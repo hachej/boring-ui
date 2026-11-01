@@ -15,6 +15,7 @@ import * as BaseDrawerParts from '@base-ui/react/drawer';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useChatVoice } from '@hachej/boring-ui-kit/chat-react/voice';
 import type { ChatVoiceHandle as Voice } from '@hachej/boring-ui-kit/chat-react/voice';
@@ -32,6 +33,10 @@ import { voiceClock } from '../pi-chat/config';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { PendingVoiceBubble, VoiceMessageButton } from '../pi-chat-voice/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
+import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
+import { feedbackLabelsFr } from '../feedback/feedback-labels';
+import { sentFeedbackContent } from '../feedback/sent-content';
+import { CommentBanner, useCommenting, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
 import { useBackLayer } from '../utils/back';
 import { parseAgentLink } from './agent-link';
@@ -53,6 +58,8 @@ export interface AgentSpec {
   readonly chatProps?: Omit<PiChatProps, 'controller'>;
   /** Push-to-talk. `message` retains audio plus transcript; `auto` sends text only; `draft` (default) fills the composer. */
   readonly voice?: VoiceMessageConfig & { readonly send?: 'auto' | 'draft' | 'message' };
+  /** The pointing tool, from the `feedback` item: the composer's annotate toggle and point mode on the app's surface. */
+  readonly feedback?: FeedbackSession;
   /** Host actions in the layer's title row (before the dock controls, or the snap and close controls when compact), as the screen header's. Two shown, the rest in « … ». Not at peek. */
   readonly headerActions?: readonly ScreenHeaderAction[];
 }
@@ -452,9 +459,19 @@ function VoiceProblem() {
 function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly visible: boolean; readonly role: Which }) {
   const layer = useInternal();
   const locale = spec.chatProps?.locale ?? layer.locale;
+  // One annotate toggle: pins on desktop, point mode (which hides the layer while the person taps the app) on touch and compact screens.
+  const feedback = useComposerFeedback(spec.feedback);
+  const pointing = usePointing(spec.feedback);
+  // The pin's mic uses the shell's transcription: this agent's own, else the coach's.
+  const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
+  const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
-    <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'}
+    <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
       {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: layer.voice.phase === 'starting' || layer.voice.phase === 'recording' ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
+    {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
+    {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
+    {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden">
+      <NoteBubble session={spec.feedback} {...(transcribe ? { transcribe } : {})} {...(fr ? { labels: feedbackLabelsFr } : {})} /></div>}
   </div>;
 }
 
@@ -507,7 +524,7 @@ function useTitle(): { text: AppShellText; title: string } {
 const toSnap = (point: number | string | null, peekPoint: string): Snap | null =>
   point === peekPoint ? 'peek' : point === HALF ? 'half' : point === FULL ? 'full' : null;
 
-function CompactSheet() {
+function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const layer = useInternal();
   const { snap, agent, voice } = layer;
   const hasPeek = Boolean(agent);
@@ -518,7 +535,7 @@ function CompactSheet() {
   // Set while the layer closes; cleared when it opens again (a close is final until the trigger or a choice opens the layer).
   const closing = useRef(false);
   useEffect(() => { if (snap !== 'closed') closing.current = false; }, [snap]);
-  const open = snap !== 'closed' && layer.showing !== 'improve';
+  const open = snap !== 'closed' && layer.showing !== 'improve' && !pointing;
   const peek = snap === 'peek';
   const points = useMemo(() => hasPeek ? [layer.peekPoint, HALF, FULL] : [HALF, FULL], [hasPeek, layer.peekPoint]);
   const value = peek ? layer.peekPoint : snap === 'full' ? FULL : HALF;
@@ -695,9 +712,24 @@ export function AgentDockLayout({ children }: { readonly children: ReactNode }):
   </DockLayout>;
 }
 
-/** The layer itself: the drawer on a phone (the wide dock is `AgentDockLayout`). Placed once by the shell. */
+/** The layer itself: the drawer on a phone (the wide dock is `AgentDockLayout`). Placed once by the shell, for point mode on both. */
 export function AgentLayer(): ReactElement | null {
   const layer = useInternal();
+  const pointingAgent = usePointing(layer.agent?.feedback);
+  const session = pointingAgent ? layer.agent?.feedback : undefined;
+  const commentingAgent = useCommenting(layer.agent?.feedback);
+  const commenting = commentingAgent ? layer.agent?.feedback : undefined;
+  // Back ends pointing first (the `point` priority), like Done: the notes wait for the next message. The layer keeps its own history entry underneath.
+  useBackLayer(session !== undefined, () => { void session?.done(); }, 'point');
   if (!layer.agent && !layer.improve) return null;
-  return layer.expanded ? null : <CompactSheet />;
+  const pointed = layer.agent;
+  const transcribe = (pointed?.voice ?? layer.agent?.voice)?.transcribe;
+  const locale = pointed?.chatProps?.locale ?? layer.locale;
+  // Comment mode shows its banner either way: on a phone (point mode) above the tab bar, outside the layer, while the compact sheet steps
+  // aside; on a wide screen at the top, the dock beside the app. The note bubble is here only while pointing (else inside the layer).
+  return <>
+    {!layer.expanded && <CompactSheet pointing={session !== undefined} />}
+    {commenting && <CommentBanner session={commenting} bottomOffset={`${layer.tabbar}px`} className="z-[60]" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
+    {session && <NoteBubble session={session} {...(transcribe ? { transcribe } : {})} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
+  </>;
 }

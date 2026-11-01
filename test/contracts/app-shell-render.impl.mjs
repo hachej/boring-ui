@@ -317,7 +317,7 @@ async function openedLayer(t, width, specs, { search = '', state = null, strict 
   window.document.body.append(container);
   const reactRoot = createRoot(container);
   const nav = [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }];
-  const app = h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...specs, locale: 'fr' });
+  const app = h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...(typeof specs === 'function' ? specs(window) : specs), locale: 'fr' });
   await act(async () => reactRoot.render(strict ? h(StrictMode, null, app) : app));
   t.after(() => act(async () => reactRoot.unmount()));
   return { window, replaced, latest: () => latest, act, unmount: () => act(async () => reactRoot.unmount()) };
@@ -770,4 +770,44 @@ test('compactNav defaults to the tab bar on a phone', async t => {
   assert.ok(ui.container.querySelector('[role=tablist]'));
   assert.ok(ui.container.querySelector('[data-sidebar=trigger]') === null);
   await ui.unmount();
+});
+
+// The pointing tool on an app's own agent: `AgentSpec.feedback` gives the composer its toggle and steps the layer aside while the person points.
+test('AgentSpec.feedback: the composer shows annotate, and on a phone the layer steps aside while pointing', async t => {
+  const { createFeedbackSession } = await import('@hachej/boring-feedback/ui');
+  const { createPrivacyPolicy } = await import('@hachej/boring-feedback/page');
+  const without = await openedLayer(t, 390, { agent: agentWith() });
+  await without.act(async () => without.latest().open('agent', 'half'));
+  assert.ok(without.window.document.querySelector('[data-testid=composer-input]'), 'the layer is open');
+  assert.equal(without.window.document.querySelector('[data-testid=composer-annotate]'), null, 'no feedback, no toggle');
+  await without.unmount();
+
+  let session;
+  const opened = await openedLayer(t, 390, window => {
+    session = createFeedbackSession({ app: 'fictional-app', build: 'dev-fixture', root: window.document.body, policy: createPrivacyPolicy(), hitTest: () => [] });
+    t.after(() => session.dispose());
+    return { agent: { ...agentWith(), feedback: session } };
+  });
+  await opened.act(async () => opened.latest().open('agent', 'half'));
+  const document = opened.window.document;
+  assert.ok(document.querySelector('[data-testid=composer-annotate]'), 'the toggle is on the composer');
+  await opened.act(async () => session.start({ mode: 'point' }));
+  assert.equal(document.querySelector('[data-testid=composer-input]'), null, 'pointing: the layer leaves the app free to tap');
+  await opened.act(async () => session.done());
+  assert.ok(document.querySelector('[data-testid=composer-input]'), 'done: the layer is back');
+});
+
+test('a sent report is shown as its card through the `feedback` item; other text keeps its bubble', async t => {
+  dom(t, 390);
+  const { draftReport, feedbackText } = await import('@hachej/boring-feedback/format');
+  const { sentFeedbackContent } = await bundle('sent-entry.tsx', `export { sentFeedbackContent } from '${root}registry/feedback/sent-content.tsx';\n`);
+  const report = draftReport({
+    observed: { kind: 'host', subject: { type: 'app', app: 'fictional-app', route: '/' }, snapshot: 'app.dom@1', digest: `sha256:${'0'.repeat(64)}`, policy: { version: 1, widened: [] } },
+    anchors: [{ kind: 'app.element@1', fallback: 'the Header' }], said: '', notes: [{ anchor: 0, text: 'fictional note' }],
+  }, { id: 'fb_123456789ABCDEFG', created: '2026-10-21T12:00:00Z' });
+  const found = sentFeedbackContent(`Before\n\n\`\`\`markdown\n${feedbackText(report)}\`\`\`\n\nAfter`, 'end');
+  assert.equal(found.before, 'Before');
+  assert.equal(found.after, 'After');
+  assert.ok(found.node);
+  assert.equal(sentFeedbackContent('An ordinary message', 'end'), undefined);
 });

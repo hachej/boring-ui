@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 // shadcn roles gets a matching chat.
 const root = new URL('../../', import.meta.url);
 const read = path => readFileSync(new URL(path, root), 'utf8');
-const ITEMS = ['pi-chat', 'pi-chat-markdown', 'pi-chat-slash', 'pi-chat-mentions', 'pi-chat-pickers', 'pi-chat-voice', 'pi-chat-attachments', 'pi-chat-question', 'pi-chat-approval', 'pi-chat-subagent', 'pi-artifacts', 'pi-chat-plugins', 'pi-ambient', 'pi-workspace', 'button', 'viewer-frame', 'viewer-markdown', 'viewer-html', 'viewer-image', 'viewer-pdf', 'viewer-code'];
+const ITEMS = ['feedback', 'pi-chat', 'pi-chat-markdown', 'pi-chat-slash', 'pi-chat-mentions', 'pi-chat-pickers', 'pi-chat-voice', 'pi-chat-attachments', 'pi-chat-question', 'pi-chat-approval', 'pi-chat-subagent', 'pi-artifacts', 'pi-chat-plugins', 'pi-ambient', 'pi-workspace', 'button', 'viewer-frame', 'viewer-markdown', 'viewer-html', 'viewer-image', 'viewer-pdf', 'viewer-code'];
 const sources = ITEMS.flatMap(item => readdirSync(new URL(`registry/${item}/`, root)).filter(name => /\.tsx?$/.test(name)).map(name => `registry/${item}/${name}`));
 
 test('kit sources use the scale: no arbitrary text size, leading or radius, no palette or hex colour, no off-scale shadow or motion', () => {
@@ -105,8 +105,23 @@ test('template extras are optional: the kit derives them from shadcn roles and t
   }
   // In plain CSS every extra and every scale variable is read with its fallback.
   const SCALE = /^(shadow|radius|text|font-weight|leading|tracking)-[\w-]+$|^(font-mono|ease-standard)$/;
-  const css = `${Object.values(light).join('\n')}\n${Object.values(dark).join('\n')}`;
+  const css = `${read('registry/feedback/feedback.css')}\n${read('registry/feedback/picker-overlay.ts')}\n${Object.values(light).join('\n')}\n${Object.values(dark).join('\n')}`;
   for (const { name, fallback } of reads(css)) if (EXTRAS.test(name) || SCALE.test(name)) assert.ok(fallback, `var(--${name}) is read without a fallback`);
   assert.ok(reads('var(--font-display, var(--font-sans))')[0].fallback && !reads('var(--warning)')[0].fallback, 'the read parser tells fallbacks apart');
 });
 
+test('feedback.css reads the scale with shadcn-default fallbacks: no px text, fixed weights, literal shadows or 1px borders', () => {
+  const css = read('registry/feedback/feedback.css'), overlay = read('registry/feedback/picker-overlay.ts');
+  for (const declaration of css.match(/font-size:[^;]+/g) ?? []) assert.match(declaration, /^font-size: var\(--text-(xs|sm|base|lg|xl), [\d.]+rem\)$/, declaration);
+  for (const declaration of css.match(/font-weight:[^;]+/g) ?? []) assert.match(declaration, /^font-weight: var\(--font-weight-(normal|medium|semibold|bold), \d00\)$/, declaration);
+  for (const declaration of css.match(/box-shadow:[^;]+/g) ?? []) assert.match(declaration, /^box-shadow: (none|var\(--boring-feedback-shadow\)|0 0 0 0 .*)$/, declaration);
+  assert.doesNotMatch(css, /border: 1px|ui-monospace, SFMono-Regular, Menlo, monospace;|\bfont: \d/, 'borders and fonts come from --border-width and --font-mono');
+  assert.match(css, /\[data-status="addressed"\] \{ color: var\(--success, var\(--primary\)\); \}/);
+  assert.doesNotMatch(`${css}\n${overlay}`, /--(control-height|touch-target-min|ring-width|ring-offset)\b/);
+  assert.doesNotMatch(overlay, /box-shadow: (?!var\(--shadow-|0 0 0 )|\bease-out\b|border-radius: \d/, 'the overlay reads --shadow-*, --ease-standard and the --radius tiers');
+  // The overlay's base styles (in @hachej/boring-feedback/page) fix 12px/14px system fonts, weights and 12px/8px toolbar corners; the item overrides each.
+  for (const [selector, properties] of Object.entries({ '.label': ['font-family', 'font-size', 'font-weight', 'line-height'], '.toolbar': ['border-radius'], '.toolbar button': ['border-radius', 'font-family', 'font-size', 'font-weight', 'line-height'] })) {
+    const rule = overlay.match(new RegExp(`^${selector.replace('.', '\\.')} \\{([^}]*)\\}`, 'm'))?.[1] ?? '';
+    for (const property of properties) assert.match(rule, new RegExp(`(^|; |\\s)${property}: var\\(--`), `${selector} ${property} reads a token`);
+  }
+});

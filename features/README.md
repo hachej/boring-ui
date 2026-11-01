@@ -13,6 +13,7 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 
 | Feature | Covers | File |
 | --- | --- | --- |
+| Feedback | comment mode, pins, reports | [feedback.md](feedback.md) |
 | App shell | layouts, navigation, headers, list and detail, account | [app-shell.md](app-shell.md) |
 | Agent layer | the shell's agent drawer and dock, voice, launch links, context | [agent-layer.md](agent-layer.md) |
 | Chat | `pi-chat`, composer features, cards, mentions, conversations | [chat.md](chat.md) |
