@@ -10,6 +10,7 @@ import { registrySchema, registryItemSchema } from 'shadcn/schema';
 import { buildRegistry } from '../../scripts/build-registry.mjs';
 import { APP_SETUP, checkRegistryBlocks, SHADCN_BUILTINS } from '../../scripts/check-registry-blocks.mjs';
 import { viewersCss } from '../../registry/viewer-frame/build-css.mjs';
+import { feedbackCss } from '../../scripts/build-feedback-css.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 // Items written in Tailwind, installed into their own folder, rather than recipes over a headless @hachej/boring-ui-kit controller.
@@ -26,6 +27,11 @@ const closureOf = name => {
 /** The host-themed roots and everything they install, without global token defaults. */
 const TOKEN_FREE_ROOTS = ['app-shell', 'agent-target', 'windows'];
 const TOKEN_FREE_CLOSURE = () => new Set(TOKEN_FREE_ROOTS.flatMap(name => [name, ...closureOf(name)]));
+// The feedback item imports the package's browser entries directly (no copied validators), React and React DOM (a portal); nothing from store, agent or source.
+const FEEDBACK_IMPORTS = new Set(['react', 'react-dom', 'lucide-react', '@hachej/boring-feedback/format', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-feedback/preview', '@hachej/boring-ui-kit/chat-text', '@hachej/boring-ui-kit/chat-react/voice']);
+// The feedback item is a plug-in of its host pi-chat (owner ruling 6): its card and voice button import pi-chat's rows and labels and utils
+// (`../pi-chat/`, `../utils/`), and the host's model and chat types, which are type-only imports and never installed as a direct dependency.
+const HOST_IMPORTS = ['../pi-chat/', '../utils/'];
 const TYPE_ONLY_IMPORTS = new Set(['@earendil-works/pi-ai', '@hachej/boring-ui-kit/native-chat']);
 /** The modules a source imports or re-exports, split into type-only and value (a runtime `export ... from` counts as a value). */
 const importKinds = source => ({
@@ -168,6 +174,37 @@ test('registry dependency pins and scoped styles preserve the declared source di
           assert.match(source, /const PICK = `<script>/);
           assert.doesNotMatch(source, /from ['"]react|createElement|appendChild|contentDocument/);
         } else assert.doesNotMatch(source, /<script\b/);
+      }
+      continue;
+    }
+    if (item.name === 'feedback') {
+      assert.ok(!item.dependencies.some(name => name.startsWith('@earendil-works/pi-ai')), 'annotation-only feedback must not install the model SDK');
+      assert.deepEqual(item.css, feedbackCss(), 'registry.json css differs from registry/feedback/feedback.css: run node scripts/build-feedback-css.mjs');
+      const scoped = (rules, where) => { for (const [key, value] of Object.entries(rules)) {
+        if (key.startsWith('@layer ')) { assert.match(key, /^@layer (base|components|utilities)$/); scoped(value, where + ' ' + key); continue; }
+        if (/^@(media|container|supports)\b/.test(key)) { scoped(value, where + ' ' + key); continue; }
+        for (const part of key.split(/,(?![^(]*\))/)) assert.ok(part.trim().startsWith('[data-boring="feedback"]'), where + ': ' + key);
+      } };
+      scoped(item.css, 'feedback');
+      assert.ok(declared.has('@hachej/boring-feedback'));
+      const names = item.files.map(file => file.path.replace(/^registry\/feedback\//, '').replace(/\.tsx?$/, ''));
+      for (const file of item.files) {
+        assert.match(file.target, new RegExp('^components/' + item.name + '/'), 'files install into their own folder');
+        const source = readFileSync(join(root, file.path), 'utf8');
+        const { typeOnly, valued } = importKinds(source);
+        for (const imported of [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1])) {
+          if (imported.startsWith('./')) { assert.ok(names.includes(imported.slice(2)), `${file.path} imports missing ${imported}`); continue; }
+          const hostUi = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
+          if (hostUi) { assert.ok(SHADCN_BUILTINS.includes(hostUi[1]), `${file.path} imports ${imported}, which is not in the app setup`); continue; }
+          if (HOST_IMPORTS.some(prefix => imported.startsWith(prefix))) { assert.ok(item.registryDependencies.includes('@boring-ui/pi-chat') && item.registryDependencies.includes('@boring-ui/utils'), `${file.path} imports its host ${imported} without depending on it`); continue; }
+          // The hold-to-record hook is the optional voice item's, declared like the host.
+          if (imported.startsWith('../pi-chat-voice/')) { assert.ok(item.registryDependencies.includes('@boring-ui/pi-chat-voice'), `${file.path} imports ${imported} without depending on @boring-ui/pi-chat-voice`); continue; }
+          if (TYPE_ONLY_IMPORTS.has(imported) && typeOnly.has(imported) && !valued.has(imported)) continue;
+          assert.ok(FEEDBACK_IMPORTS.has(imported), `${file.path} imports ${imported}: only React, React DOM, @hachej/boring-feedback/format, /page, /ui and /preview, and the kit's chat-text/chat-react/voice`);
+        }
+        // Masking, picking, anchoring and placement stay in the package: no copied serializer, policy or resolver.
+        assert.doesNotMatch(source, /function\s+(parseFeedback|checkFeedback|serializePage|createPrivacyPolicy|anchorOf|resolveAppElement|maskText)\b|elementsFromPoint|getAttribute\(/);
+        assert.doesNotMatch(source, /dangerouslySetInnerHTML|innerHTML|eval\s*\(|new Function|<script\b/);
       }
       continue;
     }
