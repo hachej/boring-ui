@@ -1,8 +1,8 @@
 # Unreleased
 
-- **Platform blocks moved to boring-factory's `platform-ui/` (`pm-panel`, `task-board`, `task-mentions`, `requests-board`, `feedback`, `feedback-preview`).** They leave this registry, and `@hachej/boring-ui-kit/task-board` leaves the kit. Published versions keep them, so an app on its pinned copies changes nothing.
-- **`pmPanel` moved with the PM (`platform-ui/pm-panel`). `AgentSpec.feedback` is removed:** no app used it. A composer's annotate toggle remains `chatProps.feedback`.
-- **`PiChat sentContent` (`pi-chat`).** A host's card for a sent text; the built-in page-comments card moved out with `feedback`.
+- **Platform blocks moved to boring-factory's `platform-ui/` (`pm-panel`, `task-board`, `task-mentions`, `requests-board`, `feedback-preview`).** They leave this registry, and `@hachej/boring-ui-kit/task-board` leaves the kit. Published versions keep them, so an app on its pinned copies changes nothing.
+- **`pmPanel` moved with the PM (`platform-ui/pm-panel`). `AgentSpec.feedback` stays:** the pointing tool any app can switch on, with the `feedback` item.
+- **`PiChat sentContent` (`pi-chat`).** A host's card for a sent text; the page-comments card moved from `pi-chat` to `feedback` (`sentFeedbackContent`). `AppShell` supplies it for an agent with `feedback`; a `PiChat` outside the shell passes it itself.
 - **`voice-input` moved to `pi-chat-voice`.**
 
 # Migrating to 0.4.46

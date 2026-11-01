@@ -61,11 +61,11 @@ test('the item pins no shadcn style: kit items, tokens and classes only', () => 
 });
 
 test('the item imports only React, its declared packages and the app setup shadcn components', () => {
-  const allowed = new Set(['react', 'react-dom', 'lucide-react', '@base-ui/react/drawer', '@hachej/boring-ui-kit/native-chat', '@hachej/boring-ui-kit/voice-capture', '@hachej/boring-ui-kit/chat-text', '@hachej/boring-ui-kit/chat-react/voice']);
+  const allowed = new Set(['react', 'react-dom', 'lucide-react', '@base-ui/react/drawer', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-ui-kit/native-chat', '@hachej/boring-ui-kit/voice-capture', '@hachej/boring-ui-kit/chat-text', '@hachej/boring-ui-kit/chat-react/voice']);
   for (const name of files) {
     for (const [, imported] of source(name).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
       if (imported.startsWith('./')) { assert.ok(files.some(file => file.replace(/\.tsx?$/, '') === imported.slice(2)), `${name} imports missing ${imported}`); continue; }
-      if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|utils|dock)\//.test(imported)) continue;
+      if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|feedback|utils|dock)\//.test(imported)) continue;
       const ui = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
       if (ui) { assert.ok(SHADCN_BUILTINS.includes(ui[1]), `${name}: ${imported} is not in the app setup`); continue; }
       if (imported === '@/hooks/use-mobile') { assert.ok(SHADCN_BUILTINS.includes('sidebar'), 'use-mobile comes with the sidebar'); continue; }
@@ -143,6 +143,7 @@ test('the French words of the shell and of the chat and feedback labels use the 
   const checked = [
     ...frTable(source('text.ts'), 'text.ts').flatMap(declaration => literals(source('text.ts'), declaration)),
     ...literals(readFileSync(`${root}registry/pi-chat/labels-fr.ts`, 'utf8'), parse('labels-fr.ts', readFileSync(`${root}registry/pi-chat/labels-fr.ts`, 'utf8'))),
+    ...frTable(readFileSync(`${root}registry/feedback/feedback-labels.ts`, 'utf8'), 'feedback-labels.ts').flatMap(declaration => literals(readFileSync(`${root}registry/feedback/feedback-labels.ts`, 'utf8'), declaration)),
   ];
   assert.ok(checked.length > 100, 'the French tables are found');
   // Spec 2 writes « Améliorer l'app » with a straight apostrophe (round 7: follow the spec); every other French string keeps ’.
@@ -541,4 +542,9 @@ test('agent-target registry source is listed and equals the shipped item', () =>
   assert.deepEqual(target.files.map(entry => entry.path.slice(directory.length + 1)).sort(), readdirSync(`${root}${directory}`).sort());
   const built = JSON.parse(readFileSync(`${root}public/r/agent-target.json`, 'utf8'));
   for (const entry of target.files) assert.equal(built.files.find(file => file.path === entry.path)?.content, readFileSync(`${root}${entry.path}`, 'utf8'), `${entry.path}: run npm run registry:build`);
+});
+
+test('the shell gives an agent with feedback the card of a sent report, and a host may replace it', () => {
+  const layer = readFileSync(`${root}registry/app-shell/agent-layer.tsx`, 'utf8');
+  assert.match(layer, /spec\.feedback && !spec\.chatProps\?\.sentContent \? \{ sentContent: sentFeedbackContent \}/);
 });
