@@ -115,6 +115,8 @@ export interface WorkspaceProviderOptions {
   readonly maxFileBytes?: number;
 }
 
+const ASIDE_FOLDER_MAX_AGE_MS = 60 * 60 * 1000;
+
 const queues = new WeakMap<object, WorkspaceQueue>();
 
 /** One queue per file system object: two providers over the same `fs` share it. */
@@ -271,7 +273,14 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     if (!moved?.ok) return false;
     const left = await fs.listDir(aside, fsContext()).catch(() => undefined);
     if (left?.ok && !left.value.length) return (await fs.remove(aside, { recursive: true }, fsContext()).catch(() => undefined))?.ok === true;
-    await fs.renameFile(aside, folder, fsContext()).catch(() => undefined);
+    if ((await fs.renameFile(aside, folder, fsContext()).catch(() => undefined))?.ok) return false;
+    // Another writer recreated the folder meanwhile: what landed joins it, entry by entry, and a name already taken there stays aside rather than overwrite.
+    const present = await fs.listDir(folder, fsContext()).catch(() => undefined);
+    if (!present?.ok || !left?.ok) return false;
+    const taken = new Set(present.value.map(entry => entry.name));
+    for (const entry of left.value) if (!taken.has(entry.name)) await fs.renameFile(entry.path, `${folder}/${entry.name}`, fsContext()).catch(() => undefined);
+    const rest = await fs.listDir(aside, fsContext()).catch(() => undefined);
+    if (rest?.ok && !rest.value.length) await fs.remove(aside, { recursive: true }, fsContext()).catch(() => undefined);
     return false;
   };
   const pruneEmptied = async (path: string): Promise<void> => {
@@ -292,8 +301,8 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
         if (entry.kind === 'directory') {
           if (entry.name === '.git' || entry.name === 'node_modules') continue;
           await walk(entry.path);
-          // A folder set aside by a process that died: removed only if nothing landed in it.
-          if (isTemporary(entry.path) && entry.mtimeMs < startedAt) {
+          // A folder set aside by a process that died: removed only if nothing landed in it. Old enough that no running provider is still pruning it.
+          if (isTemporary(entry.path) && entry.mtimeMs < startedAt - ASIDE_FOLDER_MAX_AGE_MS) {
             const left = await fs.listDir(entry.path, fsContext());
             if (left.ok && !left.value.length) await fs.remove(entry.path, { recursive: true }, fsContext());
           }

@@ -166,6 +166,32 @@ test('on disk, a file landing while a folder is being pruned survives in its fol
   assert.deepEqual(readdirSync(join(fixture.root, 'folder')), ['deep'], 'nothing stays set aside');
 });
 
+test('on disk, a file set aside while another writer recreates its folder rejoins that folder (D-825)', async t => {
+  const fixture = nested(t, 'folder/deep/last.md');
+  const rename = fixture.fs.renameFile.bind(fixture.fs);
+  fixture.fs.renameFile = async (from, to, context) => {
+    if (!String(from).endsWith('folder/deep')) return rename(from, to, context);
+    writeFileSync(join(from, 'late.md'), 'LATE');
+    const moved = await rename(from, to, context);
+    mkdirSync(from);
+    writeFileSync(join(from, 'new.md'), 'NEW');
+    return moved;
+  };
+  const result = await fixture.provider.deletion.delete({ path: located('folder/deep/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'prune-recreated', pruneEmptied: true }, access);
+  assert.equal(result.kind, 'committed');
+  assert.deepEqual(readdirSync(join(fixture.root, 'folder/deep')).sort(), ['late.md', 'new.md']);
+  assert.deepEqual(readdirSync(join(fixture.root, 'folder')), ['deep'], 'nothing stays set aside');
+});
+
+test('the startup sweep leaves a folder set aside moments ago: its provider may still be pruning it (D-825)', async t => {
+  const fixture = nested(t, 'folder/deep/last.md');
+  const aside = join(fixture.root, '.boring-00000000-0000-4000-8000-000000000000.tmp');
+  mkdirSync(aside);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  await fixture.provider.deletion.delete({ path: located('folder/deep/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'sweep-young' }, access);
+  assert.equal(existsSync(aside), true);
+});
+
 test('without pruneEmptied, a delete on disk leaves the folder: another consumer may have its cwd there (D-825)', async t => {
   const fixture = nested(t, 'folder/deep/last.md');
   await fixture.provider.deletion.delete({ path: located('folder/deep/last.md'), expectedRevision: await blobRevision(bytes('KEPT')), operationId: 'no-prune' }, access);
