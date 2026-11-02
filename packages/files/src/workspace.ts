@@ -261,25 +261,15 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   }
 
   /**
-   * A folder exists through its files: the one a move or delete left empty goes, up to the first that still holds something. Best effort, and
-   * never recursive on the folder itself, so a file landing meanwhile stays. A file system that cannot remove a directory that way (Pi's Node one)
-   * has it renamed aside first: no new file can land there, and it is only deleted if it is still empty, otherwise it goes back.
+   * A folder exists through its files: the one a move or delete left empty goes, up to the first that still holds something. Best effort and
+   * never recursive, so a file landing meanwhile stays; a file system that cannot remove a directory that way (Pi's Node one) keeps the folder.
    */
-  const removeAside = async (folder: string): Promise<boolean> => {
-    const aside = `${folder.slice(0, folder.lastIndexOf('/'))}/${temporaryFileName(randomUUID())}`;
-    const moved = await fs.renameFile(folder, aside, fsContext()).catch(() => undefined);
-    if (!moved?.ok) return false;
-    const left = await fs.listDir(aside, fsContext()).catch(() => undefined);
-    if (left?.ok && !left.value.length) return (await fs.remove(aside, { recursive: true }, fsContext()).catch(() => undefined))?.ok === true;
-    await fs.renameFile(aside, folder, fsContext()).catch(() => undefined);
-    return false;
-  };
   const pruneEmptied = async (path: string): Promise<void> => {
     for (let folder = path.slice(0, Math.max(0, path.lastIndexOf('/'))); folder; folder = folder.slice(0, Math.max(0, folder.lastIndexOf('/')))) {
       const listed = await fs.listDir(absolute(folder), fsContext()).catch(() => undefined);
       if (!listed?.ok || listed.value.length) return;
       const gone = await fs.remove(absolute(folder), { recursive: false }, fsContext()).catch(() => undefined);
-      if (!gone?.ok && !await removeAside(absolute(folder))) return;
+      if (!gone?.ok) return;
     }
   };
   /** Once per provider, before its first operation: remove temporary files that an earlier process left behind. */
@@ -289,15 +279,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
       const listing = await fs.listDir(directory, fsContext());
       if (!listing.ok) return;
       for (const entry of listing.value) {
-        if (entry.kind === 'directory') {
-          if (entry.name === '.git' || entry.name === 'node_modules') continue;
-          await walk(entry.path);
-          // A folder set aside by a process that died: removed only if nothing landed in it.
-          if (isTemporary(entry.path) && entry.mtimeMs < startedAt) {
-            const left = await fs.listDir(entry.path, fsContext());
-            if (left.ok && !left.value.length) await fs.remove(entry.path, { recursive: true }, fsContext());
-          }
-        }
+        if (entry.kind === 'directory') { if (entry.name !== '.git' && entry.name !== 'node_modules') await walk(entry.path); }
         else if (entry.kind === 'file' && isTemporary(entry.path) && entry.mtimeMs < startedAt) await fs.remove(entry.path, { force: true }, fsContext());
       }
     };
