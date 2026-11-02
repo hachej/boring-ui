@@ -1,5 +1,6 @@
 # Unreleased
 
+- **Spaces block (`spaces`; D-961).** New, additive: `useSpaces`, `SpaceSwitcher` and `MembersSheet` from `@boring/ui/blocks/spaces/index`. `useSpaces({ kind, transport })` takes the call to your host, for example `(operation, input) => api(`_spaces/${operation}`, { body: input })`. An app on the legacy path adds `sheet` to its shadcn setup. An app with its own spaces client can replace it.
 - **Platform blocks moved to boring-factory's `platform-ui/` (`pm-panel`, `task-board`, `task-mentions`, `requests-board`, `feedback-preview`).** They leave this registry, and `@hachej/boring-ui-kit/task-board` leaves the kit. Published versions keep them, so an app on its pinned copies changes nothing.
 - **`pmPanel` moved with the PM (`platform-ui/pm-panel`). `AgentSpec.feedback` stays:** the pointing tool any app can switch on, with the `feedback` item.
 - **`PiChat sentContent` (`pi-chat`).** A host's card for a sent text; the page-comments card moved from `pi-chat` to `feedback` (`sentFeedbackContent`). `AppShell` supplies it for an agent with `feedback`; a `PiChat` outside the shell passes it itself.
