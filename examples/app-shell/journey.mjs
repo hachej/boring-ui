@@ -193,6 +193,34 @@ try {
     await browser.until('closed', `!${q(LAYER)}`);
   });
 
+  await step('B2b the trigger is a toggle on a phone: half closes fully, Close dismisses full (which covers the trigger), two quick taps never strand a sheet (D-864)', async () => {
+    const closed = where => browser.until(`closed ${where}`, `!${q(LAYER)}`);
+    await tap(TRIGGER);
+    await browser.until('half', `${q(LAYER)}?.dataset.state === 'half'`);
+    await settle();
+    await tapAt(TRIGGER);
+    await closed('from half');
+    await pause(700);
+    assert.equal(await browser.evaluate(`!${q(LAYER)}`), true, 'stays closed, no sheet or band left');
+    await tap(TRIGGER);
+    await browser.until('half again', `${q(LAYER)}?.dataset.state === 'half'`);
+    await settle();
+    await tap('[data-testid=agent-layer-expand]');
+    await browser.until('full', `${q(LAYER)}?.dataset.state === 'full'`);
+    await settle();
+    // Full covers the whole phone screen, trigger included: Close is what dismisses it.
+    await tap('[data-testid=agent-layer-close]');
+    await closed('from full');
+    await pause(700);
+    await tap(TRIGGER);
+    await pause(120);
+    await tapAt(TRIGGER);
+    await pause(900);
+    const state = await browser.evaluate(`${q(LAYER)}?.dataset.state ?? 'closed'`);
+    assert.ok(state === 'closed' || state === 'half', `two quick taps end open or closed, got ${state}`);
+    if (state !== 'closed') { await tap('[data-testid=agent-layer-close]'); await closed('after two taps'); }
+  });
+
   await step('B3 the layer overflow on a phone: « … » opens a sheet with the third action as a link (44px); Back closes the sheet, not the layer; a tap navigates', async () => {
     const link = '[data-testid=app-sheet] a[href="/invite?app=fitness"]';
     await tap(TRIGGER);

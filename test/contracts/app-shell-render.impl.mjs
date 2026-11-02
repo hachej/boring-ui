@@ -686,6 +686,26 @@ test('a message-mode microphone refusal at peek reveals its problem and survives
   await ui.opened.unmount();
 });
 
+test('the phone trigger is a toggle: half and full close, peek reveals (D-864)', async t => {
+  const opened = await openedLayer(t, 390, { agent: agentWith() });
+  const press = async () => {
+    const trigger = opened.window.document.querySelector('[data-testid=agent-trigger]');
+    const Pointer = opened.window.PointerEvent ?? opened.window.MouseEvent;
+    for (const type of ['pointerdown', 'pointerup']) await opened.act(async () => { trigger.dispatchEvent(new Pointer(type, { bubbles: true, cancelable: true, pointerId: 1, button: 0 })); });
+  };
+  await press();
+  assert.equal(opened.latest().state, 'half', 'closed: opens at half');
+  await press();
+  assert.equal(opened.latest().state, 'closed', 'half: closes');
+  await opened.act(async () => opened.latest().open('agent', 'full'));
+  await press();
+  assert.equal(opened.latest().state, 'closed', 'full: closes');
+  await opened.act(async () => opened.latest().open('agent', 'peek'));
+  await press();
+  assert.equal(opened.latest().state, 'half', 'peek: reveals');
+  await opened.unmount();
+});
+
 test('useAgentLayer exposes the same app controller while closed, never the product manager controller', async t => {
   const improve = new Proxy(idleController, {});
   const opened = await openedLayer(t, 390, { agent: agentWith(), panel: { ...stubSlot, identity: improve } });
