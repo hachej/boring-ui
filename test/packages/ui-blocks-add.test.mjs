@@ -130,7 +130,13 @@ for (const [name, link] of [['a symlinked scope directory', 'node_modules/@ficti
       assert.equal(existsSync(join(fixture.dir, '.npx-args')), false, 'the package manager never ran');
       assert.equal(readFileSync(join(fixture.outside, 'sentinel.txt'), 'utf8'), 'untouched\n');
     }
-    assert.doesNotMatch(run(fixture.dir, ['check'], fixture.env).stderr, /borrowed install/);
+    // The kit is reachable through the link or beside it: check runs for real and writes nothing.
+    const kit = link === 'node_modules' ? join(fixture.outside, '@hachej/boring-ui-kit') : join(fixture.dir, 'node_modules/@hachej/boring-ui-kit');
+    write(join(kit, 'package.json'), JSON.stringify({ name: '@hachej/boring-ui-kit', version: '0.0.0' }));
+    write(join(kit, 'r/empty.json'), '{}');
+    const checked = run(fixture.dir, ['check', '--json'], fixture.env);
+    assert.ok(JSON.parse(checked.stdout).kit, checked.stdout);
+    assert.equal(readFileSync(join(fixture.outside, 'sentinel.txt'), 'utf8'), 'untouched\n');
   });
 }
 
@@ -143,4 +149,34 @@ test('a physical scope with per-package links installs as before', t => {
   const result = run(fixture.dir, ['add', 'toggle'], fixture.env);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(fixture.toggle, 'utf8'), REGISTRY);
+});
+
+test('in a workspace the root counts: a borrowed scope at the root refuses even with a physical install in the app', t => {
+  const fixture = app(t);
+  const rootDir = mkdtempSync(join(tmpdir(), 'kit-blocks-workspace-'));
+  const outside = mkdtempSync(join(tmpdir(), 'kit-blocks-outside-'));
+  t.after(() => { rmSync(rootDir, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); });
+  write(join(rootDir, 'package.json'), JSON.stringify({ private: true, workspaces: ['apps/*'] }));
+  mkdirSync(join(rootDir, 'node_modules'), { recursive: true });
+  symlinkSync(outside, join(rootDir, 'node_modules/@fictional'));
+  const web = join(rootDir, 'apps/web');
+  for (const name of ['package.json', 'components.json', 'src/components/ui/button.tsx']) write(join(web, name), readFileSync(join(fixture.dir, name)));
+  mkdirSync(join(web, 'node_modules'));
+  const result = run(web, ['add', 'toggle'], fixture.env);
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /borrowed install/);
+  assert.equal(existsSync(join(fixture.dir, '.npx-args')), false);
+});
+
+test('outside a workspace a link in an unrelated parent does not refuse', t => {
+  const fixture = app(t);
+  const parent = mkdtempSync(join(tmpdir(), 'kit-blocks-parent-'));
+  const outside = mkdtempSync(join(tmpdir(), 'kit-blocks-outside-'));
+  t.after(() => { rmSync(parent, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); });
+  symlinkSync(outside, join(parent, 'node_modules'));
+  const web = join(parent, 'web');
+  for (const name of ['package.json', 'components.json', 'src/components/ui/button.tsx', '.registry-toggle']) write(join(web, name), readFileSync(join(fixture.dir, name)));
+  const result = run(web, ['add', 'toggle'], fixture.env);
+  assert.doesNotMatch(result.stderr, /borrowed install/);
+  assert.equal(existsSync(join(fixture.dir, '.npx-args')), true, 'the package manager ran');
 });

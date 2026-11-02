@@ -312,17 +312,30 @@ function shadcnAdd(app, args, log, overwrite) {
  * Refused before anything runs. Per-package links (workspaces, pnpm) stay valid, and `check` never gets here: it writes nothing.
  */
 function refuseBorrowedInstall(app) {
-  for (let dir = app; ; dir = dirname(dir)) {
+  const borrowed = [];
+  for (const dir of installRoots(app)) {
     const modules = join(dir, 'node_modules');
     const stat = lstatSync(modules, { throwIfNoEntry: false });
-    if (stat) {
-      const scopes = stat.isSymbolicLink() ? [] : readdirSync(modules).filter(name => name.startsWith('@') && lstatSync(join(modules, name)).isSymbolicLink());
-      const borrowed = stat.isSymbolicLink() ? [modules] : scopes.map(name => join(modules, name));
-      if (borrowed.length) throw new Error(`refusing to install through a borrowed install: ${borrowed.map(path => `${path} is a symlink`).join(', ')}. A package manager would write into the tree it points at. A borrowed install is read-only: \`check\` still works, and \`add\` and \`update\` need an owned physical install.`);
-      return;
-    }
-    if (dirname(dir) === dir) return;
+    if (stat?.isSymbolicLink()) borrowed.push(modules);
+    else if (stat) borrowed.push(...readdirSync(modules).filter(name => name.startsWith('@')).map(name => join(modules, name)).filter(path => lstatSync(path).isSymbolicLink()));
   }
+  if (borrowed.length) throw new Error(`refusing to install through a borrowed install: ${borrowed.map(path => `${path} is a symlink`).join(', ')}. A package manager would write into the tree it points at. A borrowed install is read-only: \`check\` still works, and \`add\` and \`update\` need an owned physical install.`);
+}
+
+/** Where a package manager run from `app` may write: the app, and every directory up to its workspace root when it is in a workspace. */
+function installRoots(app) {
+  const walked = [];
+  for (let dir = app; ; dir = dirname(dir)) {
+    walked.push(dir);
+    if (isWorkspaceRoot(dir)) return walked;
+    if (dirname(dir) === dir) return [app];
+  }
+}
+
+function isWorkspaceRoot(dir) {
+  if (existsSync(join(dir, 'pnpm-workspace.yaml'))) return true;
+  try { return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).workspaces !== undefined; }
+  catch { return false; }
 }
 
 const line = v => `${v.check} ${v.rule} ${v.file}${v.line ? `:${v.line}:${v.column}` : ''} ${v.detail}`;
