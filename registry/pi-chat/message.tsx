@@ -307,6 +307,7 @@ export function MessageClock({ at, tone, floating = true, pending = false, text,
 }
 const isoAt = (ms: number | undefined) => ms !== undefined && Number.isFinite(ms) ? new Date(ms).toISOString() : undefined;
 
+// (A message just sent reads no file previews: the server's own row will, and the same file is not read twice.)
 function NotSent() {
   const { labels } = useChatText();
   return <p role="status" data-testid="message-not-sent" className="m-0 text-end text-xs text-destructive">{labels.notSent}</p>;
@@ -388,7 +389,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
   const { labels, icons } = useChatText();
   const renderMention = useMemo(() => context.pieces?.mentions ? (path: string, text: string) => <UserMention path={path} text={text} open={context.pieces?.openMention} render={context.pieces?.renderMention} kinds={context.pieces?.kinds} /> : undefined, [context.pieces]);
   switch (row.type) {
-    case 'user': return <article data-row-id={row.key} data-role="user" data-send-state={row.local} aria-live={row.historical ? 'off' : undefined} className={row.local === 'sending' ? 'opacity-70' : undefined}><UserBubble message={row.message} images={images} context={context} lead={row.lead === true} local={row.local} />{row.local === 'failed' && <NotSent />}</article>;
+    case 'user': return <article data-row-id={row.key} data-role="user" data-send-state={row.local} aria-live={row.historical ? 'off' : undefined} className={row.local === 'sending' ? 'opacity-70' : undefined}><UserBubble message={row.message} images={images} context={row.local && context.pieces?.preview ? { ...context, pieces: { ...context.pieces, preview: undefined } } : context} lead={row.lead === true} local={row.local} />{row.local === 'failed' && <NotSent />}</article>;
     case 'card': return <article data-row-id={row.key} data-role="event">{row.card.content}</article>;
     case 'event': return <article data-row-id={row.key} data-role="event" className="text-center text-xs text-muted-foreground">{labels.event(row.label)}</article>;
     case 'system': return <article data-row-id={row.key} data-role="system"><Collapsible>
