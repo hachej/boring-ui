@@ -567,23 +567,28 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const { close, triggerUntil } = layer;
   useEffect(() => {
     if (!open || peek) return;
-    const onTrigger = (event: PointerEvent) => {
+    const triggerAt = (event: PointerEvent) => {
       const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest('[data-agent-trigger], [data-slot=drawer-popup]')) return false;
-      return [...document.querySelectorAll('[data-agent-trigger]')].some(trigger => {
+      if (target?.closest('[data-agent-trigger], [data-slot=drawer-popup], [data-boring-overlay]')) return null;
+      return [...document.querySelectorAll('[data-agent-trigger]')].find(trigger => {
         const box = trigger.getBoundingClientRect();
         return event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
-      });
+      }) ?? null;
     };
-    let pressed = false;
+    let press: { readonly trigger: Element; readonly id: number; readonly at: number } | null = null;
     const down = (event: PointerEvent) => {
-      pressed = onTrigger(event);
-      if (pressed) triggerUntil.current = Date.now() + 500;
+      if (press) return;
+      const trigger = triggerAt(event);
+      if (!trigger) return;
+      press = { trigger, id: event.pointerId, at: Date.now() };
+      triggerUntil.current = press.at + 500;
     };
     const up = (event: PointerEvent) => {
-      const closes = pressed && onTrigger(event);
-      pressed = false;
-      if (closes) close();
+      if (press?.id !== event.pointerId) return;
+      const { trigger, at } = press;
+      press = null;
+      // A tap, on the trigger it began on. A long press is not one: this trigger records only from a closed or peek layer.
+      if (triggerAt(event) === trigger && Date.now() - at < HOLD_MS) close();
     };
     document.addEventListener('pointerdown', down, true);
     document.addEventListener('pointerup', up, true);
