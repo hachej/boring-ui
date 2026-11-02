@@ -23,7 +23,7 @@ function script(job, name) {
 const journeys = [
   'test:design', 'test:viewer-chrome', 'app-shell:journey', 'app-shell:journey:workspace', 'app-shell:journey:voice', 'workspace-app:journey',
   'shared-chat:journey', 'shared-chat:journey:room', 'shared-chat:journey:mockups', 'mockup:journey', 'draft-recovery:journey', 'file-tree:journey', 'canvas:journey:commands',
-  'canvas:journey:proposals', 'canvas:journey:remote', 'board:journey', 'task-list:journey', 'task-board:journey', 'morning:journey',
+  'canvas:journey:proposals', 'canvas:journey:remote', 'board:journey', 'task-list:journey', 'morning:journey',
   'studio:journey:correctness', 'studio:journey:scripted', 'workspace-demo:journey', 'ambient:journey:scripted',
 ];
 const consumers = 'document editor html virtual remote-shell remote-files question presentation experience canvas canvas-editor canvas-remote task-list-registry morning pi-chat shared-chat'.split(' ');

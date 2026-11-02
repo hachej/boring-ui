@@ -26,7 +26,7 @@ export function SessionsPane({ id, conversations, title: givenTitle, drawer, onC
   readonly view?: SessionsView | undefined;
   readonly onViewChange?: ((view: SessionsView) => void) | undefined;
   readonly agents?: WorkspaceAgents | undefined;
-  readonly title?: string;
+  readonly title?: string | undefined;
   readonly drawer: boolean;
   readonly onClose?: (() => void) | undefined;
   readonly onCollapse?: (() => void) | undefined;

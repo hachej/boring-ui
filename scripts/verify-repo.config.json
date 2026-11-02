@@ -16,7 +16,8 @@
     "shared",
     "skills",
     "test",
-    "tools"
+    "tools",
+    "shadcn"
   ],
   "additionalSourceRoots": [
     {

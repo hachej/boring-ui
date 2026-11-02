@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '../utils/utils';
 import { ScreenActiveContext } from './agent-context';
-import { useBackLayer } from './back';
+import { useBackLayer } from '../utils/back';
 import { useIsCompact } from './compact';
 import { useScreenHeader } from './header';
 

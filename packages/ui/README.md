@@ -18,10 +18,6 @@ See [scaffold guide](../../docs/contracts/SCAFFOLD.md) and [audit](../../docs/co
 
 ## Business task board
 
-`@hachej/boring-ui-kit/task-board` is a dependency-free host-record model: `TaskRecord`, `TaskState`, `TaskFilter`, `selectTasks`, `taskReference`, `taskFromUrl`, `taskUrl` and `TASK_STATES`. `selectTasks(tasks, { filter, currentUser, limit })` filters then sorts newest-first without mutating input. `mine` requires the host adapter's `requesterId`; it is never an authorization boundary. These business tasks are not native Pi execution tasks. The model also accepts host display metadata (`age`, `requester`, `refiner`, `captureCount`, `folder`), question `askedBy`/`askedAt`, and file `kind: 'markdown' | 'mockup' | 'capture'`. These fields never determine ownership. `deriveTaskStatus` prioritizes the native viewer flag, explicit `waiting_on.type: 'builder'`, then high risk; unknown status yields `none`. `taskStatusLabel(status, locale?, viewerAction?)` supplies EN/FR question versus confirmation wording without inferring workflow authority.
-
-Copyable `TaskBoard`, `TaskDetail`, `TaskRequestCard` (also `TaskCard`) and `TaskStatusChip` presentation lives in the [`task-board` registry item](../../registry/README.md#task-board-task-board), using the app's Base UI controls/tokens. The [feature map](../../features/task-board.md) and [fictional example](../../examples/task-board/README.md) drive responsive columns/detail, URL navigation and compact own-request rows.
-
 ## Exact proposals and commands
 
 `actions.propose(selection, edits, summary)` retains an immutable proposal with its exact resource/scope/view/revision, viewer instance/epoch, buffer version, before/after text and ordered edits. It performs no publication and preserves existing human text. Every nonempty `find` must occur once; a missing or ambiguous edit rejects the entire transform.

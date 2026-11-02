@@ -25,6 +25,7 @@ import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
 import { createRevisionHandler } from '@hachej/boring-files/revision-handler';
+import { createResourceHandler } from '@hachej/boring-files/remote';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
 import { readFiles, writeFiles } from '../../shared/workspace-tools.mjs';
 import { buildTailwind } from '../../lab/studio/tailwind.mjs';
@@ -126,7 +127,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   const signedIn = request => request.headers.get('sec-fetch-site') === 'same-origin';
   const pmStart = init => agents.pm.createConversation(harness, context, { init });
   const door = {
-    '/api/pm/agent': async request => signedIn(request) && request.method === 'GET' ? Response.json({ agent: 'pm', identity: { runtimeId: 'app', ...person } }) : new Response(null, { status: 403 }),
+    '/api/pm/agent': async request => signedIn(request) && request.method === 'GET' ? Response.json({ agent: 'pm', identity: { runtimeId: 'app', ...person }, resources: { endpoint: 'api/pm/library' } }) : new Response(null, { status: 403 }),
     '/api/pm/conversations': createConversationsHandler({ conversations, authenticate: async request => signedIn(request) ? { owner: agents.pm.id, start: pmStart } : null }),
     '/api/pm/chat': createChatTransportHandler({ authenticate: async request => {
       const id = Number(new URL(request.url).searchParams.get('conversation'));
@@ -139,8 +140,15 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
       transcribes.push({ language: new URL(request.url).searchParams.get('language'), bytes: (await request.arrayBuffer()).byteLength });
       return Response.json(pmTranscript);
     },
-    // The files the PM presents, read by the panel through the door (`{base}/resources`, the same revision route as `/api/resources`).
-    '/api/pm/resources': createRevisionHandler({ resolve: async request => pmTasks && signedIn(request) ? { provider: files, access: person } : null }),
+    // Match the actual PM door: resources is POST-only; Library serves revision discovery, catalog and reads without writes.
+    '/api/pm/resources': createResourceHandler({ authenticate: async request => pmTasks && signedIn(request) ? person : null, reader: files }),
+    '/api/pm/library': async request => {
+      if (!pmTasks || !signedIn(request)) return new Response(null, { status: 403 });
+      if (request.method === 'POST' && !request.headers.has('x-boring-catalog') && (await request.clone().json()).kind !== 'read') return new Response(null, { status: 403 });
+      const headers = new Headers(request.headers);
+      headers.set('authorization', `Bearer ${token}`);
+      return resources(new Request(request, { headers }));
+    },
     '/_tasks/api': async request => !pmTasks ? new Response(null, { status: 404 }) : !signedIn(request) || refusing ? new Response(null, { status: 403 })
       : Response.json({ tasks: new URL(request.url).searchParams.get('mine') === '1' ? tasks : [], cursor: String(tasks.length + answers.length) }),
   };
@@ -176,8 +184,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
 
   const bundle = await build({ entryPoints: [pageFile], plugins: browserPlugins, bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic',
     alias: { '@': here('.') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
-  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'examples/pm-panel', 'registry/pm-panel', 'registry/task-board', 'registry/task-mentions', 'registry/app-shell', 'registry/agent-target', 'registry/documents'], extraCss: SIDEBAR_TOKENS }), BASE, ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
-    readFileSync(here('../../registry/feedback/feedback.css'), 'utf8'),
+  const css = [await buildTailwind({ extraDirectories: ['examples/app-shell', 'registry/app-shell', 'registry/agent-target', 'registry/documents'], extraCss: SIDEBAR_TOKENS }), BASE, ...bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text),
     'html,body,#root{min-height:100%;margin:0}body{background:var(--background);color:var(--foreground);font:15px/1.5 ui-sans-serif,system-ui,sans-serif}',
     themeCss,
     // The app's own rule for AppShell overlayBlur={false} (an item's CSS stays inside .app-shell; overlays are portalled outside it).

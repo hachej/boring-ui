@@ -9,7 +9,7 @@ The `app-shell` block gives an app its navigation, one header per screen, an acc
 - `shell-header` one header per screen through `useScreenHeader`, back arrow, at most two actions. `registry/app-shell/header.tsx`.
 - `shell-list-detail` `ListDetail`: both panes wide, one at a time on a phone with Back, collapsible list. `registry/app-shell/list-detail.tsx`.
 - `shell-account` account sheet and menu: name, email, app menu, theme switch, sign out. `registry/app-shell/account.tsx`.
-- `shell-back` one Back manager for point mode, sheets, the agent layer and list-detail stacks. `registry/app-shell/back.ts`.
+- `shell-back` one Back manager for point mode, sheets, the agent layer and list-detail stacks. `registry/utils/back.ts`.
 - `shell-dense-targets` 44px touch targets under 640px or on a coarse pointer, opt out with `data-dense`. `registry/README.md` section Agent layer.
 
 ## How to get to it (user POV)

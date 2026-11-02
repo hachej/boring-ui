@@ -13,7 +13,7 @@ const artifact = name => ({ schema: 'boring.artifact', version: 1, title: `Idea 
 const descriptors = ['A', 'B', 'C'].map(artifact);
 const question = { id: '2', conversationId: 'main', author: 'agent:pm', at: '2026-10-30T12:00:00Z', text: 'Which idea?', question: { callId: 'native-q', prompt: 'Which idea?', options: ['A', 'B', 'C'], allowFreeText: false, answered: false }, artifacts: descriptors };
 
-for (const width of [375, 1280]) test(`public SharedChat reuses PM cards/full sandbox, host reader and native answer at ${width}px`, async t => {
+for (const width of [375, 1280]) test(`public SharedChat uses ordinary artifact cards/panel, exact host reads and native answer at ${width}px`, async t => {
   const window = new Window({ url: 'https://fictional.invalid/', width, height: 844 });
   const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'DOMParser', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'ResizeObserver', 'sessionStorage', 'localStorage', 'matchMedia', 'IS_REACT_ACT_ENVIRONMENT'];
   const globals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
@@ -32,21 +32,29 @@ for (const width of [375, 1280]) test(`public SharedChat reuses PM cards/full sa
   const read = async descriptor => { reads.push(descriptor); return `<h1>Fictional ${descriptor.title}</h1>`; };
   t.after(async () => { await act(async () => ui.unmount()); assert.equal(controller.getSnapshot().disposed, false, 'viewer borrows the controller'); await controller.dispose(); await window.happyDOM.close(); for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
   const render = (key = 'app:ana:controller-1') => act(async () => ui.render(h(RoomPresentation, { key, controller, read })));
-  await render();
   const until = async ready => { for (let n = 0; n < 100 && !ready(); n++) await act(async () => new Promise(resolve => setTimeout(resolve, 10))); assert.ok(ready(), 'expected public UI'); };
+  const cards = () => container.querySelectorAll('[data-testid=artifact-card]');
+  const open = async index => {
+    await act(async () => cards()[index].click());
+    await until(() => container.querySelector('[data-testid=artifact-run-frame]'));
+    return container.querySelector('[data-testid=artifact-run-frame]');
+  };
+  const close = async () => {
+    await act(async () => container.querySelector('[data-testid=artifact-close]').click());
+    await until(() => !container.querySelector('[data-testid=workspace-panel]'));
+  };
+  await render();
   await until(() => container.querySelector('[data-testid=question-option]'));
-  assert.deepEqual([...container.querySelectorAll('[data-testid=pm-mockup-title]')].map(node => node.textContent), descriptors.map(item => item.title));
-  await until(() => reads.length === 3);
+  assert.deepEqual([...container.querySelectorAll('[data-testid=artifact-title]')].map(node => node.textContent), descriptors.map(item => item.title));
+  assert.deepEqual(reads, [], 'stock cards do not prefetch private attachment bytes');
   for (let i = 0; i < 3; i++) {
-    await act(async () => container.querySelectorAll('[data-testid=pm-mockup-open]')[i].click());
-    await until(() => container.querySelector('[data-testid=pm-mockup-full-run-frame]'));
-    const frame = container.querySelector('[data-testid=pm-mockup-full-run-frame]');
+    const frame = await open(i);
     assert.match(frame.getAttribute('srcdoc'), new RegExp(`Fictional ${descriptors[i].title}`));
     assert.equal(frame.getAttribute('sandbox'), 'allow-scripts');
     assert.doesNotMatch(frame.getAttribute('sandbox'), /allow-same-origin/);
-    await act(async () => container.querySelector('[data-testid=pm-mockup-back]').click());
+    await close();
   }
-  assert.deepEqual(reads, descriptors, 'thumbnail and full view reuse exact host reads');
+  assert.deepEqual(reads, descriptors, 'the ordinary panel reads each selected exact descriptor');
   await act(async () => container.querySelectorAll('[data-testid=question-option]')[1].click());
   assert.equal(source.sends.length, 1);
   assert.equal(source.sends[0].text, 'B'); assert.equal(source.sends[0].replyTo, '2');
@@ -55,21 +63,21 @@ for (const width of [375, 1280]) test(`public SharedChat reuses PM cards/full sa
   assert.equal(container.querySelector('[data-testid=question-prompt]'), null, 'no repeated prompt after choosing');
   assert.match(container.textContent, /B/, 'the person’s actual reply stays');
   assert.equal(container.querySelector('[data-testid=reply-quote]'), null, 'no assistant prompt quote on the answer');
-  assert.equal(container.querySelectorAll('[data-testid=pm-mockup]').length, 3, 'answered questions retain their mockups');
+  assert.equal(cards().length, 3, 'answered questions retain their artifacts');
   const final = { id: '3', conversationId: 'main', author: 'agent:pm', at: '2026-10-30T12:01:00Z', text: 'Selected B; launch not requested.', artifacts: descriptors };
   await act(async () => { source.emit({ type: 'message', message: final }); source.emit({ type: 'message', message: final }); });
-  assert.equal(container.querySelectorAll('[data-testid=pm-mockup]').length, 3, 'question/final/replay never duplicate the cards');
-  await act(async () => container.querySelector('[data-testid=pm-mockup-open]').click());
+  assert.equal(cards().length, 3, 'question/final/replay never duplicate the cards');
+  await open(0);
   await render('app:ben:controller-2');
-  assert.equal(container.querySelector('[data-testid=pm-mockup-view]'), null, 'host binding replacement clears opened resource');
-  await until(() => reads.length === 6);
-  assert.equal(container.querySelectorAll('[data-testid=pm-mockup]').length, 3);
+  assert.equal(container.querySelector('[data-testid=workspace-panel]'), null, 'host binding replacement clears opened resource');
+  assert.equal(cards().length, 3);
   const otherProvider = { ...descriptors[0], title: 'Another provider', target: { ...descriptors[0].target, resource: { ...descriptors[0].target.resource, providerId: 'different-room-files' } } };
   await act(async () => source.emit({ type: 'message', message: { ...final, artifacts: [...descriptors, otherProvider] } }));
-  await until(() => container.querySelectorAll('[data-testid=pm-mockup]').length === 4);
-  await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
-  assert.equal(reads.length, 7, 'same path/revision in another provider must never reuse another target’s bytes');
-  assert.deepEqual(reads.at(-1), otherProvider);
+  await until(() => cards().length === 4);
+  const otherFrame = await open(3);
+  assert.match(otherFrame.getAttribute('srcdoc'), /Fictional Another provider/);
+  assert.deepEqual(reads.at(-1), otherProvider, 'same path/revision in another provider reads that full target, never another provider’s bytes');
   await act(async () => { source.emit({ type: 'message', message: { ...question, artifacts: [], removed: { by: 'host', at: final.at } } }); source.emit({ type: 'message', message: { ...final, artifacts: [], removed: { by: 'host', at: final.at } } }); });
-  assert.equal(container.querySelectorAll('[data-testid=pm-mockup]').length, 0, 'redaction clears cards');
+  assert.equal(cards().length, 0, 'redaction clears cards');
+  assert.equal(container.querySelector('[data-testid=workspace-panel]'), null, 'redaction also closes the selected artifact');
 });

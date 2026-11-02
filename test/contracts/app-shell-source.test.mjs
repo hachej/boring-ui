@@ -65,7 +65,7 @@ test('the item imports only React, its declared packages and the app setup shadc
   for (const name of files) {
     for (const [, imported] of source(name).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
       if (imported.startsWith('./')) { assert.ok(files.some(file => file.replace(/\.tsx?$/, '') === imported.slice(2)), `${name} imports missing ${imported}`); continue; }
-      if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|feedback|utils|dock|pm-panel)\//.test(imported)) continue;
+      if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|feedback|utils|dock)\//.test(imported)) continue;
       const ui = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
       if (ui) { assert.ok(SHADCN_BUILTINS.includes(ui[1]), `${name}: ${imported} is not in the app setup`); continue; }
       if (imported === '@/hooks/use-mobile') { assert.ok(SHADCN_BUILTINS.includes('sidebar'), 'use-mobile comes with the sidebar'); continue; }
@@ -95,7 +95,7 @@ async function bundle(name, extra = {}) {
 }
 let freshModule = 0;
 async function bundleEntry(entry, outfile, extra) {
-  await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell` }, logLevel: 'silent', ...extra });
+  await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell`, '@hachej/boring-ui-kit/file-tree.css': `${root}packages/ui/styles/file-tree.css` }, logLevel: 'silent', ...extra });
   // A fresh module per call: the Back manager keeps its popstate listener on the window it first saw.
   return import(`${pathToFileURL(outfile).href}?${freshModule++}`);
 }
@@ -230,7 +230,7 @@ test('AppShellProps has the shell props, optional rail, locale and URL opt-out, 
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'compactNav', 'improve', 'layout', 'locale', 'nav', 'overlayBlur', 'rail', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'compactNav', 'layout', 'locale', 'nav', 'overlayBlur', 'panel', 'rail', 'route', 'title']);
   const rail = props.members.find(member => member.name.text === 'rail');
   assert.ok(rail.questionToken, 'rail is optional');
   assert.equal(rail.type.getText(file), "'icon' | 'hover'");
@@ -542,4 +542,9 @@ test('agent-target registry source is listed and equals the shipped item', () =>
   assert.deepEqual(target.files.map(entry => entry.path.slice(directory.length + 1)).sort(), readdirSync(`${root}${directory}`).sort());
   const built = JSON.parse(readFileSync(`${root}public/r/agent-target.json`, 'utf8'));
   for (const entry of target.files) assert.equal(built.files.find(file => file.path === entry.path)?.content, readFileSync(`${root}${entry.path}`, 'utf8'), `${entry.path}: run npm run registry:build`);
+});
+
+test('the shell gives an agent with feedback the card of a sent report, and a host may replace it', () => {
+  const layer = readFileSync(`${root}registry/app-shell/agent-layer.tsx`, 'utf8');
+  assert.match(layer, /spec\.feedback && !spec\.chatProps\?\.sentContent \? \{ sentContent: sentFeedbackContent \}/);
 });

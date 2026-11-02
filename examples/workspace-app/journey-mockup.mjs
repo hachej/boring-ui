@@ -15,7 +15,7 @@ const INPUT = q('[data-testid=composer-input]');
 const FRAME = q('[data-testid=mockup-run-frame]');
 let browser;
 try {
-  browser = await launch(`${insecureUrl(app.url)}?feedback`, { evidence });
+  browser = await launch(`${insecureUrl(app.url)}`, { evidence });
   const inside = expression => browser.frameEvaluate(FRAME, expression);
   const send = async text => { await browser.type(INPUT, text); await browser.click(q('[data-testid=composer-submit]')); };
   const ready = async () => { await browser.until('mock-up frame', `!!${FRAME}`, 30000); await pause(600); };
@@ -53,28 +53,6 @@ try {
       assert.ok(style.width <= style.viewport, 'mock-up has no horizontal overflow');
       assert.ok(await browser.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'host has no horizontal overflow');
       await browser.screenshot(`${size}-${scheme}-mockup.png`);
-      await browser.click(q('[data-testid=mockup-comment]'));
-      await browser.until('point mode', `!!${q('[data-testid=feedback-point-bar]')}`, 5000);
-      await pause(100);
-      // A real pointer event enters the opaque frame, rather than invoking a host pick callback.
-      const box = await inside(`(() => { const r = document.getElementById('calendar').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-      const offset = await browser.evaluate(`(() => { const r = ${FRAME}.getBoundingClientRect(); return { x: r.x, y: r.y }; })()`);
-      await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x + offset.x, y: box.y + offset.y, button: 'left', clickCount: 1 });
-      await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x + offset.x, y: box.y + offset.y, button: 'left', clickCount: 1 });
-      await browser.until('element note', `!!${q('[data-testid=feedback-bubble-input]')}`, 5000);
-      await browser.type(q('[data-testid=feedback-bubble-input]'), 'Make the calendar action clearer');
-      await browser.press('Enter');
-      await browser.screenshot(`${size}-${scheme}-point-pin.png`);
-      if (size === 'phone-390' && scheme === 'light') {
-        await browser.click(q('[data-testid=feedback-comment-switch]'));
-        await pause(100);
-        await inside(`document.getElementById('toggle').click()`);
-        assert.equal(await inside(`document.getElementById('reminder-state').textContent`), 'On', 'switching comment mode off suspends frame click interception');
-        await inside(`document.getElementById('toggle').click()`);
-        await browser.click(q('[data-testid=feedback-comment-switch]'));
-      }
-      await browser.click(q('[data-testid=mockup-comment]'));
-      await browser.until('point mode ended', `!${q('[data-testid=feedback-point-bar]')}`, 5000);
     }
     if (size.startsWith('phone')) {
       await browser.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 780, deviceScaleFactor: 2, mobile: true });
@@ -83,13 +61,6 @@ try {
       assert.ok(await inside('document.documentElement.scrollWidth <= innerWidth'), 'mock-up has no overflow at 360px');
     }
   }
-  await send('HTML calendar change');
-  await browser.until('feedback reached the conversation', `/Noted: the calendar element/.test(document.body.textContent)`, 30000);
-  const report = await browser.evaluate(`${qa('[data-testid=message-user], [data-role=user]')}.map(e => e.textContent).join('\\n') || document.body.textContent`);
-  assert.match(report, /mockup:booking\.mockup\.html#element=:root/);
-  assert.match(report, /Make the calendar action clearer/);
-  writeFileSync(join(evidence, 'sent-note.txt'), report);
-
   await send('Show the sandbox probe');
   await ready();
   await pause(800);

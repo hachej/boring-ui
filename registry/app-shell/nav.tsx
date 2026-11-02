@@ -9,7 +9,7 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupConte
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { afterBack } from './back';
+import { afterBack } from '../utils/back';
 import { NavUser } from './account';
 import { useAgentLayer } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
@@ -101,7 +101,7 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
 /** The expanded sidebar: the app title, the nav items (none with one item) and the account in the footer. */
 export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, agent, account, improve, text }: {
   readonly rail?: 'icon' | 'hover'; readonly title: string; readonly items: readonly NavItem[]; readonly activeId: string; readonly onChange: (id: string) => void;
-  readonly agent: AgentSpec | undefined; readonly account: AccountSpec | undefined; readonly improve: boolean; readonly text: AppShellText;
+  readonly agent: AgentSpec | undefined; readonly account: AccountSpec | undefined; readonly improve: string | undefined; readonly text: AppShellText;
 }) {
   const { setOpen, setOpenMobile, state, isMobile } = useSidebar();
   // In the phone sheet, choosing a screen closes it.

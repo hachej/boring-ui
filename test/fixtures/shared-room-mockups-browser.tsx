@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { createRoomSource, createSharedChat } from '@hachej/boring-ui-kit/shared-chat';
-import type { PmReadArtifact } from '../../registry/pm-panel/pm-mockups';
+import type { ReadArtifact } from './shared-room-mockups';
 import { RoomPresentation } from './shared-room-mockups';
 
 const source = await createRoomSource({ url: location.origin, reconnectMs: 50,
@@ -8,7 +8,7 @@ const source = await createRoomSource({ url: location.origin, reconnectMs: 50,
   open: url => { url.searchParams.set('person', 'person:ana'); return new WebSocket(url); },
 });
 const controller = createSharedChat(source, { conversationId: 'main' });
-const read: PmReadArtifact = async (artifact, signal) => {
+const read: ReadArtifact = async (artifact, signal) => {
   // The fixture host's reader; a real host rechecks requester/task rights at its own read door.
   const response = await fetch('/mockup', { method: 'POST', headers: { 'content-type': 'application/json' }, signal,
     body: JSON.stringify({ target: artifact.target, revision: { kind: 'exact', value: artifact.revision } }) });

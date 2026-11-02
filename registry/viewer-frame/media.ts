@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 
 /** What a read-only media viewer shows: bytes or a Blob (the viewer owns the object URL it makes) or a URL the host owns. */
 export interface MediaSource {
-  readonly bytes?: Uint8Array | ArrayBuffer;
-  readonly blob?: Blob;
-  readonly url?: string;
+  readonly bytes?: Uint8Array | ArrayBuffer | undefined;
+  readonly blob?: Blob | undefined;
+  readonly url?: string | undefined;
 }
 
 /** A Blob for the source, or `undefined` when the host gave a URL (or nothing). */

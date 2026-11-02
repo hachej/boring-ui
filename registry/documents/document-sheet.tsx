@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
-import { afterBack } from '../app-shell/back';
+import { afterBack } from '../utils/back';
 import { useShellLayer } from '../app-shell/shell-layer';
 import { useExclusiveSheet } from '../app-shell/use-exclusive-sheet';
 import { FileViewer } from '../pi-app/file-viewer';

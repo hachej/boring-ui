@@ -22,7 +22,7 @@ async function harness(t) {
   }
   window.HTMLElement.prototype.getBoundingClientRect = () => ({ width: 1200, height: 800, left: 0, right: 1200, top: 0, bottom: 800, x: 0, y: 0 });
   const style = window.document.createElement('style');
-  style.textContent = `${HOST_CSS}\n${readFileSync(new URL('registry/feedback/feedback.css', root), 'utf8')}`;
+  style.textContent = HOST_CSS;
   window.document.head.append(style);
   const { createElement, act } = await import('react');
   const { createRoot } = await import('react-dom/client');
@@ -53,22 +53,6 @@ async function load(entry, name) {
 
 const resolved = (window, element, property) => window.getComputedStyle(element).getPropertyValue(property).trim();
 
-test('feedback surfaces resolve the host tokens: light on the page, dark under a .dark ancestor', async t => {
-  const { window, createElement, mount } = await harness(t);
-  const { FeedbackList } = await load('registry/feedback/feedback-list.tsx', 'feedback-list');
-  const props = { items: [], protection: 'protected', onOpen: () => {} };
-  const light = (await mount(createElement(FeedbackList, props))).querySelector('[data-boring="feedback"]');
-  const darkHost = window.document.createElement('div');
-  darkHost.className = 'dark';
-  window.document.body.append(darkHost);
-  const dark = (await mount(createElement(FeedbackList, props), darkHost)).querySelector('[data-boring="feedback"]');
-  assert.ok(light && dark);
-  for (const [property, token] of [['--boring-feedback-surface', 'popover'], ['--boring-feedback-text', 'popover-foreground'], ['--boring-feedback-border', 'border'],
-    ['--boring-feedback-muted', 'muted-foreground'], ['--boring-feedback-reveal', 'ring'], ['--boring-feedback-label-background', 'foreground']]) {
-    assert.equal(resolved(window, light, property), theme.light[token], `${property} is the light ${token}`);
-    assert.equal(resolved(window, dark, property), theme.dark[token], `${property} is the dark ${token} under .dark`);
-  }
-});
 
 test('the ambient contrast window is a .dark subtree of the host tokens; surface follows the page', async t => {
   const { window, createElement, mount } = await harness(t);

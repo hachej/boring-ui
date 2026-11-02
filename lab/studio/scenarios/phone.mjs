@@ -75,11 +75,11 @@ export default [
       await pause(300);
       const box = await browser.evaluate(`(() => { const r = ${q('[data-testid=workspace-panel]')}.getBoundingClientRect(); return { w: r.width, h: r.height }; })()`);
       assert.deepEqual(box, { w: 390, h: 844 }, 'full screen');
-      assert.equal(await browser.evaluate(`!${q('[data-testid=workspace-divider]')} && !${q('[data-testid=workspace-panel] [aria-label="Enter full screen"]')} && !!${q('[data-testid=workspace-panel] [aria-label=Close]')}`), true, 'a sheet has Close and no divider or full screen button');
+      assert.equal(await browser.evaluate(`!${q('[data-testid=workspace-divider]')} && !${q('[data-testid=workspace-panel] [aria-label="Enter full screen"]')} && !!${q('[data-testid=workspace-panel] [aria-label="Back to chat"]')}`), true, 'a sheet has Back and no divider or full screen button');
       await p.noOverflow('side panel');
       await shots('mobile-sheet');
       await p.check('side panel', 'document.querySelector("[data-testid=workspace-panel]")');
-      await browser.tap(q('[data-testid=workspace-panel] [aria-label=Close]'));
+      await browser.tap(q('[data-testid=workspace-panel] [aria-label="Back to chat"]'));
       await browser.until('back to chat', `!${q('[data-testid=workspace-panel]')}`);
       await p.reportSmall('mobile-chat');
     },
@@ -194,7 +194,7 @@ export default [
       await browser.tap(q('[data-testid=studio-panel-open]'));
       await browser.until('sheet', `${q('[data-testid=workspace-panel]')}?.dataset.sheet === 'true'`); await pause(300);
       await p.noOverflow('tablet side panel'); await shots('tablet-sheet');
-      await browser.tap(q('[data-testid=workspace-panel] [aria-label=Close]'));
+      await browser.tap(q('[data-testid=workspace-panel] [aria-label="Back to chat"]'));
       await browser.until('closed', `!${q('[data-testid=workspace-panel]')}`);
       await browser.tap(`${qa(CARD)}[0]`);
       await browser.until('artifact panel', `!!${q('[data-testid=artifact-panel]')}`);

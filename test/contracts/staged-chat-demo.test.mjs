@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const source = process.env.STAGED_DEMO_ROOT ?? root;
 const out = `${root}.cache/staged-chat-demo-test`;
 mkdirSync(out, { recursive: true });
-await build({ entryPoints: [`${source}/examples/staged-chat/page.jsx`], outfile: `${out}/page.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell` }, logLevel: 'silent', plugins: [{ name: 'borrowed-demo-controllers', setup(builder) {
+await build({ entryPoints: [`${source}/examples/staged-chat/page.jsx`], outfile: `${out}/page.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell`, '@hachej/boring-ui-kit/file-tree.css': `${root}packages/ui/styles/file-tree.css` }, logLevel: 'silent', plugins: [{ name: 'borrowed-demo-controllers', setup(builder) {
   builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/(native-chat|remote-chat)$/ }, args => ({ path: args.path, namespace: 'demo-controllers' }));
   builder.onLoad({ filter: /.*/, namespace: 'demo-controllers' }, () => ({ contents: `export const createNativeChatController = options => globalThis.__DEMO_CONTROLLERS__[options.identity.scopeId]; export const createRemoteChat = async () => ({ close: async () => {} });`, loader: 'js' }));
   builder.onResolve({ filter: /^react-dom\/client$/ }, args => args.namespace === 'demo-root' ? { path: args.path, external: true } : { path: 'root', namespace: 'demo-root' });

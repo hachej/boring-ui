@@ -34,7 +34,7 @@ try {
   // One union of the closure's package pins: pack the @boring ones, lock the others to this repository's lock.
   const union = { dependencies: [...new Set([...closure.values()].flatMap(entry => entry.dependencies ?? []))] };
   const archiveByName = packBoringDependencies(root, union, join(directory, 'packs'), run);
-  const dependencies = consumerDependencies(root, union, ['typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild', 'shadcn', 'tailwindcss', 'cn', '@base-ui/react']);
+  const dependencies = consumerDependencies(root, union, ['typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild', 'shadcn', 'tailwindcss', 'cn', 'class-variance-authority', '@base-ui/react']);
   writeLockedManifest(root, directory, 'isolated-feedback-consumer', dependencies);
   run('npm', ['install', '--package-lock-only', ...npmInstallFlags(cache), ...archiveByName.values()]);
   run('npm', ['ci', ...npmInstallFlags(cache)]);
