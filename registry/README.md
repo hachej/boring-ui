@@ -26,7 +26,7 @@ Blocks are written against an app that already has shadcn set up. They import it
 2. **These shadcn components**, the one kit-wide list (`SHADCN_BUILTINS` in `scripts/check-registry-blocks.mjs`; the check keeps this command equal to it and fails on any block import outside it):
 
    ```sh
-   npx shadcn@4.23.0 add alert attachment avatar badge bubble button card checkbox collapsible dialog drawer dropdown-menu empty input input-group item label message message-scroller native-select popover progress scroll-area separator sidebar spinner switch table textarea toggle toggle-group tooltip trace
+   npx shadcn@4.23.0 add alert attachment avatar badge bubble button card checkbox collapsible dialog drawer dropdown-menu empty input input-group item label message message-scroller native-select popover progress scroll-area separator sheet sidebar spinner switch table textarea toggle toggle-group tooltip trace
    ```
 
    Installing all of them once is simplest; an app that adds only some blocks can add only the components those blocks import (`grep -rho "@/components/ui/[a-z-]*" components/<block>`). Blocks never restyle them: they pass layout classes only, so the app's own shadcn theme decides how every control looks.
@@ -62,6 +62,7 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 | `app-shell` | `... add <registry>/app-shell.json` (also installs `pi-chat` and `feedback`; uses the app's `sidebar`, `avatar`, `drawer` and `dropdown-menu`) | one agent above any app: a bottom drawer with peek, half and full on a phone, a right panel on a wide screen (see [below](#agent-layer-app-shell)) |
 | `windows` | `... add <registry>/windows.json` (the app's Base UI controls only) | independent floating utilities and a keyboard launcher (see [below](#floating-windows-windows)) |
 | `agent-target` | `... add <registry>/agent-target.json` (also installs `app-shell`; requires the coordinated kit patch, not the older published 0.4.3) | point and dictate on explicitly marked app JSON without opening chat (see [below](#point-and-dictate-on-app-data-agent-target)) |
+| `spaces` | `... add <registry>/spaces.json` | an app with shared spaces: `useSpaces`, `SpaceSwitcher` and `MembersSheet` over the host's Spaces service, through a `transport` you give |
 
 ### From one item to small items (D-257)
 

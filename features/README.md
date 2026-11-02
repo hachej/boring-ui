@@ -20,5 +20,6 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Agent workspace | `pi-app`, embedded and placed workspaces, Library, viewers | [agent-workspace.md](agent-workspace.md) |
 | Ambient agent | the floating bar over an existing site, notifications | [ambient.md](ambient.md) |
 | Shared chat | the room: people and agents in one conversation | [shared-chat.md](shared-chat.md) |
+| Spaces | switcher, members sheet and client for a host's shared spaces | [spaces.md](spaces.md) |
 | Packages | agent, files, execution, ui kit and the `boring-ui-blocks` CLI | [packages.md](packages.md) |
 | Viewer utilities | shared phone breakpoint, media/keyboard viewport and local layout persistence | [viewer-utilities.md](viewer-utilities.md) |

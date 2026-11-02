@@ -3020,6 +3020,44 @@
           "target": "components/windows/windows.tsx"
         }
       ]
+    },
+    {
+      "name": "spaces",
+      "type": "registry:component",
+      "title": "Spaces",
+      "description": "A client for a host's Spaces service: useSpaces, SpaceSwitcher and MembersSheet over a transport the app gives. Membership and roles stay the host's; no route or app wording.",
+      "dependencies": [
+        "@hachej/boring-files@^0.4.46",
+        "react@^19.0.0",
+        "lucide-react@^1.51.0"
+      ],
+      "files": [
+        {
+          "path": "registry/spaces/spaces.ts",
+          "type": "registry:lib",
+          "target": "components/spaces/spaces.ts"
+        },
+        {
+          "path": "registry/spaces/use-spaces.ts",
+          "type": "registry:hook",
+          "target": "components/spaces/use-spaces.ts"
+        },
+        {
+          "path": "registry/spaces/spaces-labels.ts",
+          "type": "registry:lib",
+          "target": "components/spaces/spaces-labels.ts"
+        },
+        {
+          "path": "registry/spaces/space-switcher.tsx",
+          "type": "registry:component",
+          "target": "components/spaces/space-switcher.tsx"
+        },
+        {
+          "path": "registry/spaces/members-sheet.tsx",
+          "type": "registry:component",
+          "target": "components/spaces/members-sheet.tsx"
+        }
+      ]
     }
   ]
 }
