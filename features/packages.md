@@ -28,7 +28,7 @@ The npm side of the kit: Pi-based agent definitions and handlers, the workspace 
 - `pkg-browser-worker` opt-in browser worker transport, SQLite, model setup and unchanged native code mode. `packages/browser/src/`; package is private to this repository.
 - `pkg-testing-tools` keyless scripted model and headless browser/network helpers. `packages/testing/src/`; test tooling only.
 - `pkg-chat-react` opt-in view selectors, transcript windows/chunks, drafts, placement, remote and conversations hooks; per-selection adapter ownership preserves concrete APIs. `packages/ui/src/chat-react.ts`, `chat-react-*.ts`.
-- `pkg-blocks-cli` `boring-ui-blocks add | update | check | manifest`. `packages/ui/bin/boring-ui-blocks.mjs`.
+- `pkg-blocks-cli` `boring-ui-blocks add | update | check | manifest`. `packages/ui/bin/boring-ui-blocks.mjs`. `add` and `update` refuse a symlinked `node_modules` or scope directory (a borrowed install); `check` still works there. Driven by `test/packages/ui-blocks-add.test.mjs`.
 - `pkg-feedback` in-app feedback capture and delivery. `packages/feedback/src/`.
 
 ## How to get to it (user POV)

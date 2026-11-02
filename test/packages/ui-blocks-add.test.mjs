@@ -2,7 +2,7 @@
 // `npx` for the shadcn CLI (offline), the real bin through child_process.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -105,4 +105,42 @@ test('add that keeps a differing file still records the files it created, so che
   assert.equal(readFileSync(toggle, 'utf8'), EDITED);
   const checked = run(dir, ['check'], env);
   assert.doesNotMatch(checked.stdout, /extra\.tsx/, `check reports the file add created: ${checked.stdout}`);
+});
+
+/** An outside install holding a sentinel, reached from the app through `link`; the stand-in `npx` writes through it if it ever runs. */
+function borrowed(t, link) {
+  const fixture = app(t);
+  const outside = mkdtempSync(join(tmpdir(), 'kit-blocks-outside-'));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  write(join(outside, 'sentinel.txt'), 'untouched\n');
+  mkdirSync(dirname(join(fixture.dir, link)), { recursive: true });
+  symlinkSync(outside, join(fixture.dir, link));
+  write(join(fixture.dir, '.fake-bin/npx'), `#!/bin/sh\necho written > "${join(outside, 'sentinel.txt')}"\necho ran > "${join(fixture.dir, '.npx-args')}"\n`);
+  chmodSync(join(fixture.dir, '.fake-bin/npx'), 0o755);
+  return { ...fixture, outside };
+}
+
+for (const [name, link] of [['a symlinked scope directory', 'node_modules/@fictional'], ['a symlinked node_modules', 'node_modules']]) {
+  test(`add and update refuse ${name} before the package manager runs; the outside tree is unchanged; check still works`, t => {
+    const fixture = borrowed(t, link);
+    for (const args of [['add', 'toggle'], ['update']]) {
+      const result = run(fixture.dir, args, fixture.env);
+      assert.equal(result.status, 2, result.stderr);
+      assert.match(result.stderr, /borrowed install/);
+      assert.equal(existsSync(join(fixture.dir, '.npx-args')), false, 'the package manager never ran');
+      assert.equal(readFileSync(join(fixture.outside, 'sentinel.txt'), 'utf8'), 'untouched\n');
+    }
+    assert.doesNotMatch(run(fixture.dir, ['check'], fixture.env).stderr, /borrowed install/);
+  });
+}
+
+test('a physical scope with per-package links installs as before', t => {
+  const fixture = app(t);
+  const outside = mkdtempSync(join(tmpdir(), 'kit-blocks-package-'));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  mkdirSync(join(fixture.dir, 'node_modules/@fictional'), { recursive: true });
+  symlinkSync(outside, join(fixture.dir, 'node_modules/@fictional/linked'));
+  const result = run(fixture.dir, ['add', 'toggle'], fixture.env);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(fixture.toggle, 'utf8'), REGISTRY);
 });

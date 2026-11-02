@@ -181,6 +181,8 @@ Installed blocks are generated copies: an app installs the shell and the chat on
 
 An app enforces every kit rule with this one command and copies no script; there is no app-level allowlist (fix the app, never the rule).
 
+`add` and `update` exit 2 on a borrowed install, a symlinked `node_modules` or scope directory, before the package manager runs. `check` still works there.
+
 Apps also run their own `lint` (oxlint with the app template's rules) over the blocks they install, except `app-shell`, `pi-chat`, `button` and `utils`. Every other block must pass those rules: `npm run check` runs `scripts/check-block-lint.mjs` with the same config (`scripts/app-oxlint.json`, kept in step with boring-factory's `templates/app/.oxlintrc.json`) over `registry/`, and fails on any error.
 
 ```sh

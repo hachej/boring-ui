@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`boring-ui-blocks add` and `update` refuse a borrowed install (`@hachej/boring-ui-kit`; D-1094).** A symlinked `node_modules` or scope directory now stops them before the package manager runs, because it would write into the tree the link points at. Use an owned physical install for these commands. Per-package links and `check` are unaffected.
+
 - **Spaces block (`spaces`; D-961).** New, additive: `useSpaces`, `SpaceSwitcher` and `MembersSheet` from `@boring/ui/blocks/spaces/spaces`. `useSpaces({ kind, transport })` takes the call to your host, for example `(operation, input) => api(`_spaces/${operation}`, { body: input })`. An app on the legacy path adds `sheet` to its shadcn setup. An app with its own spaces client can replace it.
 - **The agent trigger closes on a phone (`app-shell`; D-864).** Reinstall `app-shell`. At half or full, tapping the trigger now closes the layer, where it stepped down to peek and the next tap reopened half. At peek it still reveals half.
 - **Emptied folders on disk (`@hachej/boring-files`; D-825).** With `pruneEmptied: true`, a folder a rename or delete leaves empty now also disappears on disk hosts, where it used to stay listed. The 0.4.36 limit no longer stands. It is renamed aside to a provider-temporary name, deleted only if still empty, and put back if a file landed. A process keeping its working directory inside that folder can still lose a file written in the instant before the removal: Pi's FileSystem has no remove-if-empty. Nothing to do.
