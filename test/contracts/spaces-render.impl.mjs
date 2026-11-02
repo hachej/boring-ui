@@ -9,7 +9,7 @@ import { Window } from 'happy-dom';
 const project = fileURLToPath(new URL('../../', import.meta.url));
 const out = `${project}.cache/spaces-render-test`;
 mkdirSync(out, { recursive: true });
-writeFileSync(`${out}/entry.tsx`, `export * from '${project}registry/spaces/index.ts';\n`);
+writeFileSync(`${out}/entry.tsx`, `export * from '${project}registry/spaces/spaces.ts';\n`);
 const outfile = `${out}/spaces.mjs`;
 await build({ entryPoints: [`${out}/entry.tsx`], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${project}examples/app-shell` }, logLevel: 'silent' });
 
@@ -42,8 +42,8 @@ async function fixture(t, { url = 'https://fictional.invalid/', refuse = {} } = 
   };
   let api;
   const seen = {};
-  function Page({ view, me = 'me' }) {
-    api = block.useSpaces({ kind: 'project', transport });
+  function Page({ view, me = 'me', kind = 'project' }) {
+    api = block.useSpaces({ kind, transport });
     const [open, setOpen] = useState(true);
     seen.open = open;
     return h('main', null,
@@ -63,7 +63,7 @@ async function fixture(t, { url = 'https://fictional.invalid/', refuse = {} } = 
     for (const [name, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
     await window.happyDOM.close();
   });
-  return { window, calls, render, settle, find, click, act, api: () => api };
+  return { window, calls, refuse, render, settle, find, click, act, api: () => api };
 }
 
 test('useSpaces lists a kind, picks the first, remembers a choice per kind, and create carries an idempotency key', async t => {
@@ -95,6 +95,43 @@ test('a refused list shows the words for its code, not the raw error', async t =
   const ui = await fixture(t, { refuse: { 'spaces.list': 'manage' } });
   await ui.render({});
   assert.equal(ui.api().error, 'Only a manager of this space can do this.');
+});
+
+test('a retry that succeeds clears the error', async t => {
+  const refuse = { 'spaces.list': 'manage' };
+  const ui = await fixture(t, { refuse });
+  await ui.render({});
+  assert.ok(ui.api().error);
+  delete refuse['spaces.list'];
+  await ui.act(async () => { await ui.api().refresh(); });
+  assert.equal(ui.api().error, null);
+  assert.equal(ui.api().current.id, 'a');
+});
+
+test('each kind keeps its own remembered space when the kind changes', async t => {
+  const ui = await fixture(t);
+  ui.window.localStorage.setItem('space:other', 'b');
+  await ui.render({});
+  assert.equal(ui.api().current.id, 'a');
+  await ui.render({ kind: 'other' });
+  assert.equal(ui.api().current.id, 'b');
+  assert.equal(ui.window.localStorage.getItem('space:project'), 'a');
+  assert.equal(ui.window.localStorage.getItem('space:other'), 'b');
+});
+
+test('an invitation link is not carried to another space', async t => {
+  const ui = await fixture(t);
+  await ui.render({ view: VIEW });
+  const email = ui.find('[data-testid=invite-email]');
+  await ui.act(async () => {
+    Object.getOwnPropertyDescriptor(ui.window.HTMLInputElement.prototype, 'value').set.call(email, 'someone@example.invalid');
+    email.dispatchEvent(new ui.window.Event('input', { bubbles: true }));
+  });
+  await ui.act(async () => { email.closest('form').dispatchEvent(new ui.window.Event('submit', { bubbles: true, cancelable: true })); });
+  await ui.settle();
+  assert.ok(ui.find('[data-testid=invite-link]'));
+  await ui.render({ view: { ...VIEW, space: { ...VIEW.space, id: 'c' } } });
+  assert.equal(ui.find('[data-testid=invite-link]'), null);
 });
 
 test('SpaceSwitcher asks for a choice without a current space and offers each space', async t => {

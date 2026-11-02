@@ -3,6 +3,7 @@
 // The open space's members and roles, the invite link, remove, leave, and every administrator access to it.
 // What a person may do is the host's to decide: the sheet only hides what would be refused.
 import { useState } from 'react';
+import { copyToClipboard } from '@hachej/boring-files/platform';
 import { CopyIcon, LogOutIcon, ShieldAlertIcon, UserMinusIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,7 +62,7 @@ function InviteForm({ roles, labels, onInvite, act }: { readonly roles: readonly
     </form>
     {link && <div className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2" data-testid="invite-link">
       <span className="flex-1 truncate text-xs">{link}</span>
-      <Button size="icon" variant="ghost" aria-label={labels.copy} onClick={() => void navigator.clipboard?.writeText(link)}><CopyIcon className="size-4" /></Button>
+      <Button size="icon" variant="ghost" aria-label={labels.copy} onClick={() => void copyToClipboard(link)}><CopyIcon className="size-4" /></Button>
     </div>}
     {link && <p className="text-xs text-muted-foreground">{labels.inviteHint}</p>}
   </section>;
@@ -88,7 +89,7 @@ export function MembersSheet({ open, onOpenChange, view, roles, me, onInvite, on
               onSetRole={role => void act(() => onSetRole(member.person!, role))} onRemove={() => void act(() => onRemove(member.person!))} />)}
           </ul>
         </section>
-        {manager && <InviteForm roles={roles} labels={labels} onInvite={onInvite} act={act} />}
+        {manager && <InviteForm key={view?.space.id} roles={roles} labels={labels} onInvite={onInvite} act={act} />}
         {access.length > 0 && <section className="flex flex-col gap-2" aria-label={labels.adminAccess} data-testid="admin-access">
           <h3 className="text-sm font-medium">{labels.adminAccess}</h3>
           <ul className="flex flex-col gap-1">

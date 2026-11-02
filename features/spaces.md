@@ -1,6 +1,6 @@
 # Spaces
 
-An app with shared spaces gets its client from the UI bundle: `@boring/ui/blocks/spaces/index`, or the `spaces` registry item. The host's Spaces service decides who may do what.
+An app with shared spaces gets its client from the UI bundle: `@boring/ui/blocks/spaces/spaces`, or the `spaces` registry item. The host's Spaces service decides who may do what.
 
 ## Sub-features
 

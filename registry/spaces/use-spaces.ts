@@ -2,6 +2,7 @@
 
 // The client of a host's Spaces service. The host checks membership and role on every call; this only names the space.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { randomUUID } from '@hachej/boring-files/platform';
 import { spaceErrorMessage, spacesLabels } from './spaces-labels';
 import type { SpacesLabels } from './spaces-labels';
 
@@ -27,7 +28,10 @@ export interface UseSpacesOptions {
 }
 
 /** A change carries a fresh idempotency key: a retry of the same call is the same change. */
-const change = (input: Record<string, unknown>) => ({ ...input, idempotencyKey: crypto.randomUUID() });
+const change = (input: Record<string, unknown>) => ({ ...input, idempotencyKey: randomUUID() });
+
+const rememberedKey = (kind: string) => `space:${kind}`;
+const remembered = (kind: string): string | null => { try { return localStorage.getItem(rememberedKey(kind)); } catch { return null; } };
 
 /** The link a manager sends: this page with the invitation in its address. The host signs the person in first and keeps the query. */
 export const spaceInviteLink = (token: string, inviteParam = 'invite'): string => {
@@ -39,19 +43,34 @@ export const spaceInviteLink = (token: string, inviteParam = 'invite'): string =
 
 /** The person's spaces of one kind: the list, the current one (remembered per kind on this device), create, members, and the invitation in the address. */
 export function useSpaces({ kind, transport, labels = spacesLabels, inviteParam = 'invite' }: UseSpacesOptions) {
-  const remembered = `space:${kind}`;
-  const [spaces, setSpaces] = useState<readonly SpaceSummary[] | null>(null);
-  const [selected, setSelected] = useState<string | null>(() => { try { return localStorage.getItem(remembered); } catch { return null; } });
-  const [error, setError] = useState<string | null>(null);
+  const [listed, setListed] = useState<{ readonly kind: string; readonly spaces: readonly SpaceSummary[] } | null>(null);
+  // One choice per kind; a kind not chosen yet starts from what this device remembers.
+  const [picks, setPicks] = useState<Readonly<Record<string, string | null>>>({});
+  const [listError, setListError] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const spaces = listed?.kind === kind ? listed.spaces : null;
+  const picked = Object.hasOwn(picks, kind);
+  const selected = picked ? picks[kind] ?? null : remembered(kind);
   const words = useRef(labels);
   useEffect(() => { words.current = labels; }, [labels]);
+  const accepting = useRef<Promise<unknown>>(Promise.resolve());
+  const latest = useRef(0);
   const refresh = useCallback(async () => {
+    const ticket = ++latest.current;
+    // A list read before an invitation is accepted would not hold the space it opens, and only the last list asked for counts.
+    await accepting.current;
     try {
       const { spaces: list } = await transport<{ spaces: SpaceSummary[] }>('spaces.list', { kind });
-      setSpaces(list);
-      setSelected(id => (id && list.some(space => space.id === id) ? id : list[0]?.id ?? null));
-    } catch (problem) { setError(spaceErrorMessage(problem, words.current)); }
+      if (ticket !== latest.current) return;
+      setListError(null);
+      setListed({ kind, spaces: list });
+      setPicks(current => {
+        const id = Object.hasOwn(current, kind) ? current[kind] ?? null : remembered(kind);
+        return { ...current, [kind]: id && list.some(space => space.id === id) ? id : list[0]?.id ?? null };
+      });
+    } catch (problem) { if (ticket === latest.current) setListError(spaceErrorMessage(problem, words.current)); }
   }, [kind, transport]);
+  const select = useCallback((id: string) => setPicks(current => ({ ...current, [kind]: id })), [kind]);
   useEffect(() => {
     const token = new URLSearchParams(window.location.search).get(inviteParam);
     // Removed from the address at once, so a second run of this effect (Strict Mode, a new transport) cannot use the one-time token again.
@@ -59,19 +78,18 @@ export function useSpaces({ kind, transport, labels = spacesLabels, inviteParam 
       const url = new URL(window.location.href);
       url.searchParams.delete(inviteParam);
       window.history.replaceState(window.history.state, '', url.href);
+      accepting.current = transport<{ space: SpaceSummary }>('invites.accept', change({ token }))
+        .then(({ space }) => { setInviteError(null); select(space.id); }, problem => setInviteError(spaceErrorMessage(problem, words.current)));
     }
-    const accept = token
-      ? transport<{ space: SpaceSummary }>('invites.accept', change({ token })).then(({ space }) => setSelected(space.id), problem => setError(spaceErrorMessage(problem, words.current)))
-      : Promise.resolve();
-    void accept.then(refresh);
-  }, [refresh, transport, inviteParam]);
-  useEffect(() => { try { if (selected) localStorage.setItem(remembered, selected); } catch { /* private mode: not remembered */ } }, [selected, remembered]);
+    void refresh();
+  }, [refresh, select, transport, inviteParam]);
+  useEffect(() => { try { if (picked && selected) localStorage.setItem(rememberedKey(kind), selected); } catch { /* private mode: not remembered */ } }, [picked, selected, kind]);
   const create = useCallback(async (title: string) => {
     const { space } = await transport<{ space: SpaceSummary }>('spaces.create', change({ kind, title }));
     await refresh();
-    setSelected(space.id);
+    select(space.id);
     return space;
-  }, [kind, transport, refresh]);
+  }, [kind, transport, refresh, select]);
   const read = useCallback((space: string) => transport<SpaceView>('spaces.get', { space }), [transport]);
   const invite = useCallback(async (space: string, email: string, role: string) => {
     const { invite: created } = await transport<{ invite: { token: string; expiresAt: string } }>('members.invite', change({ space, email, role }));
@@ -80,7 +98,7 @@ export function useSpaces({ kind, transport, labels = spacesLabels, inviteParam 
   const setRole = useCallback((space: string, person: string, role: string) => transport<unknown>('members.setRole', change({ space, person, role })), [transport]);
   const remove = useCallback((space: string, person: string) => transport<unknown>('members.remove', change({ space, person })), [transport]);
   const leave = useCallback((space: string) => transport<unknown>('members.leave', change({ space })), [transport]);
-  const select = useCallback((id: string) => setSelected(id), []);
+  const error = listError ?? inviteError;
   return useMemo(() => ({
     spaces, current: spaces?.find(space => space.id === selected) ?? null, error, select, create, refresh, read, invite, setRole, remove, leave,
   }), [spaces, selected, error, select, create, refresh, read, invite, setRole, remove, leave]);
