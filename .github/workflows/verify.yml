@@ -69,6 +69,8 @@ jobs:
           node-version: 22.22.1
           cache: npm
       - run: npm ci
+      - name: D-1041 one run of the old test
+        run: npm run build > /dev/null && for i in $(seq 1 1); do node --import ./scripts/css-stub-register.mjs --test test/packages/feedback-session.test.mjs > out.txt || { grep -E '^not ok|timed out|expected|actual' out.txt | head -20; echo failed run $i; exit 1; }; done; echo all passed
       - run: npm test -- --exclude-registered
   release-gate:
     runs-on: ubuntu-latest
