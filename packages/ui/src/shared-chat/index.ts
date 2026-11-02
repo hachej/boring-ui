@@ -9,7 +9,7 @@ import type { Card, ChannelEvent, ChannelMessage, ChannelSource, Member, SharedC
 export type * from './source.js';
 export { channelAvatarStates, cardActions } from './source.js';
 
-export type SharedChatSnapshot = Omit<NativeChatSnapshot, 'conversationId' | 'send' | 'shared'> & {
+export type SharedChatSnapshot = Omit<NativeChatSnapshot, 'conversationId' | 'send' | 'shared' | 'echo' | 'timing'> & {
   readonly conversationId: string;
   readonly shared: SharedChatState;
   readonly send: { readonly kind: 'idle' | 'submitting' | 'admitted' }

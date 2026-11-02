@@ -108,7 +108,13 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
     return derive({ ...state.view, entries, docs: {} }, { mode, presentation, hideLine, renderEntry: undefined, renderTool: undefined, groupTool: undefined, artifacts: artifactDetect, subagent }).rows
       .map(row => ({ ...row, key: `history:${row.key}`, historical: true }));
   }, [state.view, state.history, mode, presentation, hideLine, artifactDetect, subagent]);
-  const rows = useMemo(() => [...earlier, ...derived.rows], [earlier, derived.rows]);
+  // What the person just sent is on screen at once, as their own message, until the server's copy arrives (the controller drops it then).
+  const echo = state.echo;
+  const echoRows = useMemo<readonly Row<Content>[]>(() => (echo ?? []).map(item => ({ key: `echo:${item.key}`, type: 'user' as const, local: item.state,
+    message: { role: 'user' as const, timestamp: item.sentAt, content: item.draft.attachments.length ? [{ type: 'text' as const, text: item.draft.text }, ...item.draft.attachments.map(attachment => attachment.content)] : item.draft.text } })), [echo]);
+  const rows = useMemo(() => [...earlier, ...derived.rows, ...echoRows], [earlier, derived.rows, echoRows]);
+  // Tells the controller the echoed messages are on screen (after the commit that drew them), for its timing record.
+  useLayoutEffect(() => { if (echo?.length) controller.markShown?.(echo.map(item => item.key)); }, [echo, controller]);
   const files = useMemo(() => {
     const found = new Map<string, ConversationFile>();
     const open = onOpenFile ?? mentions?.open;
@@ -160,7 +166,9 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
     controller.setText(prependToDraft(draft.text, withoutKindMentions(text, mentions)));
     if (images.length) controller.setAttachments([...images, ...draft.attachments.filter(item => !images.some(image => image.id === item.id))]);
   };
-  const working = Boolean(run);
+  // Working from the moment of sending: the status shows before the server has taken the message.
+  const sending = Boolean(echo?.some(item => item.state === 'sending'));
+  const working = Boolean(run) || sending;
   const waitingForAnswer = waitsForAnswer(derived.rows);
   const send = () => {
     if (sendBlocked || !current()) return;
@@ -315,7 +323,7 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
   const empty = connected && !state.view?.entries.length && !rows.length;
   const loading = (state.connection.kind === 'idle' || state.connection.kind === 'connecting') && !state.view;
   return { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, sendBlocked, error, setError, report, act, current,
-    files, empty, loading, developer, natural, send, putBack, upload, pasteText, picked, pending, uploading, activateMention,
+    files, empty, loading, developer, natural, sending, send, putBack, upload, pasteText, picked, pending, uploading, activateMention,
     pickMention: (path: string) => setPicked(value => value.includes(path) ? value : [...value, path]),
     dismissUpload: (id: string) => setPending(items => items.filter(item => item.id !== id)),
     currentModel: optimistic.model ?? viewModel, currentEffort: optimistic.effort ?? viewEffort,

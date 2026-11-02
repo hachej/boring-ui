@@ -174,6 +174,8 @@ export const defaultChatLabels = {
   more: 'More',
   edit: 'Edit',
   sending: 'Sending',
+  /** Under a message whose send was not confirmed; the notice below offers Check and Retry. */
+  notSent: 'Not sent',
   /** The time inside a bubble in the `messaging` style (« 14:02 »), and its full date as the tooltip. */
   messageClock: (at: string) => formatClock(at, 'en'),
   messageTimestamp: (at: string) => formatTimestamp(at, 'en'),

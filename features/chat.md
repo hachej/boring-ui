@@ -23,6 +23,9 @@
 - `chat-cards` question (`ask_user`), approval, sub-agent and artifact cards. `registry/pi-chat-question/`, `pi-chat-approval/`, `pi-chat-subagent/`, `pi-artifacts/`.
 - `chat-conversations` History with New, rename, archive, fork over the host's conversations handler (`useConversationsClient`). `packages/ui/src/chat-react-conversations.ts`, `registry/pi-chat/history.tsx`; old hook imports re-export for one release.
 - `chat-remote` `useRemoteChat` connects a concrete controller to the host's chat transport, with `requestContext` and placement. `packages/ui/src/chat-react-remote.ts`, `chat-react-controller.ts`; old hook imports re-export for one release.
+- `chat-send-echo` the message the person sends is on screen at once (the controller's `echo`, drawn as their own message, dimmed with a clock while sending) and the working status shows with it, before validation or the network; the server's copy replaces it, never beside it. A send that is not confirmed keeps the message with « Non envoyé » and the Check / Retry notice; a refused one goes back to the composer. `packages/ui/src/native-chat.ts`, `chat-react-session.ts`, `registry/pi-chat/message.tsx`, `notice.tsx`.
+- `chat-send-timing` `getSnapshot().timing`: `inputReady` and, per send, `enter`, `shown`, `firstWords`, `done` (ms on `performance.now()`, also `performance.mark('boring-chat:<step>')`), for tests and harnesses. `packages/ui/src/native-chat.ts`.
+- `chat-first-view-timeout` `createRemoteChat({ firstViewTimeoutMs })` (default 18000): a host that never sends the first view is an error with retry, not « Connexion… » for good. `packages/ui/src/remote-chat.ts`.
 - `chat-plugins` `withChatPlugins(props)` fills every missing component and card. `registry/pi-chat-plugins/chat-plugins.ts`.
 
 - `chat-history-retry` native older-page reads time out after 15 seconds, retain the prior page and permit retry; late results cannot replace accepted history. New native threads without a head boundary do not advertise nonexistent older records. `packages/ui/src/native-chat.ts`, `registry/pi-chat/pi-chat.tsx`.
@@ -37,6 +40,8 @@
 Preconditions: `npm run build`, Chromium; journeys use a scripted fake model unless stated.
 
 - **Transcript and composer.** `chat-transcript`, `chat-composer`: `npm run workspace-app:journey`; send a message, a Markdown reply renders, a queued prompt can be edited.
+- **Instant send.** `chat-send-echo`, `chat-send-timing`: `node --test test/packages/ui-chat-send-echo.test.mjs` (a slow fake host: the message is in the snapshot at once, one copy when the server's arrives, a failed send is kept with Retry, the steps are timed). In a browser, send a message and read `data-send-state` on the `[data-role="user"]` row.
+- **First view.** `chat-first-view-timeout`: `node --test test/packages/ui-remote-chat-first-view.test.mjs`.
 - **Menus.** `chat-slash`, `chat-mentions`, `chat-pickers`: type `/` and `@` in the composer, pick an option; a chip appears.
 - **Attachments and voice.** `chat-attachments`, `chat-voice`: `npm run app-shell:journey:voice`, `APP_ONLY=inline-images npm run workspace-app:journey`.
 - **Target chip.** `chat-target-chip`: `node --test test/contracts/pi-chat-target-chip.test.mjs`; render `PiChat` with a sent and a queued target carrying `mealId`, check no raw field in text or attributes, pass `targetLabel` and read its words; the same through `SharedChat`, and the conversation list's tooltip.
