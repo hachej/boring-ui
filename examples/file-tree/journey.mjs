@@ -149,6 +149,30 @@ try {
     await shots('conflict');
     await browser.click(q(`${row('recovered.txt')} [data-mutation-dismiss]`));
     await browser.until('message dismissed', `!${q(`${row('recovered.txt')} [data-mutation-error]`)}`);
+    // A folder: the row's menu, F2, Move to… and Delete, each checked against the workspace (D-825).
+    await browser.click(q('button[aria-label="Actions for archive"]'));
+    await browser.until('folder menu', `!!${q('[role=menuitem][data-action=rename]')} && !!${q('[role=menuitem][data-action=move]')} && !!${q('[role=menuitem][data-action=delete]')}`);
+    await shots('folder-menu');
+    await browser.click(q('[role=menuitem][data-action=rename]'));
+    await browser.until('folder rename focused', `document.activeElement?.matches('input[data-file-rename]')`);
+    await replaceName('old');
+    await browser.until('folder renamed', `!!${q(row('old'))} && !${q(row('archive'))}`);
+    assert.equal(await text('old/one.txt'), 'fictional one'); assert.equal(await text('archive/one.txt'), 'missing');
+    await browser.evaluate(`${q(row('old'))}.focus()`); await browser.press('F2');
+    await browser.until('folder F2 rename', `document.activeElement?.matches('input[data-file-rename]')`);
+    await replaceName('kept');
+    await browser.until('folder renamed by F2', `!!${q(row('kept'))} && !${q(row('old'))}`);
+    await browser.click(q('button[aria-label="Actions for kept"]'));
+    await browser.click(q('[role=menuitem][data-action=move]'));
+    await browser.until('folder move dialog', `!!${q('[data-boring=file-tree-dialog] [data-destination="docs"]')}`);
+    await browser.click(q('[data-boring=file-tree-dialog] [data-destination="docs"]'));
+    await browser.until('folder moved', `!!${q(row('docs/kept'))} && !${q(row('kept'))}`);
+    assert.equal(await text('docs/kept/two.txt'), 'fictional two');
+    await browser.evaluate(`${q(row('docs/kept'))}.focus()`); await browser.press('Delete');
+    await browser.until('folder delete dialog', `!!${q('[data-boring=file-tree-dialog] [data-confirm=delete]')}`);
+    await browser.click(q('[data-boring=file-tree-dialog] [data-confirm=delete]'));
+    await browser.until('folder deleted', `!${q('[data-boring=file-tree-dialog]')} && !${q(row('docs/kept'))}`);
+    assert.equal(await text('docs/kept/one.txt'), 'missing');
     // A phone: the same menu, with touch-sized items.
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
     await browser.until('phone width', 'innerWidth === 390');
