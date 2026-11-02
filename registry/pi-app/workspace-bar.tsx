@@ -3,7 +3,7 @@
 // The compact top bar of `AgentWorkspace layout="embedded"`: the conversation title, then History, Library, the host's own panels and New
 // as icon buttons (each panel opens a popover on a wide workspace and a bottom sheet on a phone) and the host's controls. Inside an app-shell
 // screen the controls go into the shell's header instead (`useScreenHeaderSlot`), so the page keeps one row. Host concern: Pi has no layout.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { CircleIcon, XIcon } from 'lucide-react';
@@ -84,10 +84,17 @@ export interface WorkspaceBarProps {
   readonly narrow: boolean;
   /** The host's own controls, after New. */
   readonly controls?: ReactNode;
+  /**
+   * The host owns the one bar (Studio's phone header): nothing is drawn here, but `command` still opens History, the Library or a new
+   * conversation. The panels open from an invisible anchor at the top right.
+   */
+  readonly hidden?: boolean | undefined;
+  /** A host's request to open `history` or `library` or start a `new` conversation; `n` changes with each request (the same kind twice needs a new `n`). */
+  readonly command?: { readonly kind: 'history' | 'library' | 'new'; readonly n: number } | undefined;
 }
 
 /** The bar, or only its controls in the app shell's header when the page sits in a shell screen (then nothing renders here). */
-export function WorkspaceBar({ title, subtitle, conversations, library, panels, panelsFirst = false, narrow, controls }: WorkspaceBarProps) {
+export function WorkspaceBar({ title, subtitle, conversations, library, panels, panelsFirst = false, narrow, controls, hidden = false, command }: WorkspaceBarProps) {
   const { labels, icons } = useAppText();
   const slot = useScreenHeaderSlot();
   const [shown, setShown] = useState<string | null>(null);
@@ -97,6 +104,14 @@ export function WorkspaceBar({ title, subtitle, conversations, library, panels, 
     panels?.find(panel => panel.id === next)?.onOpenChange?.(true);
     setShown(next);
   };
+  const [handled, setHandled] = useState(command?.n);
+  useEffect(() => {
+    if (!command || command.n === handled) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a host's request is handled once per `n`; the effect settles
+    setHandled(command.n);
+    if (command.kind === 'new') conversations?.onNew?.();
+    else if (command.kind === 'history' ? conversations : library) setShown(command.kind);
+  }, [command, handled, conversations, library]);
   const toggle = (which: string) => (open: boolean) => change(open ? which : shown === which ? null : shown);
   const close = () => change(null);
   const hostPanels = panels?.map(panel => <BarPanel key={panel.id} id={panel.id} label={panel.label} icon={panel.icon} dot={panel.dot} narrow={narrow} open={shown === panel.id} onOpenChange={open => { toggle(panel.id)(open); if (open) panel.onOpen?.(); }}>
@@ -119,6 +134,7 @@ export function WorkspaceBar({ title, subtitle, conversations, library, panels, 
     {conversations?.onNew && <Hinted label={labels.newChat} narrow={narrow} trigger={<Button variant="ghost" size="icon" data-testid="workspace-bar-new" aria-label={labels.newChat} className={iconSize(narrow)} onClick={() => conversations.onNew?.()}><icons.newChat aria-hidden="true" /></Button>} />}
     {controls}
   </div>;
+  if (hidden) return <div data-testid="workspace-bar-hidden" inert className="pointer-events-none absolute top-0 right-0 size-px overflow-visible opacity-0">{tools}</div>;
   if (slot) return createPortal(tools, slot);
   return <>
     <header data-testid="workspace-bar" className="flex h-13 shrink-0 items-center gap-1 pr-2 pl-4 max-md:h-14 max-md:pl-3">

@@ -62,13 +62,15 @@ export function ChatConnectionNotice({ state, onReconnect, renderConnectionError
 }
 
 /** PiChat and Ambient choose the same natural/developer status without owning another run lifecycle. */
-export function ChatStatusLine({ natural, working, waitingForAnswer, derived, stop }: {
+export function ChatStatusLine({ natural, working, waitingForAnswer, derived, stop, sending = false }: {
   readonly natural: boolean; readonly working: boolean; readonly waitingForAnswer: boolean;
+  /** A message was just sent and the server has not shown it yet: the status shows at once. */
+  readonly sending?: boolean;
   readonly derived: Pick<import('./rows').Derived, 'run' | 'retry' | 'compacting' | 'stageStatus'>;
   readonly stop: ChatSnapshot['stop'];
 }) {
   const { labels } = useChatText();
-  if (natural) return preparing({ natural, waitingForAnswer, run: derived.run, retry: derived.retry, compacting: derived.compacting, stop }) ? <PreparingStatus>{derived.stageStatus}</PreparingStatus> : null;
+  if (natural) return preparing({ natural, waitingForAnswer, run: derived.run ?? (sending ? {} : undefined), retry: derived.retry, compacting: derived.compacting, stop }) ? <PreparingStatus>{derived.stageStatus}</PreparingStatus> : null;
   return <>
     {working && <p role="status" data-testid="agent-status" className="m-0 flex items-center gap-2 px-1 text-xs text-muted-foreground">
       <Shimmer active={!waitingForAnswer}>{waitingForAnswer ? labels.waitingForAnswer : derived.retry ? labels.retryPending : labels.agentWorking}</Shimmer></p>}

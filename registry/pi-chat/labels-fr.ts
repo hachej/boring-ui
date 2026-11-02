@@ -134,6 +134,7 @@ export const frenchChatLabels: ChatLabels = {
   more: 'Plus',
   edit: 'Modifier',
   sending: 'Envoi',
+  notSent: 'Non envoyé',
   messageClock: at => formatClock(at, 'fr'),
   messageTimestamp: at => formatTimestamp(at, 'fr'),
   images: count => `[${count} image${count === 1 ? '' : 's'}]`,
