@@ -4,7 +4,7 @@ The agent the shell mounts once: a bottom drawer on a phone, a right panel on a 
 
 ## Sub-features
 
-- `layer-drawer` phone drawer with peek, half and full; swipe and outside tap go to peek, only the handle drags. `registry/app-shell/agent-layer.tsx`.
+- `layer-drawer` phone drawer with peek, half and full; swipe and outside tap go to peek, only the handle drags. The trigger is a toggle: it closes half and full, and reveals peek. `registry/app-shell/agent-layer.tsx`.
 - `layer-dock` wide panel docked right, floatable and dockable left or right, remembered per viewer (`boring.app-shell`). `registry/dock/dock.tsx`.
 - `layer-context` the screen on show travels with each message (`useAgentContext`). `registry/app-shell/agent-context.ts`.
 - `layer-voice` single-tap composer recording with the shared trash/timer/waveform/pause/Send row; optional header hold remains. Waveform history freezes when no new PCM samples arrive, including the capture cap. `send: 'auto' | 'draft' | 'message'`. Kit orchestration: `packages/ui/src/chat-voice-message.ts` (`useChatVoice`), `chat-dictation.ts` and `voice-attempt.ts`. Compatibility/presentation: `registry/app-shell/use-dictation.ts`, `registry/pi-chat-voice/voice-message.tsx`.
@@ -22,7 +22,7 @@ The agent the shell mounts once: a bottom drawer on a phone, a right panel on a 
 
 Preconditions: as `app-shell.md`.
 
-- **Drawer.** `layer-drawer`: at 390px open the trigger, step peek, half, full, press Escape (back to peek). `npm run app-shell:journey`.
+- **Drawer.** `layer-drawer`: at 390px open the trigger, step peek, half, full, press Escape (back to peek), tap the trigger at half and at full (closed). `npm run app-shell:journey`.
 - **Dock.** `layer-dock`: at desktop width open the layer, float it, dock it left, reload; the side is remembered.
 - **Context.** `layer-context`: switch screens and read the `context` of the next submit in the request.
 - **Voice.** `layer-voice`: `npm run app-shell:journey:voice` (fake microphone), tap Record, trash or Send; this fixture explicitly opts into replay after reload. `node --test test/contracts/talk-about-render.test.mjs` drives capped PCM through both dictation modes and retained voice, checks frozen waveform/time and sends the capped recording.

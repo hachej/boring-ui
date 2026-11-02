@@ -1,5 +1,6 @@
 # Unreleased
 
+- **The agent trigger closes on a phone (`app-shell`; D-864).** Reinstall `app-shell`. At half or full, tapping the trigger now closes the layer, where it stepped down to peek and the next tap reopened half. At peek it still reveals half.
 - **Platform blocks moved to boring-factory's `platform-ui/` (`pm-panel`, `task-board`, `task-mentions`, `requests-board`, `feedback-preview`).** They leave this registry, and `@hachej/boring-ui-kit/task-board` leaves the kit. Published versions keep them, so an app on its pinned copies changes nothing.
 - **`pmPanel` moved with the PM (`platform-ui/pm-panel`). `AgentSpec.feedback` stays:** the pointing tool any app can switch on, with the `feedback` item.
 - **`PiChat sentContent` (`pi-chat`).** A host's card for a sent text; the page-comments card moved from `pi-chat` to `feedback` (`sentFeedbackContent`). `AppShell` supplies it for an agent with `feedback`; a `PiChat` outside the shell passes it itself.

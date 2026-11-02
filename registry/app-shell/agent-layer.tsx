@@ -392,7 +392,8 @@ export function AgentTrigger({ className, children }: { readonly className?: str
 
   const toggle = () => {
     triggerUntilRef.current = Date.now() + 500;
-    if (layer.state !== 'closed' && layer.showing === 'agent' && layer.expanded) layer.close();
+    // Peek is the collapsed coach: a tap reveals it. Every other open state closes.
+    if (layer.showing === 'agent' && layer.state !== 'closed' && layer.state !== 'peek') layer.close();
     else layer.open('agent', 'half');
   };
   const release = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -560,6 +561,37 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
       for (const { input, mode, readOnly } of inputs) { input.readOnly = readOnly; if (mode === null) input.removeAttribute('inputmode'); else input.setAttribute('inputmode', mode); }
     };
   }, [recording]);
+
+  // At half and full the sheet is modal: the page, the trigger included, is inert, so a tap on the trigger lands elsewhere and would count as an
+  // outside press (down to peek). It still means what the trigger means: close. A trigger that gets its own press, or one under the sheet, is left alone.
+  const { close, triggerUntil } = layer;
+  useEffect(() => {
+    if (!open || peek) return;
+    const onTrigger = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('[data-agent-trigger], [data-slot=drawer-popup]')) return false;
+      return [...document.querySelectorAll('[data-agent-trigger]')].some(trigger => {
+        const box = trigger.getBoundingClientRect();
+        return event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+      });
+    };
+    let pressed = false;
+    const down = (event: PointerEvent) => {
+      pressed = onTrigger(event);
+      if (pressed) triggerUntil.current = Date.now() + 500;
+    };
+    const up = (event: PointerEvent) => {
+      const closes = pressed && onTrigger(event);
+      pressed = false;
+      if (closes) close();
+    };
+    document.addEventListener('pointerdown', down, true);
+    document.addEventListener('pointerup', up, true);
+    return () => {
+      document.removeEventListener('pointerdown', down, true);
+      document.removeEventListener('pointerup', up, true);
+    };
+  }, [open, peek, close, triggerUntil]);
 
   // While « Améliorer l'app » shows, the PM panel owns the layer's Back entry (AgentLayerProvider).
   useBackLayer((snap === 'half' || snap === 'full') && layer.showing !== 'improve', layer.close, 'agent');
