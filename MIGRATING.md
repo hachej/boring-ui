@@ -1,5 +1,6 @@
 # Unreleased
 
+- **Emptied folders on disk (`@hachej/boring-files`; D-825).** With `pruneEmptied: true`, a folder a rename or delete leaves empty now also disappears on disk hosts, where it used to stay listed. The 0.4.36 limit no longer stands. It is renamed aside to a provider-temporary name, deleted only if still empty, and put back if a file landed. A process keeping its working directory inside that folder can still lose a file written in the instant before the removal: Pi's FileSystem has no remove-if-empty. Nothing to do.
 - **Platform blocks moved to boring-factory's `platform-ui/` (`pm-panel`, `task-board`, `task-mentions`, `requests-board`, `feedback-preview`).** They leave this registry, and `@hachej/boring-ui-kit/task-board` leaves the kit. Published versions keep them, so an app on its pinned copies changes nothing.
 - **`pmPanel` moved with the PM (`platform-ui/pm-panel`). `AgentSpec.feedback` stays:** the pointing tool any app can switch on, with the `feedback` item.
 - **`PiChat sentContent` (`pi-chat`).** A host's card for a sent text; the page-comments card moved from `pi-chat` to `feedback` (`sentFeedbackContent`). `AppShell` supplies it for an agent with `feedback`; a `PiChat` outside the shell passes it itself.
