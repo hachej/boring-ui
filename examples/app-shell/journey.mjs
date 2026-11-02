@@ -193,7 +193,7 @@ try {
     await browser.until('closed', `!${q(LAYER)}`);
   });
 
-  await step('B2b the trigger is a toggle on a phone: half and full close fully, two quick taps never strand a sheet (D-864)', async () => {
+  await step('B2b the trigger is a toggle on a phone: half closes fully, Close dismisses full (which covers the trigger), two quick taps never strand a sheet (D-864)', async () => {
     const closed = where => browser.until(`closed ${where}`, `!${q(LAYER)}`);
     await tap(TRIGGER);
     await browser.until('half', `${q(LAYER)}?.dataset.state === 'half'`);
@@ -208,7 +208,8 @@ try {
     await tap('[data-testid=agent-layer-expand]');
     await browser.until('full', `${q(LAYER)}?.dataset.state === 'full'`);
     await settle();
-    await tapAt(TRIGGER);
+    // Full covers the whole phone screen, trigger included: Close is what dismisses it.
+    await tap('[data-testid=agent-layer-close]');
     await closed('from full');
     await pause(700);
     await tap(TRIGGER);
