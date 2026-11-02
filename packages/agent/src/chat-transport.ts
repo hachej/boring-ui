@@ -1,4 +1,5 @@
 import type { Context } from '@earendil-works/chord';
+import { diffRevisions } from '@earendil-works/chord/delta';
 import { RequestGuardError, hasJsonContentType, readJsonBody } from '@hachej/boring-files/request-guard';
 import type { Conversation, ConversationView, ConversationWatch, Cursor, EntryId, EntryQuery, EntryRecord, InputSubmissionDraft, SubmissionId, SubmissionRecord, WatchEnd } from '@earendil-works/pi-durable';
 
@@ -125,9 +126,27 @@ function reads(conversation: Conversation, context: Context, project: ((view: Co
 
 /** A watch frame: a complete view, or one native operation batch. The NDJSON stream and the socket send the same JSON. */
 type WatchFrame = { readonly kind: 'view'; readonly view: ConversationView } | { readonly kind: 'ops'; readonly ops: readonly unknown[] };
-/** Serialize one watch frame; with `project` a view is projected first (a throw means `projection_failed`). */
-function encodeFrame(frame: WatchFrame, project: ((view: ConversationView) => ConversationView) | undefined): string {
-  return JSON.stringify(frame.kind === 'view' && project ? { kind: 'view', view: project(frame.view) } : frame);
+/**
+ * Serialize the watch frames of one connection; with `project` a view is projected first (a throw means `projection_failed`).
+ * A projected viewer used to get a complete view per update, which grows with the conversation (a 60 KB prompt, then every earlier
+ * entry, ten times a second). The first frame is still the complete view; after it, an update is the operation batch between the
+ * last view this connection received and the new projected one (`diffRevisions`), which the client already replays like native
+ * operations, and the complete view when that is not smaller. Raw operations never leave the host: the batch is computed from projected views.
+ */
+function frameEncoder(project: ((view: ConversationView) => ConversationView) | undefined): (frame: WatchFrame) => string {
+  let sent: unknown;
+  return frame => {
+    if (frame.kind !== 'view' || !project) return JSON.stringify(frame);
+    // Round-tripped, so the diff is between exactly what the client holds (no `undefined` fields).
+    const full = JSON.stringify({ kind: 'view', view: project(frame.view) });
+    const next = (JSON.parse(full) as { view: unknown }).view;
+    if (sent !== undefined) {
+      const batch = JSON.stringify({ kind: 'ops', ops: diffRevisions(sent as never, next as never) });
+      if (batch.length < full.length / 2) { sent = next; return batch; }
+    }
+    sent = next;
+    return full;
+  };
 }
 
 /** Open the conversation watch for an authenticated access, refusing a revoked one. Shared by the HTTP watch and the socket. */
@@ -140,9 +159,11 @@ async function openWatch(access: ChatTransportAccess, signal?: AbortSignal): Pro
 /**
  * Stream newline-delimited JSON. A trusted viewer receives one view and then the exact native operation batches,
  * replayed in the browser with `@earendil-works/chord/delta`. With `project`, raw operations never leave the host:
- * the viewer receives complete projected views, and a slow reader gets the latest one rather than a backlog.
+ * the viewer receives one projected view, then batches between projected views (`frameEncoder`), and a slow reader gets the
+ * batch to the latest one rather than a backlog.
  */
 function stream(watch: ConversationWatch, project: ((view: ConversationView) => ConversationView) | undefined, signal: AbortSignal, heartbeatMs: number): Response {
+  const encode = frameEncoder(project);
   let pending: WatchFrame[] = [{ kind: 'view', view: watch.value }], wake: (() => void) | undefined, end: WatchEnd | undefined, finished = false;
   // `beat` asks the next pull for a heartbeat. The timer restarts after every frame, so it fires only on an idle stream, and it is
   // cleared when the stream finishes or is cancelled: nothing outlives the response.
@@ -173,7 +194,7 @@ function stream(watch: ConversationWatch, project: ((view: ConversationView) => 
       const frame = pending.shift();
       if (frame) {
         let line: string;
-        try { line = encodeFrame(frame, project); }
+        try { line = encode(frame); }
         catch { finished = true; stop(); controller.enqueue(encoder.encode(JSON.stringify({ kind: 'end', reason: 'projection_failed' }) + '\n')); controller.close(); return; }
         if (signal.aborted) { close('revoked'); return; }
         controller.enqueue(encoder.encode(line + '\n'));
@@ -453,8 +474,9 @@ export function createConversationSocketHandler(options: ConversationSocketOptio
       const watch = await openWatch(access).catch(() => null);
       if (!watch) { live.delete(found.socketId); end(socket, 'revoked', 1008); return null; }
       const { project } = access;
+      const encode = frameEncoder(project);
       const frame = (value: WatchFrame) => {
-        try { send(socket, encodeFrame(value, project)); }
+        try { send(socket, encode(value)); }
         catch { void watch.stop(); end(socket, 'projection_failed', 1011); }
       };
       frame({ kind: 'view', view: watch.value });
