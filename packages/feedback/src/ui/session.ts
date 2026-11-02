@@ -664,6 +664,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     }
     recordings = [];
     state.set({ transcribing: false });
+    await new Promise(resolve => setTimeout(resolve, 50));
     try { observed = (await observePage(options)).observed; }
     catch { problem = 'The page could not be observed.'; }
     state.set({ phase: notes.length || state.getSnapshot().general.trim() ? 'review' : 'idle', route: observed?.subject.route ?? routeNow() });

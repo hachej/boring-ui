@@ -69,6 +69,8 @@ jobs:
           node-version: 22.22.1
           cache: npm
       - run: npm ci
+      - name: D-1041 fifty runs
+        run: for i in $(seq 1 50); do node --import ./scripts/css-stub-register.mjs --test test/packages/feedback-session.test.mjs > /dev/null || { echo failed run $i; exit 1; }; done; echo fifty passed
       - run: npm test -- --exclude-registered
   release-gate:
     runs-on: ubuntu-latest
