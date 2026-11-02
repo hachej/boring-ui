@@ -81,6 +81,7 @@ export function useSpaces({ kind, transport, labels = spacesLabels, inviteParam 
       accepting.current = transport<{ space: SpaceSummary }>('invites.accept', change({ token }))
         .then(({ space }) => { setInviteError(null); select(space.id); }, problem => setInviteError(spaceErrorMessage(problem, words.current)));
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads the host's list on mount: its state is set after the await, never synchronously
     void refresh();
   }, [refresh, select, transport, inviteParam]);
   useEffect(() => { try { if (picked && selected) localStorage.setItem(rememberedKey(kind), selected); } catch { /* private mode: not remembered */ } }, [picked, selected, kind]);

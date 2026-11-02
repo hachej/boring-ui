@@ -7,6 +7,7 @@ import { copyToClipboard } from '@hachej/boring-files/platform';
 import { CopyIcon, LogOutIcon, ShieldAlertIcon, UserMinusIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Item, ItemActions, ItemContent } from '@/components/ui/item';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { spaceErrorMessage, spacesLabels } from './spaces-labels';
@@ -60,10 +61,10 @@ function InviteForm({ roles, labels, onInvite, act }: { readonly roles: readonly
         <Button type="submit" data-testid="invite-submit">{labels.createLink}</Button>
       </div>
     </form>
-    {link && <div className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2" data-testid="invite-link">
-      <span className="flex-1 truncate text-xs">{link}</span>
-      <Button size="icon" variant="ghost" aria-label={labels.copy} onClick={() => void copyToClipboard(link)}><CopyIcon className="size-4" /></Button>
-    </div>}
+    {link && <Item variant="muted" size="sm" data-testid="invite-link">
+      <ItemContent className="min-w-0"><span className="truncate text-xs">{link}</span></ItemContent>
+      <ItemActions><Button size="icon" variant="ghost" aria-label={labels.copy} onClick={() => void copyToClipboard(link)}><CopyIcon className="size-4" /></Button></ItemActions>
+    </Item>}
     {link && <p className="text-xs text-muted-foreground">{labels.inviteHint}</p>}
   </section>;
 }
@@ -84,7 +85,7 @@ export function MembersSheet({ open, onOpenChange, view, roles, me, onInvite, on
         {error && <p role="alert" className="text-sm text-destructive" data-testid="members-error">{error}</p>}
         <section className="flex flex-col gap-2" aria-label={labels.members}>
           <h3 className="text-sm font-medium">{labels.members}</h3>
-          <ul className="flex flex-col divide-y rounded-md border">
+          <ul className="flex flex-col divide-y">
             {(view?.members ?? []).map(member => <MemberRow key={member.person ?? member.name} member={member} editable={manager} me={me} roles={roles} labels={labels}
               onSetRole={role => void act(() => onSetRole(member.person!, role))} onRemove={() => void act(() => onRemove(member.person!))} />)}
           </ul>
