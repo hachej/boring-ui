@@ -1,6 +1,7 @@
 # Unreleased
 
 - **The scroll arrow no longer covers the chat (`pi-ambient`; D-1379).** Reinstall `pi-ambient`. Scrolled up, the down arrow has its own row under the messages, as in `PiChat`, where it used to float over the reply's last lines. Nothing to change.
+- **`boring-ui-blocks add` and `update` refuse a borrowed install (`@hachej/boring-ui-kit`; D-1094).** A symlinked `node_modules` or scope directory now stops them before the package manager runs, because it would write into the tree the link points at. Use an owned physical install for these commands. Per-package links and `check` are unaffected.
 - **Which model answered (`pi-chat`; D-1222).** Reinstall `pi-chat`. In `mode="developer"` each assistant reply shows a muted « answered by provider/model » line, read from the new optional `answeredBy={reply => ({ provider, model, fallback? })}` prop (the host's per-turn record), else from the reply's own message provider/model; « fallback: reason » follows when `fallback` is set. Expert mode is unchanged. Additive.
 - **`NavItem.placement` (`app-shell`; D-1210).** Reinstall `app-shell`. Additive: `placement: 'before-sidebar'` puts a nav item above the active screen's `NavItem.sidebar` content (and first in the tab bar and the sheet); absent, or `'after-sidebar'`, keeps today's order. `placeNav(items)` returns `{ before, after }`.
 

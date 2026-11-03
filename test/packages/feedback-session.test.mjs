@@ -542,6 +542,14 @@ async function registry(t, url = 'https://fictional.invalid/settings/profile') {
   return { window, document: window.document, components, createElement, act, createRoot };
 }
 const setValue = (window, element, value) => { Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(element, value); element.dispatchEvent(new window.Event('input', { bubbles: true })); };
+/** Waits (inside act) until `check()` holds. Done awaits the page observation and the mic's steps are asynchronous: a fixed sleep is a timing guess that a loaded runner loses. */
+const waitUntil = async (act, label, check) => {
+  const deadline = Date.now() + 20_000;
+  while (!check()) {
+    if (Date.now() > deadline) assert.fail(`timed out: ${label}`);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+  }
+};
 
 test('registry: the bar, the bubble (Enter saves, Esc discards), the chip and its review (edit, remove, hover highlights), useComposerFeedback attaches', { timeout: 30000 }, async t => {
   const { window, document, components, createElement, act, createRoot } = await registry(t);
@@ -587,7 +595,8 @@ test('registry: the bar, the bubble (Enter saves, Esc discards), the chip and it
   await act(async () => document.querySelector('[data-testid=feedback-use-app]').click());
   assert.equal(document.querySelector('[data-testid=feedback-bar]').dataset.using, 'true');
   await act(async () => document.querySelector('[data-testid=feedback-use-app]').click());
-  await act(async () => { document.querySelector('[data-testid=feedback-done]').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  await act(async () => document.querySelector('[data-testid=feedback-done]').click());
+  await waitUntil(act, 'Done reached the review', () => session.getSnapshot().phase === 'review');
   assert.equal(document.querySelector('[data-testid=feedback-bar]'), null);
   assert.ok(composer.count > 0);
   const chip = document.querySelector('[data-testid=feedback-chip]');
@@ -614,7 +623,8 @@ test('registry: the bar, the bubble (Enter saves, Esc discards), the chip and it
   await act(async () => pinAt(context, under, context.$('save')));
   await act(async () => setValue(window, document.querySelector('[data-testid=feedback-bubble-input]'), 'x'));
   await act(async () => { keydown(window, document.querySelector('[data-testid=feedback-bubble-input]'), 'Enter'); });
-  await act(async () => { document.querySelector('[data-testid=feedback-done]').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  await act(async () => document.querySelector('[data-testid=feedback-done]').click());
+  await waitUntil(act, 'Done reached the review', () => session.getSnapshot().phase === 'review');
   await act(async () => document.querySelector('[data-testid=feedback-chip-discard]').click());
   assert.equal(session.getSnapshot().phase, 'idle');
   await act(async () => ui.unmount());
@@ -646,8 +656,7 @@ test('registry: ONE annotate toggle: pin, type, count, Send attaches it; Esc exi
   const ui = createRoot(document.getElementById('ui'));
   await act(async () => ui.render(createElement(Host)));
   const $t = id => document.querySelector(`[data-testid=${id}]`);
-  /** Waits (inside act) until `check()` holds: the mic's steps are asynchronous, and a slow runner must not make this a timing guess. */
-  const until = async (label, check) => { for (let i = 0; i < 300; i++) { if (check()) return; await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); }); } assert.fail(`timed out: ${label}`); };
+  const until = (label, check) => waitUntil(act, label, check);
   assert.deepEqual(Object.keys(composer).sort(), ['active', 'annotate', 'attach', 'clear', 'count', 'sent'], 'the composer prop is minimal');
   assert.deepEqual([composer.active, composer.count], [false, 0]);
 
@@ -754,7 +763,7 @@ test('registry: on touch or a compact screen the toggle enters point mode', { ti
       assert.equal(session.getSnapshot().mode, 'point');
       assert.equal(composer.active, true);
       await act(async () => { keydown(window, document.body, 'Escape'); });
-      for (let i = 0; i < 100 && session.getSnapshot().phase === 'active'; i++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+      await waitUntil(act, 'Esc left point mode', () => session.getSnapshot().phase !== 'active');
       assert.notEqual(session.getSnapshot().phase, 'active', 'Esc exits point mode too');
       await act(async () => session.discard());
     } finally {
@@ -804,7 +813,8 @@ test('registry: recording mode in the bar (Record, destructive badge, timer, Sto
   await act(async () => $t('feedback-voice').click());
   assert.equal($t('feedback-voice').textContent, 'Record');
   let done;
-  await act(async () => { done = session.done(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  await act(async () => { done = session.done(); });
+  await waitUntil(act, 'the transcription started', () => $t('feedback-bar')?.dataset.transcribing === 'true');
   assert.equal($t('feedback-bar-hint').textContent, 'Transcribing…');
   assert.equal($t('feedback-bar').dataset.transcribing, 'true');
   await act(async () => { finishTranscription(); await done; });
@@ -826,7 +836,9 @@ test('registry: recording mode in the bar (Record, destructive badge, timer, Sto
   await act(async () => $t('feedback-voice').click());
   clock.t = 1000;
   await act(async () => pinAt(context, under, context.$('save')));
-  await act(async () => { done = session.done(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  finishTranscription = undefined;
+  await act(async () => { done = session.done(); });
+  await waitUntil(act, 'the transcription started', () => finishTranscription);
   await act(async () => { finishTranscription(); await done; });
   assert.equal($t('feedback-chip-open').textContent, '💬 Feedback · 0 notes · 1 pin to describe · /settings/:section');
   assert.equal($t('feedback-chip-voice').textContent, 'Voice could not be transcribed (the transcription answered 502). Your pins are kept: type a note for each in the review.');
