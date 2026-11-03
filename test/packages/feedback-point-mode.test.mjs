@@ -160,6 +160,14 @@ export { feedbackLabels, feedbackLabelsFr, plainElement } from '${root}registry/
   return { window, document: window.document, components, createElement, act, createRoot };
 }
 const setValue = (window, element, value) => { Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(element, value); element.dispatchEvent(new window.Event('input', { bubbles: true })); };
+/** Waits (inside act) until `check()` holds. Done awaits the page observation and a sent note awaits Done: a fixed sleep is a timing guess that a loaded runner loses. */
+const waitUntil = async (act, label, check) => {
+  const deadline = Date.now() + 20_000;
+  while (!check()) {
+    if (Date.now() > deadline) assert.fail(`timed out: ${label}`);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+  }
+};
 
 function phone(t, coarse) {
   const media = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia');
@@ -231,7 +239,8 @@ test('registry: the annotate toggle on touch starts point mode, the host panel b
   await act(async () => toggle().click());
   assert.equal(bar().dataset.commenting, 'true');
 
-  await act(async () => { document.querySelector('[data-testid=feedback-point-done]').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  await act(async () => document.querySelector('[data-testid=feedback-point-done]').click());
+  await waitUntil(act, 'Done reached the review', () => session.getSnapshot().phase === 'review');
   assert.equal(bar(), null);
   assert.equal($('ui').querySelector('[data-testid=panel]').hidden, false, 'Terminé: the panel is back');
   assert.equal(composer.count, 2);
@@ -266,7 +275,8 @@ test('registry: with a mouse the banner sits at the top, useCommenting is true w
   assert.match(bar.getAttribute('style'), /top: 8px/);
   assert.equal(bar.getAttribute('aria-label'), 'Comment mode');
   assert.equal(document.querySelector('[data-testid=feedback-point-hint]').textContent, 'Click an element to comment on it');
-  await act(async () => { document.querySelector('[data-testid=feedback-point-done]').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  await act(async () => document.querySelector('[data-testid=feedback-point-done]').click());
+  await waitUntil(act, 'Done ended the round', () => session.getSnapshot().phase === 'idle');
   assert.deepEqual(flags, { commenting: false, pointing: false });
   await act(async () => ui.unmount());
 });
@@ -291,7 +301,8 @@ test('registry: an inline banner stays where it is mounted (over one surface, su
   const bar = document.querySelector('[data-testid=feedback-point-bar]');
   assert.equal(bar.parentElement, $('surface'), 'mounted in the surface it comments');
   assert.equal(bar.dataset.feedbackPointBar, 'top');
-  await act(async () => { document.querySelector('[data-testid=feedback-point-done]').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  await act(async () => document.querySelector('[data-testid=feedback-point-done]').click());
+  await waitUntil(act, 'Done ended the round', () => session.getSnapshot().phase === 'idle');
   assert.equal(document.querySelector('[data-testid=feedback-point-bar]'), null);
   await act(async () => ui.unmount());
 });
@@ -320,7 +331,8 @@ test('registry: useSendEachNote sends each note to the chat the moment it is add
   await act(async () => { tap(window, $('save')); });
   await act(async () => setValue(window, document.querySelector('[data-testid=feedback-bubble-input]'), 'Dites ce qui est enregistré.'));
   assert.equal(sent.length, 0, 'nothing is sent while the note is typed');
-  await act(async () => { document.querySelector('[data-testid=feedback-bubble-save]').click(); await new Promise(resolve => setTimeout(resolve, 20)); });
+  await act(async () => document.querySelector('[data-testid=feedback-bubble-save]').click());
+  await waitUntil(act, 'the note was sent and comment mode is back', () => sent.length === 1 && session.getSnapshot().phase === 'active');
   assert.equal(sent.length, 1, 'the note went at once');
   assert.match(sent[0], /Dites ce qui est enregistré\./);
   assert.equal(session.getSnapshot().phase, 'active', 'comment mode stays on for the next note');
@@ -329,12 +341,14 @@ test('registry: useSendEachNote sends each note to the chat the moment it is add
   under.current = [$('plan')];
   await act(async () => { tap(window, $('plan')); });
   await act(async () => setValue(window, document.querySelector('[data-testid=feedback-bubble-input]'), 'Montrer le prix.'));
-  await act(async () => { document.querySelector('[data-testid=feedback-bubble-save]').click(); await new Promise(resolve => setTimeout(resolve, 20)); });
+  await act(async () => document.querySelector('[data-testid=feedback-bubble-save]').click());
+  await waitUntil(act, 'the second note was sent and comment mode is back', () => sent.length === 2 && session.getSnapshot().phase === 'active');
   assert.equal(sent.length, 2);
   assert.match(sent[1], /Montrer le prix\./);
   assert.doesNotMatch(sent[1], /Dites ce qui est enregistré/, 'each message carries its own note only');
   assert.equal(document.querySelector('[data-testid=feedback-point-hint]').textContent, '2 notes envoyées : la réponse arrive dans la conversation (Terminé)');
-  await act(async () => { document.querySelector('[data-testid=feedback-point-done]').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  await act(async () => document.querySelector('[data-testid=feedback-point-done]').click());
+  await waitUntil(act, 'Done ended the round', () => session.getSnapshot().phase === 'idle');
   assert.equal(session.getSnapshot().phase, 'idle');
   await act(async () => composer.annotate());
   assert.equal(document.querySelector('[data-testid=feedback-point-hint]').textContent, 'Touchez un élément pour le commenter', 'a new round starts at zero');

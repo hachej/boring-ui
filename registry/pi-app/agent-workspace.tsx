@@ -145,7 +145,7 @@ interface AgentWorkspaceBaseProps {
   /** `embedded` only: the host's own panels in the bar, after History and Library (a popover on a wide workspace, a sheet on a phone). */
   readonly barPanels?: readonly WorkspaceBarPanel[] | undefined;
   /** Embedded bar arrangement; defaults keep the standard History, Library, host panels and New order. */
-  readonly barOptions?: Pick<WorkspaceBarProps, 'panelsFirst'> | undefined;
+  readonly barOptions?: Pick<WorkspaceBarProps, 'panelsFirst' | 'hidden' | 'command'> | undefined;
   /**
    * `embedded` only: a fixed leading title for the bar, normally the app's name. It stays whatever the conversation is called; the
    * conversation title then follows it as a muted second element (on a phone it is left to History). Without it the bar shows the
