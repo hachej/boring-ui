@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.49
+
 - **The scroll arrow no longer covers the chat (`pi-ambient`; D-1379).** Reinstall `pi-ambient`. Scrolled up, the down arrow has its own row under the messages, as in `PiChat`, where it used to float over the reply's last lines. Nothing to change.
 - **A status per file row (`file-tree`; D-1374).** Reinstall `file-tree`. Additive: `FileTree decorate={entry => ({ badge: { label: 'Lu', tone: 'success' }, detail: '12 lignes' })}` shows a badge (`neutral`, `success`, `warning`, `danger`; read as « name: label ») and a short secondary text on that row. Return nothing to leave a row as it is; without the prop the tree is unchanged. Tones read `--success` and `--warning` when the theme defines them.
 - **`boring-ui-blocks add` and `update` refuse a borrowed install (`@hachej/boring-ui-kit`; D-1094).** A symlinked `node_modules` or scope directory now stops them before the package manager runs, because it would write into the tree the link points at. Use an owned physical install for these commands. Per-package links and `check` are unaffected.
