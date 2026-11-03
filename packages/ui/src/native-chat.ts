@@ -218,7 +218,8 @@ export function createNativeChatController(options: NativeChatOptions) {
     }
   };
   // The echo: what the person sent, drawn at once and dropped when the server's own copy is in the view.
-  interface Echo { readonly key: string; readonly draft: ChatDraft; readonly match: string; readonly base: number; readonly at: number; readonly sentAt: number; failed: boolean; admitted: boolean }
+  // `blind`: sent before any view arrived (while connecting), so `base` is counted again on the first view.
+  interface Echo { readonly key: string; readonly draft: ChatDraft; readonly match: string; base: number; blind: boolean; readonly at: number; readonly sentAt: number; failed: boolean; admitted: boolean }
   let echoSeq = 0;
   const echoes: Echo[] = [];
   /** A sent message still not in the view after this long is dropped from the echo (the server may have changed its words); the transcript is the truth. */
@@ -306,6 +307,14 @@ export function createNativeChatController(options: NativeChatOptions) {
     publish({ send: { kind: 'admitted', attempt, submissionId, ...(record ? { record } : {}) }, ...(found ? { echo: echoView() } : {}) });
     return true;
   };
+  /** Resolves true once a view is there, false if the controller is disposed or its connection fails first. */
+  const viewed = (): Promise<boolean> => snapshot.view ? Promise.resolve(true) : new Promise(resolve => {
+    const check = () => {
+      const failed = snapshot.disposed || snapshot.connection.kind === 'error' || snapshot.connection.kind === 'closed';
+      if (snapshot.view || failed) { listeners.delete(check); resolve(Boolean(snapshot.view) && !snapshot.disposed); }
+    };
+    listeners.add(check);
+  });
   interface Outgoing { readonly draft: ChatDraft; readonly whenBusy: ChatAttempt['whenBusy']; readonly resolve: (submission: Submission | undefined) => void }
   /** Messages taken from the composer that wait for the current send (`outbox` in the snapshot). */
   const waiting: Outgoing[] = [];
@@ -491,7 +500,12 @@ export function createNativeChatController(options: NativeChatOptions) {
           if (acquired.value.conversation.id !== conversation.id) { await acquired.stop(); throw new Error('Chat source returned another conversation'); }
           watch = acquired;
           const ready = snapshot.timing.inputReady === undefined;
-          publish({ connection: live(), view: acquired.value, ...(ready ? { timing: Object.freeze({ inputReady: mark('input-ready'), sends: Object.freeze([...timings]) }) } : {}) });
+          // Messages sent before any view were counted against none; they are held until now (see `send`), so the first view is their baseline.
+          for (const [index, item] of echoes.entries()) if (item.blind) {
+            item.blind = false; firstEntries.set(item.key, acquired.value.entries.length);
+            item.base = countOf(acquired.value, item.match) + echoes.slice(0, index).filter(other => other.match === item.match).length;
+          }
+          publish({ connection: live(), view: acquired.value, ...(snapshot.conversationId !== conversation.id ? { conversationId: conversation.id } : {}), ...(ready ? { timing: Object.freeze({ inputReady: mark('input-ready'), sends: Object.freeze([...timings]) }) } : {}) });
           acquired.start(async view => {
             if (snapshot.disposed || watch !== acquired) return;
             if (view.conversation.id !== conversation.id) throw new Error('Chat source changed conversation identity');
@@ -511,7 +525,8 @@ export function createNativeChatController(options: NativeChatOptions) {
     /**
      * Sends the composer draft (or `input`) and empties the composer at once. While another send is still being confirmed the message
      * waits in `outbox` and is submitted, in order, after it. A refused message, and any waiting behind it, go back into the composer
-     * ahead of what was typed since; nothing is dropped or merged into another message. Resolves with the native submission, or
+     * ahead of what was typed since; nothing is dropped or merged into another message. Sent before any view (while connecting), it is
+     * held until the first view arrives and then submitted, in order; if the connection fails first it goes back into the composer. Resolves with the native submission, or
      * undefined when the message was not admitted (refused, unknown, or the controller was disposed).
      */
     send: async (whenBusy: ChatAttempt['whenBusy'] = 'followUp', input?: ChatSendInput): Promise<Submission | undefined> => {
@@ -524,13 +539,15 @@ export function createNativeChatController(options: NativeChatOptions) {
         return;
       }
       if (input?.restore) restoreOf.set(selected, draft(input.restore.text, input.restore.attachments ?? [], 0));
+      // Connecting with no view yet: the message is held until the first view (below), which is then its echo's baseline.
+      const held = !snapshot.view && snapshot.connection.kind === 'connecting';
       // The message is the person's from this moment: it is drawn at once (the echo) and the composer is emptied, before any
       // validation or network call. The server's copy replaces it when it arrives; a refusal puts the words back in the composer.
       // (A steer takes a queued message back and sends it again, so it is not echoed twice.)
       if (whenBusy !== 'steer') {
         const enter = mark('enter');
         const match = selected.text.trim(), key = `m${++echoSeq}`;
-        echoes.push({ key, draft: selected, match, base: countOf(snapshot.view, match) + echoes.filter(item => item.match === match).length, at: enter, sentAt: Date.now(), failed: false, admitted: false });
+        echoes.push({ key, draft: selected, match, base: countOf(snapshot.view, match) + echoes.filter(item => item.match === match).length, blind: held, at: enter, sentAt: Date.now(), failed: false, admitted: false });
         firstEntries.set(key, snapshot.view?.entries.length ?? 0);
         timings.push(Object.freeze({ key, enter })); if (timings.length > 20) firstEntries.delete(timings.shift()!.key);
       }
@@ -544,6 +561,9 @@ export function createNativeChatController(options: NativeChatOptions) {
       sending = true;
       publish(cleared);
       try {
+        // Sent while connecting: held (shown as the person's own) until the first view, so nothing is submitted before the connection is up.
+        // If the connection fails first, it and everything behind it go back into the composer, marked not sent.
+        if (held && !await viewed()) { restore([selected], { send: { kind: 'blocked', reason: 'Not connected: the message was not sent' } }); return; }
         let next: Outgoing | undefined = { draft: selected, whenBusy, resolve: () => {} };
         const first = await dispatch(next);
         let result = first;

@@ -3,7 +3,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 export type ConversationControllerState<C> =
-  | { readonly status: 'connecting' }
+  /** `controller`: created, its `connect` still running (absent before creation). Hosts that wait for `ready` can ignore it. */
+  | { readonly status: 'connecting'; readonly controller?: C }
   | { readonly status: 'offline'; readonly error: unknown }
   | { readonly status: 'ready'; readonly controller: C };
 
@@ -43,11 +44,14 @@ export function useControllerPerConversation<C extends { readonly dispose: () =>
         try {
           owned = await create();
           if (off) { await retire(); return; }
+          publish({ status: 'connecting', controller: owned });
           await connect?.(owned);
           if (off) { await retire(); return; }
           publish({ status: 'ready', controller: owned });
           return;
         } catch (error) {
+          // A controller handed out while connecting is withdrawn before it is disposed, so no host holds a disposed one.
+          if (owned) publish({ status: 'connecting' });
           try { await retire(); } catch (teardownError) { console.error('Chat controller teardown failed', teardownError); }
           retiring = undefined;
           if (off) return;
