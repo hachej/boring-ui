@@ -66,16 +66,20 @@ export function DrawingViewer({ text, path, format: given, title, onRead, excali
   useLayoutEffect(() => { read.current = onRead; });
   // A drawn outcome's image lives until another outcome replaces it or the viewer unmounts, so going back to an earlier text never shows a
   // revoked image; that text is drawn again anyway.
+  // Every image made is tracked from its creation, so one whose outcome never commits (onRead hid the viewer first) is still released, once.
+  const made = useRef(new Set<string>());
   useEffect(() => {
     const url = outcome?.state.kind === 'drawn' ? outcome.state.url : undefined;
-    return () => { if (url) URL.revokeObjectURL(url); };
+    return () => { if (url && made.current.delete(url)) URL.revokeObjectURL(url); };
   }, [outcome]);
+  useEffect(() => { const live = made.current; return () => { for (const url of live) URL.revokeObjectURL(url); live.clear(); }; }, []);
   useEffect(() => {
     if (!format) return;
     const abort = new AbortController();
     render(format, text, excalidrawAssets, abort.signal).then(rendered => {
       if (abort.signal.aborted) return;
       const url = URL.createObjectURL(new Blob([rendered.svg], { type: 'image/svg+xml' }));
+      made.current.add(url);
       setOutcome({ text, format, assets: excalidrawAssets, state: { kind: 'drawn', rendered, url } });
       read.current?.(rendered.drawing, { blocked: rendered.blocked });
     }, (error: unknown) => {
