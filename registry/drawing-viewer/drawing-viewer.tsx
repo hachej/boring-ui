@@ -70,7 +70,8 @@ export function DrawingViewer({ text, path, format: given, title, onRead, excali
   const made = useRef(new Set<string>());
   useEffect(() => {
     const url = outcome?.state.kind === 'drawn' ? outcome.state.url : undefined;
-    return () => { if (url && made.current.delete(url)) URL.revokeObjectURL(url); };
+    const live = made.current;
+    return () => { if (url && live.delete(url)) URL.revokeObjectURL(url); };
   }, [outcome]);
   useEffect(() => { const live = made.current; return () => { for (const url of live) URL.revokeObjectURL(url); live.clear(); }; }, []);
   useEffect(() => {
