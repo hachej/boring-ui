@@ -158,6 +158,30 @@ test('file tree renders in StrictMode, expands by keyboard and reads history wit
   await t.test('folder rows do not repeat the generic kind as metadata', () => {
     assert.equal(Boolean(directory.querySelector('[data-file-meta]')), false);
   });
+  await t.test('decorate shows a status per row; without it no row is decorated (D-1374)', async () => {
+    assert.equal(element.querySelector('[data-file-badge], [data-file-detail]'), null);
+    const g = fixture(t, { list: async () => ({ entries: ['lu.md', 'attente.md', 'revoir.md', 'brouillon.md', 'plain.md'].map(entry) }) });
+    const states = {
+      'lu.md': { badge: { label: 'Lu', tone: 'success' }, detail: '12 lignes' },
+      'attente.md': { badge: { label: 'En attente de lecture', tone: 'warning' } },
+      'revoir.md': { badge: { label: 'À revoir', tone: 'danger' } },
+      'brouillon.md': { badge: { label: 'Brouillon', tone: 'neutral' } },
+      'plain.md': null,
+    };
+    const host = window.document.createElement('div'); window.document.body.append(host); const other = createRoot(host);
+    await act(async () => other.render(createElement(FileTree, { components: fileTreeComponents, variant: 'list', revisionProvider: g.binding, decorate: e => states[e.path] })));
+    for (let i = 0; i < 50 && !host.querySelector('[data-path="plain.md"]'); i++) await act(async () => { await new Promise(r => setTimeout(r, 10)); });
+    const row = path => host.querySelector(`[role=treeitem][data-path="${path}"]`);
+    for (const [path, tone, label] of [['lu.md', 'success', 'Lu'], ['attente.md', 'warning', 'En attente de lecture'], ['revoir.md', 'danger', 'À revoir'], ['brouillon.md', 'neutral', 'Brouillon']]) {
+      const badge = row(path).querySelector('[data-file-badge]');
+      assert.ok(badge, path); assert.equal(badge.textContent, label); assert.equal(badge.getAttribute('data-tone'), tone);
+      assert.equal(badge.getAttribute('role'), 'note'); assert.equal(badge.getAttribute('aria-label'), `${path}: ${label}`);
+    }
+    assert.equal(row('lu.md').querySelector('[data-file-detail]').textContent, '12 lignes');
+    assert.equal(row('attente.md').querySelector('[data-file-detail]'), null);
+    assert.equal(row('plain.md').querySelector('[data-file-badge], [data-file-detail]'), null);
+    await act(async () => other.unmount()); host.remove();
+  });
   await act(async () => directory.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
   assert.equal(directory.getAttribute('aria-expanded'), 'true');
   await t.test('complete provider listings show the folder child count', () => {
