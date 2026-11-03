@@ -2,8 +2,9 @@
 
 import '@hachej/boring-ui-kit/file-tree.css';
 import { FileTree as PackageFileTree, FileTreeView as PackageFileTreeView } from '@hachej/boring-ui-kit/file-tree-view';
-import type { FileTreeComponents, FileTreeActionsProps, FileTreeButtonProps, FileTreeDialogProps, FileTreeVersionsProps, FileTreeProps as PackageFileTreeProps, FileTreeViewProps as PackageFileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';
+import type { FileTreeComponents, FileTreeActionsProps, FileTreeBadgeProps, FileTreeButtonProps, FileTreeDialogProps, FileTreeVersionsProps, FileTreeProps as PackageFileTreeProps, FileTreeViewProps as PackageFileTreeViewProps } from '@hachej/boring-ui-kit/file-tree-view';
 import { useRef } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
@@ -66,10 +67,15 @@ function FileTreeEmpty({ icon, title, description, className, children }: Parame
   </Empty>;
 }
 
+// The tone picks the shadcn variant; success and warning take the theme's colour when it has one (file-tree.css).
+function FileTreeBadge({ tone, ...props }: FileTreeBadgeProps) {
+  return <Badge variant={tone === 'danger' ? 'destructive' : tone === 'neutral' ? 'secondary' : 'outline'} {...props} />;
+}
+
 export const fileTreeComponents = {
   Button: LibraryButton, Actions: FileActions, Versions: FileVersions,
   Menu: SidebarMenu, MenuItem: SidebarMenuItem, MenuSub: SidebarMenuSub, Input, Separator: () => <Separator />,
-  Collapsible, CollapsibleTrigger, CollapsibleContent, Empty: FileTreeEmpty, Dialog: FileTreeModal,
+  Collapsible, CollapsibleTrigger, CollapsibleContent, Empty: FileTreeEmpty, Dialog: FileTreeModal, Badge: FileTreeBadge,
   Progress: ({ value, 'aria-label': label }: { readonly value: number | null; readonly 'aria-label': string }) => <Progress value={value} aria-label={label} />,
 } satisfies FileTreeComponents;
 export type FileTreeProps = Omit<PackageFileTreeProps, 'components'>;
@@ -83,4 +89,4 @@ export function FileTreeView(props: FileTreeViewProps) {
 }
 export { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 export type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
-export type { FileDecoration } from '@hachej/boring-ui-kit/file-tree-view';
+export type { FileDecoration, FileDecorationTone } from '@hachej/boring-ui-kit/file-tree-view';

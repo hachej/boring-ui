@@ -201,6 +201,17 @@ export interface FileTreeDialogProps {
   readonly footer: ReactNode;
 }
 /** Host presentation. The registry supplies real shadcn Base UI controls and shared version rows; no primitive fallback. */
+/** A row's status badge, as `decorate` gave it. */
+export interface FileTreeBadgeProps {
+  readonly tone: FileDecorationTone;
+  readonly children: ReactNode;
+  readonly role: 'note';
+  readonly 'aria-label': string;
+  readonly title: string;
+  readonly 'data-file-badge': '';
+  readonly 'data-tone': FileDecorationTone;
+}
+
 export interface FileTreeComponents {
   readonly Button: (props: FileTreeButtonProps) => ReactNode;
   readonly Actions: (props: FileTreeActionsProps) => ReactNode;
@@ -221,6 +232,8 @@ export interface FileTreeComponents {
   readonly Empty: (props: { readonly icon?: ReactNode; readonly title: ReactNode; readonly description?: ReactNode; readonly className?: string; readonly children?: ReactNode }) => ReactNode;
   /** The host's shadcn `Progress` (`value` 0–100, `null` while the total is unknown), for uploads through `uploadBlob`. */
   readonly Progress?: (props: { readonly value: number | null; readonly 'aria-label': string }) => ReactNode;
+  /** The host's shadcn `Badge` for a row's status (`decorate`); without it the status is plain text. */
+  readonly Badge?: (props: FileTreeBadgeProps) => ReactNode;
   /** The host's shadcn `Dialog`. Without it the tree offers neither Delete nor Move to… (dragging a file onto a folder still moves it). */
   readonly Dialog?: (props: FileTreeDialogProps) => ReactNode;
 }
@@ -237,9 +250,10 @@ export interface UploadProgress { readonly loaded: number; readonly total: numbe
  */
 export type UploadBlob = (file: globalThis.File, options: { readonly signal: AbortSignal; readonly onProgress: (progress: UploadProgress) => void }) => Promise<unknown>;
 
+export type FileDecorationTone = 'neutral' | 'success' | 'warning' | 'danger';
 /** A row's status from the host (D-1374): a badge, read with the file's name, and a short secondary text. */
 export interface FileDecoration {
-  readonly badge?: { readonly label: string; readonly tone: 'neutral' | 'success' | 'warning' | 'danger' };
+  readonly badge?: { readonly label: string; readonly tone: FileDecorationTone };
   readonly detail?: string;
 }
 
@@ -322,7 +336,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     else if (mutation.kind === 'delete') changed.current.onDeleted?.(mutation.path);
     return mutation;
   };
-  const { Button, Actions, Menu: SidebarMenu, MenuItem: SidebarMenuItem, MenuSub: SidebarMenuSub, Input, Collapsible: CollapsibleRoot, CollapsibleTrigger, CollapsibleContent, Empty, Progress, Dialog } = components;
+  const { Button, Actions, Menu: SidebarMenu, MenuItem: SidebarMenuItem, MenuSub: SidebarMenuSub, Input, Collapsible: CollapsibleRoot, CollapsibleTrigger, CollapsibleContent, Empty, Progress, Dialog, Badge } = components;
   const can = {
     // The client's methods turn the actions on; capabilities, when the host passes them, only narrow.
     rename: controller.actions.rename && (capabilities === undefined || capabilities.effective.includes('rename')),
@@ -565,7 +579,10 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
             // Focus moved somewhere on purpose cancels; a closing menu that drops focus (no related target) does not.
             onBlur={event => { if (event.relatedTarget) setRenaming(current => current?.path === entry.path ? undefined : current); }} />
         </span> : folder ? <CollapsibleTrigger render={button} /> : button}
-        {decoration?.badge && !editing && <span data-file-badge data-tone={decoration.badge.tone} role="note" aria-label={`${name}: ${decoration.badge.label}`} title={decoration.badge.label}>{decoration.badge.label}</span>}
+        {decoration?.badge && !editing && (() => {
+          const badge: FileTreeBadgeProps = { tone: decoration.badge.tone, children: decoration.badge.label, role: 'note', 'aria-label': `${name}: ${decoration.badge.label}`, title: decoration.badge.label, 'data-file-badge': '', 'data-tone': decoration.badge.tone };
+          return Badge ? <Badge {...badge} /> : <span role={badge.role} aria-label={badge['aria-label']} title={badge.title} data-file-badge="" data-tone={badge.tone}>{badge.children}</span>;
+        })()}
         {(status?.kind === 'pending' || mutation?.state.kind === 'pending') && <LoaderCircle data-upload-spinner={status ? '' : undefined} data-mutation-spinner={mutation ? '' : undefined} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
         {status?.kind === 'failed' && <Button type="button" variant="ghost" data-upload-retry aria-label={status.retryLabel} onClick={status.retry}>{status.retryLabel}</Button>}
         {mutation && mutationFailed && <Button type="button" variant="ghost" size="icon" data-mutation-dismiss aria-label={labels.dismiss(entry.path)} title={labels.dismiss(entry.path)}
