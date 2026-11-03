@@ -64,20 +64,25 @@ export function DrawingViewer({ text, path, format: given, title, onRead, excali
     : outcome && outcome.text === text && outcome.format === format && outcome.assets === excalidrawAssets ? outcome.state : { kind: 'loading' };
   const read = useRef(onRead);
   useLayoutEffect(() => { read.current = onRead; });
+  // A drawn outcome's image lives until another outcome replaces it or the viewer unmounts, so going back to an earlier text never shows a
+  // revoked image; that text is drawn again anyway.
+  useEffect(() => {
+    const url = outcome?.state.kind === 'drawn' ? outcome.state.url : undefined;
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [outcome]);
   useEffect(() => {
     if (!format) return;
     const abort = new AbortController();
-    let url: string | undefined;
     render(format, text, excalidrawAssets, abort.signal).then(rendered => {
       if (abort.signal.aborted) return;
-      url = URL.createObjectURL(new Blob([rendered.svg], { type: 'image/svg+xml' }));
+      const url = URL.createObjectURL(new Blob([rendered.svg], { type: 'image/svg+xml' }));
       setOutcome({ text, format, assets: excalidrawAssets, state: { kind: 'drawn', rendered, url } });
       read.current?.(rendered.drawing, { blocked: rendered.blocked });
     }, (error: unknown) => {
       if (abort.signal.aborted) return;
       setOutcome({ text, format, assets: excalidrawAssets, state: { kind: 'error', reason: error instanceof DrawingError ? error.reason : 'renderer' } });
     });
-    return () => { abort.abort(); if (url) URL.revokeObjectURL(url); };
+    return () => abort.abort();
   }, [format, text, excalidrawAssets]);
   return <section data-boring="drawing-viewer" data-state={state.kind} data-format={format} data-blocked={state.kind === 'drawn' ? state.rendered.blocked.length : undefined} aria-label={title ?? labels.kind} aria-busy={state.kind === 'loading' || undefined}
     className="flex w-full min-w-0 flex-col gap-3 px-3 pt-2 pb-4 sm:px-6">

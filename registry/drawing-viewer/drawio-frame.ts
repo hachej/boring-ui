@@ -35,7 +35,7 @@ const BOOT = String.raw`(function () {
   }
   function colour(value) { return value && value !== 'none' ? String(value) : undefined; }
   function read(graph) {
-    var model = graph.getModel(), view = graph.view, scale = view.scale, dx = view.translate.x, dy = view.translate.y, shapes = [], arrows = [], labels = {};
+    var model = graph.getModel(), view = graph.view, scale = view.scale, dx = view.translate.x, dy = view.translate.y, shapes = [], arrows = [], labels = Object.create(null);
     var place = function (state) { return { x: state.x / scale - dx, y: state.y / scale - dy, width: state.width / scale, height: state.height / scale }; };
     var label = function (cell) { return plain(graph.convertValueToString(cell), graph.isHtmlLabel(cell)) || undefined; };
     for (var id in model.cells) {
