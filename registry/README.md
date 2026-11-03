@@ -454,6 +454,10 @@ A descriptor is metadata, **not a grant to read bytes**. The host owns the read 
 
 `ViewerWindowProvider value={{ headerLayout: 'stacked' }}` keeps a compact, left-aligned title and facts with the menu and Close on one row, and places viewer controls directly below in the same frame. The default `inline` layout is unchanged. The workspace demo uses `stacked` inside `ArtifactWorkspace variant="inset"`, with 44px header targets. It does not portal the file header outside its card.
 
+## Which model answered, in `pi-chat` developer mode
+
+With `mode="developer"`, every assistant reply gets one muted line beneath it (`data-testid="answered-by"`): « answered by provider/model ». `answeredBy={reply => record}` gives the host's per-turn record `{ provider, model, fallback? }` for a reply (`reply` is the same `ReplyRef` `replyFooter` receives); when it returns nothing, the line names the reply's own message `provider/model`. `fallback` adds « · fallback: reason » (`data-testid="answered-fallback"`). No model info, no line. User messages and `mode="expert"` never show it. Labels `answeredBy` and `answeredFallback`.
+
 ## Reply footer in `pi-chat`
 
 Pass `replyFooter={reply => <small>…</small>}` to `PiChat` or `AmbientChat` and every finished reply gets that node under its actions, including earlier replies in the same transcript. Archived replies keep passive copy and footer content, but cannot revive question answers, fork controls or host mutation actions. `reply` is the

@@ -25,7 +25,7 @@ import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
 import { useChatText } from './labels';
 import { cn } from '../utils/utils';
-import type { ReplyRef } from './config';
+import type { AnsweredBy, ReplyRef } from './config';
 import { Message, MessageContent, MessageFooter } from '@/components/ui/message';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { MessageScrollerItem } from '@/components/ui/message-scroller';
@@ -87,8 +87,18 @@ export interface RowContext {
   readonly replyError?: ((reply: ReplyRef) => ReactNode) | undefined;
   /** A line under a finished reply (not while it streams, runs a tool or waits to retry), after its actions (a host shows which model answered and how long it took). */
   readonly replyFooter?: ((reply: ReplyRef) => ReactNode) | undefined;
+  /** Developer mode: the host's per-turn `answeredBy` for a reply; absent, the line under the reply names the message's own provider/model. */
+  readonly answeredBy?: ((reply: ReplyRef) => AnsweredBy | undefined) | undefined;
   /** Fork the conversation after a settled reply (its last native entry): adds a Fork button next to Copy. */
   readonly onFork?: ((entryId: string) => void) | undefined;
+}
+
+function AnsweredByLine({ answered }: { readonly answered: AnsweredBy }) {
+  const { labels } = useChatText();
+  return <p data-testid="answered-by" className="m-0 text-xs text-muted-foreground">
+    {labels.answeredBy(`${answered.provider}/${answered.model}`)}
+    {answered.fallback && <span data-testid="answered-fallback"> · {labels.answeredFallback(answered.fallback)}</span>}
+  </p>;
 }
 
 const replyRef = (row: Extract<Row, { type: 'assistant' }>): ReplyRef => ({ key: row.key, text: row.text, entryId: row.entryId, timestamp: row.timestamp, model: row.model, durationMs: row.durationMs });
@@ -420,6 +430,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
         : null;
       const unread = nativeActions && row.text ? context.unread?.(replyRef(row)) : null;
       const footer = nativeActions && !row.active && row.text ? context.replyFooter?.(replyRef(row)) : null;
+      const answered = context.developer ? context.answeredBy?.(replyRef(row)) ?? (row.model ? { provider: row.model.provider, model: row.model.modelId } : undefined) : undefined;
       return <article data-row-id={row.key} data-role="assistant" aria-live={row.historical ? 'off' : undefined} data-streaming={row.streaming ? 'true' : undefined} className="group/message">
         <Message><MessageContent>
         <div className="flex flex-col gap-3">
@@ -470,6 +481,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
           {context.onFork && row.entryId && <Button size="icon-sm" variant="ghost" aria-label={labels.fork} title={labels.forkHint} data-testid="fork-reply"
             onClick={() => context.onFork!(row.entryId!)}><icons.fork data-icon="inline-start" aria-hidden="true" /></Button>}
           {host}</div>}
+        {answered && <AnsweredByLine answered={answered} />}
         {footer != null && footer !== false && <MessageFooter>{footer}</MessageFooter>}
         </MessageContent></Message>
       </article>;

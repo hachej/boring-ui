@@ -196,6 +196,8 @@ export const frenchChatLabels: ChatLabels = {
   forkHint: 'Repartir d’ici : une nouvelle conversation avec les messages jusqu’à cette réponse',
   responseFailed: 'La réponse a échoué',
   interrupted: 'Réponse interrompue',
+  answeredBy: model => `répondu par ${model}`,
+  answeredFallback: reason => `repli : ${reason}`,
   thinking: 'Réflexion…',
   openImage: 'Ouvrir l’image jointe',
   imageAttachment: 'Image jointe',

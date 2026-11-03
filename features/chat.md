@@ -19,6 +19,7 @@
 - `chat-voice-untranscribed` audio-only recovery shows a localized non-playback missing-transcript status, including retained messages after reload. `registry/pi-chat/message.tsx`, `labels.ts`, `labels-fr.ts`.
 - `chat-kind-skill` a registered leading `/skill` stays first in native submissions ahead of hidden app tokens, including unfinished quoted input. `packages/ui/src/chat-text.ts`, `registry/pi-chat/composer.tsx`.
 - `chat-kind-mentions` registered app kinds show readable removable chips, hide their tokens from editable text and retain them in native submissions; sent kind/file mentions share text-line alignment. `registry/pi-chat/composer.tsx`, `packages/ui/src/chat-text.ts`.
+- `chat-answered-by` `mode="developer"`: one muted line under each assistant reply, « answered by provider/model » from the host's per-turn `answeredBy` (PiChat prop), else the reply's own message provider/model, plus « fallback: reason » when `answeredBy.fallback` is set; nothing without model info, never on user messages, unchanged in expert mode (D-1222). `registry/pi-chat/message.tsx`, `labels.ts`, `labels-fr.ts`.
 - `chat-pickers` model and effort menus. `registry/pi-chat-pickers/pickers.tsx`.
 - `chat-cards` question (`ask_user`), approval, sub-agent and artifact cards. `registry/pi-chat-question/`, `pi-chat-approval/`, `pi-chat-subagent/`, `pi-artifacts/`.
 - `chat-conversations` History with New, rename, archive, fork over the host's conversations handler (`useConversationsClient`). `packages/ui/src/chat-react-conversations.ts`, `registry/pi-chat/history.tsx`; old hook imports re-export for one release.
@@ -40,6 +41,7 @@
 
 Preconditions: `npm run build`, Chromium; journeys use a scripted fake model unless stated.
 
+- **Which model answered.** `chat-answered-by`: `node --test test/ui/pi-chat-answered-by.test.mjs` (developer mode shows « answered by provider/model », and « fallback: reason » only when set; no line without model info, on a user message, or in expert mode).
 - **Transcript and composer.** `chat-transcript`, `chat-composer`: `npm run workspace-app:journey`; send a message, a Markdown reply renders, a queued prompt can be edited.
 - **Instant send.** `chat-send-echo`, `chat-send-timing`: `node --test test/packages/ui-chat-send-echo.test.mjs` (a slow fake host: the message is in the snapshot at once, one copy when the server's arrives, a failed send is kept with Retry, the steps are timed). In a browser, send a message and read `data-send-state` on the `[data-role="user"]` row.
 - **Projected watch.** `chat-projected-watch`: `node --test test/packages/agent-chat-transport-projected.test.mjs` (updates are batches, the same size with 2 or 30 earlier turns, the replica equals the projected view).
