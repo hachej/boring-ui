@@ -747,7 +747,7 @@ test('the file tree hides what the host says the caller cannot write: writable t
     assert.equal(draggable('public/notice.md'), false);
     await key(row('public/notice.md'), 'F2'); assert.equal(element.querySelector('[data-file-rename]'), null);
     await key(row('public/notice.md'), 'Delete'); assert.equal(window.document.querySelector('[role=alertdialog], [role=dialog]'), null);
-    assert.equal(await accepts(row('public'), 'public/notice.md'), false, 'a read-only folder is no drop target');
+    assert.equal(await accepts(row('public'), 'notes/elsewhere.md'), false, 'a read-only folder is no drop target');
     assert.deepEqual(member.listed.map(request => request.directory), ['', 'public'], 'each listing names its folder');
   });
 
@@ -799,4 +799,41 @@ test('the file tree hides what the host says the caller cannot write: writable t
     await key(row('public'), 'ArrowRight'); await settle(() => row('public/notice.md'));
     assert.ok(row('public/notice.md'));
   });
+});
+
+test('a folder keeps its read-only word while read again; only a host 403 makes it read-only; a 404 clears its subtree and search rows (D-1436)', async t => {
+  const { RevisionError } = await import('@hachej/boring-files/revision');
+  const dir = path => ({ path, kind: 'directory', size: 0 });
+  let answer = async () => ({ entries: [], writable: false });
+  const { controller } = fixture(t, { list: async ({ directory }) => directory === 'docs' ? answer() : { entries: [dir('docs'), dir('other')] },
+    search: async () => ({ entries: [dir('docs/deep'), entry('docs/deep/a.md'), entry('other/b.md')] }) });
+  const listing = path => controller.getSnapshot().directories.get(path);
+  await controller.refresh(); await controller.toggle('docs');
+  assert.equal(listing('docs').writable, false);
+  const slow = later(); answer = () => slow.promise;
+  const reading = controller.refresh('docs');
+  assert.equal(listing('docs').kind, 'loading'); assert.equal(listing('docs').writable, false, 'a reload keeps the read-only word');
+  slow.resolve({ entries: [entry('docs/a.md')] }); await reading;
+  assert.equal(listing('docs').writable, undefined, 'a fresh page without the flag is the host saying nothing');
+  answer = async () => { throw new RevisionError('denied', 'Binding changed', 409); };
+  await controller.refresh('docs');
+  assert.equal(listing('docs').kind, 'error', 'a 409 binding mismatch stays an error');
+  answer = async () => { throw new RevisionError('denied', 'Not for this caller', 403); };
+  await controller.refresh('docs');
+  assert.deepEqual({ ...listing('docs') }, { kind: 'ready', entries: [], writable: false }, 'a host 403 is a read-only folder');
+  answer = async () => { throw new Error('Host down'); };
+  await controller.refresh('docs');
+  assert.equal(listing('docs').kind, 'error'); assert.equal(listing('docs').writable, false, 'a failed read keeps the read-only word');
+  await controller.search('a');
+  // A child read still pending when its parent turns out gone must not bring the subtree back.
+  const child = later(); answer = async () => { throw new RevisionError('missing', 'Not there', 404); };
+  const list = controller.revisionProvider.list;
+  controller.revisionProvider.list = async request => request.directory === 'docs/deep' ? child.promise : list(request);
+  const lateChild = controller.refresh('docs/deep');
+  await controller.refresh('docs');
+  assert.equal(listing('docs'), undefined); assert.equal(controller.getSnapshot().expanded.has('docs'), false);
+  assert.deepEqual(controller.getSnapshot().directories.get('').entries.map(item => item.path), ['other']);
+  assert.deepEqual(controller.getSnapshot().search.entries.map(item => item.path), ['other/b.md'], 'search rows under a gone folder leave too');
+  child.resolve({ entries: [entry('docs/deep/a.md')] }); await lateChild;
+  assert.equal(listing('docs/deep'), undefined, 'the late child read is fenced');
 });

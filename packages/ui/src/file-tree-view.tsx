@@ -324,7 +324,7 @@ export interface FileTreeViewProps extends Omit<FileTreeProps, 'revisionProvider
 }
 
 type UploadRow = { readonly kind: 'pending'; readonly size: number }
-  | { readonly kind: 'failed'; readonly size: number; readonly reason: string; readonly retryLabel: string; readonly retry: () => void };
+  | { readonly kind: 'failed'; readonly size: number; readonly reason: string; readonly retryLabel: string; readonly retry?: () => void };
 
 /** Renders a borrowed controller, for a workspace whose chat and tree share upload state. */
 export function FileTreeView({ components, controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refresh = true, variant = 'list', title, onClose, refreshKey, historyKey, maxBytes, tooLarge, uploadBlob, capabilities, onRenamed, onDeleted, decorate }: FileTreeViewProps) {
@@ -350,8 +350,9 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     if (Object.is(shownKey.current, refreshKey)) return;
     shownKey.current = refreshKey;
     const { query, expanded } = controller.getSnapshot();
+    // Open folders are read again while searching too: their listing carries the host's word on writing in them.
     if (query) void controller.search(query);
-    else for (const directory of ['', ...expanded]) void controller.refresh(directory);
+    for (const directory of ['', ...expanded]) void controller.refresh(directory);
   }, [controller, refreshKey]);
   const tree = useRef<HTMLUListElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -400,6 +401,13 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
       catch (error) { setLocalFailures(previous => new Map(previous).set(path, { file, reason: error instanceof Error ? error.message : labels.uploadFailed(file.name) })); }
     }
   };
+  // The host's per-folder word (`FilePage.writable`): a folder it marks read-only offers no upload, retry, rename, move, delete or drop.
+  const writableIn = (folder: string) => folderWritable(state.directories, folder);
+  const isListedFolder = (path: string) => [...state.directories.values(), state.search].some(listing => listing.entries.some(entry => entry.path === path && entry.kind === 'directory'));
+  /** A row changes its folder (and a folder row its own content): both must be writable. */
+  const pathWritable = (path: string, folder = isListedFolder(path)) => writableIn(parentPath(path)) && (!folder || writableIn(path));
+  const entryWritable = (entry: FileEntry) => pathWritable(entry.path, entry.kind === 'directory');
+  const canUpload = upload && writableIn(uploadDirectory);
   const uploadRows = new Map<string, UploadRow>();
   for (const item of state.uploads) {
     if (item.state.kind === 'pending') uploadRows.set(item.path, { kind: 'pending', size: item.size });
@@ -407,15 +415,12 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     else uploadRows.set(item.path, { kind: 'failed', size: item.size,
       reason: item.state.result.reason,
       retryLabel: item.state.result.kind === 'unknown' ? labels.checkUpload : labels.retry,
-      retry: () => { void controller.retry(item.operationId).catch(error => setUploadError(error instanceof Error ? error.message : labels.uploadStatusUnavailable)); } });
+      // Checking an unconfirmed upload writes nothing; trying a refused one again writes, so a read-only folder offers only the first.
+      ...(item.state.result.kind === 'unknown' || writableIn(parentPath(item.path)) ? {
+        retry: () => { void controller.retry(item.operationId).catch(error => setUploadError(error instanceof Error ? error.message : labels.uploadStatusUnavailable)); } } : {}) });
   }
   for (const [path, failure] of localFailures) uploadRows.set(path, { kind: 'failed', size: failure.file.size, reason: failure.reason,
-    retryLabel: labels.retry, retry: () => { void uploadFiles([failure.file]); } });
-  // The host's per-folder word (`FilePage.writable`): a folder it marks read-only offers no upload, rename, move, delete or drop.
-  const writableIn = (folder: string) => folderWritable(state.directories, folder);
-  /** A row changes its folder (and a folder row its own content): both must be writable. */
-  const entryWritable = (entry: FileEntry) => writableIn(parentPath(entry.path)) && (entry.kind !== 'directory' || writableIn(entry.path));
-  const canUpload = upload && writableIn(uploadDirectory);
+    retryLabel: labels.retry, ...(writableIn(parentPath(path)) ? { retry: () => { void uploadFiles([failure.file]); } } : {}) });
   const uploadButton = <Button type="button" variant="secondary" data-file-upload onClick={() => fileInput.current?.click()}><Upload aria-hidden="true" />{labels.upload}</Button>;
   const mutationRows = new Map<string, FileMutation>();
   for (const item of state.mutations) if (item.state.kind === 'pending' || item.state.result.kind !== 'committed') mutationRows.set(item.path, item);
@@ -438,7 +443,8 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
   };
   const commitRename = (path: string, value: string) => {
     const name = value.trim();
-    if (!name || name === baseName(path)) { setRenaming(undefined); focus(path); return; }
+    // The folder may have become read-only while the name was typed: nothing is sent.
+    if (!name || name === baseName(path) || !pathWritable(path)) { setRenaming(undefined); focus(path); return; }
     const to = parentPath(path) ? `${parentPath(path)}/${name}` : name;
     if (name.includes('/')) { setRenaming(current => ({ ...current, path, error: labels.invalidName })); return; }
     setRenaming(undefined); focus(path);
@@ -446,7 +452,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
   };
   const moveTo = (path: string, folder: string) => {
     setAsking(undefined);
-    if (parentPath(path) === folder) return;
+    if (parentPath(path) === folder || !pathWritable(path) || !writableIn(folder)) return;
     void controller.move(path, folder).then(report).catch(refused(path));
   };
   const closeAsking = () => { const path = asking?.path; setAsking(undefined); if (path) requestAnimationFrame(() => focus(path)); };
@@ -459,7 +465,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     onDrop: (event: DragEvent) => {
       const path = draggedPath(event); if (path === undefined) return;
       event.preventDefault(); event.stopPropagation(); setDropTarget(undefined); setDragged(undefined);
-      if (path && parentPath(path) !== folder) void controller.move(path, folder).then(report).catch(refused(path));
+      if (path && parentPath(path) !== folder && pathWritable(path)) void controller.move(path, folder).then(report).catch(refused(path));
     },
   } : {};
 
@@ -551,7 +557,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
         {decoration?.detail && <span data-file-detail>{decoration.detail}</span>}
       </span>
     </Button>;
-    const editing = renaming?.path === entry.path && can.rename;
+    const editing = renaming?.path === entry.path && can.rename && entryWritable(entry);
     const mutationFailed = mutation?.state.kind === 'settled';
     const item = <SidebarMenuItem key={entry.path} role="treeitem" data-path={entry.path} data-blob-type={blob?.type} data-upload-state={status?.kind}
       data-mutation-state={mutation ? mutationFailed ? 'failed' : 'pending' : undefined} data-drop-target={folder && dropTarget === entry.path ? 'true' : undefined}
@@ -589,7 +595,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
           return Badge ? <Badge {...badge} /> : <span role={badge.role} aria-label={badge['aria-label']} title={badge.title} data-file-badge="" data-tone={badge.tone}>{badge.children}</span>;
         })()}
         {(status?.kind === 'pending' || mutation?.state.kind === 'pending') && <LoaderCircle data-upload-spinner={status ? '' : undefined} data-mutation-spinner={mutation ? '' : undefined} className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
-        {status?.kind === 'failed' && <Button type="button" variant="ghost" data-upload-retry aria-label={status.retryLabel} onClick={status.retry}>{status.retryLabel}</Button>}
+        {status?.kind === 'failed' && status.retry && <Button type="button" variant="ghost" data-upload-retry aria-label={status.retryLabel} onClick={status.retry}>{status.retryLabel}</Button>}
         {mutation && mutationFailed && <Button type="button" variant="ghost" size="icon" data-mutation-dismiss aria-label={labels.dismiss(entry.path)} title={labels.dismiss(entry.path)}
           onClick={() => controller.dismiss(mutation.operationId)}><X aria-hidden="true" /></Button>}
         {!temporary && !status && !editing && mutation?.state.kind !== 'pending' && (!folder || changeable && (can.rename || can.delete)) && <FileActions Actions={Actions} controller={controller} entry={entry} labels={labels}
@@ -611,7 +617,9 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
   const paginated = visibleListing?.kind === 'ready' && visibleListing.cursor !== undefined;
   const rootDrop = dropHandlers('');
   const dialogPath = asking?.path ?? '';
-  const dialogIsFolder = [...state.directories.values(), state.search].some(listing => listing.entries.some(entry => entry.path === dialogPath && entry.kind === 'directory'));
+  const dialogIsFolder = isListedFolder(dialogPath);
+  // A dialog opened before its folder became read-only closes, and its confirm checks again.
+  const askingAllowed = asking !== undefined && pathWritable(asking.path, dialogIsFolder);
   const folders = asking?.kind === 'move' ? [...new Set(['', ...[...state.directories.values(), state.search].flatMap(listing => listing.entries.filter(entry => entry.kind === 'directory').map(entry => entry.path))])].filter(folder => folder !== dialogPath && !folder.startsWith(`${dialogPath}/`) && writableIn(folder)).sort() : [];
   return <section data-boring="file-tree" data-variant={variant} data-dropping={dropping || undefined} data-drop-target={dropTarget === '' ? 'true' : undefined} className={className} aria-label={labels.region}
     onDragEnter={event => { rootDrop.onDragEnter?.(event); if (canUpload && event.dataTransfer.types.includes('Files')) { event.preventDefault(); dragDepth.current++; setDropping(true); } }}
@@ -652,14 +660,14 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
       {upload.path}: {upload.state.kind === 'pending' ? labels.uploading : upload.state.result.kind === 'committed' ? labels.saved : upload.state.result.reason}
     </li>)}{[...localFailures].map(([path, failure]) => <li key={path}>{path}: {failure.reason}</li>)}
     {state.mutations.map(item => <li key={item.operationId} data-operation={item.operationId}>{item.path}: {mutationReason(item)}</li>)}</ul>
-    {Dialog && <Dialog open={asking !== undefined} onOpenChange={open => { if (!open) closeAsking(); }}
+    {Dialog && <Dialog open={askingAllowed} onOpenChange={open => { if (!open) closeAsking(); }}
       title={asking?.kind === 'move' ? labels.moveTitle(baseName(dialogPath)) : labels.deleteTitle(baseName(dialogPath))}
       description={asking?.kind === 'move' ? labels.moveDescription : dialogIsFolder ? labels.deleteFolderDescription : labels.deleteDescription}
       footer={asking?.kind === 'delete' ? <>
         <Button type="button" variant="outline" data-confirm="cancel" onClick={closeAsking}>{labels.cancel}</Button>
         <Button type="button" variant="destructive" data-confirm="delete" onClick={() => {
           const path = dialogPath; setAsking(undefined);
-          void controller.remove(path).then(report).catch(refused(path));
+          if (pathWritable(path, dialogIsFolder)) void controller.remove(path).then(report).catch(refused(path));
         }}><Trash2 aria-hidden="true" />{labels.delete}</Button>
       </> : <Button type="button" variant="outline" data-confirm="cancel" onClick={closeAsking}>{labels.cancel}</Button>}>
       {asking?.kind === 'move' && <ul className="file-tree-destinations" aria-label={labels.moveTitle(baseName(dialogPath))}>{folders.map(folder => <li key={folder}>

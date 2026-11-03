@@ -83,8 +83,11 @@ export interface WorkspaceCatalog {
 }
 
 export class RevisionError extends Error {
-  /** `missing`: the addressed folder or file is not there (or not for this caller): HTTP 404. */
-  constructor(readonly kind: 'denied' | 'unavailable' | 'invalid' | 'aborted' | 'missing', message: string) {
+  /**
+   * `missing`: the addressed folder or file is not there (or not for this caller): HTTP 404. `status`: the HTTP status the host answered,
+   * when it answered one (`connectRevisionProvider` sets it), so a 403 can be told from a 409 binding mismatch, both `denied`.
+   */
+  constructor(readonly kind: 'denied' | 'unavailable' | 'invalid' | 'aborted' | 'missing', message: string, readonly status?: number) {
     super(message);
     this.name = 'RevisionError';
   }
