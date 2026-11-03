@@ -479,7 +479,8 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
               </MessageScrollerContent>
               </div>
             </MessageScrollerViewport>
-            {!isAtBottom && <MessageScrollerButton data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}
+            {/* Its own row under the messages, never over them (D-1379): the arrow used to cover the reply's last lines. */}
+            {!isAtBottom && <div data-testid="transcript-navigation" className="flex shrink-0 items-center justify-center py-1"><MessageScrollerButton className="static inset-auto translate-x-0" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton></div>}
           </MessageScroller>
         </div>
       </div>}

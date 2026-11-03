@@ -5,6 +5,7 @@
 ## Sub-features
 
 - `ambient-bar` bar, expanded window and minimised pill over one controller, draggable, position remembered. `registry/pi-ambient/ambient.tsx`.
+- `ambient-jump-latest` scrolled up, the down arrow sits in its own row under the messages and covers no text; it scrolls back to the end. `registry/pi-ambient/ambient.tsx`.
 - `ambient-notifications` toasts for background conversations and tasks (`createNotificationStore`, `watchConversation`). `registry/pi-ambient/notifications.tsx`.
 - `ambient-browser-notify` optional browser notifications. `registry/pi-ambient/browser-notify.ts`.
 - `ambient-artifacts` an artifact opens inside the window (`artifactPanel`) or in the host (`artifactTarget="host"`). `registry/pi-ambient/ambient.tsx`.
@@ -19,6 +20,7 @@
 Preconditions: `npm run build`, Chromium.
 
 - **Bar.** `ambient-bar`: `npm run ambient:journey` (or `ambient:journey:scripted` without a model): type, expand, minimise, drag, reload; position and conversation persist.
+- **Jump to latest.** `ambient-jump-latest`: the scripted journey scrolls the expanded window up, checks the arrow is outside the messages' box, clicks it and is back at the end (`06b-scrolled-up.png`).
 - **Notifications.** `ambient-notifications`: the journey's background task raises a toast.
 - **Browser notify.** `ambient-browser-notify`: grant the permission in the journey page; a notification fires when hidden.
 - **Artifacts.** `ambient-artifacts`: click an artifact card; the window widens with the panel.
