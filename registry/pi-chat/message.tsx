@@ -108,7 +108,7 @@ function ImageThumbnails({ images, onOpenImage }: { readonly images: readonly Im
   if (!images.length) return null;
   return <div data-testid="message-images" data-slot="message-images" className={cn('grid max-w-full gap-2', images.length === 1 ? 'w-60' : 'w-120 grid-cols-2')}>
     {images.map((image, at) => <div key={at} className="relative min-h-12 min-w-12 self-start">
-      <MessageImage image={image} alt={labels.imageAttachment} />
+      <MessageImage key={imageSource(image) ?? ''} image={image} alt={labels.imageAttachment} />
       <Button variant="link" className="absolute inset-0 h-auto min-h-12 min-w-12 w-full" data-testid="message-image" aria-label={images.length > 1 ? `${labels.openImage}, ${labels.imagePosition(at + 1, images.length)}` : labels.openImage} onClick={() => onOpenImage?.(image, images)} />
     </div>)}
   </div>;
@@ -116,11 +116,12 @@ function ImageThumbnails({ images, onOpenImage }: { readonly images: readonly Im
 
 /** One photo of a message; a linked photo the host no longer serves (a 404) shows a placeholder in its place. */
 function MessageImage({ image, alt }: { readonly image: ImageContent; readonly alt: string }) {
+  // Keyed by its source by the caller: a new source starts again, a failed one is not requested again on every render.
   const src = imageSource(image);
-  const [failed, setFailed] = useState<string>();
-  if (!src || failed === src) return <div data-testid="message-image-missing" role="img" aria-label={alt}
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <div data-testid="message-image-missing" role="img" aria-label={alt}
     className="flex aspect-square w-full items-center justify-center rounded-(--radius-xl) bg-muted text-muted-foreground"><ImageOffIcon aria-hidden="true" /></div>;
-  return <img src={src} alt={alt} onError={() => setFailed(src)} className="block h-auto w-full rounded-(--radius-xl)" />;
+  return <img src={src} alt={alt} onError={() => setFailed(true)} className="block h-auto w-full rounded-(--radius-xl)" />;
 }
 
 /** Inline sent mention; workspace openers and host renderers keep their existing authority. */
