@@ -1199,6 +1199,22 @@ and `parseDiagram(textOrValue)` are exported: the maquette viewer draws its work
 `workflow` may instead be a relative `*.diagram.json` path: the viewer reads it from the maquette's folder through the kind renderer's `read`
 (`ArtifactKindViewProps.read`, passed by the artifact panel) when How it works opens.
 
+## Drawing viewer (`drawing-viewer`)
+
+`DrawingViewer` shows an Excalidraw (`.excalidraw`) or draw.io (`.drawio`) file read-only, drawn by the tool's own renderer on a white page fitted to the shapes: Excalidraw's `restore` and `exportToSvg` (`@excalidraw/excalidraw@0.18.1`, installed with the item), and the official diagrams.net viewer (jgraph/drawio v32.4.1), vendored in the kit as `@hachej/boring-ui-kit/drawio-viewer` and run in a hidden `sandbox="allow-scripts"` frame whose policy allows only its nonce scripts and no network. The result is an SVG image from a blob URL, so nothing in the file runs on the page. Each renderer loads the first time a drawing of its format opens. `drawingKind` / `createDrawingKind({ locale: 'fr', excalidrawAssets })` (« Dessin ») match `.excalidraw` and `.drawio` files; they are not in the `pi-app-kinds` defaults, so add the kind to `artifactKinds` to open drawings in the panel. Feature map: [features/drawing-viewer.md](../features/drawing-viewer.md).
+
+| Prop | Meaning |
+| --- | --- |
+| `text` | The file's text. |
+| `path` | Its name: `.excalidraw`, `.excalidraw.json`, `.drawio`, `.drawio.xml` or `.dio` picks the format; without it the text decides. |
+| `format` | `'excalidraw'` or `'drawio'`, when the app knows better. |
+| `title` | The drawing's name, for the reader. |
+| `onRead` | `(drawing: Drawing, { blocked }) => void` once drawn: `shapes` (`id`, `kind`, `x`, `y`, `width`, `height`, `rotation`, `label`, `stroke`, `fill`, `parent`) and `arrows` (`id`, `kind`, `from`, `to`, `points`, `label`, `stroke`), read from the native model; `blocked` lists what the draw.io frame refused from the network (those parts are not drawn). `describeDrawing(drawing)` writes it as text for a model. |
+| `excalidrawAssets` | The folder where the app serves `@excalidraw/excalidraw/dist/prod/` (default `/excalidraw/`, which needs `fonts/` inside), unless the page set `window.EXCALIDRAW_ASSET_PATH`. `false`, or a folder without fonts, draws text in a system font; Excalidraw's CDN is never used. |
+| `locale`, `labels` | English by default, `'fr'` for French; any word overridden. |
+
+An unreadable, unknown or empty file shows an inline error. The page's policy must allow a `srcdoc` frame's inline script and `blob:` images.
+
 ## Typed records (`record-viewer`)
 
 `record-viewer` exports `RecordTable`, `RecordList`, `RecordsViewer` and `createRecordsKind` from `components/record-viewer/record-viewer`. It composes the host's shadcn table, badge, item, button, alert and empty components. The `pi-app-kinds` default list opens `*.records.json`; app kinds placed before it in `artifactKinds` win. This is host presentation, not a Pi execution extension.
