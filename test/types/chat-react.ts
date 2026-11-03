@@ -10,6 +10,9 @@ export function useChatDeclarations(chat: ChatController, shared: SharedChatCont
     concrete.setReplyTo('fictional');
   }
   const remote = useRemoteChat({ conversationId: 'fictional', endpoint: id => `https://fictional.invalid/${id}`, fetch, identity: { runtimeId: 'r', scopeId: 's', principalId: 'p' } });
+  // D-1434: the controller can be read in every state, without narrowing.
+  const early: NativeChatController | undefined = remote.controller;
+  void early;
   if (remote.status === 'ready') {
     const concrete: NativeChatController = remote.controller;
     void concrete.reconcile();

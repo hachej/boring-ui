@@ -15,8 +15,8 @@ writeFileSync(`${out}/entry.tsx`, `
   import { PiChat } from '${root}registry/pi-chat/pi-chat.tsx';
   import { useRemoteChat } from '${root}registry/pi-chat/use-remote-chat.ts';
   // A host that shows the chat as soon as it has a controller (the new contract), and its status beside it.
-  export function Host({ fetch, onState }) {
-    const chat = useRemoteChat({ conversationId: 'c1', endpoint: id => new URL('https://fixture.invalid/chat?c=' + id), fetch,
+  export function Host({ fetch, onState, conversationId = 'c1' }) {
+    const chat = useRemoteChat({ conversationId, endpoint: id => new URL('https://fixture.invalid/chat?c=' + id), fetch,
       identity: { runtimeId: 'r', scopeId: 's', principalId: 'p' } });
     onState(chat);
     return h('main', { 'data-status': chat.status }, chat.controller ? h(PiChat, { controller: chat.controller, actions: chat.actions }) : null);
@@ -25,7 +25,7 @@ await build({ entryPoints: [`${out}/entry.tsx`], outfile: `${out}/entry.mjs`, bu
 
 const user = (id, text) => ({ id, kind: 'message', byTaskId: id, model: [{ role: 'user', content: text, timestamp: id }] });
 const reply = (id, text) => ({ id, kind: 'message', byTaskId: id, model: [{ role: 'assistant', content: [{ type: 'text', text }], api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: id }] });
-const view = entries => ({ conversation: { id: 'c1' }, entries, docs: {} });
+const view = (entries, id = 'c1') => ({ conversation: { id }, entries, docs: {} });
 const line = frame => new TextEncoder().encode(JSON.stringify(frame) + '\n');
 
 async function fixture(t) {
@@ -43,7 +43,7 @@ async function fixture(t) {
   const ui = createRoot(element);
   t.after(async () => { await act(async () => ui.unmount()); await window.happyDOM.close(); for (const [name, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; } });
   const settle = (ms = 20) => act(async () => { await new Promise(resolve => setTimeout(resolve, ms)); });
-  return { act, h, element, ui, settle };
+  return { Host, act, h, element, ui, settle };
 }
 /** Types in the composer the way a person does (React reads the native input event) and presses Send. */
 async function type(f, text) {
@@ -77,7 +77,7 @@ test('with a slow watch the composer is usable at once; messages queued before t
     return new Response('{}', { status: 404 });
   };
   const started = performance.now();
-  await f.act(async () => f.ui.render(f.h(Host, { fetch, onState: state => states.push(state) })));
+  await f.act(async () => f.ui.render(f.h(f.Host, { fetch, onState: state => states.push(state) })));
   await watching; await f.settle();
   // The host has not sent its view yet: the chat is connecting, yet it has its controller and its composer takes messages.
   assert.equal(f.element.querySelector('main').getAttribute('data-status'), 'connecting');
@@ -123,7 +123,7 @@ test('a failed connect keeps the queued message: never sent, it comes back in th
     if (op === 'submit') { submits.push(await request.json()); return Response.json({ submissionId: submits.length }); }
     return new Response('{}', { status: 404 });
   };
-  await f.act(async () => f.ui.render(f.h(Host, { fetch, onState: state => states.push(state) })));
+  await f.act(async () => f.ui.render(f.h(f.Host, { fetch, onState: state => states.push(state) })));
   await watching; await f.settle();
   await type(f, 'Message important');
   assert.deepEqual(userRows(f.element, asked), [{ text: 'Message important', state: 'sending' }]);
@@ -137,4 +137,29 @@ test('a failed connect keeps the queued message: never sent, it comes back in th
   assert.equal(f.element.querySelector('[data-testid="composer-input"]').value, 'Message important');
   assert.deepEqual(userRows(f.element, asked), []);
   assert.deepEqual(submits, []);
+});
+
+test('switching away before the first view keeps the queued message for that conversation, never sent by itself', async t => {
+  const f = await fixture(t);
+  const submits = [], held = new Map();
+  const fetch = async request => {
+    const url = new URL(request.url), op = url.searchParams.get('op'), id = url.searchParams.get('c');
+    if (op === 'watch') {
+      // « a » holds its first view until the test releases it; « b » connects at once.
+      if (id === 'b' || held.has(id)) return new Response(line({ kind: 'view', view: view([], id) }), { headers: { 'content-type': 'application/x-ndjson' } });
+      return new Promise(resolve => { held.set(id, () => resolve(new Response(line({ kind: 'view', view: view([], id) }), { headers: { 'content-type': 'application/x-ndjson' } }))); });
+    }
+    if (op === 'submit') { submits.push((await request.json()).content); return Response.json({ submissionId: submits.length }); }
+    return new Response('{}', { status: 404 });
+  };
+  const render = conversationId => f.act(async () => f.ui.render(f.h(f.Host, { fetch, conversationId, onState: () => {} })));
+  await render('a'); await f.settle();
+  await type(f, 'Pour la conversation A');
+  await render('b'); await f.settle(50);
+  await f.act(async () => held.get('a')());
+  await f.settle(50);
+  await render('a'); await f.settle(50);
+  assert.equal(f.element.querySelector('main').getAttribute('data-status'), 'ready');
+  assert.equal(f.element.querySelector('[data-testid="composer-input"]').value, 'Pour la conversation A', 'the words are back in A\'s composer');
+  assert.deepEqual(submits, [], 'nothing was sent behind the person\'s back');
 });

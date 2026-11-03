@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
-import type { ChatAttachment, ChatController } from './native-chat.js';
+import type { ChatAttachment, ChatController, ChatSnapshot } from './native-chat.js';
 import { derive, isFileBlock, object, queuedMessages, waitingForAnswer as waitsForAnswer } from './chat-view.js';
 import type { ChatCard, DeriveOptions, Mode, QueuedMessage, Row } from './chat-view.js';
 import { appendToDraft, displayName, kindMentionDraft, looksLikeMarkdown, mentionKind, mentionToken, pieces, prependToDraft, withoutKindMentions, writeKindMentionDraft } from './chat-text.js';
@@ -64,6 +64,18 @@ export interface ChatSessionOptions<Content = unknown> extends Partial<DeriveOpt
 }
 
 /** Headless session over the public native controller snapshot/commands. Borrows it; cleanup only aborts this hook's uploads. */
+/** The snapshot once the controller has its first view (its conversation id is then the server's); undefined if it is disposed or fails first. */
+function connectedSnapshot(controller: ChatController): Promise<ChatSnapshot | undefined> {
+  return new Promise(resolve => {
+    let off = () => {};
+    const check = () => {
+      const snapshot = controller.getSnapshot(), kind = snapshot.connection.kind;
+      if (snapshot.view || snapshot.disposed || kind === 'error' || kind === 'closed') { off(); resolve(snapshot.view && !snapshot.disposed ? snapshot : undefined); return true; }
+      return false;
+    };
+    if (!check()) off = controller.subscribe(() => { check(); });
+  });
+}
 export function useChatSession<Content = unknown>(options: ChatSessionOptions<Content>) {
   const { controller, activeController: active, mode, presentation, actions, renderEntry, hideLine, renderTool: catchAll, toolRenderers, groupTool, subagent,
     onOpenImage, onFiles, mentions, slash, attachments, model, effort, artifacts, afterSend, feedback, onOpenFile, onPickFiles, commandMentions, onFocus, labels } = options;
@@ -266,7 +278,12 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
           if (result.image) added = [...added, { id: `image-${Date.now()}-${++uploadIds.current}`, name: result.name, content: { type: 'image', data: result.image.data, mimeType: result.image.mimeType } }];
           else if (result.path) paths = [...paths, result.path];
         }
-      } else added = await onFiles!(files, { identity: state.identity, conversationId: state.conversationId, signal: abort.signal });
+      } else {
+        // While the chat connects its conversation id is still the host's selection: the host's upload waits for the first view's.
+        const target = await connectedSnapshot(controller);
+        if (!target) throw new Error(labels.uploadFailedShort);
+        added = await onFiles!(files, { identity: target.identity, conversationId: target.conversationId, signal: abort.signal });
+      }
       if (current() && !abort.signal.aborted) {
         if (added.length) controller.setAttachments([...controller.getSnapshot().draft.attachments, ...added]);
         if (paths.length) addMentions(paths);

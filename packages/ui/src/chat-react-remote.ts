@@ -44,7 +44,7 @@ type RemoteActions = Partial<Pick<RemoteChat, 'answer' | 'withdraw'>>;
  */
 export type RemoteChatState =
   | { readonly status: 'connecting'; readonly conversationId: string | undefined; readonly controller?: NativeChatController; readonly actions?: RemoteActions; readonly configure?: RemoteChat['configure'] }
-  | { readonly status: 'offline'; readonly conversationId: string | undefined; readonly error: string }
+  | { readonly status: 'offline'; readonly conversationId: string | undefined; readonly error: string; readonly controller?: undefined; readonly actions?: undefined; readonly configure?: undefined }
   | { readonly status: 'ready'; readonly conversationId: string; readonly controller: NativeChatController; readonly actions: RemoteActions; readonly configure: RemoteChat['configure'] };
 
 /** A remote chat being opened: `current` once its first view arrived. Members called earlier wait for it. */
@@ -135,14 +135,14 @@ export function useRemoteChat({ conversationId, endpoint, fetch, identity, reque
       void controller.connect();
       return controller;
     },
-    connect: async controller => {
-      try { await remotes.get(controller)!.remote; }
-      catch (error) { const back = unsent(controller); if (back.text || back.attachments.length) carried.set(String(key), back); throw error; }
-      await controller.connect();
-    },
+    connect: async controller => { await remotes.get(controller)!.remote; await controller.connect(); },
     dispose: async controller => {
+      const remote = remotes.get(controller);
+      // Disposed before its remote connected (a failed connect, or another selection): nothing it took was submitted. Its words come back
+      // in the composer of this selection's next controller, never sent by themselves.
+      if (!remote?.current) { const back = unsent(controller); if (back.text || back.attachments.length) carried.set(String(key), back); }
       // Start both: closing a transport may release a pending native watch opening.
-      const pending = controller.dispose(), remote = remotes.get(controller);
+      const pending = controller.dispose();
       try { await (remote?.current ?? await remote?.remote.catch(() => undefined))?.close(); } finally { await pending; remotes.delete(controller); }
     },
   });
