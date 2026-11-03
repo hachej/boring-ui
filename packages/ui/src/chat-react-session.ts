@@ -64,16 +64,24 @@ export interface ChatSessionOptions<Content = unknown> extends Partial<DeriveOpt
 }
 
 /** Headless session over the public native controller snapshot/commands. Borrows it; cleanup only aborts this hook's uploads. */
-/** The snapshot once the controller has its first view (its conversation id is then the server's); undefined if it is disposed or fails first. */
-function connectedSnapshot(controller: ChatController): Promise<ChatSnapshot | undefined> {
+/**
+ * The snapshot once the controller has its first view (its conversation id is then the server's); undefined if it is disposed, fails or
+ * `signal` aborts first.
+ */
+function connectedSnapshot(controller: ChatController, signal: AbortSignal): Promise<ChatSnapshot | undefined> {
   return new Promise(resolve => {
-    let off = () => {};
+    let off = () => {}, done = false;
+    const finish = (value: ChatSnapshot | undefined) => { if (done) return; done = true; off(); signal.removeEventListener('abort', aborted); resolve(value); };
+    const aborted = () => finish(undefined);
     const check = () => {
       const snapshot = controller.getSnapshot(), kind = snapshot.connection.kind;
-      if (snapshot.view || snapshot.disposed || kind === 'error' || kind === 'closed') { off(); resolve(snapshot.view && !snapshot.disposed ? snapshot : undefined); return true; }
-      return false;
+      if (signal.aborted) finish(undefined);
+      else if (snapshot.view || snapshot.disposed || kind === 'error' || kind === 'closed') finish(snapshot.view && !snapshot.disposed ? snapshot : undefined);
     };
-    if (!check()) off = controller.subscribe(() => { check(); });
+    check();
+    if (done) return;
+    off = controller.subscribe(check);
+    signal.addEventListener('abort', aborted, { once: true });
   });
 }
 export function useChatSession<Content = unknown>(options: ChatSessionOptions<Content>) {
@@ -280,7 +288,8 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
         }
       } else {
         // While the chat connects its conversation id is still the host's selection: the host's upload waits for the first view's.
-        const target = await connectedSnapshot(controller);
+        const target = await connectedSnapshot(controller, abort.signal);
+        if (abort.signal.aborted || !current()) return;
         if (!target) throw new Error(labels.uploadFailedShort);
         added = await onFiles!(files, { identity: target.identity, conversationId: target.conversationId, signal: abort.signal });
       }

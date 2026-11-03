@@ -138,9 +138,9 @@ export function useRemoteChat({ conversationId, endpoint, fetch, identity, reque
     connect: async controller => { await remotes.get(controller)!.remote; await controller.connect(); },
     dispose: async controller => {
       const remote = remotes.get(controller);
-      // Disposed before its remote connected (a failed connect, or another selection): nothing it took was submitted. Its words come back
-      // in the composer of this selection's next controller, never sent by themselves.
-      if (!remote?.current) { const back = unsent(controller); if (back.text || back.attachments.length) carried.set(String(key), back); }
+      // Disposed before its first view (a failed connect, or another selection): what it took was held, never submitted (see `send`). Its
+      // words come back in the composer of this selection's next controller, never sent by themselves.
+      if (!controller.getSnapshot().view) { const back = unsent(controller); if (back.text || back.attachments.length) carried.set(String(key), back); }
       // Start both: closing a transport may release a pending native watch opening.
       const pending = controller.dispose();
       try { await (remote?.current ?? await remote?.remote.catch(() => undefined))?.close(); } finally { await pending; remotes.delete(controller); }
