@@ -102,11 +102,14 @@ export default [
       await shots('mobile-artifact-card');
       await p.check('artifact cards', 'document.querySelector("[data-testid=transcript]")');
       await browser.evaluate(`${qa(CARD)}[0].scrollIntoView({ block: 'center' })`); await pause(500);
-      const before = await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop`);
+      const scrollProbe = `(() => { const v = ${q('[data-testid=transcript-scroll]')}; const n = ${q('[data-testid=transcript-navigation]')}; return { top: v.scrollTop, gap: Math.round(v.scrollHeight - v.clientHeight - v.scrollTop), ch: v.clientHeight, sh: v.scrollHeight, arrow: n ? Math.round(n.getBoundingClientRect().height) : 0 }; })()`;
+      const seen = [await browser.evaluate(scrollProbe)];
+      const before = seen[0].top;
       await browser.tap(`${qa(CARD)}[0]`);
       await browser.until('artifact panel', `!!${q('[data-testid=artifact-panel]')}`);
       await browser.until('content', `${q('[data-testid=artifact-body]')}?.innerText.length > 40`);
       await pause(300);
+      seen.push(await browser.evaluate(scrollProbe));
       assert.deepEqual(await browser.evaluate(`(() => { const r = ${q('[data-testid=viewer-panel]')}.getBoundingClientRect(); return { w: r.width, h: r.height }; })()`), { w: 390, h: 844 }, 'full screen');
       await p.noOverflow('artifact panel');
       // The panel is a sheet: a close control, no divider to drag and no full screen button (it already is full screen).
@@ -125,8 +128,8 @@ export default [
       await browser.until('closed', `!${q('[data-testid=artifact-panel]')}`);
       await pause(300);
       // (a few pixels of rounding while the transcript settles are not a lost position)
-      const after = await browser.evaluate(`(() => { const v = ${q('[data-testid=transcript-scroll]')}; return { top: v.scrollTop, gap: Math.round(v.scrollHeight - v.clientHeight - v.scrollTop), arrow: !!${q('[data-testid=transcript-navigation]')} }; })()`);
-      assert.ok(Math.abs(after.top - before) <= 8, `the chat scroll position is unchanged (before ${before}, after ${JSON.stringify(after)})`);
+      seen.push(await browser.evaluate(scrollProbe));
+      assert.ok(Math.abs(seen[2].top - before) <= 8, `the chat scroll position is unchanged (before, open, closed: ${JSON.stringify(seen)})`);
       // The second card is HTML: open it and check that it fits.
       await browser.tap(`${qa(CARD)}[1]`);
       await browser.until('html panel', `!!${q('[data-testid=artifact-panel][data-artifact-type=html] iframe')}`);
