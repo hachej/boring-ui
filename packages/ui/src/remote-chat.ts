@@ -313,7 +313,8 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     const finish = (end: WatchEnd) => {
       if (ended) return;
       ended = end; page?.removeEventListener('visibilitychange', onVisibility); cancelRetry(); setReconnecting(false); settle(end);
-      const live = current; current = undefined; void live?.stop();
+      // Stopped before it started (the owner left while the first view was on its way, D-1434): the first watch is still open, close it.
+      const live = current ?? (listener ? undefined : first); current = undefined; void live?.stop();
     };
     const fail = (error: unknown) => finish({ reason: 'listener_error', error: error instanceof Error ? error : new Error(String(error)) });
     const forward = async (view: ConversationView) => { last = view; await listener!(view, [], context); };
