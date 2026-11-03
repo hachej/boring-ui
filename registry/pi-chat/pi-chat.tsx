@@ -262,7 +262,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
           </MessageScrollerContent>
           </div>
         </MessageScrollerViewport>
-        {!empty && <div data-testid="transcript-navigation" className="flex h-12 shrink-0 items-center justify-center">{!isAtBottom && <MessageScrollerButton className="static inset-auto translate-x-0" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton>}</div>}
+        {!empty && !isAtBottom && <div data-testid="transcript-navigation" className="flex shrink-0 items-center justify-center py-1"><MessageScrollerButton className="static inset-auto translate-x-0" data-testid="jump-latest" aria-label={labels.jumpToLatest} title={labels.jumpToLatest} onClick={transcript.reset}><icons.jumpToLatest aria-hidden="true" /></MessageScrollerButton></div>}
       </MessageScroller>}
       {(empty || loading) && <div className="pointer-events-none absolute inset-0">
         <div className="pointer-events-auto h-full">

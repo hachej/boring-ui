@@ -930,6 +930,7 @@ try {
     await browser.until('the slow read completed', `!${q('[data-testid=transcript-history] svg')}`, 10000);
     await pause(100);
     assert.equal(await browser.evaluate(atBottom), true, 'a completed read cannot undo Jump to latest');
+    assert.equal(await browser.evaluate(`!${q('[data-testid=transcript-navigation]')}`), true, 'at the latest message there is no empty arrow band above the composer (D-1403)');
     assert.ok(await browser.evaluate(`${q('[data-testid=transcript-history] [role=status]')}.textContent.includes('earlier messages loaded')`));
     for (const device of ['desktop', 'phone']) {
       await browser.emulate(device);
