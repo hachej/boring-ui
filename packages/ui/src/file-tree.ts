@@ -4,7 +4,8 @@ import { randomUUID } from '@hachej/boring-files/platform';
 import type { FileEntry, FilePage, RevisionProvider, SavedRevision } from '@hachej/boring-files/revision';
 
 export type FileListing = { readonly kind: 'loading'; readonly entries: readonly FileEntry[] }
-  | { readonly kind: 'ready'; readonly entries: readonly FileEntry[]; readonly cursor?: string }
+  /** `writable`: the host's word on writing in this folder (`FilePage.writable`); `false` also when the host refused the listing (403). */
+  | { readonly kind: 'ready'; readonly entries: readonly FileEntry[]; readonly cursor?: string; readonly writable?: boolean }
   | { readonly kind: 'error'; readonly entries: readonly FileEntry[]; readonly reason: string };
 export interface FileUpload {
   readonly operationId: string;
@@ -61,6 +62,19 @@ export interface FileTreeController {
 }
 
 const message = (error: unknown) => error instanceof Error ? error.message : 'Files could not be loaded';
+/** A `RevisionError`'s kind, by shape: a hand-built binding may throw one from another copy of the package. */
+const refusal = (error: unknown) => error instanceof Error && error.name === 'RevisionError' && 'kind' in error ? error.kind : undefined;
+/**
+ * Whether the host lets the caller write in `folder` (`''` is the root): the flag of its own listing, or of the nearest listed folder
+ * above it while it is not listed. True when no listing says otherwise, so a host that sends no flag keeps every control.
+ */
+export function folderWritable(directories: ReadonlyMap<string, FileListing>, folder: string): boolean {
+  for (let path = folder; ; path = path.slice(0, Math.max(0, path.lastIndexOf('/')))) {
+    const listing = directories.get(path);
+    if (listing?.kind === 'ready' && listing.writable !== undefined) return listing.writable;
+    if (!path) return true;
+  }
+}
 const empty: FileListing = { kind: 'ready', entries: [] };
 const parentOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/')));
 const nameOf = (path: string) => path.slice(path.lastIndexOf('/') + 1);
@@ -106,12 +120,26 @@ export function createFileTreeController({ revisionProvider }: { readonly revisi
         : revisionProvider.list({ directory: path, ...(cursor ? { cursor } : {}) }, signal));
       if (signal.aborted || loads.get(key) !== abort) return;
       const entries = append ? [...new Map([...previous.entries, ...page.entries].map(entry => [entry.path, entry])).values()] : [...page.entries];
-      set({ kind: 'ready', entries, ...(page.cursor === undefined ? {} : { cursor: page.cursor }) });
+      set({ kind: 'ready', entries, ...(page.cursor === undefined ? {} : { cursor: page.cursor }), ...(!search && typeof page.writable === 'boolean' ? { writable: page.writable } : {}) });
     } catch (error) {
-      if (!signal.aborted && loads.get(key) === abort) set({ kind: 'error', entries: previous.entries, reason: message(error) });
+      if (signal.aborted || loads.get(key) !== abort) return;
+      const kind = search || !path ? undefined : refusal(error);
+      // A folder the host refuses to list (403) is shown read-only and empty, with no error; one it says is not there (404) leaves the
+      // tree: its row, its listing and its open state. The root keeps its error, the workspace itself being out of reach.
+      if (kind === 'denied') set({ kind: 'ready', entries: [], writable: false });
+      else if (kind === 'missing') gone(path);
+      else set({ kind: 'error', entries: previous.entries, reason: message(error) });
     } finally { if (loads.get(key) === abort) loads.delete(key); }
   }
   const refresh = (path = '') => load(path, false);
+  /** A folder the host says is not there: removed with everything under it, and from its parent's listing. */
+  function gone(path: string) {
+    const under = (item: string) => item === path || item.startsWith(`${path}/`);
+    const directories = new Map([...state.directories].filter(([folder]) => !under(folder)));
+    const parent = directories.get(parentOf(path));
+    if (parent) directories.set(parentOf(path), { ...parent, entries: parent.entries.filter(entry => entry.path !== path) });
+    update({ ...state, directories, expanded: new Set([...state.expanded].filter(folder => !under(folder))) });
+  }
   function uploadState(operationId: string, result: PublicationResult): FileUpload {
     const attempt = attempts.get(operationId);
     if (!attempt) throw new Error('Unknown upload operation');

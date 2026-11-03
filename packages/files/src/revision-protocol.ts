@@ -44,7 +44,8 @@ export function filePage(value: unknown): FilePage {
     return { path: catalogPath(entry.path), kind: entry.kind, size: entry.size };
   });
   if (new Set(entries.map(entry => entry.path)).size !== entries.length) throw new RevisionError('invalid', 'Duplicate file entries');
-  return { entries, ...(typeof data.cursor === 'string' ? { cursor: data.cursor } : {}) };
+  if (data.writable !== undefined && typeof data.writable !== 'boolean') throw new RevisionError('invalid', 'Invalid file page');
+  return { entries, ...(typeof data.cursor === 'string' ? { cursor: data.cursor } : {}), ...(typeof data.writable === 'boolean' ? { writable: data.writable } : {}) };
 }
 export function savedRevisions(value: unknown): readonly SavedRevision[] {
   if (!Array.isArray(value) || value.length > 100_000) throw new RevisionError('invalid', 'Invalid file history');

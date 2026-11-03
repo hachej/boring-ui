@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, DragEvent, KeyboardEvent, ReactNode } from 'react';
 import type { ResourceSnapshot } from '@hachej/boring-files';
 import type { FileEntry, RevisionProvider, SavedRevision } from '@hachej/boring-files/revision';
-import { createFileTreeController } from './file-tree.js';
+import { createFileTreeController, folderWritable } from './file-tree.js';
 import type { FileListing, FileMutation, FileTreeController } from './file-tree.js';
 
 /** Every word of the tree, so a host can translate it. Functions receive what they name. */
@@ -411,6 +411,11 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
   }
   for (const [path, failure] of localFailures) uploadRows.set(path, { kind: 'failed', size: failure.file.size, reason: failure.reason,
     retryLabel: labels.retry, retry: () => { void uploadFiles([failure.file]); } });
+  // The host's per-folder word (`FilePage.writable`): a folder it marks read-only offers no upload, rename, move, delete or drop.
+  const writableIn = (folder: string) => folderWritable(state.directories, folder);
+  /** A row changes its folder (and a folder row its own content): both must be writable. */
+  const entryWritable = (entry: FileEntry) => writableIn(parentPath(entry.path)) && (entry.kind !== 'directory' || writableIn(entry.path));
+  const canUpload = upload && writableIn(uploadDirectory);
   const uploadButton = <Button type="button" variant="secondary" data-file-upload onClick={() => fileInput.current?.click()}><Upload aria-hidden="true" />{labels.upload}</Button>;
   const mutationRows = new Map<string, FileMutation>();
   for (const item of state.mutations) if (item.state.kind === 'pending' || item.state.result.kind !== 'committed') mutationRows.set(item.path, item);
@@ -447,7 +452,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
   const closeAsking = () => { const path = asking?.path; setAsking(undefined); if (path) requestAnimationFrame(() => focus(path)); };
   const draggedPath = (event: DragEvent) => event.dataTransfer.types.includes(DRAGGED_FILE) ? dragged ?? event.dataTransfer.getData(DRAGGED_FILE) : undefined;
   /** A folder (or `''`, the root) accepts a dragged file that is not already in it. */
-  const dropHandlers = (folder: string) => can.rename ? {
+  const dropHandlers = (folder: string) => can.rename && writableIn(folder) ? {
     onDragEnter: (event: DragEvent) => { const path = draggedPath(event); if (path === undefined || parentPath(path) === folder) return; event.preventDefault(); event.stopPropagation(); setDropTarget(folder); },
     onDragOver: (event: DragEvent) => { const path = draggedPath(event); if (path === undefined || parentPath(path) === folder) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; if (dropTarget !== folder) setDropTarget(folder); },
     onDragLeave: (event: DragEvent) => { if (draggedPath(event) !== undefined && dropTarget === folder && !event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(undefined); },
@@ -479,7 +484,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     for (const node of Array.from(nodes ?? [])) if (node.dataset.path === path) node.focus();
   };
   /** Files only: a provider renames and deletes regular files, and a row busy uploading or changing waits. */
-  const mutable = (entry: FileEntry) => !temporaryPaths.has(entry.path) && uploadRows.get(entry.path)?.kind !== 'pending' && mutationRows.get(entry.path)?.state.kind !== 'pending';
+  const mutable = (entry: FileEntry) => entryWritable(entry) && !temporaryPaths.has(entry.path) && uploadRows.get(entry.path)?.kind !== 'pending' && mutationRows.get(entry.path)?.state.kind !== 'pending';
   /** A blob pointer's row shows the file it stands for, not the pointer's own name: it can be moved or deleted, not renamed in place. */
   const renameable = (entry: FileEntry) => !entry.blob;
   const keyboard = (event: KeyboardEvent, entry: FileEntry) => {
@@ -510,7 +515,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     return <>
       {listing.entries.length === 0 && (directory || temporaryEntries.length === 0) && <li role="none" className={list && !directory ? undefined : 'file-tree-status'}>
         {list && !directory
-          ? <Empty className="file-tree-empty" icon={<FolderOpen aria-hidden="true" />} title={search ? labels.noMatches : labels.empty} description={search ? undefined : labels.emptyHint}>{!search && upload && uploadButton}</Empty>
+          ? <Empty className="file-tree-empty" icon={<FolderOpen aria-hidden="true" />} title={search ? labels.noMatches : labels.empty} description={search ? undefined : labels.emptyHint}>{!search && canUpload && uploadButton}</Empty>
           : <span>{search ? labels.noMatches : labels.empty}</span>}
       </li>}
       {listing.cursor !== undefined && <li role="none"><Button type="button" variant="ghost" onClick={() => { void (search ? controller.moreSearch() : controller.more(directory)); }}>{labels.loadMore}</Button></li>}
@@ -607,15 +612,15 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
   const rootDrop = dropHandlers('');
   const dialogPath = asking?.path ?? '';
   const dialogIsFolder = [...state.directories.values(), state.search].some(listing => listing.entries.some(entry => entry.path === dialogPath && entry.kind === 'directory'));
-  const folders = asking?.kind === 'move' ? [...new Set(['', ...[...state.directories.values(), state.search].flatMap(listing => listing.entries.filter(entry => entry.kind === 'directory').map(entry => entry.path))])].filter(folder => folder !== dialogPath && !folder.startsWith(`${dialogPath}/`)).sort() : [];
+  const folders = asking?.kind === 'move' ? [...new Set(['', ...[...state.directories.values(), state.search].flatMap(listing => listing.entries.filter(entry => entry.kind === 'directory').map(entry => entry.path))])].filter(folder => folder !== dialogPath && !folder.startsWith(`${dialogPath}/`) && writableIn(folder)).sort() : [];
   return <section data-boring="file-tree" data-variant={variant} data-dropping={dropping || undefined} data-drop-target={dropTarget === '' ? 'true' : undefined} className={className} aria-label={labels.region}
-    onDragEnter={event => { rootDrop.onDragEnter?.(event); if (upload && event.dataTransfer.types.includes('Files')) { event.preventDefault(); dragDepth.current++; setDropping(true); } }}
-    onDragOver={event => { rootDrop.onDragOver?.(event); if (upload && event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } }}
-    onDragLeave={event => { rootDrop.onDragLeave?.(event); if (upload && event.dataTransfer.types.includes('Files')) { dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDropping(false); } }}
-    onDrop={event => { rootDrop.onDrop?.(event); if (upload && event.dataTransfer.types.includes('Files')) { event.preventDefault(); dragDepth.current = 0; setDropping(false); void uploadFiles(Array.from(event.dataTransfer.files)); } }}>
+    onDragEnter={event => { rootDrop.onDragEnter?.(event); if (canUpload && event.dataTransfer.types.includes('Files')) { event.preventDefault(); dragDepth.current++; setDropping(true); } }}
+    onDragOver={event => { rootDrop.onDragOver?.(event); if (canUpload && event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } }}
+    onDragLeave={event => { rootDrop.onDragLeave?.(event); if (canUpload && event.dataTransfer.types.includes('Files')) { dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDropping(false); } }}
+    onDrop={event => { rootDrop.onDrop?.(event); if (canUpload && event.dataTransfer.types.includes('Files')) { event.preventDefault(); dragDepth.current = 0; setDropping(false); void uploadFiles(Array.from(event.dataTransfer.files)); } }}>
     {list && <header className="file-tree-header"><h2>{title ?? labels.library}</h2>
       <span className="file-tree-count" aria-label={labels.shownItems(rows.length)}>{rows.length}{paginated ? '+' : ''}</span>
-      {upload && uploadButton}
+      {canUpload && uploadButton}
       {onClose && <Button type="button" variant="ghost" size="icon" data-file-close aria-label={labels.close} onClick={onClose}><X aria-hidden="true" /></Button>}
     </header>}
     <div className="file-tree-toolbar">
@@ -624,9 +629,9 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
           onChange={event => { void controller.search(event.currentTarget.value); }} />
       </div>
       {refresh && <Button type="button" variant="ghost" aria-label={labels.refresh} onClick={() => { void (state.query ? controller.search(state.query) : controller.refresh()); }}>{labels.refresh}</Button>}
-      {!list && upload && uploadButton}
+      {!list && canUpload && uploadButton}
     </div>
-    {upload && <Input ref={fileInput} aria-label={labels.uploadFiles} type="file" multiple onChange={event => {
+    {canUpload && <Input ref={fileInput} aria-label={labels.uploadFiles} type="file" multiple onChange={event => {
       const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; void uploadFiles(files);
     }} />}
     {dropping && <div className="file-tree-drop" role="status"><Empty icon={<Upload aria-hidden="true" />} title={labels.dropFiles} /></div>}
