@@ -38,6 +38,8 @@ export async function startDrawings({ port = 0 } = {}) {
       const file = normalize(join(fonts, decodeURIComponent(url.pathname.slice('/excalidraw/fonts/'.length))));
       if (file.startsWith(`${fonts}/`) && file.endsWith('.woff2') && existsSync(file)) return void outgoing.writeHead(200, { 'content-type': 'font/woff2', 'access-control-allow-origin': '*' }).end(readFileSync(file));
     }
+    // A folder that serves the probe font only: every other Excalidraw font is missing, so Excalidraw would turn to its CDN.
+    if (url.pathname === '/partial-fonts/fonts/Virgil/Virgil-Regular.woff2') return void outgoing.writeHead(200, { 'content-type': 'font/woff2' }).end(readFileSync(join(fonts, 'Virgil/Virgil-Regular.woff2')));
     // An app's fallback page for an unknown path, as a single-page app serves it: the viewer must not take it for a font.
     outgoing.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><title>Not here</title>');
   });

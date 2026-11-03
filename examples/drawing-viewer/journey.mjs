@@ -52,7 +52,7 @@ try {
     const image = await ev(`const img = document.querySelector('[data-testid="block-oakfield-garden.excalidraw"] img'); return { src: img.src.slice(0, 5), width: img.naturalWidth, height: img.naturalHeight, alt: img.alt };`);
     assert.equal(image.src, 'blob:', 'the drawing is an image from a blob URL');
     assert.ok(image.width > 500 && image.height > 400, `fitted to the shapes: ${image.width}×${image.height}`);
-    assert.match(image.alt, /^Excalidraw drawing: \d+ shapes, 2 arrows$/);
+    assert.match(image.alt, /^Excalidraw drawing: \d+ shapes, 3 arrows$/);
     const svg = await ev(`const r = await fetch(document.querySelector('[data-testid="block-oakfield-garden.excalidraw"] img').src); return r.text();`);
     assert.match(svg, /fill="#ffffff"/i, 'a white page');
     assert.match(svg, /@font-face[\s\S]*Excalifont[\s\S]*url\(["']?data:/, 'Excalidraw inlined its own font, served by the app');
@@ -95,12 +95,14 @@ try {
     assert.ok(toEllipse(water.points[0], shape('pond')) < 6, `the arrow starts on the pond's outline: ${water.points[0]}`);
     assert.ok(toOutline(water.points.at(-1), shape('beds')) < 6, `and ends on the beds' outline: ${water.points.at(-1)}`);
     assert.deepEqual(garden.arrows.find(entry => entry.id === 'fence').kind, 'line');
+    const tilted = garden.arrows.find(entry => entry.id === 'tilted').points;
+    assert.ok(near(tilted[0][0], 700, 0.5) && near(tilted[0][1], 50, 0.5) && near(tilted[1][0], 700, 0.5) && near(tilted[1][1], 150, 0.5), `a turned line at its drawn ends: ${JSON.stringify(tilted)}`);
 
     const bakery = await parsed('bakery-morning.drawio');
     const cell = id => bakery.shapes.find(entry => entry.id === id);
     const edge = id => bakery.arrows.find(entry => entry.id === id);
     assert.equal(bakery.format, 'drawio');
-    assert.deepEqual(bakery.shapes.map(entry => entry.id).sort(), ['check', 'dough', 'kitchen', 'oven', 'shelf', 'shelf-group', 'sign']);
+    assert.deepEqual(bakery.shapes.map(entry => entry.id).sort(), ['check', 'dough', 'kitchen', 'logo', 'oven', 'shelf', 'shelf-group', 'sign']);
     assert.deepEqual([cell('kitchen').kind, cell('oven').kind, cell('check').kind, cell('shelf').kind], ['swimlane', 'ellipse', 'rhombus', 'cylinder3']);
     assert.deepEqual([cell('dough').x, cell('dough').y, cell('dough').width, cell('dough').height], [70, 90, 120, 60], 'a vertex in a container at its absolute place');
     assert.deepEqual([cell('dough').label, cell('dough').parent, cell('dough').fill, cell('dough').stroke], ['Mix dough', 'kitchen', '#fff2cc', '#d6b656'], 'HTML stripped from the label');
@@ -109,6 +111,9 @@ try {
     assert.deepEqual([edge('to-oven').from, edge('to-oven').to, edge('to-oven').label], ['dough', 'oven', 'rest 1 h']);
     assert.ok(edge('to-oven').points.some(([x, y]) => near(x, 130, 1) && near(y, 245, 1)), `the bend point at its absolute place: ${JSON.stringify(edge('to-oven').points)}`);
     assert.equal(edge('to-check').label, '25 min', 'an edge label child is the edge\'s label');
+    assert.deepEqual([edge('to-logo').kind, edge('to-check').kind], ['line', 'arrow'], 'a plain line is a line');
+    const refused = await ev(`return window.__drawings.blocked['bakery-morning.drawio'];`);
+    assert.ok(refused.some(entry => entry.includes('fictional.invalid')), `the frame refused the remote image and said so: ${JSON.stringify(refused)}`);
     assert.ok(toOutline(edge('to-shelf').points[0], cell('check')) < 2 && toOutline(edge('to-shelf').points.at(-1), cell('shelf')) < 2, 'the edge starts and ends on the outlines');
     assert.ok(toOutline(edge('to-oven').points[0], cell('dough')) < 2 && toEllipse(edge('to-oven').points.at(-1), cell('oven')) < 3, 'from the box to the ellipse\'s outline');
     assert.deepEqual(await parsed('bakery-morning-plain.drawio'), { ...bakery }, 'the plain file reads as the compressed one');
@@ -137,6 +142,14 @@ try {
     assert.doesNotMatch(svg, /@font-face/);
     const state = await ev(`return { violations: window.__drawings.violations, foreign: performance.getEntriesByType('resource').map(entry => entry.name).filter(name => !name.startsWith(location.origin) && !/^(data|blob):/.test(name)) };`);
     assert.deepEqual(state, { violations: [], foreign: [] });
+  });
+
+  await step('with only some fonts served, Excalidraw\'s CDN fallback is refused and the drawing is still drawn', async () => {
+    await open('?only=oakfield-garden.excalidraw&fonts=partial');
+    await drawn('[data-testid="row-oakfield-garden.excalidraw"]', 1);
+    await pause(1000);
+    const state = await ev(`return { violations: window.__drawings.violations, foreign: performance.getEntriesByType('resource').map(entry => entry.name).filter(name => !name.startsWith(location.origin) && !/^(data|blob):/.test(name)) };`);
+    assert.deepEqual(state, { violations: [], foreign: [] }, 'no CDN request was even attempted');
   });
 
   await step('on a phone the drawing fits the width', async () => {

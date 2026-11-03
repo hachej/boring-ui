@@ -3,7 +3,7 @@
 import { lazy } from 'react';
 import type { ComponentType, ReactNode } from 'react';
 import { PenToolIcon } from 'lucide-react';
-import { drawingFormat, isDrawingPath } from './drawing';
+import { isDrawingPath } from './drawing';
 import { drawingLabelsFor } from './drawing-labels';
 import type { DrawingLabels, DrawingLocale } from './drawing-labels';
 
@@ -18,7 +18,8 @@ export interface DrawingKind {
   readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;
   readonly label: string;
   readonly icon: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }>;
-  readonly renderer: (props: { readonly text: string; readonly path?: string }) => ReactNode;
+  /** Takes the artifact panel's view props (`ArtifactKindViewProps` of pi-artifacts): the file's name comes from `artifact.target`. */
+  readonly renderer: (props: { readonly text: string; readonly artifact?: { readonly title?: string | undefined; readonly target: { readonly resource: { readonly path: string } } } | undefined }) => ReactNode;
 }
 
 /** A drawing kind in `locale` ("Drawing", "Dessin") with any word overridden, and where the app serves Excalidraw's fonts. */
@@ -27,7 +28,7 @@ export function createDrawingKind({ locale, labels, excalidrawAssets }: { readon
     match: target => isDrawingPath(target.resource.path),
     label: drawingLabelsFor(locale, labels).kind,
     icon: PenToolIcon,
-    renderer: ({ text, path }) => <DrawingViewer text={text} format={drawingFormat(path, text)} locale={locale} labels={labels} excalidrawAssets={excalidrawAssets} />,
+    renderer: ({ text, artifact }) => <DrawingViewer text={text} path={artifact?.target.resource.path} title={artifact?.title} locale={locale} labels={labels} excalidrawAssets={excalidrawAssets} />,
   };
 }
 

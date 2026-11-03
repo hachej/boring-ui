@@ -19,6 +19,8 @@ const BOOT = String.raw`(function () {
     try { Object.defineProperty(window, 'localStorage', { configurable: true, value: memory() }); Object.defineProperty(window, 'sessionStorage', { configurable: true, value: memory() }); } catch (ignored) {}
   }
   window.mxLoadResources = false; window.mxLoadStylesheets = false; window.mxForceIncludes = false;
+  var blocked = [];
+  document.addEventListener('securitypolicyviolation', function (event) { if (blocked.length < 50) blocked.push(String(event.effectiveDirective || event.violatedDirective) + ' ' + String(event.blockedURI)); });
   function answer(message) { if (port) { port.postMessage(message); port.close(); port = null; } }
   function fail(reason, error) { answer({ type: 'error', reason: reason, message: String(error && error.message || error || reason) }); }
   function plain(value, html) {
@@ -44,7 +46,9 @@ const BOOT = String.raw`(function () {
       if (model.isEdge(cell)) {
         var source = model.getTerminal(cell, true), target = model.getTerminal(cell, false), points = [];
         for (var i = 0; i < (state.absolutePoints || []).length; i++) { var point = state.absolutePoints[i]; if (point) points.push([point.x / scale - dx, point.y / scale - dy]); }
-        var arrowhead = style.endArrow !== 'none' || (style.startArrow && style.startArrow !== 'none');
+        // The viewer drops a style value of 'none', so a plain line has neither marker at all.
+        var marked = function (marker) { return !!marker && marker !== 'none'; };
+        var arrowhead = marked(style.endArrow) || marked(style.startArrow);
         arrows.push({ id: String(cell.id), kind: arrowhead ? 'arrow' : 'line', from: source ? String(source.id) : undefined, to: target ? String(target.id) : undefined, points: points, label: label(cell), stroke: colour(style.strokeColor) });
       } else {
         var box = place(state);
@@ -69,7 +73,9 @@ const BOOT = String.raw`(function () {
     if (!drawing.shapes.length && !drawing.arrows.length) return fail('empty', 'the diagram draws nothing');
     var svg = graph.getSvg('#ffffff', 1, 16, false, null, true);
     var width = parseFloat(svg.getAttribute('width')) || drawing.bounds.width + 32, height = parseFloat(svg.getAttribute('height')) || drawing.bounds.height + 32;
-    answer({ type: 'drawn', svg: mxUtils.getXml(svg), width: width, height: height, drawing: drawing });
+    var exported = mxUtils.getXml(svg);
+    // Refused requests are reported as tasks after the attempt: give them a moment so the answer names what was not drawn.
+    setTimeout(function () { answer({ type: 'drawn', svg: exported, width: width, height: height, drawing: drawing, blocked: blocked.slice() }); }, 250);
   }
   window.addEventListener('message', function (event) {
     if (port || event.source !== window.parent || !event.ports || !event.ports[0] || !event.data || event.data.type !== 'draw') return;

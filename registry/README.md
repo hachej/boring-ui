@@ -1209,7 +1209,7 @@ and `parseDiagram(textOrValue)` are exported: the maquette viewer draws its work
 | `path` | Its name: `.excalidraw`, `.excalidraw.json`, `.drawio`, `.drawio.xml` or `.dio` picks the format; without it the text decides. |
 | `format` | `'excalidraw'` or `'drawio'`, when the app knows better. |
 | `title` | The drawing's name, for the reader. |
-| `onRead` | `(drawing: Drawing) => void` once drawn: `shapes` (`id`, `kind`, `x`, `y`, `width`, `height`, `label`, `stroke`, `fill`, `parent`) and `arrows` (`id`, `kind`, `from`, `to`, `points`, `label`, `stroke`), read from the native model. `describeDrawing(drawing)` writes it as text for a model. |
+| `onRead` | `(drawing: Drawing, { blocked }) => void` once drawn: `shapes` (`id`, `kind`, `x`, `y`, `width`, `height`, `rotation`, `label`, `stroke`, `fill`, `parent`) and `arrows` (`id`, `kind`, `from`, `to`, `points`, `label`, `stroke`), read from the native model; `blocked` lists what the draw.io frame refused from the network (those parts are not drawn). `describeDrawing(drawing)` writes it as text for a model. |
 | `excalidrawAssets` | The folder where the app serves `@excalidraw/excalidraw/dist/prod/` (default `/excalidraw/`, which needs `fonts/` inside), unless the page set `window.EXCALIDRAW_ASSET_PATH`. `false`, or a folder without fonts, draws text in a system font; Excalidraw's CDN is never used. |
 | `locale`, `labels` | English by default, `'fr'` for French; any word overridden. |
 

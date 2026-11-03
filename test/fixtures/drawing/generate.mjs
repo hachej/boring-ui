@@ -1,7 +1,8 @@
 // Writes the drawing viewer's fictional fixtures (D-1398): `node test/fixtures/drawing/generate.mjs`. An Excalidraw garden plan with every
 // element kind (rectangle, ellipse, diamond, arrow bound to two shapes with its own label, line, text, freehand, containers' labels, a
 // deleted element and a script-shaped text with a javascript: link) and a draw.io bakery morning (a container, a group, a cylinder,
-// edges with bend points and labels, an edge label child, an HTML label carrying a script and a handler), compressed and plain.
+// edges with bend points and labels, an edge label child, a plain line, an image from the network the viewer must refuse, an HTML label
+// carrying a script and a handler), compressed and plain. The garden also has a line turned a quarter.
 import { writeFileSync } from 'node:fs';
 import { deflateRawSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
@@ -24,6 +25,7 @@ const elements = [
   base({ id: 'fence', type: 'line', x: 40, y: 450, width: 560, height: 30, points: [[0, 0], [280, 30], [560, 0]], strokeColor: '#868e96', strokeStyle: 'dashed' }),
   text({ id: 'note', x: 430, y: 300, width: 190, height: 50, text: 'Plan for the fictional\nOakfield garden', textAlign: 'left', verticalAlign: 'top', fontSize: 18 }),
   base({ id: 'path-scribble', type: 'freedraw', x: 60, y: 300, width: 120, height: 60, points: [[0, 0], [20, 15], [40, 40], [60, 50], [80, 45], [100, 30], [120, 60]], pressures: [], simulatePressure: true, strokeColor: '#2f9e44' }),
+  base({ id: 'tilted', type: 'line', x: 650, y: 100, width: 100, height: 0, angle: Math.PI / 2, points: [[0, 0], [100, 0]], strokeColor: '#868e96' }),
   base({ id: 'old-shed', type: 'rectangle', x: 700, y: 600, width: 80, height: 80, isDeleted: true, backgroundColor: '#ff8787' }),
   text({ id: 'unsafe', x: 40, y: 500, width: 420, height: 18, text: '<script>parent.postMessage("pwned","*")</script> stays text', fontSize: 14, textAlign: 'left', verticalAlign: 'top', link: 'javascript:parent.postMessage("pwned","*")' }),
 ];
@@ -38,11 +40,13 @@ const model = [
   '<mxCell id="shelf-group" value="" style="group" vertex="1" connectable="0" parent="1"><mxGeometry x="420" y="390" width="260" height="70" as="geometry"/></mxCell>',
   '<mxCell id="shelf" value="Shop shelf" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="shelf-group"><mxGeometry width="120" height="70" as="geometry"/></mxCell>',
   '<mxCell id="sign" value="Fresh &amp;amp; warm&lt;img src=x onerror=&quot;parent.postMessage(\'pwned\',\'*\')&quot;&gt;&lt;script&gt;parent.postMessage(\'pwned\',\'*\')&lt;/script&gt;" style="text;html=1;align=center;verticalAlign=middle;sketch=1;" vertex="1" parent="shelf-group"><mxGeometry x="140" y="20" width="120" height="30" as="geometry"/></mxCell>',
+  '<mxCell id="logo" value="" style="shape=image;image=https://fictional.invalid/logo.png;imageAspect=0;" vertex="1" parent="1"><mxGeometry x="620" y="200" width="60" height="60" as="geometry"/></mxCell>',
   '<mxCell id="to-oven" value="rest 1 h" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=classic;strokeColor=#d6b656;" edge="1" parent="kitchen" source="dough" target="oven"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="90" y="205"/></Array></mxGeometry></mxCell>',
   '<mxCell id="to-check" value="" style="html=1;endArrow=classic;strokeColor=#b85450;" edge="1" parent="1" source="oven" target="check"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="400" y="245"/><mxPoint x="400" y="240"/></Array></mxGeometry></mxCell>',
   '<mxCell id="to-check-label" value="25 min" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" vertex="1" connectable="0" parent="to-check"><mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset"/></mxGeometry></mxCell>',
   '<mxCell id="to-shelf" value="yes" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#82b366;" edge="1" parent="1" source="check" target="shelf"><mxGeometry relative="1" as="geometry"/></mxCell>',
   '<mxCell id="again" value="no" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=classic;dashed=1;strokeColor=#82b366;" edge="1" parent="1" source="check" target="oven"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="500" y="340"/><mxPoint x="240" y="340"/></Array></mxGeometry></mxCell>',
+  '<mxCell id="to-logo" value="" style="html=1;endArrow=none;startArrow=none;strokeColor=#666666;" edge="1" parent="1" source="check" target="logo"><mxGeometry relative="1" as="geometry"/></mxCell>',
   '</root></mxGraphModel>',
 ].join('');
 const file = (diagram) => `<mxfile host="fictional.invalid" agent="fixture" version="32.4.1">\n  <diagram id="bakery" name="Bakery morning">${diagram}</diagram>\n</mxfile>\n`;

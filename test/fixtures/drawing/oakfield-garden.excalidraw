@@ -449,9 +449,9 @@
       "simulatePressure": true
     },
     {
-      "angle": 0,
-      "strokeColor": "#1e1e1e",
-      "backgroundColor": "#ff8787",
+      "angle": 1.5707963267948966,
+      "strokeColor": "#868e96",
+      "backgroundColor": "transparent",
       "fillStyle": "solid",
       "strokeWidth": 2,
       "strokeStyle": "solid",
@@ -463,6 +463,43 @@
       "seed": 1022,
       "version": 1,
       "versionNonce": 1023,
+      "isDeleted": false,
+      "boundElements": [],
+      "updated": 1,
+      "link": null,
+      "locked": false,
+      "id": "tilted",
+      "type": "line",
+      "x": 650,
+      "y": 100,
+      "width": 100,
+      "height": 0,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          100,
+          0
+        ]
+      ]
+    },
+    {
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "#ff8787",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "roundness": null,
+      "seed": 1024,
+      "version": 1,
+      "versionNonce": 1025,
       "isDeleted": true,
       "boundElements": [],
       "updated": 1,
@@ -487,9 +524,9 @@
       "groupIds": [],
       "frameId": null,
       "roundness": null,
-      "seed": 1024,
+      "seed": 1026,
       "version": 1,
-      "versionNonce": 1025,
+      "versionNonce": 1027,
       "isDeleted": false,
       "boundElements": [],
       "updated": 1,

@@ -64,7 +64,7 @@ test('an unreadable drawing shows an inline error through the kind, in English a
   assert.equal(kit.drawingKind.match({ resource: { path: 'plans/bakery.drawio' } }), true);
   assert.equal(kit.drawingKind.match({ resource: { path: 'plans/flow.diagram.json' } }), false);
   assert.equal(kit.drawingKind.label, 'Drawing');
-  await view.render(kit.drawingKind.renderer({ text: fixture('broken.excalidraw'), path: 'plans/broken.excalidraw' }));
+  await view.render(kit.drawingKind.renderer({ text: fixture('broken.excalidraw'), artifact: { title: 'Broken', target: { resource: { path: 'plans/broken.excalidraw' } } } }));
   const viewer = view.$('[data-boring=drawing-viewer]');
   assert.equal(viewer.dataset.state, 'error');
   assert.equal(view.$('[data-testid=drawing-error]').dataset.reason, 'unreadable');
@@ -77,6 +77,9 @@ test('an unreadable drawing shows an inline error through the kind, in English a
   assert.match(view.$('[data-testid=drawing-error]').textContent, /Ce dessin ne peut pas être affiché/);
   await view.render(view.h(kit.DrawingViewer, { text: '<mxfile><diagram>', path: 'x.drawio' }));
   assert.equal(view.$('[data-boring=drawing-viewer]').dataset.format, 'drawio');
+  // The kind takes the file's name from the artifact, as the panel passes it: a standalone <diagram> named .drawio is a draw.io file.
+  await view.render(kit.drawingKind.renderer({ text: '<?xml version="1.0"?>\n<diagram id="a">x</diagram>', artifact: { title: 'A', target: { resource: { path: 'a.drawio' } } } }));
+  assert.equal(view.$('[data-boring=drawing-viewer]').dataset.format, 'drawio');
 });
 
 test('the format comes from the name, else from the text; the description names every shape and arrow', async () => {
@@ -87,6 +90,7 @@ test('the format comes from the name, else from the text; the description names 
   assert.equal(drawing.drawingFormat(undefined, fixture('oakfield-garden.excalidraw')), 'excalidraw');
   assert.equal(drawing.drawingFormat(undefined, fixture('bakery-morning.drawio')), 'drawio');
   assert.equal(drawing.drawingFormat('notes.md', '# notes'), undefined);
+  assert.equal(drawing.drawingFormat(undefined, '<?xml version="1.0"?>\n<diagram id="a">x</diagram>'), 'drawio');
   const text = drawing.describeDrawing({ format: 'drawio', bounds: { x: 0, y: 0, width: 300, height: 120 },
     shapes: [{ id: 'a', kind: 'rectangle', x: 0, y: 0, width: 100, height: 60, label: 'Mix dough', fill: '#fff2cc' }, { id: 'b', kind: 'ellipse', x: 200, y: 0, width: 100, height: 60, label: 'Bake' }],
     arrows: [{ id: 'e', kind: 'arrow', from: 'a', to: 'b', points: [[100, 30], [200, 30]], label: 'rest 1 h' }] });

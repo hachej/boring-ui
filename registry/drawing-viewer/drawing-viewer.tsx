@@ -30,8 +30,8 @@ export interface DrawingViewerProps {
   readonly format?: DrawingFormat | undefined;
   /** The drawing's name, for the reader. */
   readonly title?: string | undefined;
-  /** Called with what the renderer read once the drawing is drawn. */
-  readonly onRead?: ((drawing: Drawing) => void) | undefined;
+  /** Called with what the renderer read once the drawing is drawn, and what it was refused from the network (those parts are not drawn). */
+  readonly onRead?: ((drawing: Drawing, details: { readonly blocked: readonly string[] }) => void) | undefined;
   /**
    * The URL of the folder where the app serves `@excalidraw/excalidraw/dist/prod/` (Excalidraw looks for `fonts/` in it), unless the page
    * set `window.EXCALIDRAW_ASSET_PATH` itself. `false`, or a folder that serves no font, draws text without Excalidraw's fonts; the
@@ -72,22 +72,22 @@ export function DrawingViewer({ text, path, format: given, title, onRead, excali
       if (abort.signal.aborted) return;
       url = URL.createObjectURL(new Blob([rendered.svg], { type: 'image/svg+xml' }));
       setOutcome({ text, format, assets: excalidrawAssets, state: { kind: 'drawn', rendered, url } });
-      read.current?.(rendered.drawing);
+      read.current?.(rendered.drawing, { blocked: rendered.blocked });
     }, (error: unknown) => {
       if (abort.signal.aborted) return;
       setOutcome({ text, format, assets: excalidrawAssets, state: { kind: 'error', reason: error instanceof DrawingError ? error.reason : 'renderer' } });
     });
     return () => { abort.abort(); if (url) URL.revokeObjectURL(url); };
   }, [format, text, excalidrawAssets]);
-  return <section data-boring="drawing-viewer" data-state={state.kind} data-format={format} aria-label={title ?? labels.kind} aria-busy={state.kind === 'loading' || undefined}
+  return <section data-boring="drawing-viewer" data-state={state.kind} data-format={format} data-blocked={state.kind === 'drawn' ? state.rendered.blocked.length : undefined} aria-label={title ?? labels.kind} aria-busy={state.kind === 'loading' || undefined}
     className="flex w-full min-w-0 flex-col gap-3 px-3 pt-2 pb-4 sm:px-6">
     {state.kind === 'loading' && <p role="status" className="m-0 flex items-center justify-center gap-2 p-6 text-sm text-muted-foreground"><Spinner />{labels.loading}</p>}
     {state.kind === 'error' && <Alert variant="destructive" data-testid="drawing-error" data-reason={state.reason}><TriangleAlertIcon aria-hidden="true" />
       <AlertTitle>{labels.errorTitle}</AlertTitle><AlertDescription>{labels.error(state.reason)}</AlertDescription></Alert>}
-    {state.kind === 'drawn' && <figure className="m-0 min-w-0 overflow-auto rounded-md border bg-muted/40 p-2">
+    {state.kind === 'drawn' && <figure className="m-0 min-w-0 overflow-auto bg-muted p-2">
       <img data-testid="drawing-image" src={state.url} width={Math.round(state.rendered.width) || undefined} height={Math.round(state.rendered.height) || undefined}
         alt={labels.image(state.rendered.drawing.format, state.rendered.drawing.shapes.length, state.rendered.drawing.arrows.length)}
-        className="mx-auto block h-auto max-w-full shadow-sm" draggable={false} />
+        className="mx-auto block h-auto max-w-full" draggable={false} />
     </figure>}
   </section>;
 }

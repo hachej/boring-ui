@@ -13,6 +13,8 @@ export interface DrawingShape {
   readonly y: number;
   readonly width: number;
   readonly height: number;
+  /** Degrees clockwise around the box's centre, when the shape is turned (x, y, width and height are the unturned box). */
+  readonly rotation?: number | undefined;
   /** Its text: a container's bound text, or a text element's own; HTML stripped. */
   readonly label?: string | undefined;
   readonly stroke?: string | undefined;
@@ -47,7 +49,7 @@ export function drawingFormat(path: string | undefined, text?: string): DrawingF
   if (/\.(?:drawio(?:\.xml)?|dio)$/.test(name)) return 'drawio';
   const start = (text ?? '').trimStart();
   if (start.startsWith('{') && /"type"\s*:\s*"excalidraw"/.test(start.slice(0, 400))) return 'excalidraw';
-  if (start.startsWith('<') && /<(?:mxfile|mxGraphModel)\b/.test(start.slice(0, 2000))) return 'drawio';
+  if (start.startsWith('<') && /<(?:mxfile|mxGraphModel|diagram)\b/.test(start.slice(0, 8000))) return 'drawio';
   return undefined;
 }
 
@@ -86,6 +88,8 @@ export interface RenderedDrawing {
   readonly width: number;
   readonly height: number;
   readonly drawing: Drawing;
+  /** What the renderer was refused (a draw.io image, stencil or font from the network): those parts are not drawn. */
+  readonly blocked: readonly string[];
 }
 
 /** The bounds of boxes, or an empty box at the origin. */

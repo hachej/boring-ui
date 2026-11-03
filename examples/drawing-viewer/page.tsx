@@ -10,8 +10,8 @@ import type { Drawing } from '../../registry/drawing-viewer/drawing';
 
 const { fixtures } = JSON.parse(document.getElementById('boot')!.textContent!) as { fixtures: Record<string, string> };
 const params = new URLSearchParams(location.search);
-const assets = params.get('fonts') === 'missing' ? '/missing-fonts/' : '/excalidraw/';
-const journey = { read: {} as Record<string, Drawing>, pwned: [] as unknown[], violations: [] as string[] };
+const assets = params.get('fonts') === 'missing' ? '/missing-fonts/' : params.get('fonts') === 'partial' ? '/partial-fonts/' : '/excalidraw/';
+const journey = { read: {} as Record<string, Drawing>, blocked: {} as Record<string, readonly string[]>, pwned: [] as unknown[], violations: [] as string[] };
 (window as unknown as { __drawings: typeof journey }).__drawings = journey;
 window.addEventListener('message', event => { if (event.data === 'pwned' || (event.data && typeof event.data === 'object' && 'pwned' in event.data)) journey.pwned.push(event.data); });
 document.addEventListener('securitypolicyviolation', event => journey.violations.push(`${event.violatedDirective} ${event.blockedURI}`));
@@ -49,7 +49,7 @@ function NativeDrawio({ text }: { readonly text: string }) {
 function Row({ name, native }: { readonly name: string; readonly native: ReactNode }) {
   return <section data-testid={`row-${name}`} className="grid grid-cols-1 gap-4 border-b p-4 lg:grid-cols-2">
     <div className="min-w-0"><h2 className="m-0 mb-2 text-sm font-medium">boring-ui drawing-viewer · {name}</h2>
-      <div data-testid={`block-${name}`}>{kind.renderer({ text: fixtures[name]!, path: name })}</div></div>
+      <div data-testid={`block-${name}`}>{kind.renderer({ text: fixtures[name]!, artifact: { title: name, target: { resource: { path: name } } } })}</div></div>
     <div className="min-w-0"><h2 className="m-0 mb-2 text-sm font-medium">Native · {name}</h2>{native}</div>
   </section>;
 }
@@ -68,7 +68,7 @@ function App() {
     {!only && <section data-testid="row-unknown" className="p-4"><DrawingViewer text="just some words" /></section>}
     {/* The parse of each fixture through `onRead`, as an app takes it to describe the drawing to a model. */}
     <div hidden>{['oakfield-garden.excalidraw', 'bakery-morning.drawio'].filter(show).map(name =>
-      <DrawingViewer key={name} text={fixtures[name]!} path={name} excalidrawAssets={assets} onRead={drawing => { journey.read[name] = drawing; }} />)}</div>
+      <DrawingViewer key={name} text={fixtures[name]!} path={name} excalidrawAssets={assets} onRead={(drawing, { blocked }) => { journey.read[name] = drawing; journey.blocked[name] = blocked; }} />)}</div>
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<App />);

@@ -51,7 +51,8 @@ export async function renderDrawio(source: string, { signal }: { readonly signal
     channel.port1.onmessage = event => {
       const data = (event.data && typeof event.data === 'object' ? event.data : {}) as Record<string, unknown>;
       done();
-      if (data.type === 'drawn' && typeof data.svg === 'string') resolve({ svg: data.svg, width: finite(data.width), height: finite(data.height), drawing: cleanDrawing(data.drawing) });
+      const blocked = (Array.isArray(data.blocked) ? data.blocked : []).filter((entry): entry is string => typeof entry === 'string').slice(0, 50);
+      if (data.type === 'drawn' && typeof data.svg === 'string') resolve({ svg: data.svg, width: finite(data.width), height: finite(data.height), drawing: cleanDrawing(data.drawing), blocked });
       else reject(new DrawingError(data.reason === 'unreadable' || data.reason === 'empty' ? data.reason : 'renderer', text(data.message)));
     };
     signal?.addEventListener('abort', aborted, { once: true });
