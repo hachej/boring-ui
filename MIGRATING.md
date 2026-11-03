@@ -1,5 +1,6 @@
 # Unreleased
 
+- **A status per file row (`file-tree`; D-1374).** Reinstall `file-tree`. Additive: `FileTree decorate={entry => ({ badge: { label: 'Lu', tone: 'success' }, detail: '12 lignes' })}` shows a badge (`neutral`, `success`, `warning`, `danger`; read as « name: label ») and a short secondary text on that row. Return nothing to leave a row as it is; without the prop the tree is unchanged. Tones read `--success` and `--warning` when the theme defines them.
 - **Which model answered (`pi-chat`; D-1222).** Reinstall `pi-chat`. In `mode="developer"` each assistant reply shows a muted « answered by provider/model » line, read from the new optional `answeredBy={reply => ({ provider, model, fallback? })}` prop (the host's per-turn record), else from the reply's own message provider/model; « fallback: reason » follows when `fallback` is set. Expert mode is unchanged. Additive.
 - **`NavItem.placement` (`app-shell`; D-1210).** Reinstall `app-shell`. Additive: `placement: 'before-sidebar'` puts a nav item above the active screen's `NavItem.sidebar` content (and first in the tab bar and the sheet); absent, or `'after-sidebar'`, keeps today's order. `placeNav(items)` returns `{ before, after }`.
 

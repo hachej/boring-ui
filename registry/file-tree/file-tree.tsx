@@ -83,3 +83,4 @@ export function FileTreeView(props: FileTreeViewProps) {
 }
 export { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 export type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
+export type { FileDecoration } from '@hachej/boring-ui-kit/file-tree-view';
