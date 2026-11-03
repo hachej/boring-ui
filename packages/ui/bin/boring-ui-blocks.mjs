@@ -10,7 +10,7 @@
 //
 // `check` writes nothing. `add`, `update` and `manifest` write the shadcn files they install and the manifest, nothing else.
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -307,6 +307,37 @@ function shadcnAdd(app, args, log, overwrite) {
   return { status: result.status ?? 1, skipped: skipped.map(([path]) => path), created };
 }
 
+/**
+ * A package manager follows a symlinked `node_modules` or scope directory and writes into the tree it points at: another checkout's install.
+ * Refused before anything runs. Per-package links (workspaces, pnpm) stay valid, and `check` never gets here: it writes nothing.
+ */
+function refuseBorrowedInstall(app) {
+  const borrowed = [];
+  for (const dir of installRoots(app)) {
+    const modules = join(dir, 'node_modules');
+    const stat = lstatSync(modules, { throwIfNoEntry: false });
+    if (stat?.isSymbolicLink()) borrowed.push(modules);
+    else if (stat) borrowed.push(...readdirSync(modules).filter(name => name.startsWith('@')).map(name => join(modules, name)).filter(path => lstatSync(path).isSymbolicLink()));
+  }
+  if (borrowed.length) throw new Error(`refusing to install through a borrowed install: ${borrowed.map(path => `${path} is a symlink`).join(', ')}. A package manager would write into the tree it points at. A borrowed install is read-only: \`check\` still works, and \`add\` and \`update\` need an owned physical install.`);
+}
+
+/** Where a package manager run from `app` may write: the app, and every directory up to its workspace root when it is in a workspace. */
+function installRoots(app) {
+  const walked = [];
+  for (let dir = app; ; dir = dirname(dir)) {
+    walked.push(dir);
+    if (isWorkspaceRoot(dir)) return walked;
+    if (dirname(dir) === dir) return [app];
+  }
+}
+
+function isWorkspaceRoot(dir) {
+  if (existsSync(join(dir, 'pnpm-workspace.yaml'))) return true;
+  try { return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).workspaces !== undefined; }
+  catch { return false; }
+}
+
 const line = v => `${v.check} ${v.rule} ${v.file}${v.line ? `:${v.line}:${v.column}` : ''} ${v.detail}`;
 
 export function main(argv, cwd = process.cwd(), log = console.log, error = console.error) {
@@ -328,6 +359,7 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
       return 1;
     }
     if (command === 'manifest') { log(`${flags.manifest ?? MANIFEST}: ${writeManifest(app, flags.manifest)} file(s)`); return 0; }
+    if (command === 'add' || (command === 'update' && !flags.dryRun)) refuseBorrowedInstall(app);
     if (command === 'add') {
       appPaths(app);
       if (!flags.pass.length) throw new Error('add needs shadcn add arguments');
