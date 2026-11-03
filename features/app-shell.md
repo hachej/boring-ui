@@ -5,7 +5,7 @@ The `app-shell` block gives an app its navigation, one header per screen, an acc
 ## Sub-features
 
 - `shell-layouts` three layouts: `screen`, `workspace` (list and detail, left pane starts as the icon rail) and `chat` (the page is `AgentWorkspace`). `registry/app-shell/app-shell.tsx`.
-- `shell-nav` bottom tab bar on a phone (four items, more give three plus « Plus »), `compactNav="sheet"` for a sheet instead, shadcn sidebar with `rail="icon" | "hover"` on a wide screen. `registry/app-shell/nav.tsx`.
+- `shell-nav` bottom tab bar on a phone (four items, more give three plus « Plus »), `compactNav="sheet"` for a sheet instead, shadcn sidebar with `rail="icon" | "hover"` on a wide screen; `NavItem.placement: "before-sidebar"` puts an item above the screen's own sidebar content and first in the tab bar (D-1210). `registry/app-shell/nav.tsx`.
 - `shell-header` one header per screen through `useScreenHeader`, back arrow, at most two actions. `registry/app-shell/header.tsx`.
 - `shell-list-detail` `ListDetail`: both panes wide, one at a time on a phone with Back, collapsible list. `registry/app-shell/list-detail.tsx`.
 - `shell-account` account sheet and menu: name, email, app menu, theme switch, sign out. `registry/app-shell/account.tsx`.

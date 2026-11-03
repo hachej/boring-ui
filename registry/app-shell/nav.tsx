@@ -25,6 +25,13 @@ export interface NavItem {
   readonly render: () => ReactNode;
   /** The screen's own content inside the shell's sidebar (its list, say) while this item is on show: above the nav items, which move below it. `collapsed` is true on the icon rail, so the content can fold with it. */
   readonly sidebar?: (state: { readonly collapsed: boolean }) => ReactNode;
+  /** Where this item sits against a screen's own sidebar content: `'before-sidebar'` puts it above that content, `'after-sidebar'` (the default) below. Items marked before come first everywhere (the tab bar and the phone sheet too); each side keeps the registered order. */
+  readonly placement?: 'before-sidebar' | 'after-sidebar';
+}
+
+/** The items marked `before-sidebar`, then the others, each in registered order. */
+export function placeNav<T extends Pick<NavItem, 'placement'>>(items: readonly T[]): { readonly before: readonly T[]; readonly after: readonly T[] } {
+  return { before: items.filter(item => item.placement === 'before-sidebar'), after: items.filter(item => item.placement !== 'before-sidebar') };
 }
 
 /** The most tabs the bar shows. */
@@ -72,7 +79,8 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
   const shown = items.length > 1;
   useTabbarHeight(bar, shown);
   if (!shown) return null;
-  const { tabs, overflow } = splitNav(items);
+  const { before, after } = placeNav(items);
+  const { tabs, overflow } = splitNav([...before, ...after]);
   const inOverflow = overflow.find(item => item.id === activeId);
   const tab = (item: NavItem) => <Button key={item.id} variant={item.id === activeId ? 'secondary' : 'ghost'} role="tab" data-testid={`tab-${item.id}`} aria-selected={item.id === activeId} tabIndex={item.id === activeId ? 0 : -1}
     onClick={() => onChange(item.id)} className={TAB}>
@@ -107,6 +115,16 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
   // In the phone sheet, choosing a screen closes it.
   const choose = (id: string) => { setOpenMobile(false); onChange(id); };
   const own = items.find(item => item.id === activeId)?.sidebar?.({ collapsed: state === 'collapsed' && !isMobile });
+  const { before, after } = placeNav(items);
+  const navGroup = (group: readonly NavItem[], className?: string, testId?: string) => group.length > 0 && <SidebarGroup className={className} data-testid={testId}><SidebarGroupContent><SidebarMenu>
+    {group.map(item => <SidebarMenuItem key={item.id}>
+      <SidebarMenuButton isActive={item.id === activeId} tooltip={item.label} data-testid={`nav-${item.id}`} className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" onClick={() => choose(item.id)}>
+        <item.icon />
+        <span>{item.label}</span>
+        {item.badge && <Dot className="ml-auto group-data-[collapsible=icon]:hidden" />}
+      </SidebarMenuButton>
+    </SidebarMenuItem>)}
+  </SidebarMenu></SidebarGroupContent></SidebarGroup>;
   const layer = useAgentLayer();
   const pressed = layer.state !== 'closed' && layer.showing === 'agent';
   const AgentIcon = agent?.icon ?? SparklesIcon;
@@ -116,16 +134,10 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
     <div className="app-shell contents">
     <SidebarHeader><p data-testid="sidebar-title" className="m-0 truncate px-2 py-1 text-base font-semibold group-data-[collapsible=icon]:hidden">{title}</p></SidebarHeader>
     <SidebarContent>
+      {/* Without the screen's own content, one group in placed order; with it, the before items above it and the rest below. */}
+      {items.length > 1 && own != null && navGroup(before, 'shrink-0', 'nav-before')}
       {own != null && <div data-testid="sidebar-screen" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{own}</div>}
-      {items.length > 1 && <SidebarGroup className={own != null ? 'shrink-0' : undefined}><SidebarGroupContent><SidebarMenu>
-        {items.map(item => <SidebarMenuItem key={item.id}>
-          <SidebarMenuButton isActive={item.id === activeId} tooltip={item.label} data-testid={`nav-${item.id}`} className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" onClick={() => choose(item.id)}>
-            <item.icon />
-            <span>{item.label}</span>
-            {item.badge && <Dot className="ml-auto group-data-[collapsible=icon]:hidden" />}
-          </SidebarMenuButton>
-        </SidebarMenuItem>)}
-      </SidebarMenu></SidebarGroupContent></SidebarGroup>}
+      {items.length > 1 && (own != null ? navGroup(after, 'shrink-0') : navGroup([...before, ...after]))}
       {/* The assistant is a layer, never a destination: no route, it toggles the right panel. */}
       {agent && <>
         {items.length > 1 && <SidebarSeparator />}
