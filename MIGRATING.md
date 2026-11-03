@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`NavItem.placement` (`app-shell`; D-1210).** Reinstall `app-shell`. Additive: `placement: 'before-sidebar'` puts a nav item above the active screen's `NavItem.sidebar` content (and first in the tab bar and the sheet); absent, or `'after-sidebar'`, keeps today's order. `placeNav(items)` returns `{ before, after }`.
+
 # Migrating to 0.4.48
 
 - **A projected watch sends operation batches (`@hachej/boring-agent`, `chat-transport`).** A host that passes `project` to `createChatTransportHandler` or the socket handler used to send a complete view per update, which grew with the conversation (a member's PM: 62 KB, ten times a second). It now sends the first view, then the batch between projected views (`diffRevisions`), or the complete view when the batch is not under half its size. No client change: `createRemoteChat` already replays batches. A host that does not project is unchanged.

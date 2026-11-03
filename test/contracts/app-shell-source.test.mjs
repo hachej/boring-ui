@@ -242,6 +242,15 @@ test('AppShellProps has the shell props, optional rail, locale and URL opt-out, 
   assert.equal(compactNav.type.getText(file), "'tabs' | 'sheet'");
 });
 
+test('placeNav: items marked before-sidebar come first, each side in registered order; absent means after', async () => {
+  const { placeNav } = await bundle('nav.tsx');
+  const items = [{ id: 'a' }, { id: 'b', placement: 'before-sidebar' }, { id: 'c', placement: 'after-sidebar' }, { id: 'd', placement: 'before-sidebar' }];
+  const ids = list => list.map(item => item.id);
+  const placed = placeNav(items);
+  assert.deepEqual([ids(placed.before), ids(placed.after)], [['b', 'd'], ['a', 'c']]);
+  assert.deepEqual(ids(placeNav([{ id: 'x' }, { id: 'y' }]).after), ['x', 'y'], 'no field: today\'s order');
+});
+
 test('splitNav: up to four screens are all tabs; more give three tabs plus « Plus »', async () => {
   const { splitNav } = await bundle('nav.tsx');
   const ids = count => Array.from({ length: count }, (_, index) => `n${index + 1}`);
