@@ -158,7 +158,10 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
   // Only a submission whose outcome is unknown blocks, until it is checked or retried.
   const unconfirmed = state.send.kind === 'unknown';
   const connected = state.connection.kind === 'connected';
-  const sendBlocked = uploading > 0 || state.disposed || !connected || unconfirmed;
+  // Before the first view the composer already takes messages: the controller holds them, shown as the person's own, and sends them once
+  // connected (or puts them back if the connection fails).
+  const firstConnect = state.connection.kind === 'connecting' && !state.view;
+  const sendBlocked = uploading > 0 || state.disposed || !(connected || firstConnect) || unconfirmed;
   /** Puts a message back into the composer ahead of whatever is there now (nothing is dropped). */
   const putBack = (text: string, images: readonly ChatAttachment[]) => {
     if (controller.getSnapshot().disposed) return;
@@ -321,7 +324,7 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
     if (catalog && selected) act(async () => catalog.onActivate({ name: selected.name, behavior: selected.behavior }));
   };
   const empty = connected && !state.view?.entries.length && !rows.length;
-  const loading = (state.connection.kind === 'idle' || state.connection.kind === 'connecting') && !state.view;
+  const loading = (state.connection.kind === 'idle' || state.connection.kind === 'connecting') && !state.view && !echo?.length;
   return { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, sendBlocked, error, setError, report, act, current,
     files, empty, loading, developer, natural, sending, send, putBack, upload, pasteText, picked, pending, uploading, activateMention,
     pickMention: (path: string) => setPicked(value => value.includes(path) ? value : [...value, path]),
