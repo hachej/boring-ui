@@ -238,6 +238,14 @@ async function registry(t, entry, name) {
   return { window, document: window.document, components, labels, createElement, act, createRoot };
 }
 const setValue = (window, element, value) => { Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(element, value); element.dispatchEvent(new window.Event('input', { bubbles: true })); };
+/** Waits (inside act) until `check()` holds. Done awaits the page observation and a sent note awaits Done: a fixed sleep is a timing guess that a loaded runner loses. */
+const waitUntil = async (act, label, check) => {
+  const deadline = Date.now() + 20_000;
+  while (!check()) {
+    if (Date.now() > deadline) assert.fail(`timed out: ${label}`);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 10)); });
+  }
+};
 
 test('registry bubble: Annuler la sélection, Esc, a second click on the zone, with French labels and announcements; no general-question entry anywhere in the UI', { timeout: 30000 }, async t => {
   const { window, document, components, labels, createElement, act, createRoot } = await registry(t, 'feedback-session.tsx', 'feedback-session');
@@ -289,7 +297,8 @@ test('registry bubble: Annuler la sélection, Esc, a second click on the zone, w
   await act(async () => q('feedback-bubble-save').click());
   assert.equal(q('feedback-bubble'), null);
   assert.equal(q('feedback-bar-count').textContent, '1 note');
-  await act(async () => { q('feedback-done').click(); await new Promise(resolve => setTimeout(resolve, 10)); });
+  await act(async () => q('feedback-done').click());
+  await waitUntil(act, 'Done reached the review', () => session.getSnapshot().phase === 'review');
   assert.equal(session.getSnapshot().phase, 'review');
   await act(async () => ui.unmount());
 });
