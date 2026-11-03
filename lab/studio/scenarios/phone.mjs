@@ -101,7 +101,9 @@ export default [
       assert.equal(await browser.evaluate(`!${q('[data-testid=artifact-panel]')}`), true, 'a phone keeps to the card: the sheet does not cover the chat by itself');
       await shots('mobile-artifact-card');
       await p.check('artifact cards', 'document.querySelector("[data-testid=transcript]")');
-      await browser.evaluate(`${qa(CARD)}[0].scrollIntoView({ block: 'center' })`); await pause(500);
+      // Centred twice: scrolling up from the end mounts the jump-to-latest row, which shortens the viewport (D-1403), and the tap centres its
+      // target again; centring on the settled layout makes `before` the position the tap leaves.
+      for (let i = 0; i < 2; i++) { await browser.evaluate(`${qa(CARD)}[0].scrollIntoView({ block: 'center' })`); await pause(500); }
       const scrollProbe = `(() => { const v = ${q('[data-testid=transcript-scroll]')}; const n = ${q('[data-testid=transcript-navigation]')}; return { top: v.scrollTop, gap: Math.round(v.scrollHeight - v.clientHeight - v.scrollTop), ch: v.clientHeight, sh: v.scrollHeight, arrow: n ? Math.round(n.getBoundingClientRect().height) : 0 }; })()`;
       const seen = [await browser.evaluate(scrollProbe)];
       const before = seen[0].top;
