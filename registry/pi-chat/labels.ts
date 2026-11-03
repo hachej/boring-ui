@@ -174,6 +174,8 @@ export const defaultChatLabels = {
   more: 'More',
   edit: 'Edit',
   sending: 'Sending',
+  /** Under a message whose send was not confirmed; the notice below offers Check and Retry. */
+  notSent: 'Not sent',
   /** The time inside a bubble in the `messaging` style (« 14:02 »), and its full date as the tooltip. */
   messageClock: (at: string) => formatClock(at, 'en'),
   messageTimestamp: (at: string) => formatTimestamp(at, 'en'),
@@ -238,6 +240,8 @@ export const defaultChatLabels = {
   forkHint: 'Fork from here: a new conversation with the messages up to this reply',
   responseFailed: 'The response failed',
   interrupted: 'Response interrupted',
+  answeredBy: (model: string) => `answered by ${model}`,
+  answeredFallback: (reason: string) => `fallback: ${reason}`,
   thinking: 'Thinking…',
   openImage: 'Open image attachment',
   imageAttachment: 'Image attachment',

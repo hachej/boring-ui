@@ -157,6 +157,9 @@ export interface ReplyRef {
   readonly durationMs?: number | undefined;
 }
 
+/** The host's per-turn record of the model that answered a reply; `fallback` is why it is not the model the agent asked for. */
+export interface AnsweredBy { readonly provider: string; readonly model: string; readonly fallback?: string | undefined }
+
 export interface ModelConfig {
   readonly options: readonly (ModelRef & { readonly label?: string })[];
   /** Reject to refuse: the message is shown inline. */

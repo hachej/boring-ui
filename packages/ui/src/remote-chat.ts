@@ -43,6 +43,12 @@ export interface RemoteChatOptions {
    * every interval; a socket silent for 2.5 intervals is treated as lost and reopened.
    */
   readonly webSocket?: { readonly open?: (url: URL) => WebSocket; readonly pingMs?: number };
+  /**
+   * How long the first view of a connection may take before the chat gives up and reports an error (default 18000). Without it a
+   * host that accepts the watch request but never sends a view leaves the page on « Connecting… » for good. Later views are
+   * bounded by the heartbeat.
+   */
+  readonly firstViewTimeoutMs?: number;
   /** Host events the socket carries beside the chat (`broadcast` on the server, for example presence or the conversation list). */
   readonly onEvent?: (event: unknown) => void;
 }
@@ -152,7 +158,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
       const notify = () => { const resume = wake; wake = undefined; resume?.(); };
       const finish = () => {
         if (closed) return;
-        closed = true; clearInterval(timer); if (current === socket) current = undefined; notify();
+        closed = true; clearInterval(timer); clearTimeout(firstView); if (current === socket) current = undefined; notify();
         if (!opened) refuse(new Error('Remote chat socket closed before its first view'));
       };
       const timer = setInterval(() => {
@@ -161,6 +167,8 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
       }, ping);
       const next = async () => { while (frames.length === 0 && !closed) await new Promise<void>(resolve => { wake = resolve; }); return frames.shift(); };
       const cancel = () => { try { socket.close(1000); } catch { /* closing */ } finish(); };
+      // A socket that opens but never sends its first view is closed (then HTTP is tried, or the error is reported).
+      const firstView = setTimeout(() => { if (!opened) { try { socket.close(); } catch { /* closing */ } finish(); } }, options.firstViewTimeoutMs ?? 18_000);
       socket.onclose = finish;
       socket.onerror = () => { try { socket.close(); } catch { /* closing */ } finish(); };
       socket.onmessage = event => {
@@ -188,6 +196,15 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
 
   async function httpSource(): Promise<Source> {
     const stopped = new AbortController();
+    // The whole wait for the first view (the response, then its first line) is bounded: a host that never answers is an error with retry.
+    const limit = options.firstViewTimeoutMs ?? 18_000;
+    let giveUp: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<never>((_, reject) => { giveUp = setTimeout(() => { stopped.abort(); reject(new WatchRefused('Remote chat watch timed out before its first view', 408)); }, limit); });
+    late.catch(() => {});
+    try { return await Promise.race([openHttp(stopped), late]); }
+    finally { clearTimeout(giveUp); }
+  }
+  async function openHttp(stopped: AbortController): Promise<Source> {
     const response = await send(new Request(url('watch'), { signal: stopped.signal }));
     if (!response.ok || !response.body) throw new WatchRefused(`Remote chat watch failed: ${await reason(response)}`, response.status);
     const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();

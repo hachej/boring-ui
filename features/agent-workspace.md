@@ -14,6 +14,7 @@
 - `workspace-viewers` Markdown, HTML, image, PDF and code viewers loaded by kind. `registry/viewer-markdown/`, `viewer-html/`, `viewer-image/`, `viewer-pdf/`, `viewer-code/`.
 - `workspace-documents` `documents`: the Library, a file and its revisions; `DocumentSheet`. `registry/documents/`.
 - `workspace-windows` floating utility windows and launcher. `registry/windows/`.
+- `workspace-bar-host` `barOptions={{ hidden, command }}` (embedded): the host draws the one bar; `command={{ kind: 'history' | 'library' | 'new', n }}` still opens History or the Library, or starts a conversation (a new `n` per request). `registry/pi-app/workspace-bar.tsx`.
 
 ## How to get to it (user POV)
 
@@ -24,6 +25,7 @@
 
 Preconditions: `npm run build`, Chromium.
 
+- **Host bar.** `workspace-bar-host`: render an embedded workspace with `barOptions={{ hidden: true, command }}`; changing `command.n` opens `workspace-history` or `workspace-library`, or calls `onNew`. Not driven by a journey yet.
 - **Folders.** `workspace-library-folders`: `node --test test/ui/file-tree.mjs` renames, moves and deletes a folder against a fictional sqlite workspace, with a refusal halfway and a retry; `npm run file-tree:journey` drives the folder menu, F2, Move to… and Delete in a browser; `node --test test/packages/files-publication-recovery.test.mjs` prunes on disk.
 - **Page.** `workspace-page`, `workspace-library`, `workspace-artifacts`: `npm run workspace-app:journey`.
 - **Embedded.** `workspace-embedded`: `npm run app-shell:journey:workspace`; the bar buttons `workspace-bar-history`, `workspace-bar-library`, `workspace-bar-new` sit in the shell header. `node examples/pm-panel/journey.mjs` drives the optional host-first Tasks panel and New inside History.

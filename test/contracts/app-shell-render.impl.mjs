@@ -762,6 +762,33 @@ test('NavItem.sidebar: the screen on show puts its own content in the shell\'s s
   await ui.unmount();
 });
 
+test('NavItem.placement: before-sidebar items sit above the screen\'s own sidebar content, the rest below', async t => {
+  const { createElement: h } = await import('react');
+  const items = [
+    { id: 'settings', label: 'Réglages', icon: Icon, render: () => null },
+    { id: 'strategy', label: 'Strategy', icon: Icon, placement: 'before-sidebar', render: () => null, sidebar: () => h('p', { 'data-testid': 'own-sections' }, 'sections') },
+    { id: 'data', label: 'Data', icon: Icon, placement: 'before-sidebar', render: () => null },
+  ];
+  const wide = await render(t, { nav: items, route: { id: 'strategy', onChange() {} } }, { width: 1440 });
+  const q = id => wide.container.querySelector(`[data-testid=${id}]`);
+  const follows = (a, b) => Boolean(q(a).compareDocumentPosition(q(b)) & wide.window.Node.DOCUMENT_POSITION_FOLLOWING);
+  assert.ok(follows('nav-strategy', 'nav-data'), 'the before items keep their registered order');
+  assert.ok(follows('nav-data', 'sidebar-screen'), 'and sit above the screen\'s content');
+  assert.ok(follows('sidebar-screen', 'nav-settings'), 'an item without placement stays below it');
+  await wide.unmount();
+});
+
+test('NavItem.placement: the phone tab bar puts before-sidebar items first', async t => {
+  const items = [
+    { id: 'settings', label: 'Réglages', icon: Icon, render: () => null },
+    { id: 'strategy', label: 'Strategy', icon: Icon, placement: 'before-sidebar', render: () => null },
+    { id: 'data', label: 'Data', icon: Icon, placement: 'before-sidebar', render: () => null },
+  ];
+  const phone = await render(t, { nav: items, route: { id: 'strategy', onChange() {} } });
+  assert.deepEqual([...phone.container.querySelectorAll('[role=tab]')].map(tab => tab.dataset.testid), ['tab-strategy', 'tab-data', 'tab-settings'], 'the tab bar follows the same order');
+  await phone.unmount();
+});
+
 test('compactNav="sheet": a phone has no tab bar; the header\'s leading button opens the sidebar as a sheet, and choosing a screen closes it', async t => {
   const { createElement: h } = await import('react');
   const items = ['Jour', 'Semaine'].map(label => ({ id: label, label, icon: Icon, render: () => null, sidebar: () => h('p', { 'data-testid': 'own-list' }, 'liste') }));
