@@ -192,7 +192,8 @@ export function useAgentLoan(): (AgentLoan & { readonly compact: boolean }) | nu
 /** Whether `which` is on show: the assistant on the one snap; the PM on it too, or in its own column when wide enough for both. */
 function onShow(current: { readonly improve: ShellPanel | undefined; readonly snap: Snap; readonly shown: Which; readonly pmOpen: boolean; readonly together: boolean }, which: Which): boolean {
   if (which === 'agent') return current.snap !== 'closed' && current.shown === 'agent';
-  return current.improve !== undefined && ((current.snap !== 'closed' && current.shown === 'improve') || (current.together && current.pmOpen));
+  // A PM column alone stays on show for the one render between a narrowing and its move to the snap (no Back entry dropped and pushed again).
+  return current.improve !== undefined && ((current.snap !== 'closed' && current.shown === 'improve') || (current.pmOpen && (current.together || current.snap === 'closed')));
 }
 
 const controllerOf = (spec: AgentSpec | ShellPanel | undefined) => spec && ('controller' in spec ? spec.controller : spec.identity);
@@ -264,15 +265,30 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     if (specs.current.shown === 'improve') setSnapState('closed');
   }, []);
   const closeAll = useCallback(() => { setPmOpen(false); setSnapState('closed'); }, []);
-  const closeShowing = useCallback(() => { if (specs.current.snap !== 'closed') setSnapState('closed'); else setPmOpen(false); }, []);
+  const closeShowing = useCallback(() => {
+    const current = specs.current;
+    if (current.snap === 'closed' || current.shown === 'improve') setPmOpen(false);
+    if (current.snap !== 'closed') setSnapState('closed');
+  }, []);
+  // Crossing `TOGETHER_FROM` moves the PM between its two representations, so what is on show stays on show and nothing reopens by itself.
+  // Narrowing: a PM alone becomes the one snap; beside the assistant it closes (one at a time), its conversation still mounted. Widening:
+  // a PM on the one snap moves to its column and the assistant's snap is free again.
+  const wasTogether = useRef(together);
+  useLayoutEffect(() => {
+    if (wasTogether.current === together) return;
+    wasTogether.current = together;
+    const current = specs.current;
+    const alone = current.snap === 'closed' && current.improve !== undefined;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- runs once per breakpoint crossing (the ref guards repeats), so it settles after one pass
+    if (!together) { if (current.pmOpen) { setPmOpen(false); if (alone) { setShown('improve'); setSnapState('half'); } } return; }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- runs once per breakpoint crossing (the ref guards repeats), so it settles after one pass
+    if (current.snap !== 'closed' && current.shown === 'improve') { setPmOpen(true); setSnapState('closed'); if (current.agent) setShown('agent'); }
+  }, [together]);
   // One full-screen layer at a time: opening the agent or product manager closes a view of the app (`useShellLayer`), and a view closes both.
   useEffect(() => registerAgentLayerCloser(closeAll), [closeAll]);
-  // The assistant comes on show. Wide enough for both, a PM on show (opened below `TOGETHER_FROM`, then widened) stays open beside it;
-  // narrower, it closes (one at a time).
+  // The assistant comes on show; below `TOGETHER_FROM` the PM closes (one at a time), from it the PM column stays as it is.
   const toAgent = useCallback(() => {
-    const current = specs.current;
-    if (!current.together) setPmOpen(false);
-    else if (current.shown === 'improve' && current.snap !== 'closed') setPmOpen(true);
+    if (!specs.current.together) setPmOpen(false);
     setShown('agent');
   }, []);
   const open = useCallback((which?: Which, at: 'peek' | 'half' | 'full' = 'half') => {

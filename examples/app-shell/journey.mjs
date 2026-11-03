@@ -1077,8 +1077,31 @@ try {
     await browser.press('Escape');
     await browser.until('Escape closes the coach', `${q(LAYER)}?.dataset.state === 'closed'`);
     assert.equal(await browser.evaluate(pmShown), true, '1440: Escape in the dock leaves the PM');
-    await browser.click(q(`${PM} [data-testid=pm-close]`));
-    await browser.until('the PM closed', `${q(PM)}.hidden`);
+    // A live resize across 1360px keeps what is on show and reopens nothing by itself.
+    const resize = width => send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+    await resize(1280);
+    await browser.until('1280: the PM alone stays on show', `${pmShown} && ${q(LAYER)}?.dataset.state === 'closed'`);
+    await resize(1440);
+    await browser.until('1440 again: still the PM alone', `${pmShown} && ${q(LAYER)}?.dataset.state === 'closed'`);
+    await browser.click(q(TRIGGER));
+    await browser.until('both again', `${pmShown} && ${coachShown}`);
+    await resize(1280);
+    await browser.until('1280: one at a time, the coach stays', `${coachShown} && ${q(PM)}.hidden`);
+    await resize(1440);
+    await pause(400);
+    assert.equal(await browser.evaluate(pmShown), false, 'widening does not reopen the PM by itself');
+    await browser.press('Escape');
+    await browser.until('the coach closed', `${q(LAYER)}?.dataset.state === 'closed'`);
+    await improve();
+    await resize(1280);
+    await pause(300);
+    await browser.click(q(TRIGGER));
+    await browser.until('1280: the coach replaced the PM', `${coachShown} && ${q(PM)}.hidden`);
+    await browser.press('Escape');
+    await browser.until('the coach closed', `${q(LAYER)}?.dataset.state === 'closed'`);
+    await resize(1440);
+    await pause(400);
+    assert.equal(await browser.evaluate(`${pmShown} || ${coachShown}`), false, 'closed stays closed after widening');
     // Too narrow for the dock, the 26rem column and the screen: one at a time, as before.
     for (const width of [1024, 768]) {
       await send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: false });
