@@ -93,6 +93,40 @@ export class SubmissionRefused extends Error {
   constructor(message: string) { super(message); this.name = 'SubmissionRefused'; }
 }
 
+/**
+ * A photo the host sends as a link (an image part with a `url`, `data: ''`, so the first view stays small) is handed out with its
+ * `url` resolved against the chat endpoint: a relative link names the endpoint's own route (`?op=image&…`), whatever page the chat is
+ * on. The wire replica stays as sent, so later native operations (a field set, a string append) replay on the host's own values; the
+ * linked copy is derived after each replay. Values are immutable, so a node maps to one linked node for good: unchanged entries keep
+ * their identity and only changed paths are walked again.
+ */
+function imageLinker(base: URL): <T>(value: T) => T {
+  const linked = new WeakMap<object, unknown>();
+  const link = (node: unknown): unknown => {
+    if (!node || typeof node !== 'object') return node;
+    if (linked.has(node)) return linked.get(node);
+    let out: unknown = node;
+    if (Array.isArray(node)) {
+      const items = node.map(link);
+      if (items.some((item, index) => item !== node[index])) out = items;
+    } else {
+      const record = node as Record<string, unknown>;
+      let copy: Record<string, unknown> | undefined;
+      for (const key of Object.keys(record)) {
+        const value = record[key];
+        const next = key === 'url' && record.type === 'image' && typeof value === 'string' ? resolved(value) : link(value);
+        if (next !== value) (copy ??= { ...record })[key] = next;
+      }
+      if (copy) out = copy;
+    }
+    linked.set(node, out);
+    return out;
+  };
+  // A link that is not a URL is left as sent: the chat draws a placeholder.
+  const resolved = (url: string) => { try { return new URL(url, base).href; } catch { return url; } };
+  return <T>(value: T) => link(value) as T;
+}
+
 async function reason(response: Response): Promise<string> {
   try { const value = await response.json() as { reason?: unknown }; if (typeof value.reason === 'string') return value.reason; } catch { /* fall through */ }
   return `status ${response.status}`;
@@ -105,6 +139,7 @@ async function reason(response: Response): Promise<string> {
  */
 export async function createRemoteChat(options: RemoteChatOptions): Promise<RemoteChat> {
   const base = new URL(options.endpoint, globalThis.location?.href);
+  const linkImages = imageLinker(base);
   const send = options.fetch, pollMs = options.pollMs ?? 500;
   const backoff = { base: options.reconnect?.baseDelayMs ?? 1000, max: options.reconnect?.maxDelayMs ?? 30_000 };
   const url = (op: string, extra: Record<string, string> = {}) => {
@@ -252,7 +287,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     const closed = new Promise<WatchEnd>(resolve => { settle = resolve; });
     const finish = (end: WatchEnd) => { if (!ended) { ended = end; source.cancel(); settle(end); } };
     const handle: Watch = {
-      get value() { return value; },
+      get value() { return linkImages(value); },
       closed,
       lost: () => lost,
       stop: async () => { finish({ reason: 'stopped' }); return closed; },
@@ -272,7 +307,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
               }
               // Native operation batches are replayed with the upstream delta implementation; a view frame resets the replica.
               value = frame.kind === 'view' ? frame.view : applyImmutable(value, frame.ops) as ConversationView;
-              try { await listener(value, [], context); }
+              try { await listener(linkImages(value), [], context); }
               catch (error) { return finish({ reason: 'listener_error', error: error instanceof Error ? error : new Error(String(error)) }); }
             }
           } catch (error) {
@@ -395,11 +430,11 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     commit: async (change, _context) => change({ submissionByRequest: (_conversationId, requestId) => lookup(requestId) }),
     abort: async () => { await post('abort', {}); },
     entries: async (query, limit, cursor: Cursor | undefined) =>
-      (await call<{ page: Page<EntryRecord, Cursor> }>('entries', {}, { limit: String(limit),
+      linkImages((await call<{ page: Page<EntryRecord, Cursor> }>('entries', {}, { limit: String(limit),
         ...(query.maxEntryId === undefined ? {} : { maxEntryId: String(query.maxEntryId) }),
         ...(query.minEntryId === undefined ? {} : { minEntryId: String(query.minEntryId) }),
         ...(query.order === undefined ? {} : { order: query.order }),
-        ...(cursor === undefined ? {} : { cursor: JSON.stringify(cursor) }) })).page,
+        ...(cursor === undefined ? {} : { cursor: JSON.stringify(cursor) }) })).page),
   };
   const context = BACKGROUND_CONTEXT;
   const close = async () => { const first = unclaimed; unclaimed = undefined; await first?.stop(); };
