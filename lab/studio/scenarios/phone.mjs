@@ -125,7 +125,8 @@ export default [
       await browser.until('closed', `!${q('[data-testid=artifact-panel]')}`);
       await pause(300);
       // (a few pixels of rounding while the transcript settles are not a lost position)
-      assert.ok(Math.abs(await browser.evaluate(`${q('[data-testid=transcript-scroll]')}.scrollTop`) - before) <= 8, 'the chat scroll position is unchanged');
+      const after = await browser.evaluate(`(() => { const v = ${q('[data-testid=transcript-scroll]')}; return { top: v.scrollTop, gap: Math.round(v.scrollHeight - v.clientHeight - v.scrollTop), arrow: !!${q('[data-testid=transcript-navigation]')} }; })()`);
+      assert.ok(Math.abs(after.top - before) <= 8, `the chat scroll position is unchanged (before ${before}, after ${JSON.stringify(after)})`);
       // The second card is HTML: open it and check that it fits.
       await browser.tap(`${qa(CARD)}[1]`);
       await browser.until('html panel', `!!${q('[data-testid=artifact-panel][data-artifact-type=html] iframe')}`);
