@@ -4,14 +4,14 @@ import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
 import type { JsonObject } from '@earendil-works/pi-durable';
-import { AlertCircleIcon, CircleSlashIcon, ClockIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, PauseIcon, PlayIcon, PresentationIcon } from 'lucide-react';
+import { AlertCircleIcon, CircleSlashIcon, ClockIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, ImageOffIcon, PauseIcon, PlayIcon, PresentationIcon } from 'lucide-react';
 import { CopyButton } from './code-block';
 import type { AnswerOutcome, ChatArtifactsConfig, ChatCards, CommandMentions } from './config';
 import { ActivityBlock } from './activity';
 import type { ActivityState } from './activity';
 import { Shimmer } from './shimmer';
 import { ToolCard } from './tool';
-import { thumbnail } from './composer';
+import { imageSource, thumbnail } from './composer';
 import { ImageViewer } from './image-viewer';
 import { displayName, fileKind, isUploadPath, isVoicePath, mentionKind, pieces, visibleParts } from '@hachej/boring-ui-kit/chat-text';
 import type { FileKind, Piece } from '@hachej/boring-ui-kit/chat-text';
@@ -108,10 +108,20 @@ function ImageThumbnails({ images, onOpenImage }: { readonly images: readonly Im
   if (!images.length) return null;
   return <div data-testid="message-images" data-slot="message-images" className={cn('grid max-w-full gap-2', images.length === 1 ? 'w-60' : 'w-120 grid-cols-2')}>
     {images.map((image, at) => <div key={at} className="relative min-h-12 min-w-12 self-start">
-      <img src={thumbnail(image.mimeType, image.data)} alt={labels.imageAttachment} className="block h-auto w-full rounded-(--radius-xl)" />
+      <MessageImage key={imageSource(image) ?? ''} image={image} alt={labels.imageAttachment} />
       <Button variant="link" className="absolute inset-0 h-auto min-h-12 min-w-12 w-full" data-testid="message-image" aria-label={images.length > 1 ? `${labels.openImage}, ${labels.imagePosition(at + 1, images.length)}` : labels.openImage} onClick={() => onOpenImage?.(image, images)} />
     </div>)}
   </div>;
+}
+
+/** One photo of a message; a linked photo the host no longer serves (a 404) shows a placeholder in its place. */
+function MessageImage({ image, alt }: { readonly image: ImageContent; readonly alt: string }) {
+  // Keyed by its source by the caller: a new source starts again, a failed one is not requested again on every render.
+  const src = imageSource(image);
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <div data-testid="message-image-missing" role="img" aria-label={alt}
+    className="flex aspect-square w-full items-center justify-center rounded-(--radius-xl) bg-muted text-muted-foreground"><ImageOffIcon aria-hidden="true" /></div>;
+  return <img src={src} alt={alt} onError={() => setFailed(true)} className="block h-auto w-full rounded-(--radius-xl)" />;
 }
 
 /** Inline sent mention; workspace openers and host renderers keep their existing authority. */
@@ -356,10 +366,10 @@ function AnswerWaiting({ kind }: { readonly kind: 'question' | 'approval' }) {
 function resultText(message: ToolResultMessage): string { return message.content.map(part => part.type === 'text' ? part.text : '').join('\n'); }
 
 function messageImages(row: Row): readonly ImageContent[] {
-  const images = (content: ToolResultMessage['content']) => content.flatMap(part => part.type === 'image' && thumbnail(part.mimeType, part.data) ? [part] : []);
+  const images = (content: ToolResultMessage['content']) => content.flatMap(part => part.type === 'image' && imageSource(part) ? [part] : []);
   if (row.type === 'user') return typeof row.message.content === 'string' ? [] : images(row.message.content);
   if (row.type === 'orphan-result') return images(row.message.content);
-  return row.type === 'assistant' ? row.images?.filter(image => thumbnail(image.mimeType, image.data)) ?? row.parts.flatMap(part => part.kind === 'tool' && part.entry.result ? images(part.entry.result.content) : []) : [];
+  return row.type === 'assistant' ? row.images?.filter(image => imageSource(image)) ?? row.parts.flatMap(part => part.kind === 'tool' && part.entry.result ? images(part.entry.result.content) : []) : [];
 }
 
 /**
@@ -380,11 +390,11 @@ export function RowView({ row, context }: { readonly row: Row; readonly context:
   const images = messageImages(row);
   const [selection, setSelection] = useState<{ readonly index: number; readonly images: readonly ImageContent[]; readonly key: string; readonly opener: RowContext['onOpenImage'] }>();
   const current = selection && selection.key === row.key && selection.opener === context.onOpenImage && selection.images.length === images.length
-    && selection.images.every((image, at) => image.mimeType === images[at]?.mimeType && image.data === images[at]?.data) ? selection : undefined;
+    && selection.images.every((image, at) => image.mimeType === images[at]?.mimeType && image.data === images[at]?.data && imageSource(image) === (images[at] && imageSource(images[at]))) ? selection : undefined;
   // eslint-disable-next-line react-hooks/set-state-in-effect -- a stale selection (other row, opener or images) is dropped once, after commit
   useEffect(() => { if (selection && !current) setSelection(undefined); }, [selection, current]);
   const openImage: NonNullable<RowContext['onOpenImage']> = image => {
-    if (!thumbnail(image.mimeType, image.data)) return;
+    if (!imageSource(image)) return;
     if (context.onOpenImage) { context.onOpenImage(image, images); return; }
     const index = images.indexOf(image);
     if (index >= 0) setSelection({ index, images, key: row.key, opener: context.onOpenImage });

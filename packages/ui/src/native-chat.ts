@@ -68,6 +68,15 @@ export interface NativeChatHistorySource {
   readonly id: Conversation['id'];
   readonly entries: Conversation['entries'];
 }
+/**
+ * Whether entries older than the view's first one exist, when the host says so. A host that sends a slice of the conversation sets
+ * `hasEarlier` on the view it sends (a boolean beside the native fields); without it, a native `head` on a kept entry means earlier entries
+ * exist (a reset or compaction starts the view there). `undefined`: the view does not say.
+ */
+export function viewHasEarlier(view: ConversationView | undefined): boolean | undefined {
+  const said = (view as { readonly hasEarlier?: unknown } | undefined)?.hasEarlier;
+  return typeof said === 'boolean' ? said : undefined;
+}
 export type ChatHistoryState = { readonly kind: 'disabled' | 'idle' }
   | { readonly kind: 'loading' | 'ready'; readonly entries: readonly EntryRecord[]; readonly hasMore: boolean }
   | { readonly kind: 'error'; readonly entries: readonly EntryRecord[]; readonly hasMore: boolean; readonly error: unknown };
@@ -440,10 +449,13 @@ export function createNativeChatController(options: NativeChatOptions) {
       const previous = snapshot.history;
       if (previous.kind === 'ready' && !previous.hasMore) return Promise.resolve();
       if (!historyScan) {
-        let maxEntryId: EntryId | undefined;
-        for (const entry of snapshot.view?.entries ?? []) if (maxEntryId === undefined || entry.id > maxEntryId) maxEntryId = entry.id;
-        if (maxEntryId === undefined) { publish({ history: { kind: 'ready', entries: Object.freeze([]), hasMore: false } }); return Promise.resolve(); }
-        historyScan = { maxEntryId };
+        // Earlier means below the view's first entry: the view's own entries are on screen already, so the first page never repeats them.
+        let firstEntryId: EntryId | undefined;
+        for (const entry of snapshot.view?.entries ?? []) if (firstEntryId === undefined || entry.id < firstEntryId) firstEntryId = entry.id;
+        if (firstEntryId === undefined || firstEntryId <= 0 || viewHasEarlier(snapshot.view) === false) {
+          publish({ history: { kind: 'ready', entries: Object.freeze([]), hasMore: false } }); return Promise.resolve();
+        }
+        historyScan = { maxEntryId: firstEntryId - 1 as EntryId };
       }
       const scan = historyScan, generation = historyGeneration;
       const entries = 'entries' in previous ? previous.entries : Object.freeze([]);

@@ -6,7 +6,7 @@ import type { ImageContent } from '@earendil-works/pi-ai';
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import { thumbnail } from './composer';
+import { imageSource } from './composer';
 import { useChatText } from './labels';
 import type { ChatLabels } from './labels';
 
@@ -30,7 +30,7 @@ export function ImageViewer({ images, index, onIndexChange, onClose, labels: sup
 }) {
   const { labels: defaults } = useChatText();
   const labels = supplied ?? defaults;
-  const src = images[index] && thumbnail(images[index]!.mimeType, images[index]!.data);
+  const src = images[index] && imageSource(images[index]!);
   const move = (offset: number) => onIndexChange((index + offset + images.length) % images.length);
   if (!src) return null;
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent showCloseButton={false} aria-describedby={undefined} data-testid="image-viewer"

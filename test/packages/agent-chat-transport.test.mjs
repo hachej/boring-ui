@@ -59,6 +59,7 @@ test('remote history preserves its native upper bound when a write races the fir
   const { conversation, fetch: served } = await fixture(t);
   const write = text => conversation.submit({ type: 'write', entry: { kind: 'fictional.history', model: [{ role: 'user', content: text, timestamp: 0 }] } }, context);
   for (let index = 0; index < 50; index++) await write(`Earlier fictional ${index}`);
+  await conversation.reset('Fictional history boundary', context);
   let raced = false;
   const requests = [];
   const fetch = async request => {
@@ -71,7 +72,8 @@ test('remote history preserves its native upper bound when a write races the fir
   };
   const controller = createNativeChatController({ identity, ...await createRemoteChat({ endpoint, fetch }) });
   t.after(() => controller.dispose()); await controller.connect();
-  const bound = Math.max(...controller.getSnapshot().view.entries.map(entry => entry.id));
+  // Earlier entries are the ones below the view's first entry (D-1433): the view's own are on screen already.
+  const bound = Math.min(...controller.getSnapshot().view.entries.map(entry => entry.id)) - 1;
   await controller.loadEarlier();
   assert.equal(controller.getSnapshot().history.kind, 'ready', 'a concurrent append does not turn automatic history loading into an error');
   assert.equal(requests[0].searchParams.get('maxEntryId'), String(bound));
