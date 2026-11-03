@@ -58,22 +58,24 @@ async function render(format: DrawingFormat, text: string, assets: string | fals
 export function DrawingViewer({ text, path, format: given, title, onRead, excalidrawAssets = DEFAULT_EXCALIDRAW_ASSETS, locale, labels: words }: DrawingViewerProps) {
   const labels = useMemo(() => drawingLabelsFor(locale, words), [locale, words]);
   const format = given ?? drawingFormat(path, text);
-  const [state, setState] = useState<State>({ kind: 'loading' });
+  // The outcome of the drawing it was rendered for: another text, format or font folder shows loading until its own outcome lands.
+  const [outcome, setOutcome] = useState<{ readonly text: string; readonly format: DrawingFormat; readonly assets: string | false; readonly state: State }>();
+  const state: State = !format ? { kind: 'error', reason: 'unreadable' }
+    : outcome && outcome.text === text && outcome.format === format && outcome.assets === excalidrawAssets ? outcome.state : { kind: 'loading' };
   const read = useRef(onRead);
   useLayoutEffect(() => { read.current = onRead; });
   useEffect(() => {
-    if (!format) { setState({ kind: 'error', reason: 'unreadable' }); return; }
+    if (!format) return;
     const abort = new AbortController();
     let url: string | undefined;
-    setState({ kind: 'loading' });
     render(format, text, excalidrawAssets, abort.signal).then(rendered => {
       if (abort.signal.aborted) return;
       url = URL.createObjectURL(new Blob([rendered.svg], { type: 'image/svg+xml' }));
-      setState({ kind: 'drawn', rendered, url });
+      setOutcome({ text, format, assets: excalidrawAssets, state: { kind: 'drawn', rendered, url } });
       read.current?.(rendered.drawing);
     }, (error: unknown) => {
       if (abort.signal.aborted) return;
-      setState({ kind: 'error', reason: error instanceof DrawingError ? error.reason : 'renderer' });
+      setOutcome({ text, format, assets: excalidrawAssets, state: { kind: 'error', reason: error instanceof DrawingError ? error.reason : 'renderer' } });
     });
     return () => { abort.abort(); if (url) URL.revokeObjectURL(url); };
   }, [format, text, excalidrawAssets]);
