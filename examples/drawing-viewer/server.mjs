@@ -1,6 +1,6 @@
 // The drawing viewer journey's host (D-1398): the page bundled with code splitting as an app bundles it, the fictional fixtures, and
 // Excalidraw's fonts served by the app at /excalidraw/fonts/ (the package's dist/prod/fonts), under a policy that allows no request
-// to another origin, so any fetch from a CDN is refused and reported as a violation.
+// to another origin (the journey reads the drawn image back from its blob: URL), so any fetch from a CDN is refused and reported as a violation.
 import { createServer } from 'node:http';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, normalize } from 'node:path';
@@ -15,7 +15,7 @@ const fonts = join(root, 'node_modules/@excalidraw/excalidraw/dist/prod/fonts');
 const injectCss = { name: 'lazy-css', setup(builder) {
   builder.onLoad({ filter: /\.css$/ }, ({ path }) => ({ loader: 'js', contents: `const style = document.createElement('style'); style.textContent = ${JSON.stringify(readFileSync(path, 'utf8'))}; document.head.append(style);` }));
 } };
-const policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'none'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'";
+const policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' blob:; frame-src 'none'; worker-src 'self' blob:; base-uri 'none'; form-action 'none'";
 export const FIXTURES = ['oakfield-garden.excalidraw', 'bakery-morning.drawio', 'bakery-morning-plain.drawio', 'broken.excalidraw'];
 
 export async function startDrawings({ port = 0 } = {}) {
