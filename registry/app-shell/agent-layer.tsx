@@ -279,9 +279,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     wasTogether.current = together;
     const current = specs.current;
     const alone = current.snap === 'closed' && current.improve !== undefined;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- runs once per breakpoint crossing (the ref guards repeats), so it settles after one pass
     if (!together) { if (current.pmOpen) { setPmOpen(false); if (alone) { setShown('improve'); setSnapState('half'); } } return; }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- runs once per breakpoint crossing (the ref guards repeats), so it settles after one pass
     if (current.snap !== 'closed' && current.shown === 'improve') { setPmOpen(true); setSnapState('closed'); if (current.agent) setShown('agent'); }
   }, [together]);
   // One full-screen layer at a time: opening the agent or product manager closes a view of the app (`useShellLayer`), and a view closes both.
