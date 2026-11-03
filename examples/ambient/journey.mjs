@@ -173,6 +173,15 @@ try {
     assert.ok(after.h > before.h + 100 && Math.abs(after.right - before.right) < 2 && Math.abs(after.bottom - before.bottom) < 2, `the window grew upward in place ${JSON.stringify({ before, after })}`);
     assert.ok(after.h <= (await browser.evaluate('innerHeight')) * 0.7 + 1, 'the window stays under 70% of the viewport');
     await shot('06-expanded');
+    // D-1379: scrolled up, the arrow has its own row under the messages and covers no text.
+    await browser.evaluate(`(() => { const s = document.createElement('div'); s.id = 'journey-spacer'; s.style.height = '1600px'; document.querySelector('[data-testid=transcript]').append(s); document.querySelector('[data-testid=transcript-scroll]').scrollTop = 0; })()`);
+    await browser.until('the arrow shows when scrolled up', `!!document.querySelector('[data-testid=jump-latest]')`, 5000);
+    const arrow = await browser.evaluate(`(() => { const v = document.querySelector('[data-testid=transcript-scroll]').getBoundingClientRect(), b = document.querySelector('[data-testid=jump-latest]').getBoundingClientRect(); return { viewportBottom: v.bottom, viewportTop: v.top, top: b.top, bottom: b.bottom }; })()`);
+    assert.ok(arrow.top >= arrow.viewportBottom - 0.5 || arrow.bottom <= arrow.viewportTop + 0.5, `the arrow sits outside the messages ${JSON.stringify(arrow)}`);
+    await shot('06b-scrolled-up');
+    await browser.click(control('jump-latest'));
+    await browser.until('back at the end', `(() => { const v = document.querySelector('[data-testid=transcript-scroll]'); return v.scrollHeight - v.clientHeight - v.scrollTop < 4; })()`, 5000);
+    await browser.evaluate(`document.getElementById('journey-spacer')?.remove()`);
     await browser.click(control('open-full'));
     await browser.until('the host was handed the conversation', `/Opening conversation/.test(document.querySelector('[data-testid=host-note]').textContent)`, 3000);
     await browser.click(control('ambient-minimize'));
