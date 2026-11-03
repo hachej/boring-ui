@@ -1,5 +1,7 @@
 # Unreleased
 
+- **No empty band above the chat box (`pi-chat`; D-1403).** Reinstall `pi-chat`. The jump-to-latest row now mounts only when scrolled up, so at the latest message the composer sits right under the messages; the arrow still has its own row and covers no text.
+
 # Migrating to 0.4.49
 
 - **The scroll arrow no longer covers the chat (`pi-ambient`; D-1379).** Reinstall `pi-ambient`. Scrolled up, the down arrow has its own row under the messages, as in `PiChat`, where it used to float over the reply's last lines. Nothing to change.
