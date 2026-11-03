@@ -7,6 +7,7 @@
 - `chat-transcript` rows, tool steps, activity, Markdown replies (`pi-chat-markdown`), `presentation="natural"` for readers. Paging/chunks live in `packages/ui/src/chat-react-transcript.ts`; `registry/pi-chat/session.tsx` adapts the host's shadcn MessageScroller. Rendering: `registry/pi-chat/pi-chat.tsx`, `rows.ts`, `message.tsx`.
 - `chat-session` headless state/files, connect/errors, send/restore, queue, uploads/paste and model/effort reconciliation, preserving existing app-kind send recovery and hidden-token paste coordinates. `packages/ui/src/chat-react-session.ts`; `registry/pi-chat/session.tsx` builds JSX/context/composer props only. Old contract imports remain re-exports for one release.
 - `chat-connection-status` reusable `ChatConnectionNotice` / `ChatStatusLine` in `registry/pi-chat/notice.tsx`; PiChat and Ambient retain host connection recovery and identical developer/natural status choices. Compact Ambient keeps `loadFailedShort`/`disconnectedShort` overrides unless the host error renderer is supplied.
+- `chat-jump-latest` scrolled up, the down arrow sits in its own row under the messages; at the latest message the row is gone, so no empty band sits above the composer (D-1403). `registry/pi-chat/pi-chat.tsx`.
 - `chat-composer` multi-line composer, including sizing/width observation after recording trash, queue (steer, edit, remove), draft kept per conversation (`useChatDraft`, `packages/ui/src/chat-react-draft.ts`). `registry/pi-chat/composer.tsx`, `queue.tsx`.
 - `chat-slash` the `/` menu: commands and skills. `registry/pi-chat-slash/slash-menu.tsx`.
 - `chat-mentions` the `@` menu for files and, through `MentionsConfig`, any catalog of ids. `registry/pi-chat-mentions/mention-menu.tsx`, `registry/pi-chat/config.ts`.
@@ -43,6 +44,7 @@ Preconditions: `npm run build`, Chromium; journeys use a scripted fake model unl
 
 - **Which model answered.** `chat-answered-by`: `node --test test/ui/pi-chat-answered-by.test.mjs` (developer mode shows « answered by provider/model », and « fallback: reason » only when set; no line without model info, on a user message, or in expert mode).
 - **Transcript and composer.** `chat-transcript`, `chat-composer`: `npm run workspace-app:journey`; send a message, a Markdown reply renders, a queued prompt can be edited.
+- **Jump to latest.** `chat-jump-latest`: `npm run workspace-app:journey`; scroll up, click the arrow, back at the end with no `transcript-navigation` row.
 - **Instant send.** `chat-send-echo`, `chat-send-timing`: `node --test test/packages/ui-chat-send-echo.test.mjs` (a slow fake host: the message is in the snapshot at once, one copy when the server's arrives, a failed send is kept with Retry, the steps are timed). In a browser, send a message and read `data-send-state` on the `[data-role="user"]` row.
 - **Projected watch.** `chat-projected-watch`: `node --test test/packages/agent-chat-transport-projected.test.mjs` (updates are batches, the same size with 2 or 30 earlier turns, the replica equals the projected view).
 - **First view.** `chat-first-view-timeout`: `node --test test/packages/ui-remote-chat-first-view.test.mjs`.
