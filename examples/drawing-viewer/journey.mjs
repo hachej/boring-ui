@@ -156,8 +156,11 @@ try {
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
     await open('?only=bakery-morning.drawio');
     await drawn('[data-testid="row-bakery-morning.drawio"]', 1);
-    const fit = await ev(`const img = document.querySelector('[data-testid="block-bakery-morning.drawio"] img'); return { width: img.getBoundingClientRect().width, page: document.documentElement.scrollWidth };`);
-    assert.ok(fit.width <= 390 && fit.page <= 390, JSON.stringify(fit));
+    const fit = await ev(`const viewer = document.querySelector('[data-testid="block-bakery-morning.drawio"] [data-boring=drawing-viewer]'), img = viewer.querySelector('img'), r = img.getBoundingClientRect();
+      const wide = [...document.querySelectorAll('body *')].filter(element => element.getBoundingClientRect().right > innerWidth + 0.5).slice(0, 5).map(element => element.tagName + '.' + String(element.className).slice(0, 60));
+      return { left: r.left, right: r.right, viewer: viewer.getBoundingClientRect().right, inside: viewer.scrollWidth - viewer.clientWidth, page: document.documentElement.scrollWidth, wide };`);
+    writeFileSync(resolve(evidence, 'phone-fit.json'), JSON.stringify(fit, null, 2));
+    assert.ok(fit.left >= 0 && fit.right <= 390 && fit.viewer <= 390 && fit.inside <= 0, `the drawing and its viewer fit the phone's width: ${JSON.stringify(fit)}`);
     await browser.screenshot('drawio-phone-390.png');
   });
 } finally {
