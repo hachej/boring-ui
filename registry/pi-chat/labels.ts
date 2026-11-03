@@ -240,6 +240,8 @@ export const defaultChatLabels = {
   forkHint: 'Fork from here: a new conversation with the messages up to this reply',
   responseFailed: 'The response failed',
   interrupted: 'Response interrupted',
+  answeredBy: (model: string) => `answered by ${model}`,
+  answeredFallback: (reason: string) => `fallback: ${reason}`,
   thinking: 'Thinking…',
   openImage: 'Open image attachment',
   imageAttachment: 'Image attachment',

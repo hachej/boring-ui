@@ -1,5 +1,6 @@
 # Unreleased
 
+- **Which model answered (`pi-chat`; D-1222).** Reinstall `pi-chat`. In `mode="developer"` each assistant reply shows a muted « answered by provider/model » line, read from the new optional `answeredBy={reply => ({ provider, model, fallback? })}` prop (the host's per-turn record), else from the reply's own message provider/model; « fallback: reason » follows when `fallback` is set. Expert mode is unchanged. Additive.
 - **`NavItem.placement` (`app-shell`; D-1210).** Reinstall `app-shell`. Additive: `placement: 'before-sidebar'` puts a nav item above the active screen's `NavItem.sidebar` content (and first in the tab bar and the sheet); absent, or `'after-sidebar'`, keeps today's order. `placeNav(items)` returns `{ before, after }`.
 
 # Migrating to 0.4.48
