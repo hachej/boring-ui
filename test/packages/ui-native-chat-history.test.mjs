@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Harness, MemoryStorage, createRegistry } from '@earendil-works/pi-durable';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
+import { createNativeChatController, viewHasEarlier } from '@hachej/boring-ui-kit/native-chat';
 import { createFakeChatModel } from '@hachej/boring-testing/model';
 
 const identity = { runtimeId: 'fictional-runtime', scopeId: 'fictional-scope', principalId: 'fictional-person' };
@@ -50,10 +50,11 @@ test('native reset keeps an explicit archived page while active view remains the
   assert.equal(history.kind, 'ready');
   assert.ok(labels(history.entries).includes('Fictional first'));
   assert.ok(labels(history.entries).includes('Fictional second'));
-  assert.ok(history.entries.some(entry => entry.kind === 'pi.reset'));
+  assert.ok(!history.entries.some(entry => ids(active.entries).includes(entry.id)), 'nothing on screen comes back as earlier');
+  assert.ok(Math.max(...ids(history.entries)) < Math.min(...ids(active.entries)));
   assert.deepEqual(ids(history.entries), [...ids(history.entries)].sort((a, b) => a - b));
   assert.deepEqual(ids(controller.getSnapshot().view.entries), ids(active.entries));
-  assert.ok(before.entries.every(entry => history.entries.some(archived => archived.id === entry.id)));
+  assert.ok(before.entries.every(entry => history.entries.some(archived => archived.id === entry.id) || ids(active.entries).includes(entry.id)));
   controller.clearHistory();
   assert.equal(controller.getSnapshot().history.kind, 'idle');
   assert.deepEqual(ids(controller.getSnapshot().view.entries), ids(active.entries));
@@ -75,6 +76,7 @@ test('an empty active conversation returns an exhausted empty history without a 
 test('native requests stay bounded while earlier pages accumulate in order under the original head bound', { timeout: 20000 }, async t => {
   const f = await fixture(t);
   for (let index = 0; index < 90; index++) await write(f.conversation, `Fictional entry ${index}`);
+  await f.conversation.reset('Fictional handoff', context);
   const requests = [], history = { id: f.conversation.id, entries: (...args) => {
     requests.push(args); return f.conversation.entries(...args);
   } };
@@ -87,7 +89,8 @@ test('native requests stay bounded while earlier pages accumulate in order under
   assert.equal(first.entries.length, 40);
   assert.equal(first.hasMore, true);
   assert.deepEqual(ids(first.entries), [...ids(first.entries)].sort((a, b) => a - b));
-  assert.equal(requests[0][0].maxEntryId, Math.max(...activeIds));
+  assert.equal(requests[0][0].maxEntryId, Math.min(...activeIds) - 1, 'the scan starts below the view\'s first entry');
+  assert.ok(ids(first.entries).every(id => id < Math.min(...activeIds)));
   assert.equal(requests[0][1], 40);
   assert.equal(requests[0][3].telemetry, context.telemetry, 'bounded read preserves the parent context values');
   assert.ok(requests[0][3].abortSignal, 'only the page read has a cancellation signal');
@@ -108,6 +111,7 @@ test('native requests stay bounded while earlier pages accumulate in order under
   assert.equal(third.kind, 'ready');
   assert.equal(third.entries.length, 90);
   assert.equal(new Set(ids(third.entries)).size, 90);
+  assert.equal(labels(third.entries).filter(label => label.startsWith('Fictional entry')).length, 90, 'the start of the conversation is reached, no gap');
   assert.equal(third.hasMore, false);
   assert.equal(requests[2][0].maxEntryId, requests[0][0].maxEntryId);
   assert.deepEqual(ids(third.entries.slice(-80)), ids(second.entries));
@@ -118,6 +122,7 @@ test('native requests stay bounded while earlier pages accumulate in order under
 test('native paging failure retains the last page and retries the identical bound and cursor', { timeout: 15000 }, async t => {
   const f = await fixture(t);
   for (let index = 0; index < 50; index++) await write(f.conversation, `Fictional entry ${index}`);
+  await f.conversation.reset('Fictional handoff', context);
   const requests = []; let fail = true;
   const controller = f.controller({ history: { id: f.conversation.id, entries: async (...args) => {
     requests.push(args);
@@ -149,6 +154,7 @@ test('a fork accepts inherited parent-owned records through the public native hi
   await write(f.conversation, 'Fictional inherited second');
   const parent = await f.conversation.context(context);
   const fork = await f.conversation.fork(parent.entries.at(-1).id, { ownership: { kind: 'ownerless' } }, context);
+  await fork.reset('Fictional fork handoff', context);
   const controller = f.controller({ conversation: fork, history: nativeHistory(fork) });
   await controller.connect();
   await controller.loadEarlier();
@@ -254,6 +260,7 @@ test('overlapping loads coalesce; stale result after clear, head change or dispo
 test('repeated, oversized and duplicate native pages refuse instead of looping or rendering more than 40', { timeout: 10000 }, async t => {
   const f = await fixture(t); await write(f.conversation, 'Fictional first'); await write(f.conversation, 'Fictional second');
   const real = await f.conversation.entries({}, 40, undefined, context);
+  await f.conversation.reset('Fictional handoff', context);
   for (const page of [
     { items: [real.items[0], real.items[0]], next: { cursor: 'duplicate' } },
     { items: Array.from({ length: 41 }, () => real.items[0]), next: { cursor: 'oversized' } },
@@ -281,6 +288,7 @@ test('repeated, oversized and duplicate native pages refuse instead of looping o
 test('an unresponsive older-page read times out visibly and retries without accepting its late result', async t => {
   const f = await fixture(t);
   await write(f.conversation, 'Fictional older message');
+  await f.conversation.reset('Fictional handoff', context);
   const stalled = deferred(); let attempts = 0;
   const controller = f.controller({ history: { id: f.conversation.id, entries: (...args) => ++attempts === 1 ? stalled.promise : f.conversation.entries(...args) } });
   await controller.connect();
@@ -301,4 +309,39 @@ test('an unresponsive older-page read times out visibly and retries without acce
   stalled.resolve({ items: [], next: undefined });
   await Promise.resolve(); await Promise.resolve();
   assert.ok(labels(controller.getSnapshot().history.entries).includes('Fictional older message'), 'late first read cannot replace the accepted retry');
+});
+
+// D-1433: earlier entries are the ones below the view's first entry, and a host that sends a slice can say whether they exist.
+const saying = (conversation, hasEarlier) => ({ open: async () => {
+  const watch = await conversation.watch(context);
+  const tag = view => hasEarlier === undefined ? view : { ...view, hasEarlier };
+  return { value: tag(watch.value), start: listener => watch.start((view, ...rest) => listener(tag(view), ...rest)), stop: () => watch.stop(), closed: watch.closed };
+} });
+
+test('a view that holds the whole conversation has nothing earlier: the first page repeats nothing on screen', { timeout: 10000 }, async t => {
+  const f = await fixture(t);
+  await write(f.conversation, 'Fictional first'); await write(f.conversation, 'Fictional second');
+  const controller = f.controller();
+  await controller.connect();
+  assert.equal(labels(controller.getSnapshot().view.entries).length, 2);
+  await controller.loadEarlier();
+  assert.deepEqual(controller.getSnapshot().history, { kind: 'ready', entries: [], hasMore: false }, 'no entry already on screen comes back');
+});
+
+test('hasEarlier on the view: false ends history without a scan, true and absent scan below the first entry', { timeout: 10000 }, async t => {
+  const f = await fixture(t);
+  await write(f.conversation, 'Fictional before'); await f.conversation.reset('Fictional handoff', context); await write(f.conversation, 'Fictional after');
+  for (const [hasEarlier, expected] of [[false, 0], [true, 1], [undefined, 1]]) {
+    let scans = 0;
+    const controller = f.controller({ source: saying(f.conversation, hasEarlier), history: { id: f.conversation.id, entries: (...args) => { scans++; return f.conversation.entries(...args); } } });
+    await controller.connect();
+    assert.equal(viewHasEarlier(controller.getSnapshot().view), hasEarlier);
+    await controller.loadEarlier();
+    const history = controller.getSnapshot().history;
+    assert.equal(scans, expected, `scans with hasEarlier ${hasEarlier}`);
+    assert.equal(history.kind, 'ready');
+    assert.deepEqual(labels(history.entries), expected ? ['Fictional before'] : [], `earlier entries with hasEarlier ${hasEarlier}`);
+  }
+  assert.equal(viewHasEarlier(undefined), undefined);
+  assert.equal(viewHasEarlier({ conversation: { id: 1 }, entries: [], docs: {}, hasEarlier: 'yes' }), undefined, 'only a boolean says');
 });

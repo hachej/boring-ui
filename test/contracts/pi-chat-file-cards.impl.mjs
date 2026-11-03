@@ -1020,3 +1020,23 @@ for (const failure of [0, 1, 2]) test(`recorded voice composes with native stage
   assert.equal(ui.controller.getSnapshot().draft.text.includes('@uploads/'), false);
   assert.equal(ui.container.querySelectorAll('[data-testid=response-error]').length, failure ? 1 : 0);
 });
+
+test('photos sent as links (data empty, url) are drawn from the link; a link the host no longer serves shows a placeholder (D-1433)', async t => {
+  const { container, write, act, window } = await harness(t);
+  const linked = 'https://fictional.invalid/api/chat?op=image&conversation=c&entry=1&part=0.1';
+  const pixel = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  await write([{ role: 'user', timestamp: 0, content: [
+    { type: 'text', text: 'Fictional meal photos' },
+    { type: 'image', mimeType: 'image/jpeg', data: '', url: linked },
+    { type: 'image', mimeType: 'image/png', data: pixel },
+    { type: 'image', mimeType: 'image/jpeg', data: '', url: 'javascript:alert(1)' },
+  ] }]);
+  const sources = () => [...container.querySelectorAll('[data-testid=message-images] img')].map(image => image.getAttribute('src'));
+  assert.deepEqual(sources(), [linked, `data:image/png;base64,${pixel}`], 'the link is drawn, inline bytes as before, a non-http link is not drawn');
+  assert.equal(container.querySelectorAll('[data-testid=message-image-missing]').length, 0);
+  const first = container.querySelector('[data-testid=message-images] img');
+  await act(async () => { first.dispatchEvent(new window.Event('error')); });
+  assert.equal(container.querySelectorAll('[data-testid=message-image-missing]').length, 1, 'a 404 photo shows the placeholder');
+  assert.deepEqual(sources(), [`data:image/png;base64,${pixel}`], 'the other photo stays');
+  assert.match(container.textContent, /Fictional meal photos/, 'the message still renders');
+});

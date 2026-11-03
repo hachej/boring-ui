@@ -25,6 +25,18 @@ export function thumbnail(mimeType: string, data: string): string | undefined {
 }
 
 /**
+ * Where an image part is drawn from: its bytes as a data URL, or, for a part the host sent as a link (`data: ''` and a `url`, which the
+ * remote chat has resolved against its endpoint), that link when it is http(s). `undefined`: nothing safe to draw.
+ */
+export function imageSource(image: { readonly mimeType: string; readonly data: string; readonly url?: unknown }): string | undefined {
+  if (image.data !== '' || typeof image.url !== 'string') return thumbnail(image.mimeType, image.data);
+  try {
+    const link = new URL(image.url, globalThis.location?.href);
+    return link.protocol === 'https:' || link.protocol === 'http:' ? link.href : undefined;
+  } catch { return undefined; }
+}
+
+/**
  * The optional annotate toggle (FEEDBACK.md, "UX"): one button in the composer's row that arms element targeting on the host's page,
  * and one count chip for the notes taken. Send attaches them. The host owns everything else (the registry `feedback` item's
  * `useComposerFeedback` returns this shape). Absent: the composer is unchanged.

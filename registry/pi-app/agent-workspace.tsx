@@ -48,7 +48,7 @@ import { ArtifactPanel } from './artifact-panel';
 import type { CustomViewers, SavedRevision, ViewerOptions } from './artifact-panel';
 import { FileViewer } from './file-viewer';
 import { ImageViewer } from '../pi-chat/image-viewer';
-import { thumbnail } from '../pi-chat/composer';
+import { imageSource } from '../pi-chat/composer';
 import { useRevisionAttachments } from './use-revision-attachments';
 import { imageData } from './revision-files';
 import { SessionsPane, SessionsToggle } from './sessions';
@@ -401,7 +401,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, barOptions, pane
   const [imagePreview, setImagePreview] = useState<{ readonly images: readonly ImageContent[]; readonly index: number; readonly controller: typeof controller; readonly client: typeof client; readonly conversationId: typeof conversationId }>();
   const openImage = useCallback((image: ImageContent, images: readonly ImageContent[] = [image]) => {
     const index = images.indexOf(image);
-    if (index >= 0 && images.every(item => thumbnail(item.mimeType, item.data))) setImagePreview({ images: images.slice(), index, controller, client, conversationId });
+    if (index >= 0 && images.every(item => imageSource(item))) setImagePreview({ images: images.slice(), index, controller, client, conversationId });
   }, [controller, client, conversationId]);
   // eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render
   const preview = imagePreview && !chat.onOpenImage && imagePreview.controller === controller && imagePreview.client === client && imagePreview.conversationId === conversationId ? imagePreview : undefined;

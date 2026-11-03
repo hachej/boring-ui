@@ -93,6 +93,25 @@ export class SubmissionRefused extends Error {
   constructor(message: string) { super(message); this.name = 'SubmissionRefused'; }
 }
 
+/**
+ * A photo the host sends as a link (an image part with `data: ''` and a `url`, so the first view stays small) gets its `url` resolved
+ * against the chat endpoint: a relative link names the endpoint's own route (`?op=image&…`), whatever page the chat is on. The frame was
+ * just parsed and is not shared yet; only frames holding such a part (`"data":""`) are walked.
+ */
+function linkImages(frame: unknown, text: string, base: URL): void {
+  if (!text.includes('"data":""')) return;
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) { for (const item of node) visit(item); return; }
+    if (!node || typeof node !== 'object') return;
+    const record = node as Record<string, unknown>;
+    if (record.type === 'image' && record.data === '' && typeof record.url === 'string') {
+      try { record.url = new URL(record.url, base).href; } catch { /* left as sent: the chat draws a placeholder */ }
+    }
+    for (const key of Object.keys(record)) visit(record[key]);
+  };
+  visit(frame);
+}
+
 async function reason(response: Response): Promise<string> {
   try { const value = await response.json() as { reason?: unknown }; if (typeof value.reason === 'string') return value.reason; } catch { /* fall through */ }
   return `status ${response.status}`;
@@ -176,6 +195,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
         if (typeof event.data !== 'string' || event.data === 'pong') return;
         let frame: Frame | { readonly kind: 'reply'; readonly id: string; readonly status: number; readonly body: unknown } | { readonly kind: 'event'; readonly event: unknown };
         try { frame = JSON.parse(event.data) as typeof frame; } catch { return; }
+        if (frame.kind === 'view' || frame.kind === 'ops') linkImages(frame, event.data, base);
         if (frame.kind === 'reply') {
           outbox.resolve(frame.id, new Response(JSON.stringify(frame.body), { status: frame.status, headers: { 'content-type': 'application/json' } }));
           return;
@@ -227,6 +247,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
           const line = pending.slice(0, end); pending = pending.slice(end + 1);
           const frame = JSON.parse(line) as Frame | Heartbeat;
           if (frame.kind === 'heartbeat') { if (typeof frame.intervalMs === 'number' && frame.intervalMs > 0) staleMs = frame.intervalMs * 2.5; continue; }
+          if (frame.kind !== 'end') linkImages(frame, line, base);
           return frame;
         }
         const chunk = await read();
