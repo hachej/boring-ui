@@ -4,7 +4,7 @@
   "title": "Spaces",
   "description": "A client for a host's Spaces service: useSpaces, SpaceSwitcher and MembersSheet over a transport the app gives. Membership and roles stay the host's; no route or app wording.",
   "dependencies": [
-    "@hachej/boring-files@^0.4.50",
+    "@hachej/boring-files@^0.4.51",
     "react@^19.0.0",
     "lucide-react@^1.51.0"
   ],
