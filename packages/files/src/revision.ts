@@ -23,7 +23,7 @@ export async function connectRevisionProvider(options: {
       if (request.signal.aborted) { void response.body?.cancel().catch(() => {}); throw new RevisionError('aborted', 'File request was cancelled'); }
       if (response.redirected || !response.ok) {
         void response.body?.cancel().catch(() => {});
-        throw new RevisionError(response.status === 403 || response.status === 409 ? 'denied' : response.status === 400 ? 'invalid' : 'unavailable', 'The selected workspace is unavailable or no longer authorized');
+        throw new RevisionError(response.status === 403 || response.status === 409 ? 'denied' : response.status === 400 ? 'invalid' : response.status === 404 ? 'missing' : 'unavailable', response.status === 404 ? 'Not found' : 'The selected workspace is unavailable or no longer authorized', response.status);
       }
       return await readJsonBody(response, 8_388_608, request.signal);
     } catch (error) {

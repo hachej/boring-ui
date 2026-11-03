@@ -26,6 +26,11 @@ export interface FileEntry {
 export interface FilePage {
   readonly entries: readonly FileEntry[];
   readonly cursor?: string;
+  /**
+   * Whether the caller may write in the listed folder (add, upload, rename, move or delete there), as the host decides it. Absent: the
+   * host says nothing, and the views offer what the client and its capabilities offer. A view never infers it from roles or config.
+   */
+  readonly writable?: boolean;
 }
 
 export interface FileListRequest {
@@ -78,7 +83,11 @@ export interface WorkspaceCatalog {
 }
 
 export class RevisionError extends Error {
-  constructor(readonly kind: 'denied' | 'unavailable' | 'invalid' | 'aborted', message: string) {
+  /**
+   * `missing`: the addressed folder or file is not there (or not for this caller): HTTP 404. `status`: the HTTP status the host answered,
+   * when it answered one (`connectRevisionProvider` sets it), so a 403 can be told from a 409 binding mismatch, both `denied`.
+   */
+  constructor(readonly kind: 'denied' | 'unavailable' | 'invalid' | 'aborted' | 'missing', message: string, readonly status?: number) {
     super(message);
     this.name = 'RevisionError';
   }

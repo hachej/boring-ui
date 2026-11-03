@@ -187,7 +187,7 @@ export function createRevisionHandler(options: RevisionHandlerOptions): (request
       if (new TextEncoder().encode(body).byteLength > 8_388_608) return refuse(503);
       return new Response(body, { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
     } catch (error) {
-      return refuse(error instanceof RevisionError ? error.kind === 'invalid' ? 400 : error.kind === 'denied' || error.kind === 'aborted' ? 403 : 503 : error instanceof RequestGuardError || error instanceof TypeError ? guardStatus(error) : 503);
+      return refuse(error instanceof RevisionError ? error.kind === 'invalid' ? 400 : error.kind === 'denied' || error.kind === 'aborted' ? 403 : error.kind === 'missing' ? 404 : 503 : error instanceof RequestGuardError || error instanceof TypeError ? guardStatus(error) : 503);
     } finally {
       await Promise.allSettled([...operations]);
       try { await release?.(); } catch { return refuse(503); } finally { if (!request.bodyUsed) void request.body?.cancel().catch(() => {}); }

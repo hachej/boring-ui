@@ -665,3 +665,175 @@ test('rendered tree renames inline, deletes after confirmation and moves by drag
   await act(async () => row('docs/a.md').querySelector('[data-mutation-dismiss]').click());
   assert.equal(row('docs/a.md').querySelector('[data-mutation-error]'), null);
 });
+
+// D-1436: the host's word on writing, per folder, through the real route (`createRevisionHandler`) and client (`connectRevisionProvider`).
+// The host here applies the fictional rule {"public/": "members", "*": ["owner","editor"]} to its listing, as boring-factory's Private
+// folders does: it lists only what the caller may read and says `writable` per folder. The tree reads nothing but that flag and 403/404.
+async function hostedWorkspace(t) {
+  const { mkdtempSync, rmSync } = await import('node:fs'); const { join } = await import('node:path'); const { tmpdir } = await import('node:os');
+  const { openNodeConnection } = await import('@hachej/boring-files/sqlite');
+  const { openSqliteFileSystem } = await import('@hachej/boring-files/sqlite-filesystem');
+  const { createWorkspaceJournal } = await import('@hachej/boring-files/journal');
+  const { createWorkspaceProvider } = await import('@hachej/boring-files/workspace');
+  const { connectRevisionProvider, RevisionError } = await import('@hachej/boring-files/revision');
+  const { createRevisionHandler } = await import('@hachej/boring-files/revision-handler');
+  const directory = mkdtempSync(join(tmpdir(), 'boring-file-tree-writable-'));
+  const db = openNodeConnection(join(directory, 'files.sqlite'));
+  const fs = openSqliteFileSystem({ connection: db, workspace: 'fictional', cwd: '/workspace', maxFileBytes: 1_000_000 });
+  const provider = createWorkspaceProvider({ fs, journal: createWorkspaceJournal(db), identity: { providerId: 'files', instanceId: 'fictional', incarnation: fs.incarnation, viewId: 'published' } });
+  t.after(() => { db.close(); rmSync(directory, { force: true, recursive: true }); });
+  const rule = { 'public/': 'members', '*': ['owner', 'editor'] };
+  const readable = (path, role) => {
+    const key = Object.keys(rule).filter(item => item !== '*' && `${path}/`.startsWith(item)).sort((a, b) => b.length - a.length)[0] ?? '*';
+    return role === 'owner' || rule[key] === 'members' || rule[key].includes(role);
+  };
+  const leads = path => Object.keys(rule).some(item => item.startsWith(`${path}/`));
+  /** One caller's route: `role` applies the rule (none: an app without the field); `deny`/`gone` folders answer 403/404. */
+  const connect = async ({ role, deny = [], gone = [] } = {}) => {
+    const listed = [];
+    const access = { principalId: `fictional-${role ?? 'person'}`, scopeId: 'fictional-scope', initiatorId: `fictional-${role ?? 'person'}` };
+    const hosted = { ...provider, catalog: { ...provider.catalog, list: async (request, context) => {
+      const folder = request.directory ?? '';
+      if (deny.includes(folder)) throw new RevisionError('denied', 'Not for this caller');
+      if (gone.includes(folder)) throw new RevisionError('missing', 'Not there');
+      const page = await provider.catalog.list(request, context);
+      if (!role) return page;
+      return { ...page, entries: page.entries.filter(entry => readable(entry.path, role) || (entry.kind === 'directory' && leads(entry.path))), writable: role !== 'user' && readable(folder, role) };
+    } } };
+    const handler = createRevisionHandler({ resolve: async () => ({ provider: hosted, access, release() {} }) });
+    const fetch = async request => {
+      if (request.method === 'POST') { try { const body = await request.clone().json(); if (body.kind === 'list') listed.push(body.value); } catch { /* a resource call */ } }
+      return handler(request);
+    };
+    return { client: await connectRevisionProvider({ endpoint: 'https://fictional.invalid/api/files', fetch }), listed };
+  };
+  const owner = await connect();
+  for (const path of ['public/notice.md', 'private/plan.md', 'uploads/scan.md']) {
+    const result = await owner.client.publish({ operationId: `seed-${path}`, atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: owner.client.locate(path), expected: { kind: 'absent' }, bytes: new TextEncoder().encode('Fictional'), mediaType: 'text/markdown' }] });
+    assert.equal(result.kind, 'committed');
+  }
+  return { connect };
+}
+
+test('the file tree hides what the host says the caller cannot write: writable true, false and absent, a 403 folder, a 404 folder (D-1436)', async t => {
+  const { connect } = await hostedWorkspace(t);
+  const ui = await renderedTree(t);
+  const { window, element, act, settle, render, key, row, menu } = ui;
+  const writes = items => items.map(item => item.dataset.action).filter(id => ['rename', 'move', 'delete'].includes(id));
+  const close = items => key(items[0], 'Escape');
+  const draggable = path => row(path).querySelector('.file-tree-row-button').getAttribute('draggable') === 'true';
+  const uploadControls = () => [element.querySelector('[data-file-upload]'), element.querySelector('input[type=file]')].filter(Boolean).length;
+  const accepts = async (target, path) => {
+    const transfer = { types: ['application/x-boring-file-path'], getData: () => path, setData() {}, effectAllowed: 'move', dropEffect: 'none', files: [] };
+    const event = new window.Event('dragenter', { bubbles: true, cancelable: true }); Object.defineProperty(event, 'dataTransfer', { value: transfer });
+    await act(async () => target.dispatchEvent(event));
+    const accepted = target.dataset.dropTarget === 'true';
+    const leave = new window.Event('dragleave', { bubbles: true }); Object.defineProperty(leave, 'dataTransfer', { value: transfer });
+    await act(async () => target.dispatchEvent(leave));
+    return accepted;
+  };
+
+  await t.test('a member (role user) sees only public/, with no upload, rename, move, delete or drop (writable: false)', async () => {
+    const member = await connect({ role: 'user' });
+    await render({ revisionProvider: member.client });
+    await settle(() => row('public'));
+    assert.ok(row('public')); assert.equal(row('private'), null); assert.equal(row('uploads'), null);
+    assert.equal(uploadControls(), 0, 'no Upload button and no file input');
+    assert.equal(row('public').querySelector('[data-file-more]'), null, 'the folder row offers no rename, move or delete');
+    await key(row('public'), 'ArrowRight'); await settle(() => row('public/notice.md'));
+    const items = await menu('public/notice.md');
+    assert.deepEqual(writes(items), []); assert.ok(items.some(item => item.dataset.action === 'download'), 'reading stays');
+    await close(items);
+    assert.equal(draggable('public/notice.md'), false);
+    await key(row('public/notice.md'), 'F2'); assert.equal(element.querySelector('[data-file-rename]'), null);
+    await key(row('public/notice.md'), 'Delete'); assert.equal(window.document.querySelector('[role=alertdialog], [role=dialog]'), null);
+    assert.equal(await accepts(row('public'), 'notes/elsewhere.md'), false, 'a read-only folder is no drop target');
+    assert.deepEqual(member.listed.map(request => request.directory), ['', 'public'], 'each listing names its folder');
+  });
+
+  await t.test('the owner sees every folder with every control (writable: true)', async () => {
+    const owner = await connect({ role: 'owner' });
+    await render({ revisionProvider: owner.client });
+    await settle(() => row('private'));
+    assert.ok(row('public')); assert.ok(row('private')); assert.ok(row('uploads'));
+    assert.equal(uploadControls(), 2);
+    await key(row('private'), 'ArrowRight'); await settle(() => row('private/plan.md'));
+    const items = await menu('private/plan.md');
+    assert.deepEqual(writes(items), ['rename', 'move', 'delete']); await close(items);
+    assert.equal(draggable('private/plan.md'), true);
+    assert.equal(await accepts(row('public'), 'private/plan.md'), true);
+    assert.deepEqual(owner.listed.map(request => request.directory), ['', 'private']);
+  });
+
+  await t.test('an app without the field keeps every control (writable absent)', async () => {
+    const plain = await connect();
+    await render({ revisionProvider: plain.client });
+    await settle(() => row('private'));
+    assert.equal(uploadControls(), 2);
+    await key(row('public'), 'ArrowRight'); await settle(() => row('public/notice.md'));
+    const items = await menu('public/notice.md');
+    assert.deepEqual(writes(items), ['rename', 'move', 'delete']); await close(items);
+    assert.equal(draggable('public/notice.md'), true);
+  });
+
+  await t.test('a folder listing refused with 403 is read-only, with no error', async () => {
+    const refused = await connect({ deny: ['private'] });
+    await render({ revisionProvider: refused.client });
+    await settle(() => row('private'));
+    assert.ok(row('private').querySelector('[data-file-more]'), 'before its listing the folder has its controls');
+    await key(row('private'), 'ArrowRight'); await settle(() => row('private').querySelector('[role=group]')?.textContent.includes('No files yet'));
+    assert.match(row('private').querySelector('[role=group]').textContent, /No files yet/);
+    assert.equal(element.querySelector('[role=alert]'), null, 'no error');
+    assert.equal(row('private').getAttribute('aria-expanded'), 'true');
+    assert.equal(row('private').querySelector('[data-file-more]'), null, 'no rename, move or delete of a read-only folder');
+    assert.equal(await accepts(row('private'), 'public/notice.md'), false);
+    assert.equal(uploadControls(), 2, 'the root stays writable');
+  });
+
+  await t.test('a folder listing answered 404 is gone from the tree, which keeps working', async () => {
+    const missing = await connect({ gone: ['private'] });
+    await render({ revisionProvider: missing.client });
+    await settle(() => row('private'));
+    await key(row('private'), 'ArrowRight'); await settle(() => !row('private'));
+    assert.equal(row('private'), null); assert.equal(element.querySelector('[role=alert]'), null);
+    await key(row('public'), 'ArrowRight'); await settle(() => row('public/notice.md'));
+    assert.ok(row('public/notice.md'));
+  });
+});
+
+test('a folder keeps its read-only word while read again; only a host 403 makes it read-only; a 404 clears its subtree and search rows (D-1436)', async t => {
+  const { RevisionError } = await import('@hachej/boring-files/revision');
+  const dir = path => ({ path, kind: 'directory', size: 0 });
+  let answer = async () => ({ entries: [], writable: false });
+  const { controller } = fixture(t, { list: async ({ directory }) => directory === 'docs' ? answer() : { entries: [dir('docs'), dir('other')] },
+    search: async () => ({ entries: [dir('docs/deep'), entry('docs/deep/a.md'), entry('other/b.md')] }) });
+  const listing = path => controller.getSnapshot().directories.get(path);
+  await controller.refresh(); await controller.toggle('docs');
+  assert.equal(listing('docs').writable, false);
+  const slow = later(); answer = () => slow.promise;
+  const reading = controller.refresh('docs');
+  assert.equal(listing('docs').kind, 'loading'); assert.equal(listing('docs').writable, false, 'a reload keeps the read-only word');
+  slow.resolve({ entries: [entry('docs/a.md')] }); await reading;
+  assert.equal(listing('docs').writable, undefined, 'a fresh page without the flag is the host saying nothing');
+  answer = async () => { throw new RevisionError('denied', 'Binding changed', 409); };
+  await controller.refresh('docs');
+  assert.equal(listing('docs').kind, 'error', 'a 409 binding mismatch stays an error');
+  answer = async () => { throw new RevisionError('denied', 'Not for this caller', 403); };
+  await controller.refresh('docs');
+  assert.deepEqual({ ...listing('docs') }, { kind: 'ready', entries: [], writable: false }, 'a host 403 is a read-only folder');
+  answer = async () => { throw new Error('Host down'); };
+  await controller.refresh('docs');
+  assert.equal(listing('docs').kind, 'error'); assert.equal(listing('docs').writable, false, 'a failed read keeps the read-only word');
+  await controller.search('a');
+  // A child read still pending when its parent turns out gone must not bring the subtree back.
+  const child = later(); answer = async () => { throw new RevisionError('missing', 'Not there', 404); };
+  const list = controller.revisionProvider.list;
+  controller.revisionProvider.list = async request => request.directory === 'docs/deep' ? child.promise : list(request);
+  const lateChild = controller.refresh('docs/deep');
+  await controller.refresh('docs');
+  assert.equal(listing('docs'), undefined); assert.equal(controller.getSnapshot().expanded.has('docs'), false);
+  assert.deepEqual(controller.getSnapshot().directories.get('').entries.map(item => item.path), ['other']);
+  assert.deepEqual(controller.getSnapshot().search.entries.map(item => item.path), ['other/b.md'], 'search rows under a gone folder leave too');
+  child.resolve({ entries: [entry('docs/deep/a.md')] }); await lateChild;
+  assert.equal(listing('docs/deep'), undefined, 'the late child read is fenced');
+});
