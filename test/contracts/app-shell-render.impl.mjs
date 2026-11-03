@@ -575,6 +575,103 @@ test('the composer microphone: single tap starts and Send transcribes', async t 
 test('one layer at a time on a phone: opening the agent closes the product manager and back', t => oneLayerAt(t, 390));
 test('one layer at a time on a wide screen: opening the agent closes the product manager and back', t => oneLayerAt(t, 1280));
 
+// D-1375: from TOGETHER_FROM (1360px) the assistant dock and the PM column are open together, each closes on its own, and the shell's
+// closer (a view of the app opening, `useShellLayer`) closes both; close() closes what `showing` names. Driven through the public layer API, the dock's own Close, the PM's
+// own close and the browser's Back. Below that width (1280 above, 390) the one-at-a-time rule stays.
+test('wide enough for both (1440): the assistant and the PM open side by side, each closes alone, Back closes the PM, a view closes both', async t => {
+  const { createElement: h, useLayoutEffect, act } = await import('react');
+  const shell = await bundle('together-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\nexport { useShellLayer } from '${root}${folder}/shell-layer.ts';\n`);
+  let latest, view;
+  const Probe = () => { const api = shell.useAgentLayer(); const sheet = shell.useShellLayer('fictional-document'); useLayoutEffect(() => { latest = api; view = sheet; }); return null; };
+  const PmOpen = createContext({ open: false, close() {} });
+  const panel = {
+    config: null,
+    Provider: ({ open, close, children }) => h(PmOpen.Provider, { value: { open, close } }, children),
+    Layout: ({ children }) => { const pm = useContext(PmOpen); return h('div', { 'data-pm-layout': '' }, children,
+      h('section', { 'data-testid': 'pm-panel', hidden: !pm.open }, h('textarea', { 'data-testid': 'composer-input' }), h('button', { 'data-testid': 'pm-close', onClick: pm.close }, 'Fermer'))); },
+  };
+  const window = dom(t, 1440);
+  const { createRoot } = await import('react-dom/client');
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const reactRoot = createRoot(container);
+  t.after(() => act(async () => reactRoot.unmount()));
+  const conversation = { controller: idleController };
+  await act(async () => reactRoot.render(h(shell.AppShell, { layout: 'screen', title: 'Forme', nav: [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }], route: { id: 'Jour', onChange() {} }, agent: conversation, panel, locale: 'fr' })));
+  const find = selector => window.document.querySelector(selector);
+  const settle = () => act(async () => new Promise(done => setTimeout(done, 50)));
+  const dockOpen = () => find('[data-testid=agent-layer]')?.dataset.state === 'open';
+  const pmOpen = () => find('[data-testid=pm-panel]')?.hidden === false;
+  const click = selector => act(async () => find(selector).dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
+
+  await act(async () => latest.open('agent', 'half'));
+  await settle();
+  assert.ok(dockOpen(), 'the assistant dock opens');
+  const agentComposer = find('[data-spec=agent] [data-testid=composer-input]');
+  assert.ok(agentComposer?.isConnected, 'the assistant\'s composer is mounted');
+  await act(async () => latest.open('improve', 'half'));
+  await settle();
+  assert.ok(pmOpen(), 'the PM opens');
+  assert.ok(dockOpen(), 'and the assistant stays open beside it');
+  assert.equal(latest.state, 'open');
+  assert.equal(latest.showing, 'agent', 'both open: showing names the assistant');
+  assert.equal(find('[data-spec=agent] [data-testid=composer-input]'), agentComposer, 'the assistant\'s chat was not remounted');
+
+  // The dock's own Close closes the assistant only.
+  await click('[data-testid=agent-layer-close]');
+  await settle();
+  assert.equal(dockOpen(), false, 'the dock\'s Close closes the assistant');
+  assert.ok(pmOpen(), 'and leaves the PM open');
+  assert.equal(latest.showing, 'improve');
+  assert.equal(latest.state, 'open');
+
+  // Reopened, then the PM's own close: the assistant stays.
+  await act(async () => latest.open('agent', 'half'));
+  await settle();
+  assert.ok(dockOpen() && pmOpen(), 'both open again');
+  assert.equal(find('[data-spec=agent] [data-testid=composer-input]'), agentComposer, 'the same chat, nothing lost');
+  await click('[data-testid=pm-close]');
+  await settle();
+  assert.equal(pmOpen(), false, 'the PM\'s close closes the PM');
+  assert.ok(dockOpen(), 'and leaves the assistant open');
+  assert.equal(latest.showing, 'agent');
+
+  // The PM's Back entry closes the PM only.
+  await act(async () => latest.open('improve'));
+  await settle();
+  assert.ok(pmOpen() && dockOpen());
+  await act(async () => window.dispatchEvent(new window.PopStateEvent('popstate')));
+  await settle();
+  assert.equal(pmOpen(), false, 'Back closes the PM');
+  assert.ok(dockOpen(), 'and leaves the assistant open');
+
+  // A view of the app (the shell's one closer) closes both.
+  await act(async () => latest.open('improve'));
+  await settle();
+  assert.ok(pmOpen() && dockOpen());
+  await act(async () => view.open());
+  await settle();
+  assert.equal(pmOpen(), false, 'a view closes the PM');
+  assert.equal(dockOpen(), false, 'and the assistant');
+  assert.equal(latest.state, 'closed');
+  await act(async () => view.close());
+  await act(async () => { latest.open('agent'); });
+  await act(async () => latest.open('improve'));
+  await settle();
+  assert.ok(pmOpen() && dockOpen());
+  // close() closes what `showing` names: the assistant first (the sidebar's agent entry toggles it), then the PM.
+  await act(async () => latest.close());
+  await settle();
+  assert.equal(dockOpen(), false, 'close() closes the assistant');
+  assert.ok(pmOpen(), 'and leaves the PM');
+  assert.equal(latest.showing, 'improve');
+  await act(async () => latest.close());
+  await settle();
+  assert.equal(pmOpen(), false, 'a second close() closes the PM');
+  assert.equal(latest.state, 'closed');
+  assert.equal(find('[data-spec=agent] [data-testid=composer-input]'), agentComposer, 'closing keeps the chat mounted');
+});
+
 for (const width of [390, 1280]) test(`the agent layer's chat at ${width} lists the agent's conversations over a relative, per-agent endpoint (useConversations from pi-chat): History, new, rename`, async t => {
   const { createElement: h, useLayoutEffect, useMemo, useState, act } = await import('react');
   const shell = await bundle('conversations-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\nexport { useConversations } from '${root}registry/pi-chat/use-conversations.ts';\n`);

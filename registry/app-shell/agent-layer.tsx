@@ -3,7 +3,9 @@
 // The AgentLayer: ONE agent's PiChat above the app. Compact (below 768px): a bottom drawer with three fixed snap points, peek, half and
 // full (shadcn `drawer`, Base UI variant). Expanded: a `Dock` (the `dock` item) beside the app, docked on the left or the right (default right)
 // or floating over it; the person chooses and the choice is remembered. The same layer shows
-// the product manager (« Améliorer l'app ») when the account menu asks for it. Push-to-talk is an option of the agent.
+// the product manager (« Améliorer l'app ») when the account menu asks for it. One of the two at a time on a phone and on a screen too
+// narrow for both (below `TOGETHER_FROM`): opening one closes the other. From `TOGETHER_FROM` up the PM column opens beside the dock, each
+// closes on its own, and the shell's closer closes both. Push-to-talk is an option of the agent.
 // Host concern: Pi has no layout. The chat is the borrowed NativeChatController rendered by PiChat; the screen context travels as the
 // submit's `context` (agent-context.ts). Nothing here is configurable beyond AgentSpec.
 import { createPortal } from 'react-dom';
@@ -21,7 +23,7 @@ import { useChatVoice } from '@hachej/boring-ui-kit/chat-react/voice';
 import type { ChatVoiceHandle as Voice } from '@hachej/boring-ui-kit/chat-react/voice';
 import { appendToDraft, mentionToken, pieces, removeMention } from '@hachej/boring-ui-kit/chat-text';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
-import { usePhone } from '../utils/use-media';
+import { useMedia, usePhone } from '../utils/use-media';
 import { Dock, DockLayout, DockMain } from '../dock/dock';
 import { useDraggable } from '../utils/use-draggable';
 import type { DockApi } from '../dock/dock';
@@ -73,7 +75,9 @@ export interface AgentLayerApi {
   readonly agent: NativeChatController | undefined;
   readonly state: AgentLayerState;
   readonly showing: Which | null;
+  /** Opens the assistant or the PM. Below `TOGETHER_FROM` (and on a phone) it closes the other; from it, the PM opens beside the assistant. */
   open(which?: Which, at?: 'peek' | 'half' | 'full'): void;
+  /** Closes what `showing` names: with both open, the assistant (a second call closes the PM). */
   close(): void;
   /** Open the real chat with one card mention. Call directly from a click or swipe release to grant microphone permission. False without an agent. */
   readonly talkAbout: (mention: string, options?: { readonly voice?: boolean; readonly at?: 'half' | 'full' }) => boolean;
@@ -88,6 +92,15 @@ const HALF = 0.55;
 const FULL = 1;
 /** Hold the trigger this long before it records; shorter is a tap. */
 const HOLD_MS = 350;
+/**
+ * From this width the assistant dock and the PM column are open together: the expanded sidebar (16rem) + the screen's least width
+ * (`DockLayout`'s 360px) + the dock's least width (320px) + the PM column (26rem) = 1352px. Below it they are one at a time, as on a phone.
+ */
+const TOGETHER_FROM = 1360;
+const TOGETHER_QUERY = `(width >= ${TOGETHER_FROM}px)`;
+/** The PM column's width in px (26rem): while it is open beside the dock, the dock leaves the screen its least width beside both. */
+const PM_COLUMN = 416;
+const MIN_MAIN = 360;
 
 /**
  * What a close request from the drawer becomes. A swipe, an outside press, a lost focus and Escape never close the layer: they step down
@@ -113,6 +126,10 @@ export function isOverlayEvent(details: { readonly reason: string; readonly even
 }
 
 interface Internal extends Omit<AgentLayerApi, 'agent'> {
+  /** The layer's own controls (Close, the trigger, Escape, a swipe): the one snap (the assistant, or the PM where they are one at a time). */
+  readonly close: () => void;
+  /** `AgentLayerApi.close`: what `showing` names. */
+  readonly closeShowing: () => void;
   readonly agent: AgentSpec | undefined;
   readonly improve: ShellPanel | undefined;
   readonly snap: Snap;
@@ -121,6 +138,8 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly dockFloating: boolean;
   readonly setDockFloating: (floating: boolean) => void;
   readonly showAgent: () => void;
+  /** Wide enough for both and the PM column open: the dock leaves room for it (`AgentDockLayout`). */
+  readonly besidePanel: boolean;
   /** Until this time (ms) an outside press is the AgentTrigger's own click. */
   readonly triggerUntil: { current: number };
   readonly voice: Voice;
@@ -170,11 +189,18 @@ const LoanContext = createContext<LoanContextValue | null>(null);
  */
 export function useAgentLoan(): (AgentLoan & { readonly compact: boolean }) | null { return useContext(LoanContext); }
 
+/** Whether `which` is on show: the assistant on the one snap; the PM on it too, or in its own column when wide enough for both. */
+function onShow(current: { readonly improve: ShellPanel | undefined; readonly snap: Snap; readonly shown: Which; readonly pmOpen: boolean; readonly together: boolean }, which: Which): boolean {
+  if (which === 'agent') return current.snap !== 'closed' && current.shown === 'agent';
+  // A PM column alone stays on show for the one render between a narrowing and its move to the snap (no Back entry dropped and pushed again).
+  return current.improve !== undefined && ((current.snap !== 'closed' && current.shown === 'improve') || (current.pmOpen && (current.together || current.snap === 'closed')));
+}
+
 const controllerOf = (spec: AgentSpec | ShellPanel | undefined) => spec && ('controller' in spec ? spec.controller : spec.identity);
 
 /** The layer's state and controls. */
 export function useAgentLayer(): AgentLayerApi {
-  const { state, showing, open, close, talkAbout, expanded, agent: spec } = useInternal();
+  const { state, showing, open, closeShowing: close, talkAbout, expanded, agent: spec } = useInternal();
   const agent = spec?.controller;
   return useMemo(() => ({ state, showing, open, close, talkAbout, expanded, agent }), [state, showing, open, close, talkAbout, expanded, agent]);
 }
@@ -209,7 +235,10 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): { readonly pe
 export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLink, appName, children }: { readonly agent?: AgentSpec | undefined; readonly panel?: ShellPanel | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly appName?: string | undefined; readonly children: ReactNode }): ReactElement {
   const compact = usePhone();
   const expanded = !compact;
+  const together = useMedia(TOGETHER_QUERY) && expanded;
   const [snap, setSnapState] = useState<Snap>('closed');
+  // The PM column beside the dock, used only `together`; below that the PM is `shown === 'improve'` with the one snap, as on a phone.
+  const [pmOpen, setPmOpen] = useState(false);
   const [dockFloating, setDockFloating] = useState(false);
   // A screen may lend the layer its assistant (`useAgentLoan`); the shell's own `agent` always wins.
   const [lent, setLent] = useState<AgentSpec | undefined>();
@@ -224,36 +253,69 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after mount; reading it before paint keeps server and client markup equal without a flash
   useLayoutEffect(() => { try { const saved = globalThis.localStorage?.getItem(SIDE_KEY); if (saved === 'left' || saved === 'right') setSideState(saved); } catch { /* a convenience */ } }, []);
   const setSide = useCallback((next: DockSide) => { setSideState(next); try { globalThis.localStorage?.setItem(SIDE_KEY, next); } catch { /* a convenience */ } }, []);
-  const specs = useRef({ agent, improve, snap, shown });
+  const specs = useRef({ agent, improve, snap, shown, pmOpen, together });
   // eslint-disable-next-line react-hooks/refs -- latest-value ref: open/lend/showAgent may be called from a child's layout effect, before this component's own effects run
-  specs.current = { agent, improve, snap, shown };
+  specs.current = { agent, improve, snap, shown, pmOpen, together };
   const lentRef = useRef<AgentSpec | undefined>(undefined);
 
   const setSnap = useCallback((next: Snap) => setSnapState(next), []);
   const close = useCallback(() => setSnapState('closed'), []);
-  // One full-screen layer at a time: opening the agent or product manager closes a view of the app (`useShellLayer`), and a view closes these.
-  useEffect(() => registerAgentLayerCloser(close), [close]);
+  const closePm = useCallback(() => {
+    setPmOpen(false);
+    if (specs.current.shown === 'improve') setSnapState('closed');
+  }, []);
+  const closeAll = useCallback(() => { setPmOpen(false); setSnapState('closed'); }, []);
+  const closeShowing = useCallback(() => {
+    const current = specs.current;
+    if (current.snap === 'closed' || current.shown === 'improve') setPmOpen(false);
+    if (current.snap !== 'closed') setSnapState('closed');
+  }, []);
+  // Crossing `TOGETHER_FROM` moves the PM between its two representations, so what is on show stays on show and nothing reopens by itself.
+  // Narrowing: a PM alone becomes the one snap; beside the assistant it closes (one at a time), its conversation still mounted. Widening:
+  // a PM on the one snap moves to its column and the assistant's snap is free again.
+  const wasTogether = useRef(together);
+  useLayoutEffect(() => {
+    if (wasTogether.current === together) return;
+    wasTogether.current = together;
+    const current = specs.current;
+    const alone = current.snap === 'closed' && current.improve !== undefined;
+    if (!together) { if (current.pmOpen) { setPmOpen(false); if (alone) { setShown('improve'); setSnapState('half'); } } return; }
+    if (current.snap !== 'closed' && current.shown === 'improve') { setPmOpen(true); setSnapState('closed'); if (current.agent) setShown('agent'); }
+  }, [together]);
+  // One full-screen layer at a time: opening the agent or product manager closes a view of the app (`useShellLayer`), and a view closes both.
+  useEffect(() => registerAgentLayerCloser(closeAll), [closeAll]);
+  // The assistant comes on show; below `TOGETHER_FROM` the PM closes (one at a time), from it the PM column stays as it is.
+  const toAgent = useCallback(() => {
+    if (!specs.current.together) setPmOpen(false);
+    setShown('agent');
+  }, []);
   const open = useCallback((which?: Which, at: 'peek' | 'half' | 'full' = 'half') => {
-    const { agent: a, improve: i } = specs.current;
+    const { agent: a, improve: i, together: both } = specs.current;
     const target = which ?? (a ? 'agent' : 'improve');
     if (target === 'agent' ? !a : !i) return;
     closeShellLayer();
-    setShown(target);
-    setSnapState(at === 'peek' && target !== 'agent' ? 'half' : at);
-  }, []);
+    if (target === 'agent') { toAgent(); setSnapState(at); return; }
+    // Wide enough for both: the PM opens beside the assistant and leaves it as it is.
+    if (both) { setPmOpen(true); return; }
+    setPmOpen(false);
+    setShown('improve');
+    setSnapState(at === 'peek' ? 'half' : at);
+  }, [toAgent]);
   const lend = useCallback((spec: AgentSpec | undefined, at?: 'peek' | 'half' | 'full') => {
     if (specs.current.agent && specs.current.agent !== lentRef.current) return;
     lentRef.current = spec;
     setLent(spec);
-    if (spec && at) { closeShellLayer(); setShown('agent'); setSnapState(at); }
-  }, []);
+    if (spec && at) { closeShellLayer(); toAgent(); setSnapState(at); }
+  }, [toAgent]);
   const loan = useMemo<LoanContextValue>(() => ({ available: !own, lend, compact }), [own, lend, compact]);
-  const showAgent = useCallback(() => { if (specs.current.agent) setShown('agent'); }, []);
+  const showAgent = useCallback(() => { if (specs.current.agent) toAgent(); }, [toAgent]);
 
   // A spec that goes away takes the layer with it.
   const shownSpec = shown === 'agent' ? agent : improve;
   // eslint-disable-next-line react-hooks/set-state-in-effect -- closes the layer once after its spec goes away; the guard (!shownSpec) settles after one pass
   useEffect(() => { if (!shownSpec) { setSnapState('closed'); if (shown === 'improve' && agent) setShown('agent'); else if (shown === 'agent' && improve) setShown('improve'); } }, [shownSpec, shown, agent, improve]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a panel that goes away takes its column with it; the guard settles after one pass
+  useEffect(() => { if (!improve && pmOpen) setPmOpen(false); }, [improve, pmOpen]);
 
   // The chats live in one element that is moved into the open drawer or panel; React keeps them mounted (and so their presentation state
   // and uploads) while the layer is closed, on a phone and on a wide screen. Nothing is mounted before the layer is first opened.
@@ -285,7 +347,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     // The drawer's slide and initial focus finish first. Voice deliberately leaves focus off the composer and never calls start().
     const timer = setTimeout(() => {
       const current = specs.current;
-      if (current.snap !== 'closed' && current.shown === which && controllerOf(current[which]) === controllerOf(spec)) {
+      if (onShow(current, which) && controllerOf(current[which]) === controllerOf(spec)) {
         host?.querySelector<HTMLElement>(`[data-spec=${which}] [data-testid=composer-input]`)?.focus({ preventScroll: true });
       }
     }, 520);
@@ -293,7 +355,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   }, [host, open, firstAgentLink]);
 
   const voice = useVoice(agent, locale, outcome => {
-    if (outcome === 'drafted') { setShown('agent'); setSnapState('half'); }
+    if (outcome === 'drafted') { toAgent(); setSnapState('half'); }
   });
   const [talkRecording, setTalkRecording] = useState(false);
   const cancelTalkRecording = useCallback(() => {
@@ -343,16 +405,18 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a pending item's id or phase changes (pendingKey), not on every new pending array
   }, [expanded, shown, snap, voiceSend, voice.captureSequence, voice.problem, pendingKey]);
 
-  // One Back entry for the PM, one more while pointing: Back returns to chat, then closes without leaving the app.
-  const improveOpen = snap !== 'closed' && shown === 'improve';
+  // One Back entry for the PM, one more while pointing: Back returns to chat, then closes the PM (only the PM, beside the dock) without leaving the app.
+  const improveOpen = onShow({ improve, snap, shown, pmOpen, together }, 'improve');
   const [pmFull, setPmFull] = useState<{ readonly full: boolean; readonly collapse: () => void }>({ full: false, collapse: () => {} });
   const onFull = useCallback((full: boolean, collapse: () => void) => setPmFull(current => current.full === full ? current : { full, collapse }), []);
-  useBackLayer(improveOpen, close, 'agent');
+  useBackLayer(improveOpen, closePm, 'agent');
   useBackLayer(improveOpen && pmFull.full, pmFull.collapse, 'sheet');
-  const state: AgentLayerState = snap === 'closed' ? 'closed' : expanded ? 'open' : snap;
+  // Both open: the state is `open` and `showing` the assistant; the PM alone: `improve`.
+  const state: AgentLayerState = snap === 'closed' ? (improveOpen ? 'open' : 'closed') : expanded ? 'open' : snap;
+  const besidePanel = together && improveOpen;
   const value = useMemo<Internal>(() => ({
-    state, showing: snap === 'closed' ? null : shown, open, close, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus,
-  }), [state, snap, shown, open, close, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide]);
+    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus,
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -364,7 +428,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   </div>;
   return <AgentContextProvider>
     <LayerContext.Provider value={value}><LoanContext.Provider value={loan}>
-      {improve ? <improve.Provider config={improve.config} open={improveOpen} close={close} appName={appName} locale={locale} onFull={onFull}>{page}</improve.Provider> : page}
+      {improve ? <improve.Provider config={improve.config} open={improveOpen} close={closePm} appName={appName} locale={locale} onFull={onFull}>{page}</improve.Provider> : page}
     </LoanContext.Provider></LayerContext.Provider>
   </AgentContextProvider>;
 }
@@ -742,7 +806,8 @@ function AgentDock({ side }: { readonly side: DockSide }) {
 export function AgentDockLayout({ children }: { readonly children: ReactNode }): ReactElement {
   const layer = useInternal();
   const dock = layer.expanded && (layer.agent || layer.improve) ? <AgentDock side={layer.side} /> : null;
-  return <DockLayout storageKey={DOCK_KEY} persist="local">
+  // The PM column sits inside the main content: while it is open beside the dock, the dock leaves the screen its least width beside it.
+  return <DockLayout storageKey={DOCK_KEY} persist="local" minMain={MIN_MAIN + (layer.besidePanel ? PM_COLUMN : 0)}>
     {layer.side === 'left' && dock}
     <DockMain>{children}</DockMain>
     {layer.side === 'right' && dock}

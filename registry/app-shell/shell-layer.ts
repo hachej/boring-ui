@@ -1,7 +1,8 @@
 'use client';
 
 // A full-screen app view (a document sheet, a pushed view of the app) that takes part in the shell's one-layer-at-a-time rule: opening it
-// closes the agent and product manager layers, and opening either of those closes it. Its Back is the shared Back manager's `sheet` layer
+// closes the agent and product manager layers (both, when a wide screen shows them side by side), and opening either of those closes it.
+// Between the agent and the product manager the rule is the agent layer's own: one at a time on a phone and below `TOGETHER_FROM`. Its Back is the shared Back manager's `sheet` layer
 // (`useBackLayer`), so the browser's Back closes it first. Host concern: Pi has no layers; this is the shell's own presentation rule.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useBackLayer } from '../utils/back';

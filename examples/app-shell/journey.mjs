@@ -1029,6 +1029,123 @@ try {
     assert.equal(await browser.evaluate(`!!${q('[data-testid=sidebar-title]')} && !!${q('[data-testid=nav-user]')}`), true, 'title and NavUser only');
   });
 
+  await step('D-1375 at 1440 the coach and the PM open side by side and both answer; each closes alone; at 1024, 768 and 390 one at a time', async () => {
+    const PM = '[data-testid=pm-panel]', SCREEN = '[data-screen]';
+    const pmShown = `${q(PM)}?.hidden === false`, coachShown = `${q(LAYER)}?.dataset.state === 'open'`;
+    const ask = async (where, text, reply) => {
+      await browser.evaluate(`${q(`${where} [data-testid=composer-input]`)}.focus()`);
+      await browser.type(q(`${where} [data-testid=composer-input]`), text);
+      await browser.click(q(`${where} [data-testid=composer-submit]`));
+      await browser.until(`${where} answers`, `${q(where)}.innerText.includes(${JSON.stringify(reply)})`, 20000);
+    };
+    const improve = async () => {
+      await browser.click(q('[data-testid=nav-user]'));
+      await browser.until('the NavUser menu', `!!${q('[data-testid=account-improve]')}`);
+      await browser.click(q('[data-testid=account-improve]'));
+      await browser.until('the PM open', pmShown);
+      await pause(400);
+    };
+    await browser.emulate('desktop');
+    await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await send('Page.navigate', { url: `${app.url}?pmChat=1` });
+    await live();
+    await browser.click(q(TRIGGER));
+    await browser.until('the coach open', coachShown);
+    await improve();
+    assert.equal(await browser.evaluate(coachShown), true, '1440: opening the PM leaves the coach open');
+    const screen = await browser.evaluate(rect(SCREEN)), pm = await browser.evaluate(rect(PM)), dock = await browser.evaluate(rect(LAYER));
+    assert.ok(screen.right <= pm.x + 1 && pm.right <= dock.x + 1 && dock.right <= await browser.evaluate('innerWidth') + 1, `1440: screen | PM | dock, no overlap: ${JSON.stringify({ screen, pm, dock })}`);
+    assert.ok(screen.w >= 359 && Math.abs(pm.w - 416) <= 2 && dock.w >= 319, `1440: nothing squeezed: ${JSON.stringify({ screen: screen.w, pm: pm.w, dock: dock.w })}`);
+    assert.ok(await browser.evaluate(noOverflow), '1440: no horizontal overflow');
+    await ask(LAYER, 'Une question au coach', 'Le coach répond à côté du PM.');
+    await ask(PM, 'Une idée pour le PM', 'Le PM a noté ton idée fictive.');
+    await browser.screenshot('d1375-1440-together.png');
+    // The coach's Close leaves the PM; reopened, the coach's conversation is still there; the PM's close leaves the coach.
+    await browser.click(q(`${LAYER} [data-testid=agent-layer-close]`));
+    await browser.until('the coach closed', `${q(LAYER)}?.dataset.state === 'closed'`);
+    assert.equal(await browser.evaluate(pmShown), true, '1440: closing the coach leaves the PM open');
+    await browser.screenshot('d1375-1440-pm-alone.png');
+    await browser.click(q(TRIGGER));
+    await browser.until('the coach again', coachShown);
+    assert.ok(await browser.evaluate(`${q(LAYER)}.innerText.includes('Le coach répond à côté du PM.')`), '1440: the coach kept its conversation');
+    await browser.click(q(`${PM} [data-testid=pm-close]`));
+    await browser.until('the PM closed', `${q(PM)}.hidden`);
+    assert.equal(await browser.evaluate(coachShown), true, '1440: closing the PM leaves the coach open');
+    await browser.screenshot('d1375-1440-coach-alone.png');
+    await improve();
+    assert.ok(await browser.evaluate(`${q(PM)}.innerText.includes('Le PM a noté ton idée fictive.')`), '1440: the PM kept its conversation');
+    await browser.press('Escape');
+    await browser.until('Escape closes the coach', `${q(LAYER)}?.dataset.state === 'closed'`);
+    assert.equal(await browser.evaluate(pmShown), true, '1440: Escape in the dock leaves the PM');
+    // A live resize across 1360px keeps what is on show and reopens nothing by itself.
+    const resize = width => send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: false });
+    await resize(1280);
+    await browser.until('1280: the PM alone stays on show', `${pmShown} && ${q(LAYER)}?.dataset.state === 'closed'`);
+    await resize(1440);
+    await browser.until('1440 again: still the PM alone', `${pmShown} && ${q(LAYER)}?.dataset.state === 'closed'`);
+    await browser.click(q(TRIGGER));
+    await browser.until('both again', `${pmShown} && ${coachShown}`);
+    await resize(1280);
+    await browser.until('1280: one at a time, the coach stays', `${coachShown} && ${q(PM)}.hidden`);
+    await resize(1440);
+    await pause(400);
+    assert.equal(await browser.evaluate(pmShown), false, 'widening does not reopen the PM by itself');
+    await browser.press('Escape');
+    await browser.until('the coach closed', `${q(LAYER)}?.dataset.state === 'closed'`);
+    await improve();
+    await resize(1280);
+    await pause(300);
+    await browser.click(q(TRIGGER));
+    await browser.until('1280: the coach replaced the PM', `${coachShown} && ${q(PM)}.hidden`);
+    await browser.press('Escape');
+    await browser.until('the coach closed', `${q(LAYER)}?.dataset.state === 'closed'`);
+    await resize(1440);
+    await pause(400);
+    assert.equal(await browser.evaluate(`${pmShown} || ${coachShown}`), false, 'closed stays closed after widening');
+    // Too narrow for the dock, the 26rem column and the screen: one at a time, as before.
+    for (const width of [1024, 768]) {
+      await send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: false });
+      await send('Page.navigate', { url: `${app.url}?pmChat=1` });
+      await live();
+      await browser.click(q(TRIGGER));
+      await browser.until(`${width}: the coach open`, coachShown);
+      await improve();
+      await browser.until(`${width}: the PM replaced the coach`, `${q(LAYER)}?.dataset.state === 'closed'`);
+      const alone = await browser.evaluate(rect(PM)), main = await browser.evaluate(rect(SCREEN));
+      assert.ok(main.right <= alone.x + 1 && alone.right <= await browser.evaluate('innerWidth') + 1, `${width}: screen | PM, no overlap: ${JSON.stringify({ main, alone })}`);
+      assert.ok(await browser.evaluate(noOverflow), `${width}: no horizontal overflow`);
+      await browser.screenshot(`d1375-${width}-one-at-a-time.png`);
+      await browser.click(q(TRIGGER));
+      await browser.until(`${width}: the coach replaced the PM`, `${coachShown} && ${q(PM)}.hidden`);
+      await browser.press('Escape');
+      await browser.until(`${width}: closed`, `${q(LAYER)}?.dataset.state === 'closed'`);
+    }
+    await browser.emulate('phone');
+    await send('Page.navigate', { url: `${app.url}?pmChat=1` });
+    await live();
+    await tap(TRIGGER);
+    await browser.until('390: the coach at half', `${snap} === 'half'`);
+    await pause(500);
+    await tap('[data-testid=agent-layer-close]');
+    await browser.until('390: closed', `!${q(LAYER)} || ${snap} === 'closed'`);
+    await pause(500);
+    await openImprove();
+    await browser.until('390: the PM as a sheet', pmShown);
+    await pause(600);
+    await ask(PM, 'Une idée pour le PM', 'Le PM a noté ton idée fictive.');
+    await browser.screenshot('d1375-390-pm.png');
+    await browser.evaluate(`${q(`${PM} [data-testid=composer-input]`)}.blur()`);
+    await tap('[data-testid=pm-close]');
+    await browser.until('390: PM closed', `${q(PM)}.hidden`);
+    await pause(500);
+    await tap(TRIGGER);
+    await browser.until('390: the coach at half, the PM closed', `${snap} === 'half' && ${q(PM)}.hidden`);
+    await browser.screenshot('d1375-390-coach.png');
+    await tap('[data-testid=agent-layer-close]');
+    await browser.until('390: closed again', `!${q(LAYER)} || ${snap} === 'closed'`);
+    await pause(500);
+  });
+
   await step('D75 hover rail at 1440: labels overlay the unchanged page, keyboard and Escape work, 390 keeps tabs', async () => {
     await browser.emulate('desktop');
     await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
