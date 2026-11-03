@@ -148,6 +148,17 @@ jobs:
           path: .cache/evidence/feat-board-viewer
           if-no-files-found: ignore
           retention-days: 7
+      - name: Excalidraw and draw.io drawings beside their native renderers
+        if: matrix.shard == 'documents'
+        run: node scripts/retry-journey.mjs drawing:journey
+      - name: Drawing viewer evidence
+        if: always() && matrix.shard == 'documents'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: drawing-viewer-evidence-${{ matrix.shard }}
+          path: .cache/evidence/drawing-viewer
+          if-no-files-found: error
+          retention-days: 7
       - name: Consumer task-list viewer
         if: matrix.shard == 'documents'
         run: node scripts/retry-journey.mjs task-list:journey

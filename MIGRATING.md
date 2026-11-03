@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Drawing viewer (`drawing-viewer`, `@hachej/boring-ui-kit/drawio-viewer`; D-1398).** New, additive: `DrawingViewer` shows an `.excalidraw` or `.drawio` file read-only, drawn by Excalidraw (`@excalidraw/excalidraw@0.18.1`, installed with the item) and by the official diagrams.net viewer (v32.4.1, vendored in the kit, run in a sandboxed frame without network). `onRead` hands the shapes and arrows it read; `describeDrawing` writes them as text. Serve `node_modules/@excalidraw/excalidraw/dist/prod/fonts` at `/excalidraw/fonts` (or pass `excalidrawAssets`) for Excalidraw's fonts; without them text draws in a system font and nothing is fetched from a CDN. To open drawings in the artifact panel, add `drawingKind` to your `artifactKinds`: it is not in the pi-app-kinds defaults, so an app without drawings installs nothing. YouTube Visual can replace its `DrawingView` with it.
+
 # Migrating to 0.4.49
 
 - **The scroll arrow no longer covers the chat (`pi-ambient`; D-1379).** Reinstall `pi-ambient`. Scrolled up, the down arrow has its own row under the messages, as in `PiChat`, where it used to float over the reply's last lines. Nothing to change.
