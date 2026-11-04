@@ -9,6 +9,7 @@ import type { Locale } from './kit';
 import { Foundations } from './foundations';
 import { Level1 } from './level1';
 import { Chat, Layouts, Pm, Tasks } from './sections';
+import { AgentShell, BoardDemo, ChatDemo, Detached, Workspace } from './agents';
 import { FloatingWindow, WindowLauncher, WindowLayer } from '../../registry/windows/windows';
 
 /** Demos that the iframe embeds render alone (`window.__EMBED__.name`), each in its own viewport. */
@@ -38,6 +39,19 @@ function WindowsDemo() {
 const embeds: Record<string, () => ReactNode> = {
   shell: () => <div className="gx-fixed-shell h-full"><ShellDemo /></div>,
   windows: () => <div className="h-full"><WindowsDemo /></div>,
+  'chat-slash': () => <ChatDemo state="populated" action="slash" />,
+  'chat-mention': () => <ChatDemo state="populated" action="mention" />,
+  'chat-model': () => <ChatDemo state="populated" action="model" />,
+  'chat-history': () => <ChatDemo state="populated" action="history" />,
+  dock: () => <div className="gx-fixed-shell h-full"><AgentShell open="half" /></div>,
+  'drawer-peek': () => <div className="gx-fixed-shell h-full"><AgentShell open="peek" /></div>,
+  'drawer-half': () => <div className="gx-fixed-shell h-full"><AgentShell open="half" /></div>,
+  'drawer-full': () => <div className="gx-fixed-shell h-full"><AgentShell open="full" /></div>,
+  'agent-target': () => <div className="gx-fixed-shell h-full"><AgentShell target /></div>,
+  'pi-app': () => <div className="h-full"><Workspace /></div>,
+  pm: () => <div className="h-full"><Workspace pm /></div>,
+  detached: () => <Detached />,
+  board: () => <BoardDemo />,
 };
 
 const SECTIONS: ReadonlyArray<readonly [string, string]> = [
