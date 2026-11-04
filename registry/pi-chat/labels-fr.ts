@@ -265,6 +265,7 @@ export const frenchChatLabels: ChatLabels = {
   answeringUnavailable: 'La réponse n’est pas disponible dans cette vue.',
   answerRefused: kind => kind === 'denied' ? 'Cette réponse n’a pas été acceptée.' : kind === 'conflict' ? 'Cette question a déjà reçu une réponse.' : 'Cette question n’attend plus de réponse.',
   answerNotSent: 'La réponse n’a pas pu être envoyée.',
+  questionNotAnswered: 'La question n’a pas reçu de réponse.',
   yourAnswer: 'Votre réponse :',
   artifact: 'Document',
   artifactTypes: { markdown: 'Document', html: 'Page HTML', svg: 'Image SVG', code: 'Code', canvas: 'Canevas' },

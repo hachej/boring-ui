@@ -303,6 +303,7 @@ export const defaultChatLabels = {
   answeringUnavailable: 'Answering is not available in this view.',
   answerRefused: (kind: 'denied' | 'conflict' | 'unknown-question'): string => kind === 'denied' ? 'The host did not accept this answer.' : kind === 'conflict' ? 'This question was already answered.' : 'This question is no longer waiting for an answer.',
   answerNotSent: 'The answer could not be sent.',
+  questionNotAnswered: 'The question was not answered.',
   yourAnswer: 'Your answer:',
   // Run card (a headless run: `runs/<id>`)
   run: 'Run',
