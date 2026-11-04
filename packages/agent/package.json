@@ -179,7 +179,7 @@
     }
   },
   "dependencies": {
-    "unpdf": "1.9.1"
+    "unpdf": "2.1.0"
   },
   "devDependencies": {
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
