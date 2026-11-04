@@ -56,39 +56,79 @@ const OOXML_MAIN: readonly (readonly [string, string, string])[] = [
   ['presentationml.presentation.main', 'ppt/', MEDIA_TYPES.pptx!],
 ];
 const ZIP_MIMETYPES = new Set([MEDIA_TYPES.odt, MEDIA_TYPES.ods, MEDIA_TYPES.odp, MEDIA_TYPES.epub]);
+/** The office type a zip's entry names say: a `[Content_Types].xml` and a part in `word/`, `xl/` or `ppt/`, in any order. */
+const officeTypeOf = (names: readonly string[]): string | undefined => names.includes('[Content_Types].xml')
+  ? OOXML_MAIN.find(([, prefix]) => names.some(name => name.startsWith(prefix)))?.[2]
+  : undefined;
+/** How much central directory a zip gets read: a real office file's fits well within this, and the walk is synchronous. */
+const ZIP_DIRECTORY_BYTES = 0x100000;
 /**
- * Zip-based documents from the head alone, without inflating anything: it walks the local file headers that fit in `head`.
- *  - OpenDocument and EPUB: a first entry `mimetype`, stored uncompressed, holds the media type itself.
- *  - Office Open XML (docx, xlsx, pptx): a `[Content_Types].xml` entry, then the main part's content type when that entry is stored
- *    uncompressed, or else the folder of a later entry (`word/`, `xl/`, `ppt/`). Its content is almost always deflated, and inflating
- *    is asynchronous in a browser, so the folder rule is the usual one.
- * A zip whose entries have unknown sizes (a data descriptor) cannot be walked past its first entry; it is then not claimed.
+ * The entry names of a zip's central directory when `bytes` reach its end record; undefined otherwise (a head, a zip64 file, a
+ * directory past the budget). Bytes inside an entry can look like an end record, so only one whose directory adds up counts.
  */
-function sniffZip(head: Uint8Array): string | undefined {
-  let contentTypes = false;
-  for (let offset = 0, index = 0; index < 64 && offset + 30 <= head.length && u32(head, offset) === 0x04034b50; index++) {
-    const flags = u16(head, offset + 6), method = u16(head, offset + 8), size = u32(head, offset + 18);
-    const nameStart = offset + 30, nameEnd = nameStart + u16(head, offset + 26), dataStart = nameEnd + u16(head, offset + 28);
-    if (nameEnd > head.length) return undefined;
-    const name = ascii(head.subarray(nameStart, nameEnd));
-    const stored = method === 0 && (flags & 8) === 0 && dataStart + size <= head.length ? ascii(head.subarray(dataStart, dataStart + size)) : undefined;
-    if (index === 0 && name === 'mimetype' && stored !== undefined) return ZIP_MIMETYPES.has(stored.trim()) ? stored.trim() : undefined;
-    if (name === '[Content_Types].xml') {
-      contentTypes = true;
-      const named = stored === undefined ? undefined : OOXML_MAIN.find(([main]) => stored.includes(`${main}+xml`));
-      if (named) return named[2];
-    } else if (contentTypes) {
-      const folder = OOXML_MAIN.find(([, prefix]) => name.startsWith(prefix));
-      if (folder) return folder[2];
+function zipDirectoryNames(bytes: Uint8Array): string[] | undefined {
+  let budget = ZIP_DIRECTORY_BYTES;
+  for (let end = bytes.length - 22; end >= 0 && end >= bytes.length - 22 - 0xffff; end--) {
+    if (u32(bytes, end) !== 0x06054b50 || end + 22 + u16(bytes, end + 20) !== bytes.length) continue;
+    const size = u32(bytes, end + 12), start = end - size;
+    if (start < 0 || u32(bytes, end + 16) !== start) continue;
+    budget -= size;
+    if (budget < 0) return undefined;
+    const names: string[] = [];
+    let offset = start;
+    while (offset + 46 <= end && u32(bytes, offset) === 0x02014b50) {
+      const nameEnd = offset + 46 + u16(bytes, offset + 28);
+      if (nameEnd > end) break;
+      names.push(ascii(bytes.subarray(offset + 46, nameEnd)));
+      offset = nameEnd + u16(bytes, offset + 30) + u16(bytes, offset + 32);
     }
-    if (flags & 8) return undefined;
-    offset = dataStart + size;
+    if (offset === end && names.length === u16(bytes, end + 10)) return names;
   }
   return undefined;
 }
+/**
+ * Zip-based documents from the bytes given, without inflating anything.
+ *  - OpenDocument and EPUB: a first entry `mimetype`, stored uncompressed, holds the media type itself.
+ *  - Office Open XML (docx, xlsx, pptx), whatever the order of its entries (OOXML sets none; openpyxl writes `[Content_Types].xml`
+ *    last): that entry and a part in `word/`, `xl/` or `ppt/`, or the main part's content type when that entry is stored uncompressed.
+ * The answer comes from the local headers while they suffice, then from the central directory when the bytes reach it (the only
+ * place that names entries with unknown sizes). A head of at least `SNIFF_BYTES` that runs out before either: a `.xml` part in an
+ * office folder decides, `[Content_Types].xml` being out of sight. It cannot tell a truncated file from a big one; a host that wants
+ * that refused checks the file's end once it has it. Anything shorter than `SNIFF_BYTES` is the whole file, so it is held to the rule.
+ */
+function sniffZip(bytes: Uint8Array): string | undefined {
+  const names: string[] = [];
+  let cut = false;
+  for (let offset = 0, index = 0; offset < bytes.length; index++) {
+    if (offset + 30 > bytes.length || index === 64) { cut = true; break; }
+    if (u32(bytes, offset) !== 0x04034b50) break;
+    const flags = u16(bytes, offset + 6), method = u16(bytes, offset + 8), size = u32(bytes, offset + 18);
+    const nameStart = offset + 30, nameEnd = nameStart + u16(bytes, offset + 26), dataStart = nameEnd + u16(bytes, offset + 28);
+    if (nameEnd > bytes.length) { cut = true; break; }
+    const name = ascii(bytes.subarray(nameStart, nameEnd));
+    // Only these two are ever read, and never a big one: `ascii` spreads its bytes, and a whole file can hold a large stored entry.
+    const stored = (name === 'mimetype' || name === '[Content_Types].xml') && method === 0 && (flags & 8) === 0 && size <= SNIFF_BYTES && dataStart + size <= bytes.length ? ascii(bytes.subarray(dataStart, dataStart + size)) : undefined;
+    if (index === 0 && name === 'mimetype' && stored !== undefined) return ZIP_MIMETYPES.has(stored.trim()) ? stored.trim() : undefined;
+    if (name === '[Content_Types].xml' && stored !== undefined) {
+      const named = OOXML_MAIN.find(([main]) => stored.includes(`${main}+xml`));
+      if (named) return named[2];
+    }
+    names.push(name);
+    const office = officeTypeOf(names);
+    if (office) return office;
+    if (flags & 8) { cut = true; break; }
+    offset = dataStart + size;
+    if (offset >= bytes.length) cut = true;
+  }
+  const directory = zipDirectoryNames(bytes);
+  if (directory) return officeTypeOf(directory);
+  if (!cut || bytes.length < SNIFF_BYTES) return undefined;
+  return OOXML_MAIN.find(([, prefix]) => names.some(name => name.startsWith(prefix) && name.endsWith('.xml')))?.[2];
+}
 
 /**
- * The media type a file's leading bytes name, or undefined. Pass up to `SNIFF_BYTES` of them.
+ * The media type a file's leading bytes name, or undefined. Pass at least `SNIFF_BYTES` of them when there are that many; only a zip
+ * looks further, so more bytes (the whole file) let it read its central directory.
  *  - Signatures: PDF, PNG, JPEG, GIF, WebP, HEIC/HEIF and MP4/MOV/M4V (`ftyp` brands), WebM (EBML), and zip-based documents.
  *  - Otherwise `text/plain` when the bytes are valid UTF-8 (a character cut at the end is allowed) with no NUL byte: a weak answer, a
  *    name says better which text it is (`delimitedTextType` for CSV and TSV).
@@ -109,7 +149,7 @@ export function sniffMediaType(head: Uint8Array): string | undefined {
     if (MP4_BRANDS.has(brand)) return 'video/mp4';
   }
   if (at([0x1a, 0x45, 0xdf, 0xa3])) return 'video/webm';
-  if (at([0x50, 0x4b, 0x03, 0x04])) return sniffZip(head.subarray(0, SNIFF_BYTES));
+  if (at([0x50, 0x4b, 0x03, 0x04])) return sniffZip(head);
   const sample = head.subarray(0, SNIFF_BYTES);
   if (sample.length === 0 || sample.includes(0)) return undefined;
   try { new TextDecoder('utf-8', { fatal: true }).decode(sample, { stream: true }); return 'text/plain'; } catch { return undefined; }
