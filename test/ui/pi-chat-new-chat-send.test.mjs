@@ -57,7 +57,7 @@ test('a message sent right after New chat does not reach the conversation being 
         page.lagging.reloaded = true;
       }
       if (listed.length > 1) await reload?.promise;
-      return Response.json({ conversations: listed.map(row) });
+      return Response.json({ conversations: listed.map(id => ({ ...row(id), lastMessage: page.said?.[id] ?? null })) });
     };
     const Host = () => {
       const [id, setId] = useState('old');
@@ -461,6 +461,45 @@ test('a message sent right after New chat does not reach the conversation being 
     await rest();
     assert.equal(page.deletes.length, 0);
     assert.equal(page.selected, 'new');
+  });
+
+  await t.test('a late answer for a conversation the person opened and left leaves it', async () => {
+    const page = await open({ options: { openTimeoutMs: 20 } });
+    await page.onNew();
+    await act(async () => { await new Promise(done => setTimeout(done, 60)); });
+    page.list(['old', 'new']);
+    await settle(() => page.client.reload());
+    await settle(() => page.client.onSelect('new'));
+    await settle(() => page.client.onSelect('old'));
+    await settle(() => page.create.resolve(answer()));
+    await rest();
+    assert.equal(page.deletes.length, 0);
+    assert.equal(page.client.items.map(item => item.id).join(), 'old,new');
+  });
+
+  await t.test('a late answer for a conversation that has a message, from another tab, leaves it', async () => {
+    const page = await open({ options: { openTimeoutMs: 20 } });
+    await page.onNew();
+    await act(async () => { await new Promise(done => setTimeout(done, 60)); });
+    page.said = { new: 'a message from another tab' };
+    await settle(() => page.create.resolve(answer()));
+    await rest();
+    assert.equal(page.deletes.length, 0);
+    assert.equal(page.client.items.map(item => item.id).join(), 'old,new');
+  });
+
+  await t.test('a host refresh that fails after a create that worked still opens it, with no message', async () => {
+    const change = {};
+    change.promise = new Promise((_, refuse) => { change.refuse = refuse; });
+    change.promise.catch(() => {});
+    const page = await open({ change });
+    await page.onNew();
+    await settle(() => page.create.resolve(answer()));
+    await settle(() => change.refuse(new Error('the host could not refresh')));
+    await rest();
+    assert.equal(hasFailed(), false, 'the conversation was made');
+    assert.equal(page.selected, 'new');
+    assert.equal(page.deletes.length, 0);
   });
 
   await t.test('picking a conversation during the hold says nothing, and its late answer leaves no empty row', async () => {
