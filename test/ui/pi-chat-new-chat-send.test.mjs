@@ -41,8 +41,8 @@ test('a message sent right after New chat does not reach the conversation being 
   };
 
   let drawn = 0;
-  const open = async ({ create = held(), reload, change, oldText = 'Bonjour', Chat = PiChat, chatProps = {}, options = {}, oldDocs, selectLag = 0 } = {}) => {
-    const chats = { old: chat('old', oldText, oldDocs), new: chat('new', 'Salut'), other: chat('other', '') };
+  const open = async ({ create = held(), reload, change, oldText = 'Bonjour', Chat = PiChat, chatProps = {}, options = {}, oldDocs, selectLag = 0, newText = 'Salut' } = {}) => {
+    const chats = { old: chat('old', oldText, oldDocs), new: chat('new', newText), other: chat('other', '') };
     const page = { chats, creates: 0, create, selected: 'old', endpoint: undefined };
     let listed = ['old'];
     const fetch = async request => {
@@ -297,6 +297,94 @@ test('a message sent right after New chat does not reach the conversation being 
     assert.equal(page.selected, 'new');
     assert.equal(document.activeElement === button, true);
     button.remove();
+  });
+
+  // D-1529: the box is held then, so the start of the message was lost and the rest could be sent as if whole.
+  const pressNew = async page => {
+    const button = document.createElement('button'); document.body.append(button);
+    button.addEventListener('click', () => page.client.onNew());
+    button.focus();
+    await act(async () => { button.click(); });
+    return button;
+  };
+  const noHeldField = () => document.querySelector('[data-testid=new-chat-typing]') === null;
+
+  for (const [name, Chat, chatProps] of [['PiChat', PiChat, {}], ['AmbientChat', AmbientChat, { defaultState: 'expanded' }]]) {
+    await t.test(`${name}: what is typed as the conversation opens lands whole in its box`, async () => {
+      const page = await open({ Chat, chatProps, newText: '' });
+      const button = await pressNew(page);
+      assert.equal(document.activeElement === input(), false, 'the old box takes nothing');
+      document.activeElement.value = 'first ok';
+      await settle(() => page.create.resolve(answer()));
+      assert.equal(page.selected, 'new');
+      assert.equal(page.chats.new.typed.at(-1), 'first ok');
+      assert.equal(page.chats.old.typed.length, 0, 'the draft being left is untouched');
+      assert.equal(page.chats.new.sends.length + page.chats.old.sends.length, 0, 'nothing is sent by typing');
+      assert.equal(page.creates, 1);
+      assert.equal(document.activeElement === input(), true);
+      assert.equal(noHeldField(), true);
+      button.remove();
+    });
+  }
+
+  await t.test('Enter typed as the conversation opens sends nothing', async () => {
+    const page = await open();
+    const button = await pressNew(page);
+    const key = new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    document.activeElement.dispatchEvent(key);
+    assert.equal(key.defaultPrevented, true);
+    await settle(() => page.create.resolve(answer()));
+    assert.equal(page.chats.old.sends.length + page.chats.new.sends.length, 0);
+    button.remove();
+  });
+
+  await t.test('after a refused create the typed text is gone, and the old draft untouched', async () => {
+    const page = await open();
+    const button = await pressNew(page);
+    document.activeElement.value = 'first';
+    await settle(() => page.create.resolve(new Response('no', { status: 500 })));
+    assert.equal(page.selected, 'old');
+    assert.equal(page.chats.old.typed.length, 0);
+    assert.equal(noHeldField(), true);
+    assert.equal(document.activeElement === button, true);
+    button.remove();
+  });
+
+  await t.test('picking the old conversation during the hold leaves its draft untouched', async () => {
+    const page = await open();
+    const button = await pressNew(page);
+    document.activeElement.value = 'first';
+    await settle(() => page.client.onSelect('old'));
+    await settle(() => page.create.resolve(answer()));
+    assert.equal(page.chats.old.typed.length, 0);
+    assert.equal(noHeldField(), true);
+    button.remove();
+  });
+
+  await t.test('a person who moved to another field keeps it, and what came before reaches the box', async () => {
+    const page = await open({ newText: '' });
+    const button = await pressNew(page);
+    document.activeElement.value = 'first';
+    const field = document.createElement('input'); document.body.append(field); field.focus();
+    await settle(() => page.create.resolve(answer()));
+    assert.equal(page.chats.new.typed.at(-1), 'first');
+    assert.equal(document.activeElement === field, true);
+    button.remove(); field.remove();
+  });
+
+  await t.test('a phone gets no hidden field, so no keyboard opens unasked', async () => {
+    const stock = globalThis.matchMedia;
+    globalThis.matchMedia = query => ({ matches: query.includes('coarse'), addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });
+    try {
+      const page = await open();
+      const button = await pressNew(page);
+      assert.equal(document.activeElement === button, false, 'Space cannot press New again');
+      assert.equal(noHeldField(), true);
+      assert.equal(document.activeElement?.tagName === 'TEXTAREA', false);
+      await settle(() => page.create.resolve(answer()));
+      assert.equal(document.activeElement === input(), false);
+      button.remove();
+    } finally { globalThis.matchMedia = stock; }
   });
 
   await t.test('AmbientChat waits too', async () => {
