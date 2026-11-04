@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.52
+
 - **A switch for developer mode (`pi-chat`; D-1470).** Reinstall `pi-chat`. Additive: `?chatMode=developer` turns developer mode on in that browser until `?chatMode=expert`, so « answered by provider/model » can be seen on a live app with no code change. Nothing changes for anyone who does not ask.
 - **A panel without an account row (`app-shell`; D-1472).** Reinstall `app-shell`. Additive: `ShellPanel.menu: false` drops the panel's row from the account menu, compact and expanded, while its `Provider`, `Layout` and `page` keep working. Without the field nothing changes.
 - **No alarm for a step the agent got past (`pi-chat`; D-1473).** Reinstall `pi-chat`. A failed step followed by a finished step, a card or the answer, in a reply that ends normally, no longer turns its group red or opens it for a person; opening it still shows the failure. A run that ends on the failure says so as before, and developer mode is unchanged.
