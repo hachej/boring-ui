@@ -66,7 +66,7 @@ try {
     await browser.emulate('desktop');
     await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
     await browser.evaluate('window.__leaving = true');
-    await send('Page.navigate', { url: `${app.url}?tools-history#jour` });
+    await send('Page.navigate', { url: `${app.url}?tools-history` });
     await browser.until('the agent trigger', `!window.__leaving && !!${q('[data-testid=agent-trigger]')} && !${q('[data-testid=connecting]')}`, 30000);
     await browser.click(q('[data-testid=agent-trigger]'));
     await browser.until('the agent layer', `!!${OPENER}`, 10000);
