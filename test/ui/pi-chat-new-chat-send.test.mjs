@@ -77,7 +77,8 @@ test('a message sent right after New chat does not reach the conversation being 
       useEffect(() => { if (items?.length && !items.some(item => item.id === id)) setId(items[0].id); }, [items, id]);
       return page.client ? createElement(Chat, { key: `${id}:${mount}`, controller: chats[controllerLag ? shown : id].controller, header: false, conversations: page.client, ...chatProps }) : null;
     };
-    await act(async () => root.render(createElement(Host, { key: drawn++ })));
+    page.rebuild = () => act(async () => root.render(createElement(Host, { key: drawn++ })));
+    await page.rebuild();
     page.onNew = () => act(async () => { page.client.onNew(); });
     return page;
   };
@@ -491,6 +492,20 @@ test('a message sent right after New chat does not reach the conversation being 
     await rest();
     assert.equal(page.deletes.length, 0);
     assert.equal(page.selected, 'new');
+  });
+
+  await t.test('a conversation opened after the chat was rebuilt stays when the late answer comes', async () => {
+    const page = await open({ options: { openTimeoutMs: 20 } });
+    await page.onNew();
+    await act(async () => { await new Promise(done => setTimeout(done, 60)); });
+    page.list(['old', 'new']); // The server has made it; its answer is still on the way.
+    await page.rebuild();
+    await rest();
+    await settle(() => page.client.onSelect('new'));
+    await settle(() => page.client.onSelect('old'));
+    await settle(() => page.create.resolve(answer()));
+    await rest();
+    assert.equal(page.deletes.length, 0);
   });
 
   await t.test('a late answer for a conversation that has a message, from another tab, leaves it', async () => {
