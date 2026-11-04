@@ -23,6 +23,9 @@ const answered = (...content) => ({ role: 'toolResult', toolCallId: 'q', toolNam
 const settled = { entries: [user, round(2, assistant([ask('q')])), round(3, answered(ANSWERED))], docs: running };
 const warned = { entries: [user, round(2, assistant([ask('q')])), round(3, answered(ANSWERED, '<harness>\n[warning] Fictional output note\n</harness>'))], docs: running };
 const invalid = { entries: [user, round(2, assistant([ask('q', { question: QUESTION, options: ['Port-Imaginaire'] })])), round(3, failed('q', INVALID), assistant([{ type: 'text', text: 'Je reformule.' }]))], docs: {} };
+const MALFORMED = { questions: ['Quel port ?', 'Quel jour ?', 'Quel prix ?'] };
+const malformed = { entries: [user, round(2, assistant([ask('q', MALFORMED)]))], docs: running };
+const streaming = args => ({ entries: [user], docs: { 'pi.live': { run: { taskId: 1 }, generation: { message: { content: [ask('q', args)] } } } } });
 
 test('a typed message answers the waiting question, and natural presentation shows no harness text', { timeout: 30000 }, async t => {
   const window = new Window({ url: 'https://fictional.invalid/' });
@@ -131,6 +134,33 @@ test('a typed message answers the waiting question, and natural presentation sho
     assert.deepEqual(answers.map(item => item.text), ['Le port du nord.']);
     assert.equal(attached, 0, 'not attached to the answer');
     assert.equal(marked, 0, 'still to send');
+  });
+  await t.test('a call with no question yet shows no draft card, while it is written or waiting for its refusal', async () => {
+    for (const view of [malformed, streaming(MALFORMED), streaming({})]) {
+      await draw(view);
+      assert.equal(Boolean(element.querySelector('[data-testid=question-card]')), false, 'no draft card');
+      assert.doesNotMatch(element.textContent, /agent asked a question/);
+    }
+  });
+  await t.test('a question being written still shows once it has its text', async () => {
+    await draw(streaming({ question: QUESTION }));
+    assert.match(element.querySelector('[data-testid=question-text]')?.textContent ?? '', /Quel port choisir/);
+  });
+  await t.test('a message typed while a malformed call is refused is queued and stops nothing', async () => {
+    await draw(malformed, { text: 'Le port du nord.' });
+    reply = { kind: 'unknown-question' };
+    await submit();
+    assert.equal(answers.length, 0, 'no question to answer');
+    assert.deepEqual(calls, ['send']);
+    assert.equal(sends[0].kind, 'followUp');
+  });
+  await t.test('a call Pi accepts by coercing its question stays answerable', async () => {
+    await draw({ entries: [user, round(2, assistant([ask('q', { question: 0, questions: [{ question: 'Quel port ?', options: ['Nord', 'Sud'] }] })]))], docs: running });
+    assert.equal(Boolean(element.querySelector('[data-testid=question-form]')), true, 'the form is there to answer');
+  });
+  await t.test('expert mode keeps the card as it was', async () => {
+    await draw(malformed, {}, { presentation: undefined });
+    assert.equal(Boolean(element.querySelector('[data-testid=question-card]')), true);
   });
   await t.test('a host with no answer path keeps queueing', async () => {
     await draw(waiting, { text: 'Le port du nord.' }, { actions: {} });

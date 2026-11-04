@@ -1,5 +1,6 @@
 # Unreleased
 
+- **No draft card for a malformed question (`@hachej/boring-ui-kit`; D-1494).** With `presentation="natural"`, an `ask_user` call with no question text draws no card and does not count as waiting, so a message typed then is queued as usual. No host change.
 - **A stopped question speaks the chat's language (`pi-chat`, `pi-chat-question`; D-1489).** Reinstall both. New label `questionNotAnswered`: a host that passes a complete labels object of its own adds it.
 
 # Migrating to 0.4.53
