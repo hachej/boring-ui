@@ -335,6 +335,122 @@ test('a message sent right after New chat does not reach the conversation being 
     });
   }
 
+  // D-1564: a dead key still open when the box comes back. The browser shows it in the field, then the keyboard commits the letter to whatever has the focus.
+  const compose = (field, name) => act(async () => { field.dispatchEvent(new window.Event(name, { bubbles: true })); await new Promise(done => setTimeout(done, 0)); });
+  const heldField = () => document.querySelector('[data-testid=new-chat-typing]');
+
+  for (const [name, Chat, chatProps] of [['PiChat', PiChat, {}], ['AmbientChat', AmbientChat, { defaultState: 'expanded' }]]) {
+    await t.test(`${name}: a dead key open as the conversation opens finishes in the field, then lands whole, with no stray accent`, async () => {
+      const page = await open({ Chat, chatProps, newText: '' });
+      const button = await pressNew(page);
+      const field = document.activeElement;
+      field.value = 'abcdefgh';
+      await compose(field, 'compositionstart');
+      field.value = 'abcdefgh^';
+      await settle(() => page.create.resolve(answer()));
+      assert.equal(page.selected, 'new');
+      assert.equal(page.chats.new.typed.length, 0, 'an open accent is not handed over');
+      assert.equal(document.activeElement === field, true, 'the next letter must still reach the field');
+      field.value = 'abcdefghê';
+      await compose(field, 'compositionend');
+      assert.deepEqual(page.chats.new.typed, ['abcdefghê']);
+      assert.equal(page.chats.old.typed.length, 0, 'the draft being left is untouched');
+      assert.equal(document.activeElement === input(), true);
+      assert.equal(noHeldField(), true);
+      assert.equal(page.creates, 1);
+      button.remove();
+    });
+  }
+
+  for (const [keys, committed] of [['^ then ^', '^^'], ['^ then z', '^z'], ['^ then Space', '^ '], ['^ then Backspace', 'ab']]) {
+    await t.test(`${keys}: what the browser commits is what lands`, async () => {
+      const page = await open({ newText: '' });
+      const button = await pressNew(page);
+      const field = document.activeElement;
+      field.value = 'ab';
+      await compose(field, 'compositionstart');
+      field.value = 'ab^';
+      await settle(() => page.create.resolve(answer()));
+      field.value = keys === '^ then Backspace' ? committed : `ab${committed}`;
+      await compose(field, 'compositionend');
+      assert.deepEqual(page.chats.new.typed, [keys === '^ then Backspace' ? committed : `ab${committed}`]);
+      button.remove();
+    });
+  }
+
+  await t.test('a dead key held across the hold still composes in the field', async () => {
+    const page = await open({ newText: '' });
+    const button = await pressNew(page);
+    const field = document.activeElement;
+    field.value = 't';
+    await compose(field, 'compositionstart');
+    field.value = 't^';
+    field.value = 'tê';
+    await compose(field, 'compositionend');
+    field.value = 'tête';
+    await settle(() => page.create.resolve(answer()));
+    assert.deepEqual(page.chats.new.typed, ['tête']);
+    button.remove();
+  });
+
+  await t.test('an accent left open past the three seconds is still handed over when it ends', { timeout: 6000 }, async () => {
+    const page = await open({ newText: '' });
+    const button = await pressNew(page);
+    const field = document.activeElement;
+    await compose(field, 'compositionstart');
+    field.value = 'ab^';
+    await settle(() => page.create.resolve(answer()));
+    await act(async () => { await new Promise(done => setTimeout(done, 3100)); });
+    assert.equal(heldField() === field, true, 'what was typed is still there');
+    field.value = 'abê';
+    await compose(field, 'compositionend');
+    assert.deepEqual(page.chats.new.typed, ['abê']);
+    assert.equal(noHeldField(), true);
+    button.remove();
+  });
+
+  await t.test('moving to another field with an accent open hands the text over and leaves the focus there', async () => {
+    const page = await open({ newText: '' });
+    const button = await pressNew(page);
+    const field = document.activeElement;
+    field.value = 'ab';
+    await compose(field, 'compositionstart');
+    await settle(() => page.create.resolve(answer()));
+    assert.equal(page.chats.new.typed.length, 0);
+    const other = document.createElement('input'); document.body.append(other);
+    await settle(() => other.focus());
+    assert.deepEqual(page.chats.new.typed, ['ab']);
+    assert.equal(document.activeElement === other, true);
+    assert.equal(noHeldField(), true);
+    other.remove(); button.remove();
+  });
+
+  await t.test('picking another conversation with an accent open leaves no field, and the draft untouched', async () => {
+    const page = await open({ newText: '' });
+    const button = await pressNew(page);
+    const field = document.activeElement;
+    field.value = 'ab^';
+    await compose(field, 'compositionstart');
+    await settle(() => page.create.resolve(answer()));
+    await settle(() => page.client.onSelect('old'));
+    assert.equal(noHeldField(), true);
+    assert.equal(page.chats.old.typed.length, 0);
+    assert.equal(page.chats.new.typed.length, 0);
+    button.remove();
+  });
+
+  await t.test('AmbientChat coming up open leaves the focus in a field the person is in', async () => {
+    const other = document.createElement('input'); document.body.append(other); other.focus();
+    await open({ Chat: AmbientChat, chatProps: { defaultState: 'expanded' } });
+    assert.equal(document.activeElement === other, true);
+    other.remove();
+  });
+
+  await t.test('AmbientChat coming up open with no field in use puts the cursor in its box', async () => {
+    await open({ Chat: AmbientChat, chatProps: { defaultState: 'expanded' } });
+    assert.equal(document.activeElement === input(), true);
+  });
+
   await t.test('a host whose controller comes after its active conversation: the text waits, and the old draft is untouched', async () => {
     const page = await open({ controllerLag: 100, newText: '' });
     const button = await pressNew(page);
