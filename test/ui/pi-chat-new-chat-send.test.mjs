@@ -240,20 +240,32 @@ test('a message sent right after New chat does not reach the conversation being 
     await page.onNew();
     await settle(() => page.create.resolve(answer()));
     const button = document.createElement('button'); document.body.append(button); button.focus();
-    await act(async () => { await new Promise(done => setTimeout(done, 3100)); });
     await settle(() => page.remount());
     assert.equal(document.activeElement === button, true);
     button.remove();
   });
 
-  await t.test('a key pressing New again as the new conversation opens makes no second conversation', async () => {
+  await t.test('the New button lets go of the focus, so a key typed then cannot press it again', async () => {
     const page = await open();
-    await page.onNew();
+    const button = document.createElement('button'); document.body.append(button);
+    button.addEventListener('click', () => page.client.onNew());
+    button.focus();
+    await act(async () => { button.click(); });
+    assert.equal(document.activeElement === button, false, 'while the conversation is on its way');
     await settle(() => page.create.resolve(answer()));
-    assert.equal(page.selected, 'new');
+    assert.equal(document.activeElement === input(), true);
+    button.remove();
+  });
+
+  await t.test('a refused create leaves a field the person moved to alone', async () => {
+    const page = await open();
+    const button = document.createElement('button'); document.body.append(button); button.focus();
+    const field = document.createElement('input'); document.body.append(field);
     await page.onNew();
-    await settle();
-    assert.equal(page.creates, 1);
+    field.focus();
+    await settle(() => page.create.resolve(new Response('no', { status: 500 })));
+    assert.equal(document.activeElement === field, true);
+    button.remove(); field.remove();
   });
 
   await t.test('the cursor still arrives when the host opens the conversation late', async () => {
@@ -265,21 +277,11 @@ test('a message sent right after New chat does not reach the conversation being 
     assert.equal(document.activeElement === input(), true);
   });
 
-  await t.test('New works again once the moment has passed', async () => {
+  await t.test('New works at once after a conversation opens', async () => {
     const page = await open();
     await page.onNew();
     await settle(() => page.create.resolve(answer()));
-    await act(async () => { await new Promise(done => setTimeout(done, 3100)); });
-    await page.onNew();
-    await settle();
-    assert.equal(page.creates, 2);
-  });
-
-  await t.test('New works at once after picking another conversation', async () => {
-    const page = await open();
-    await page.onNew();
-    await settle(() => page.create.resolve(answer()));
-    await settle(() => page.client.onSelect('old'));
+    assert.equal(page.selected, 'new');
     await page.onNew();
     await settle();
     assert.equal(page.creates, 2);
