@@ -42,11 +42,12 @@ test('a message sent right after New chat does not reach the conversation being 
 
   let drawn = 0;
   const open = async ({ create = held(), reload, change, oldText = 'Bonjour', Chat = PiChat, chatProps = {}, options = {}, oldDocs } = {}) => {
-    const chats = { old: chat('old', oldText, oldDocs), new: chat('new', 'Salut') };
+    const chats = { old: chat('old', oldText, oldDocs), new: chat('new', 'Salut'), other: chat('other', '') };
     const page = { chats, creates: 0, create, selected: 'old', endpoint: undefined };
     let listed = ['old'];
     const fetch = async request => {
       if (request.method === 'POST') { page.creates += 1; const reply = await create.promise; if (reply.ok) listed = ['old', 'new']; return reply; }
+      if (request.url.includes('/two')) return Response.json({ conversations: [row('other')] });
       // One poll is asked before the create and answers late; the first read after the create is the client's reload, and later polls stay out.
       if (page.lagging) {
         if (!page.lagging.asked) { page.lagging.asked = true; const rows = listed; await page.lagging.promise; return Response.json({ conversations: rows.map(row) }); }
@@ -154,6 +155,8 @@ test('a message sent right after New chat does not reach the conversation being 
     await settle(() => page.endpoint('https://fictional.invalid/two'));
     assert.equal(enabled(), true);
     await settle(() => page.create.resolve(answer()));
+    assert.equal(page.client.items.map(item => item.id).join(), 'other', 'the first list\'s late reload does not replace the new owner\'s list');
+    assert.equal(page.selected, 'other');
   });
 
   await t.test('a suggestion picked while leaving is not written into the old draft', async () => {
