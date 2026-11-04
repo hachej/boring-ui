@@ -1,6 +1,6 @@
 # Unreleased
 
-- **A refused or unanswered New chat now says so (`@hachej/boring-ui-kit`, `pi-chat`, `pi-ambient`; D-1563): `useConversationsClient` adds `newFailed` and `newFailedSeen`, and `PiChat` and `AmbientChat` show the message when the host passes the client through. A create answered after the person stopped waiting now sends `op=delete` for that conversation. A host that picks fields out of the client must pass the two new ones to get the message.
+- **A refused or unanswered New chat now says so (`@hachej/boring-ui-kit`, `pi-chat`, `pi-ambient`; D-1563): `useConversationsClient` adds `newFailed` and `newFailedSeen`, and `PiChat` and `AmbientChat` show the message when the host passes the client through. A create answered after the person stopped waiting now sends `op=delete` for that conversation, if it is still empty and they never had it open. An `onChange` that rejects after a create that worked no longer stops the conversation opening. A host that picks fields out of the client must pass the two new ones to get the message.
 - **After a refused New chat the focus stays off the button (`@hachej/boring-ui-kit`; D-1529).** No host change is needed. A Space typed after a refused create pressed New again, and a create that worked took the rest of the text as a partial message. A person using the keyboard starts again from the page after a refused create.
 
 # Migrating to 0.4.57

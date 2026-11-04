@@ -107,7 +107,9 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
   const forget = useCallback(() => { opening.current = undefined; setCreating(false); }, []);
   const base = endpoint === undefined ? undefined : String(endpoint);
   const latest = useRef({ fetch, onSelect, onChange, activeId, openTimeoutMs, base });
-  useLayoutEffect(() => { latest.current = { fetch, onSelect, onChange, activeId, openTimeoutMs, base }; });
+  // Every conversation this person has had open here: a late create's cleanup must never remove one of them.
+  const visited = useRef(new Set<string>());
+  useLayoutEffect(() => { latest.current = { fetch, onSelect, onChange, activeId, openTimeoutMs, base }; if (activeId !== undefined) visited.current.add(activeId); });
   // The text is not given back: it stays out of the draft being left, and the message says it is gone.
   const failNew = useCallback(() => {
     setFailedNew({ at: latest.current.activeId, typed: Boolean(typing.current?.field?.value) });
@@ -159,10 +161,14 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
       let selected = false;
       try {
         const { conversationId } = await op(name, body);
-        await changed();
+        // The conversation exists now: a host refresh that fails does not undo that.
+        await changed().catch(() => {});
         if (conversationId !== undefined && opening.current === run) { selected = true; markOpened(String(conversationId)); latest.current.onSelect(String(conversationId)); }
-        // Nobody waits for it any more, so it would stay in the list as an empty row, unless the person already opened it. Another owner's list is not this one's to change.
-        else if (name === 'create' && conversationId !== undefined && latest.current.base === base && latest.current.activeId !== String(conversationId)) { await op('delete', { conversationId }); await changed(); }
+        // Nobody waits for it any more, so it would stay in the list as an empty row. Only that row goes: not one the person has had open here, not one with a message (another tab), not on another owner's list.
+        else if (name === 'create' && conversationId !== undefined && latest.current.base === base && !visited.current.has(String(conversationId))) {
+          const row = (await call({})).conversations?.find(served => String(served.id) === String(conversationId));
+          if (row && row.lastMessage === null) { await op('delete', { conversationId }); await changed(); }
+        }
       } finally {
         clearTimeout(timer);
         if (opening.current === run) { forget(); if (!selected) gaveUp(); }
