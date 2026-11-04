@@ -18,6 +18,7 @@
     "pretest": "npm run build",
     "test": "node scripts/run-tests.mjs",
     "test:feedback-registry-consumer": "node scripts/test-feedback-registry-consumer.mjs",
+    "design:gallery": "node lab/design-system/build.mjs",
     "studio": "node lab/studio/server.mjs",
     "studio:headless": "node lab/studio/headless.mjs",
     "studio:journey": "node lab/studio/journey.mjs",

@@ -1,0 +1,67 @@
+/* Default style v1: the core tokens an app sets (canvas grey, white surface) and the few derived ones. Docs: docs/design/gallery.md */
+:root {
+  --background: oklch(0.97 0 0); --card: oklch(1 0 0); --foreground: oklch(0.2 0 0);
+  --card-foreground: var(--foreground); --popover: var(--card); --popover-foreground: var(--foreground);
+  --primary: oklch(0.21 0.006 285.885); --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.95 0 0); --secondary-foreground: var(--foreground);
+  --accent: oklch(0.94 0 0); --accent-foreground: var(--foreground); --muted: oklch(0.95 0 0);
+  --border: oklch(0.91 0 0); --input: var(--border); --ring: oklch(0.55 0.02 286);
+  --destructive: oklch(0.577 0.2 27); --success: oklch(0.527 0.154 150); --warning: oklch(0.6 0.15 65); --info: oklch(0.5 0.2 264);
+  --muted-foreground: color-mix(in oklab, var(--foreground) 55%, var(--background));
+  --sidebar: var(--background); --sidebar-foreground: var(--foreground); --sidebar-primary: var(--primary); --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent); --sidebar-accent-foreground: var(--foreground); --sidebar-border: var(--border); --sidebar-ring: var(--ring);
+  --chart-1: oklch(0.55 0.17 264); --chart-2: oklch(0.65 0.15 160); --chart-3: oklch(0.72 0.15 75); --chart-4: oklch(0.62 0.18 15); --chart-5: oklch(0.6 0.12 300);
+  --radius: 0.5rem; --text-body: 12px; --text-title: 14px;
+  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif; --font-mono: 'Geist Mono', ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+:root.dark {
+  --background: oklch(0.18 0 0); --card: oklch(0.23 0 0); --foreground: oklch(0.96 0 0);
+  --primary: oklch(0.92 0 0); --primary-foreground: oklch(0.2 0 0);
+  --secondary: oklch(0.27 0 0); --accent: oklch(0.28 0 0); --muted: oklch(0.27 0 0); --border: oklch(1 0 0 / 10%); --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.65 0.02 286); --destructive: oklch(0.7 0.19 22); --success: oklch(0.7 0.17 150); --warning: oklch(0.78 0.15 75); --info: oklch(0.72 0.14 254);
+  --muted-foreground: color-mix(in oklab, var(--foreground) 62%, var(--background));
+  --chart-1: oklch(0.65 0.17 264); --chart-2: oklch(0.72 0.15 160); --chart-3: oklch(0.78 0.15 75); --chart-4: oklch(0.7 0.18 15); --chart-5: oklch(0.7 0.12 300);
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--background); }
+body { margin: 0; background: var(--background); color: var(--foreground); font: 400 var(--text-body)/1.5 var(--font-sans); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+/* Overlays are portalled to body: keep them in the style (kit shadcn parts read the tokens). */
+.gx-doc { max-width: 1120px; margin: 0 auto; padding: 0 16px 96px; }
+.gx-top { position: sticky; top: 0; z-index: 40; background: var(--background); border-bottom: 1px solid var(--border); }
+.gx-top-in { max-width: 1120px; margin: 0 auto; padding: 8px 16px; display: flex; align-items: center; gap: 8px; }
+.gx-nav { display: flex; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.gx-nav::-webkit-scrollbar { display: none; }
+.gx-nav a { color: var(--muted-foreground); text-decoration: none; padding: 4px 8px; border-radius: var(--radius); white-space: nowrap; }
+.gx-nav a:hover { background: var(--accent); color: var(--foreground); }
+.gx-section { padding-top: 40px; display: flex; flex-direction: column; gap: 12px; min-width: 0; scroll-margin-top: 48px; }
+.gx-section > h2 { margin: 0; font-size: var(--text-title); font-weight: 600; }
+.gx-lead { margin: 0; max-width: 70ch; color: var(--muted-foreground); }
+.gx-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); min-width: 0; }
+.gx-grid.wide { grid-template-columns: minmax(0, 1fr); }
+.gx-block { background: var(--card); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.gx-block > header { display: flex; flex-direction: column; gap: 2px; }
+.gx-name { font: 500 11px var(--font-mono); letter-spacing: .02em; }
+.gx-tokens { font: 400 11px var(--font-mono); color: var(--muted-foreground); overflow-wrap: anywhere; }
+.gx-body { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.gx-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gx-placeholder { border: 1px dashed var(--border); border-radius: var(--radius); padding: 12px; color: var(--muted-foreground); }
+.gx-placeholder b { color: var(--foreground); font-weight: 500; }
+.gx-frame { position: relative; overflow: hidden; border-radius: var(--radius); background: var(--background); transform: translateZ(0); min-width: 0; }
+.gx-frame iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--background); }
+.gx-phone { width: 390px; max-width: 100%; margin: 0 auto; }
+.gx-swatch { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.gx-chip { height: 32px; border-radius: var(--radius); border: 1px solid var(--border); }
+.gx-kicker { font: 500 11px var(--font-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted-foreground); }
+.gx-embed .gx-doc, .gx-embed-root { padding: 0; }
+.gx-fixed-shell, .gx-fixed-shell .app-shell { height: 100% !important; min-height: 0; }
+.gx-swatch i { display: block; height: 32px; border-radius: var(--radius); border: 1px solid var(--border); }
+.gx-swatch code { font: 400 11px var(--font-mono); color: var(--muted-foreground); overflow-wrap: anywhere; }
+.gx-swatches { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+.gx-bar { display: block; height: 8px; border-radius: 2px; background: var(--primary); }
+.gx-stack { display: flex; flex-direction: column; gap: 8px; }
+.gx-radius { width: 64px; height: 64px; border: 1px solid var(--border); background: var(--card); display: flex; align-items: center; justify-content: center; }
+.gx-radius code { font: 400 11px var(--font-mono); }
+.gx-field { display: flex; flex-direction: column; gap: 4px; }
+.gx-row > .gx-kicker { min-width: 72px; }
