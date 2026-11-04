@@ -1,7 +1,7 @@
 import type { ReadResult, ResourceAccess, ResourceClient, ResourceExpectation, ResourceLocator, ResourceSnapshot } from '@hachej/boring-files';
 import { applyTextEdits, parseTextEdits, type TextEdit } from '@hachej/boring-files/text';
 import type { PresentationCommand, PresentationResult } from './contracts.js';
-import { createTextBuffer, freeze, sameBase } from './text-buffer.js';
+import { createTextBuffer, freeze, sameBase, type TextBufferRemote } from './text-buffer.js';
 import type { EditableViewerController, SaveResult, SaveSelection } from './resources.js';
 import { randomUUID } from '@hachej/boring-files/platform';
 import type { TextDraftActions, TextDraftOptions, TextDraftRecoveryState } from './text-draft-types.js';
@@ -56,7 +56,13 @@ export interface MarkdownActions extends TextDraftActions {
   /** For an unconfirmed save: stop reconciling and refresh, keeping the draft. The save is never reported committed or replayed. */
   readonly abandon: () => Promise<ReadResult>;
   readonly discardToRemote: () => Promise<ReadResult>;
+  /** Keeps the local text over the remote revision already shown and saves it conditionally. A remote that moved since is a new conflict, never an overwrite. */
+  readonly keepLocal: () => Promise<SaveResult>;
+  /** Reads the current saved text for review. The local text and base stay; what the editor knows of the remote moves to the revision returned, so `keepLocal` acts on it. */
+  readonly readRemote: () => Promise<MarkdownRemote>;
 }
+
+export type MarkdownRemote = TextBufferRemote;
 
 export interface MarkdownOptions {
   readonly drafts?: TextDraftOptions;
@@ -162,7 +168,7 @@ export function createMarkdownController(options: MarkdownOptions): MarkdownCont
       edit: text => buffer.edit(text),
       propose, accept, reject: proposalId => { if (state.lifecycle !== 'disposed') update({ ...state, proposals: state.proposals.filter(value => value.id !== proposalId) }); },
       checkDrafts: buffer.checkDrafts, checkpointDraft: buffer.checkpointDraft, restoreDraft: buffer.restoreDraft, discardDraft: buffer.discardDraft,
-      selection, refresh: () => buffer.refresh(false), discardToRemote: () => buffer.refresh(true), reconcile: buffer.reconcile, abandon: buffer.abandon,
+      selection, refresh: () => buffer.refresh(false), discardToRemote: () => buffer.refresh(true), keepLocal: buffer.rebaseOntoRemote, readRemote: buffer.readRemote, reconcile: buffer.reconcile, abandon: buffer.abandon,
     },
     tools: Object.freeze(tools), flush: buffer.flush,
     dispose: () => { buffer.dispose(); unsubscribe(); listeners.clear(); },

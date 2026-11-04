@@ -167,9 +167,7 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
     await f.input('local draft'); await f.click('Save'); await f.settled();
     assert.equal(f.controller.getSnapshot().save.result.kind, 'conflict');
     assert.equal(f.container.querySelector('textarea').value, 'local draft'); assert.equal(await f.saved(), 'remote text');
-    await f.click('Check saved version');
-    assert.equal(f.controller.getSnapshot().dirty, true); assert.equal(f.container.querySelector('textarea').value, 'local draft');
-    await f.click('Discard local changes and reload');
+    await f.click('Take theirs');
     // The reload is an asynchronous read of the workspace file: wait for it, as a person would.
     for (let attempt = 0; attempt < 100 && f.container.querySelector('textarea').value !== 'remote text'; attempt++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
     assert.equal(f.container.querySelector('textarea').value, 'remote text'); assert.equal(f.controller.getSnapshot().dirty, false);

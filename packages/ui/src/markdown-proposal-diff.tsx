@@ -111,12 +111,12 @@ function DiffRow({ line, labels }: { readonly line: DiffLine; readonly labels: M
   </div>;
 }
 
-export function MarkdownProposalDiff({ components, proposal, labels = markdownEditorLabels.en }: { readonly components?: import('./viewer-components.js').ViewerComponents | undefined; readonly proposal: MarkdownProposal; readonly labels?: MarkdownEditorLabels }) {
+export function MarkdownProposalDiff({ components, proposal, name, labels = markdownEditorLabels.en }: { readonly components?: import('./viewer-components.js').ViewerComponents | undefined; readonly proposal: Pick<MarkdownProposal, 'before' | 'after'>; readonly name?: string | undefined; readonly labels?: MarkdownEditorLabels }) {
   const Control = components?.button ?? 'button';
   const diff = useMemo(() => review(proposal.before, proposal.after), [proposal.before, proposal.after]);
   const shown = useMemo(() => entries(diff.lines), [diff]);
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
-  return <div data-boring="proposal-diff" role="group" aria-label={labels.proposedLineChanges}>
+  return <div data-boring="proposal-diff" role="group" aria-label={name ?? labels.proposedLineChanges}>
     {diff.fallback && <p role="status" data-diff-fallback="">{labels.diffFallback}</p>}
     {proposal.before === proposal.after && <p>{labels.noTextChanges}</p>}
     <div style={{ overflowX: 'auto', whiteSpace: 'pre-wrap' }}>{shown.map((entry, index) => entry.kind === 'fold' ? <div key={`fold-${entry.index}`}>

@@ -1,6 +1,9 @@
 import type { MarkdownEditorMenuLabels } from './viewer-components.js';
 import { textDraftLabels, type TextDraftLabels } from './text-draft-labels.js';
 
+/** The reason name `richOff` recognises: unlike the others, this is about the size and not about keeping the text exactly. */
+export const MARKDOWN_TOO_LARGE_REASON = 'more text than the rich editor can open';
+
 /**
  * Every word the markdown editor draws itself. `locale` picks the English or French set; `labels` overrides single keys
  * (for example `{ saved: 'Enregistré', sourceName: title => title }`). Text a host supplies (`title`, `placeholder`, a save
@@ -52,7 +55,20 @@ export interface MarkdownEditorLabels extends MarkdownEditorMenuLabels, TextDraf
   readonly checkSaveOutcome: string;
   readonly stopChecking: string;
   readonly conflictNotice: string;
+  readonly keepMine: string;
+  readonly takeTheirs: string;
+  readonly reviewDiff: string;
+  /** Keep mine found a revision the person had not seen yet. */
+  readonly conflictMovedAgain: string;
+  readonly conflictRemoteDeleted: string;
+  /** Accessible name of the Review diff panel. */
+  readonly conflictDiffName: string;
+  readonly conflictDiffLegend: string;
+  /** Short revision shown after a save; the full one is in its `title` and `data-revision`. */
+  readonly savedRevision: (revision: string) => string;
+  /** @deprecated No longer drawn: the conflict strip offers Keep mine, Take theirs and Review diff. Kept so existing overrides still type-check. */
   readonly checkSavedVersion: string;
+  /** @deprecated No longer drawn: see `takeTheirs`. Kept so existing overrides still type-check. */
   readonly discardLocal: string;
   readonly conflictFallback: string;
   readonly saveFallback: string;
@@ -109,12 +125,18 @@ export const markdownEditorLabels: Record<'en' | 'fr', MarkdownEditorLabels> = {
     uncertainNotice: 'Save acknowledgement was lost. Keep editing while its outcome is checked.',
     checkSaveOutcome: 'Check save outcome', stopChecking: 'Stop checking and refresh, keeping my draft',
     conflictNotice: 'The saved document changed. Your local text has been kept.',
+    keepMine: 'Keep mine', takeTheirs: 'Take theirs', reviewDiff: 'Review diff',
+    conflictMovedAgain: 'The saved document changed again. Nothing was saved.',
+    conflictRemoteDeleted: 'The saved document was deleted. Keep mine creates it again.',
+    conflictDiffName: 'Differences between the saved version and your text',
+    conflictDiffLegend: 'Lines marked − are in the saved version. Lines marked + are in your text.',
+    savedRevision: revision => `Saved revision ${revision}`,
     checkSavedVersion: 'Check saved version', discardLocal: 'Discard local changes and reload',
     conflictFallback: 'The document changed elsewhere. Your text is still available.',
     saveFallback: 'The document could not be saved. Your text is still available.',
     saveFailed: 'The save could not be completed. Your text is still available.',
     operationFailed: 'The operation could not be completed. Your text is still available.',
-    richOff: reasons => `Rich editing is off because this document contains ${reasons.join(', ')}, which it could not keep exactly. You can still edit the Markdown source.`,
+    richOff: reasons => reasons.includes(MARKDOWN_TOO_LARGE_REASON) ? 'Rich editing is off because this document is too large for it. You can still edit the Markdown source.' : `Rich editing is off because this document contains ${reasons.join(', ')}, which it could not keep exactly. You can still edit the Markdown source.`,
     preservedBlockName: kind => kind, frontMatterCode: 'Front matter code',
     proposedLineChanges: 'Proposed line changes', diffFallback: 'Detailed line alignment unavailable; showing changed block.',
     noTextChanges: 'No text changes', crlfLineEnding: 'CRLF line ending', noNewline: 'No newline at end',
@@ -139,12 +161,18 @@ export const markdownEditorLabels: Record<'en' | 'fr', MarkdownEditorLabels> = {
     uncertainNotice: 'L’accusé d’enregistrement a été perdu. Continuez à écrire pendant que le résultat est vérifié.',
     checkSaveOutcome: 'Vérifier l’enregistrement', stopChecking: 'Arrêter la vérification et actualiser, en gardant mon brouillon',
     conflictNotice: 'Le document enregistré a changé. Votre texte local a été conservé.',
+    keepMine: 'Garder la mienne', takeTheirs: 'Prendre la leur', reviewDiff: 'Voir les différences',
+    conflictMovedAgain: 'Le document enregistré a encore changé. Rien n’a été enregistré.',
+    conflictRemoteDeleted: 'Le document enregistré a été supprimé. Garder la mienne le recrée.',
+    conflictDiffName: 'Différences entre la version enregistrée et votre texte',
+    conflictDiffLegend: 'Les lignes marquées − sont dans la version enregistrée. Les lignes marquées + sont dans votre texte.',
+    savedRevision: revision => `Révision enregistrée ${revision}`,
     checkSavedVersion: 'Vérifier la version enregistrée', discardLocal: 'Abandonner mes modifications et recharger',
     conflictFallback: 'Le document a été modifié ailleurs. Votre texte est toujours disponible.',
     saveFallback: 'Le document n’a pas pu être enregistré. Votre texte est toujours disponible.',
     saveFailed: 'L’enregistrement n’a pas pu aboutir. Votre texte est toujours disponible.',
     operationFailed: 'L’opération n’a pas pu aboutir. Votre texte est toujours disponible.',
-    richOff: reasons => `La mise en forme est désactivée car ce document contient ${reasons.map(reason => frenchReasons[reason] ?? reason).join(', ')}, qu’elle ne saurait pas conserver à l’identique. Vous pouvez toujours modifier la source Markdown.`,
+    richOff: reasons => reasons.includes(MARKDOWN_TOO_LARGE_REASON) ? 'La mise en forme est désactivée car ce document est trop volumineux. Vous pouvez toujours modifier la source Markdown.' : `La mise en forme est désactivée car ce document contient ${reasons.map(reason => frenchReasons[reason] ?? reason).join(', ')}, qu’elle ne saurait pas conserver à l’identique. Vous pouvez toujours modifier la source Markdown.`,
     preservedBlockName: kind => frenchBlocks[kind] ?? kind,
     frontMatterCode: 'Code des métadonnées', proposedLineChanges: 'Changements de lignes proposés',
     diffFallback: 'Alignement détaillé indisponible ; affichage du bloc modifié.', noTextChanges: 'Aucun changement de texte',

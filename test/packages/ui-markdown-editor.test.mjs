@@ -297,9 +297,9 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
 
   await t.test('the conflict alert and its buttons follow the locale and the labels', async t => {
     for (const [props, notice, button] of [
-      [{ locale: 'fr' }, 'Le document enregistré a changé. Votre texte local a été conservé.', 'Vérifier la version enregistrée'],
-      [{ locale: 'fr', labels: { conflictNotice: 'Modifié ailleurs.', checkSavedVersion: 'Voir' } }, 'Modifié ailleurs.', 'Voir'],
-      [{}, 'The saved document changed. Your local text has been kept.', 'Check saved version'],
+      [{ locale: 'fr' }, 'Le document enregistré a changé. Votre texte local a été conservé.', 'Garder la mienne'],
+      [{ locale: 'fr', labels: { conflictNotice: 'Modifié ailleurs.', keepMine: 'Voir' } }, 'Modifié ailleurs.', 'Voir'],
+      [{}, 'The saved document changed. Your local text has been kept.', 'Keep mine'],
     ]) {
       const f = await fixture(t, 'original', { props: { ...props, initialMode: 'source', autosave: { delayMs: 100 } } });
       await f.client.publish({ operationId: `agent-write-${JSON.stringify(props).length}`, atomicity: 'all-or-nothing', changes: [{ kind: 'replace', target: f.controller.getSnapshot().base.target, bytes: new TextEncoder().encode('agent text'), mediaType: 'text/markdown' }] });
@@ -485,7 +485,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     assert.equal(f.writes(), 2, 'one agent write and one refused autosave, no retries');
     assert.equal(f.container.querySelector('textarea').value, 'newer human draft');
     assert.equal(await f.saved(), 'agent text');
-    await f.click('Discard local changes and reload');
+    await f.click('Take theirs');
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
     await f.input('resolved edit');
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)); });
@@ -820,9 +820,7 @@ test('React/Tiptap Markdown editor public output (DOM environment, not browser q
     await f.click('Save'); await f.settled();
     assert.equal(f.container.querySelector('[role="status"]').textContent, 'Changed elsewhere');
     assert.equal(f.container.querySelector('textarea').value, 'local draft');
-    await f.click('Check saved version');
-    assert.equal(f.container.querySelector('textarea').value, 'local draft');
-    await f.click('Discard local changes and reload');
+    await f.click('Take theirs');
     // The reload is an asynchronous read of the workspace file: wait for it, as a person would.
     for (let attempt = 0; attempt < 100 && f.container.querySelector('textarea').value !== 'remote text'; attempt++) await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
     assert.equal(f.container.querySelector('textarea').value, 'remote text');

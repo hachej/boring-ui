@@ -115,7 +115,7 @@ export default [
       await browser.until('conflict shown', `${q(`${scope} [data-testid=viewer-status]`)}?.textContent === 'Changed elsewhere'`);
       assert.ok((await browser.evaluate(editorText('docs/picnic-plan.md'))).includes('LOCAL-UNSAVED'), 'the unsaved edit is still there');
       await shots('fileviewers-markdown-conflict');
-      await browser.click(`[...document.querySelectorAll(${JSON.stringify(`${scope} button`)})].find(b => /discard/i.test(b.textContent + b.getAttribute('aria-label')))`);
+      await browser.click(`[...document.querySelectorAll(${JSON.stringify(`${scope} button`)})].find(b => b.textContent === 'Take theirs')`);
       await browser.until('the file as written elsewhere', `${editorText('docs/picnic-plan.md')}.includes('Added behind the editor') && !${editorText('docs/picnic-plan.md')}.includes('LOCAL-UNSAVED')`);
 
       // An agent write behind an open editor: Save is refused as stale and writes nothing, the draft stays, then the person reloads and saves.
@@ -130,7 +130,7 @@ export default [
       await browser.until('the save is refused as stale', `${q(scope)}.innerText.includes('Publication precondition failed') && ${q(scope)}.innerText.includes('Your local text has been kept.')`);
       assert.equal(await readText('docs/picnic-plan.md'), agentWrote, 'the refused save wrote nothing over the agent');
       assert.ok((await browser.evaluate(editorText('docs/picnic-plan.md'))).includes('STALE-DRAFT'), 'the draft is still in the editor');
-      await browser.click(`[...document.querySelectorAll(${JSON.stringify(`${scope} button`)})].find(b => /discard/i.test(b.textContent + b.getAttribute('aria-label')))`);
+      await browser.click(`[...document.querySelectorAll(${JSON.stringify(`${scope} button`)})].find(b => b.textContent === 'Take theirs')`);
       await browser.until('the editor reloaded the agent\'s file', `${editorText('docs/picnic-plan.md')}.includes('Written by the agent while') && !${editorText('docs/picnic-plan.md')}.includes('STALE-DRAFT')`);
       await caretAtStart(scope);
       await browser.send('Input.insertText', { text: 'RETRIED ' });
