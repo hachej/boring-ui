@@ -302,6 +302,35 @@ test('a panel that is not the product manager takes the shell\'s panel place', a
   assert.ok(window.document.querySelector('[data-testid=screen-Jour]'));
 });
 
+test('a panel with menu: false has no account row, and its Provider and Layout keep working (D-1472)', async t => {
+  const panel = (extra = {}) => ({ config: 'fictional', label: 'Mon outil', Provider: ({ children }) => h2('div', { 'data-testid': 'own-provider' }, children), Layout: ({ children }) => h2('div', { 'data-testid': 'own-layout' }, children), ...extra });
+  const { createElement: h2, act } = await import('react');
+  const account = { name: 'Camille Martin', menu: [], signOut() {} };
+
+  await t.test('compact: the sheet', async t => {
+    const without = await openAccount(t, { account, panel: panel({ menu: false }), locale: 'fr' });
+    assert.ok(without.window.document.querySelector('[data-testid=app-sheet]'), 'the account sheet is open');
+    assert.equal(without.window.document.querySelector('[data-testid=account-improve]'), null, 'no row');
+    assert.ok(without.window.document.querySelector('[data-testid=own-provider] [data-testid=own-layout]'), 'Provider and Layout still mount');
+    await without.unmount?.();
+  });
+  await t.test('compact: unchanged without the field', async t => {
+    const withRow = await openAccount(t, { account, panel: panel(), locale: 'fr' });
+    assert.equal(withRow.window.document.querySelector('[data-testid=account-improve]')?.textContent, 'Mon outil');
+    await withRow.unmount?.();
+  });
+  for (const [label, extra, row] of [['expanded: no row', { menu: false }, false], ['expanded: unchanged without the field', {}, true]]) await t.test(label, async t => {
+    const ui = await render(t, { account, panel: panel(extra), locale: 'fr' }, { width: 1440 });
+    const trigger = ui.container.querySelector('[data-testid=nav-user]');
+    await act(async () => trigger.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })));
+    const open = () => ui.window.document.querySelector('[role=menu]');
+    for (let attempt = 0; attempt < 40 && !open(); attempt++) await act(async () => new Promise(resolve => setTimeout(resolve, 25)));
+    assert.ok(open(), 'the account menu is open');
+    assert.equal(Boolean(ui.window.document.querySelector('[data-testid=account-improve]')), row);
+    assert.ok(ui.window.document.querySelector('[data-testid=own-provider] [data-testid=own-layout]'), 'Provider and Layout mount');
+  });
+});
+
 async function openedLayer(t, width, specs, { search = '', state = null, strict = false } = {}) {
   const { createElement: h, useLayoutEffect, act, StrictMode } = await import('react');
   const shell = await bundle('shell-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useAgentLayer } from '${root}${folder}/agent-layer.tsx';\n`);
