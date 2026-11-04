@@ -668,6 +668,19 @@
             "margin": "0",
             "padding": "0",
             "list-style": "none"
+          },
+          ".pi-chat": {
+            "font-size": "var(--chat-text-body)",
+            "line-height": "1.5"
+          },
+          ".pi-chat [data-testid=\"composer\"] [data-slot=\"input-group\"]": {
+            "background-color": "var(--card)",
+            "border-color": "var(--card)",
+            "border-radius": "var(--chat-composer-radius)",
+            "box-shadow": "none"
+          },
+          ".pi-chat [data-testid=\"composer\"] [data-slot=\"input-group\"]:focus-within": {
+            "border-color": "var(--ring)"
           }
         },
         "@layer utilities": {
@@ -693,9 +706,11 @@
             "--chat-warning-soft": "var(--warning-soft, color-mix(in oklab, var(--chat-warning) 15%, var(--background)))",
             "--chat-warning-soft-foreground": "var(--warning-soft-foreground, color-mix(in oklab, var(--chat-warning) 75%, var(--foreground)))",
             "--chat-display": "var(--font-display, var(--font-sans))",
-            "--chat-composer-radius": "26px",
+            "--chat-composer-radius": "calc(var(--radius) + 4px)",
             "--chat-send-radius": "9999px",
-            "--chat-sheet-duration": "200ms"
+            "--chat-sheet-duration": "200ms",
+            "--chat-text-body": "var(--text-body, 0.75rem)",
+            "--chat-text-title": "var(--text-title, 0.875rem)"
           },
           ".pi-chat:is(.dark, .dark *)": {
             "--chat-warning-soft": "var(--warning-soft, color-mix(in oklab, var(--chat-warning) 26%, var(--background)))",

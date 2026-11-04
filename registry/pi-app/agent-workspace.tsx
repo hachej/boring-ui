@@ -333,9 +333,11 @@ export function AgentWorkspace({ layout = 'default', barPanels, barOptions, pane
     } else setCenterMode('library');
     setFullscreen(false);
   }, [guard, libraryPlacement, noteUnsaved]);
-  const text = useMemo(() => ({ labels: withDefaults(locale === 'fr' ? frenchAppLabels : defaultAppLabels, labels), icons: withDefaults(defaultAppIcons, icons) }), [labels, icons, locale]);
+  // One language for the whole page: `locale` wins, then the chat's own, then English. The chat and the chrome around it read the same value.
+  const resolvedLocale: ChatLocale = locale ?? chat.locale ?? 'en';
+  const text = useMemo(() => ({ labels: withDefaults(resolvedLocale === 'fr' ? frenchAppLabels : defaultAppLabels, labels), icons: withDefaults(defaultAppIcons, icons) }), [labels, icons, resolvedLocale]);
   // The sessions pane shows the chat's conversation list, so it reads the chat's labels too.
-  const chatText = useMergedText(chat.labels, chat.icons, chatTextFor(locale));
+  const chatText = useMergedText(chat.labels, chat.icons, chatTextFor(resolvedLocale));
 
   // With a revision provider, `resources` carries only the blob options; without one it is the resource handler too.
   const remote = revisionProvider ? undefined : resources as WorkspaceResources | undefined;
@@ -598,7 +600,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, barOptions, pane
   const conversationTitle = conversations?.items.find(item => item.id === conversationId)?.title;
   // pi-app ships every composer feature item: Markdown, the `/` menu, `@` mentions, the model pill, voice messages, the phone camera.
   // eslint-disable-next-line react-hooks/refs -- the functions built here read refs only when a request, an event or an effect calls them, never during render
-  const chatProps: PiChatProps | undefined = controller && withChatPlugins({ ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...(locale ? { locale } : {}), ...chat, controller, artifacts, onOpenFile: chat.onOpenFile ?? chat.mentions?.open ?? openFile, onOpenImage: chat.onOpenImage ?? openImage, ...(conversations ? { conversations, historyList: popoverHistory, showHistory: chat.showHistory ?? popoverHistory, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
+  const chatProps: PiChatProps | undefined = controller && withChatPlugins({ ...(mentionsForChat ? { mentions: mentionsForChat } : {}), ...(attachments ? { attachments } : {}), ...chat, locale: resolvedLocale, controller, artifacts, onOpenFile: chat.onOpenFile ?? chat.mentions?.open ?? openFile, onOpenImage: chat.onOpenImage ?? openImage, ...(conversations ? { conversations, historyList: popoverHistory, showHistory: chat.showHistory ?? popoverHistory, conversationTitle, onRenameTitle: conversations.rename && conversationId ? (title: string) => conversations.rename!(conversationId, title) : undefined } : {}),
     headerStart: <>{toggle}{chat.headerStart}</>, ...(header === undefined ? {} : { controls: header }),
     // Embedded: the bar above replaces the chat's header (History, New and the host's controls are in it); conversations stay for Fork.
     ...(embedded ? { header: false, historyList: false, showHistory: false } : {}) });

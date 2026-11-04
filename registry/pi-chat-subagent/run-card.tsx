@@ -124,7 +124,7 @@ export function RunCard({ run: given, fetchRun, pollMs = 2000, now: clock = Date
     {(body || run.error || failed) && <ItemFooter className="flex-col items-stretch">
       {body && <div data-testid="run-output" className="min-w-0">{body}</div>}
       {run.error && <Alert variant="destructive" data-testid="run-error"><AlertDescription>{run.error}</AlertDescription></Alert>}
-      {failed && <p role="alert" className="m-0 text-sm text-destructive">{labels.runNotLoaded}</p>}
+      {failed && <p role="alert" className="m-0 text-xs text-destructive">{labels.runNotLoaded}</p>}
     </ItemFooter>}
   </Item>;
 }

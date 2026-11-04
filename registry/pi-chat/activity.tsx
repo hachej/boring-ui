@@ -48,7 +48,7 @@ function Thinking({ text, streaming, details }: { readonly text: string; readonl
   </TraceLine>;
   return <TraceCollapsible data-testid="reasoning" data-state={open ? 'open' : 'closed'} data-streaming={streaming ? 'true' : undefined} open={details && open} onOpenChange={setOpen}>
     {details ? <TraceCollapsibleTrigger className="min-h-8 max-md:min-h-11 pointer-coarse:min-h-11">{line}</TraceCollapsibleTrigger> : line}
-    {details && <TraceCollapsibleContent><div data-testid="reasoning-text" className="max-h-72 overflow-y-auto text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</div></TraceCollapsibleContent>}
+    {details && <TraceCollapsibleContent><div data-testid="reasoning-text" className="max-h-72 overflow-y-auto text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</div></TraceCollapsibleContent>}
   </TraceCollapsible>;
 }
 

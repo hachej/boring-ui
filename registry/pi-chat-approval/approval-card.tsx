@@ -91,6 +91,6 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
     {(open && (live || !answer || !questionId)) && <ItemFooter><ItemDescription>{live ? labels.stillWritingCall : labels.decidingUnavailable}</ItemDescription></ItemFooter>}
     {/* Decided, the gated call not finished yet: whoever decided, the run carries on by itself. */}
     {(approved || denied) && !result && <ItemFooter><ItemDescription>{labels.decisionSent(approved)}</ItemDescription></ItemFooter>}
-    {refusal && open && <ItemFooter><p role="alert" data-testid="approval-refusal" className="m-0 text-sm text-destructive">{refusal}</p></ItemFooter>}
+    {refusal && open && <ItemFooter><p role="alert" data-testid="approval-refusal" className="m-0 text-xs text-destructive">{refusal}</p></ItemFooter>}
   </Item>;
 }
