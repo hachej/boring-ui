@@ -1,6 +1,7 @@
 import { Editor } from '@tiptap/core';
 import { createMarkdownExtensions } from './markdown-extensions.js';
 import { captureMarkdownSource } from './markdown-source.js';
+import { MARKDOWN_TOO_LARGE_REASON } from './markdown-editor-labels.js';
 
 export type MarkdownRichSafety = { readonly safe: true } | { readonly safe: false; readonly reasons: readonly string[] };
 
@@ -74,14 +75,26 @@ function namedReasons(text: string): string[] {
   return reasons;
 }
 
+/** Above this many UTF-8 bytes a note opens as source: parsing it into the rich editor would stall the tab on every change. */
+export const MARKDOWN_RICH_SIZE_LIMIT = 512 * 1024;
+const TOO_LARGE: MarkdownRichSafety = Object.freeze({ safe: false, reasons: Object.freeze([MARKDOWN_TOO_LARGE_REASON]) });
+
+/** A UTF-16 unit is one to three UTF-8 bytes, so most lengths answer without encoding the text. */
+export function markdownExceedsRichSize(text: string, maxBytes: number = MARKDOWN_RICH_SIZE_LIMIT): boolean {
+  if (text.length > maxBytes) return true;
+  if (text.length * 3 <= maxBytes) return false;
+  return new TextEncoder().encode(text).byteLength > maxBytes;
+}
+
 const cache = new Map<string, MarkdownRichSafety>();
 
 /**
  * Verifies a native projection and its exact source spans. Unchanged blocks retain their source, and unsupported constructs are
  * inert atoms. The legacy whitespace comparison remains for empty/nbsp-only layout. Without a DOM only encoding can be checked.
  */
-export function checkMarkdownRichSafety(text: string): MarkdownRichSafety {
+export function checkMarkdownRichSafety(text: string, options: { readonly maxBytes?: number } = {}): MarkdownRichSafety {
   if (text === '') return { safe: true };
+  if (markdownExceedsRichSize(text, options.maxBytes)) return TOO_LARGE;
   const known = cache.get(text);
   if (known) return known;
   const reasons = namedReasons(text);
@@ -102,5 +115,6 @@ export function checkMarkdownRichSafety(text: string): MarkdownRichSafety {
 
 export function describeUnsafe(safety: MarkdownRichSafety): string {
   if (safety.safe) return '';
+  if (safety.reasons.includes(MARKDOWN_TOO_LARGE_REASON)) return 'Rich editing is off because this document is too large for it. You can still edit the Markdown source.';
   return `Rich editing is off because this document contains ${safety.reasons.join(', ')}, which it could not keep exactly. You can still edit the Markdown source.`;
 }

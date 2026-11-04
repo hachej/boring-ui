@@ -56,7 +56,15 @@ export interface MarkdownActions extends TextDraftActions {
   /** For an unconfirmed save: stop reconciling and refresh, keeping the draft. The save is never reported committed or replayed. */
   readonly abandon: () => Promise<ReadResult>;
   readonly discardToRemote: () => Promise<ReadResult>;
+  /** Keeps the local text over the remote revision already shown and saves it conditionally. A remote that moved since is a new conflict, never an overwrite. */
+  readonly keepLocal: () => Promise<SaveResult>;
+  /** Reads the current saved text for review. Changes nothing, not even what the editor knows about the remote. */
+  readonly readRemote: () => Promise<MarkdownRemote>;
 }
+
+export type MarkdownRemote = { readonly kind: 'available'; readonly text: string; readonly revision: string }
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'denied' | 'unavailable'; readonly reason: string };
 
 export interface MarkdownOptions {
   readonly drafts?: TextDraftOptions;
@@ -74,10 +82,11 @@ export type MarkdownController = EditableViewerController<MarkdownState, Markdow
 
 export function createMarkdownController(options: MarkdownOptions): MarkdownController {
   const { drafts, ...bufferOptions } = options;
-  const buffer = createTextBuffer({ ...bufferOptions, ...(drafts ? { drafts: { ...drafts, format: 'markdown/v1' } } : {}), mediaType: 'text/markdown', readText: snapshot => {
+  const readText = (snapshot: ResourceSnapshot): string => {
     if (snapshot.mediaType !== 'text/markdown' && snapshot.mediaType !== 'text/plain') throw new TypeError('Expected Markdown or plain text');
     return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(snapshot.bytes);
-  } });
+  };
+  const buffer = createTextBuffer({ ...bufferOptions, ...(drafts ? { drafts: { ...drafts, format: 'markdown/v1' } } : {}), mediaType: 'text/markdown', readText });
   let state: MarkdownState = freeze({ ...buffer.getSnapshot(), proposals: [] });
   const listeners = new Set<() => void>();
   const update = (next: MarkdownState) => {
@@ -123,6 +132,14 @@ export function createMarkdownController(options: MarkdownOptions): MarkdownCont
     return buffer.flush(adoptedSelection);
   }
 
+  async function readRemote(): Promise<MarkdownRemote> {
+    if (state.lifecycle === 'disposed') return { kind: 'unavailable', reason: 'Viewer is disposed' };
+    const read = await options.client.read({ target: state.base.target, revision: { kind: 'latest' } });
+    if (read.kind !== 'available') return read;
+    try { return { kind: 'available', text: readText(read.snapshot), revision: read.snapshot.ref.revision }; }
+    catch { return { kind: 'unavailable', reason: 'Remote document could not be decoded or validated' }; }
+  }
+
   function commandInput(value: unknown): { expiresAt: number } {
     if (!value || typeof value !== 'object' || !('expiresAt' in value) || typeof value.expiresAt !== 'number' || !Number.isSafeInteger(value.expiresAt)) throw new TypeError('Command expiry is required');
     return { expiresAt: value.expiresAt };
@@ -162,7 +179,7 @@ export function createMarkdownController(options: MarkdownOptions): MarkdownCont
       edit: text => buffer.edit(text),
       propose, accept, reject: proposalId => { if (state.lifecycle !== 'disposed') update({ ...state, proposals: state.proposals.filter(value => value.id !== proposalId) }); },
       checkDrafts: buffer.checkDrafts, checkpointDraft: buffer.checkpointDraft, restoreDraft: buffer.restoreDraft, discardDraft: buffer.discardDraft,
-      selection, refresh: () => buffer.refresh(false), discardToRemote: () => buffer.refresh(true), reconcile: buffer.reconcile, abandon: buffer.abandon,
+      selection, refresh: () => buffer.refresh(false), discardToRemote: () => buffer.refresh(true), keepLocal: buffer.rebaseOntoRemote, readRemote, reconcile: buffer.reconcile, abandon: buffer.abandon,
     },
     tools: Object.freeze(tools), flush: buffer.flush,
     dispose: () => { buffer.dispose(); unsubscribe(); listeners.clear(); },

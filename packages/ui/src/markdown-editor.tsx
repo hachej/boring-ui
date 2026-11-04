@@ -19,14 +19,16 @@ import { BubbleMenu } from '@tiptap/react/menus';
 import type { SelectionBookmark } from '@tiptap/pm/state';
 import type { MarkdownController } from './markdown.js';
 import { createMarkdownExtensions, type MarkdownImageResolver } from './markdown-extensions.js';
-import { checkMarkdownRichSafety, finishRichMarkdown, type MarkdownRichSafety } from './markdown-safety.js';
+import { checkMarkdownRichSafety, finishRichMarkdown, markdownExceedsRichSize, MARKDOWN_RICH_SIZE_LIMIT, type MarkdownRichSafety } from './markdown-safety.js';
 import { captureMarkdownSource, serializeMarkdownEdit, type MarkdownSource } from './markdown-source.js';
 import { MarkdownIcon, type MarkdownIconName } from './markdown-icons.js';
 import { MarkdownProposalDiff } from './markdown-proposal-diff.js';
 import { updatePreservedMarkdownLabels } from './markdown-preserved.js';
 import { resolveMarkdownEditorLabels, type MarkdownEditorLabelOverrides } from './markdown-editor-labels.js';
 import { createMountedMarkdownTools, type MarkdownMountedTools } from './markdown-mounted.js';
-export { checkMarkdownRichSafety } from './markdown-safety.js';
+import { MarkdownConflictChoices } from './markdown-conflict-choices.js';
+import { useMarkdownTabPoke } from './markdown-tab-poke.js';
+export { checkMarkdownRichSafety, MARKDOWN_RICH_SIZE_LIMIT } from './markdown-safety.js';
 export type { MarkdownRichSafety } from './markdown-safety.js';
 export type { MarkdownImageResolver } from './markdown-extensions.js';
 export { markdownEditorLabels } from './markdown-editor-labels.js';
@@ -62,6 +64,10 @@ export interface MarkdownEditorProps {
   /** Registers the async navigation barrier. Null while autosave is disabled or the editor is unmounted. */
   readonly onAutosaveChange?: (flush: MarkdownFlush | null) => void;
   readonly onSaveResult?: (result: SaveResult) => void;
+  /** After a save, tells other tabs of this note in this browser to refresh, when the browser has BroadcastChannel. false keeps tabs apart. */
+  readonly crossTabRefresh?: boolean;
+  /** Above this many UTF-8 bytes the note opens as source and cannot switch to rich mode. Defaults to `MARKDOWN_RICH_SIZE_LIMIT`. */
+  readonly richSizeLimit?: number;
   /** Selection formatting by default. Pinned shows the full row on desktop or above the phone keyboard while editing. */
   readonly formattingToolbar?: 'selection' | 'pinned';
   /** Language of everything the editor draws itself: status, alerts, buttons, accessible names. */
@@ -133,7 +139,7 @@ function NativeMarkdownViewOptions({ labels, mode, onModeChange, richDisabledRea
   </details>;
 }
 
-function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActivate, components, controller, title: titleProp, initialMode = 'rich', placeholder: placeholderProp, className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'selection', locale = 'en', labels: labelOverrides, autosave = true, onAutosaveChange, onSaveResult, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
+function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActivate, components, controller, title: titleProp, initialMode = 'rich', placeholder: placeholderProp, className, onMountedTools, header = true, showOutline = header, mode: controlledMode, onModeChange, onRichSafety, resolveImage, formattingToolbar = 'selection', locale = 'en', labels: labelOverrides, autosave = true, onAutosaveChange, onSaveResult, crossTabRefresh = true, richSizeLimit = MARKDOWN_RICH_SIZE_LIMIT, activeController: active }: MarkdownEditorProps & { readonly activeController: { readonly current: MarkdownController } }) {
   const text = useMemo(() => resolveMarkdownEditorLabels(locale, labelOverrides), [locale, labelOverrides]);
   const title = titleProp ?? text.defaultTitle;
   const placeholder = placeholderProp ?? text.defaultPlaceholder;
@@ -158,7 +164,11 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   const checked = useDeferredValue(state.text);
   // The editor's own output is safe by construction; only text that arrived from elsewhere (or from the source box) is checked.
   const ownText = state.text === emitted.current && source.current !== null;
-  const safety = useMemo<MarkdownRichSafety>(() => ownText ? { safe: true } : checkMarkdownRichSafety(checked), [checked, ownText]);
+  const oversized = useMemo(() => markdownExceedsRichSize(state.text, richSizeLimit), [state.text, richSizeLimit]);
+  const safety = useMemo<MarkdownRichSafety>(() => {
+    if (oversized) return checkMarkdownRichSafety(state.text, { maxBytes: richSizeLimit });
+    return ownText ? { safe: true } : checkMarkdownRichSafety(checked, { maxBytes: richSizeLimit });
+  }, [checked, ownText, oversized, richSizeLimit, state.text]);
   const richOffered = safety.safe;
   const mode = richOffered ? requestedMode : 'source';
   const activeMode = useRef(mode); activeMode.current = mode;
@@ -201,7 +211,8 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
     setError(null);
   }, [controller]);
   useEffect(() => {
-    if (!editor || editor.isDestroyed || state.text === projected.current) return;
+    // A note too large for rich mode is never parsed behind the source box; it projects if it comes back under the limit.
+    if (!editor || editor.isDestroyed || oversized || state.text === projected.current) return;
     // Text from outside (a load, a refresh, a discard, the source box) starts with the selection at the beginning, where the browser leaves
     // its caret when the text is replaced. Replacing the whole document would otherwise leave the editor's selection at the end while the
     // caret shows the start: a click there changes nothing the editor sees, so formatting applied to the end, and ProseMirror's own sync
@@ -209,7 +220,7 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
     editor.chain().setContent(state.text.replace(/\r\n/g, '\n'), { contentType: 'markdown', emitUpdate: false }).setTextSelection(0).command(({ tr }) => { tr.setMeta('addToHistory', false); return true; }).run();
     source.current = captureMarkdownSource(editor, state.text);
     projected.current = state.text;
-  }, [editor, state.text]);
+  }, [editor, oversized, state.text]);
   useEffect(() => { editor?.setEditable(!state.readOnly && state.lifecycle === 'active'); }, [editor, state.readOnly, state.lifecycle]);
   useEffect(() => { if (editor && !editor.isDestroyed) updatePreservedMarkdownLabels(editor.view.dom, text); }, [editor, text]);
   useEffect(() => { if (editor && !editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta('addToHistory', false)); }, [editor, placeholder]);
@@ -297,6 +308,10 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
   const outcome = state.save.kind === 'settled' ? state.save.result : null;
   const uncertain = outcome?.kind === 'unknown';
   const conflict = outcome?.kind === 'conflict' || state.remote !== null;
+  // The receipt stays while the next save is on its way, and goes once the text came from somewhere else.
+  const receipt = useRef<string | null>(null);
+  if (outcome?.kind === 'saved') receipt.current = outcome.ref.revision;
+  else if (state.save.kind !== 'pending') receipt.current = null;
   /** Shows a refused save or accept; the buffer keeps the text. */
   const report = (result: unknown) => {
     if (active.current !== controller || !result || typeof result !== 'object') return;
@@ -305,6 +320,7 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
     if (kind === 'denied' || kind === 'conflict' || kind === 'unavailable' || kind === 'file_too_large') setError(typeof reason === 'string' && reason ? reason : kind === 'conflict' ? text.conflictFallback : text.saveFallback);
   };
   const saving = useMarkdownAutosave(controller, autosave, result => { report(result); onSaveResult?.(result); });
+  useMarkdownTabPoke(controller, crossTabRefresh);
   useEffect(() => { onAutosaveChange?.(saving.enabled ? saving.immediate : null); return () => onAutosaveChange?.(null); }, [onAutosaveChange, saving.enabled, saving.immediate]);
   const save = () => {
     setError(null);
@@ -425,10 +441,8 @@ function MarkdownEditorSession({ highlights, onQuoteSelection, onHighlightActiva
       <Control type="button" onClick={() => run(controller.actions.reconcile)}>{text.checkSaveOutcome}</Control>
       <Control type="button" onClick={() => run(controller.actions.abandon)}>{text.stopChecking}</Control>
     </div>}
-    {conflict && <div role="alert" className="boring-markdown-alert">{text.conflictNotice}
-      <Control type="button" disabled={pending || uncertain} onClick={() => run(controller.actions.refresh)}>{text.checkSavedVersion}</Control>
-      <Control type="button" disabled={pending || uncertain} onClick={() => run(controller.actions.discardToRemote)}>{text.discardLocal}</Control>
-    </div>}
+    {conflict && <MarkdownConflictChoices controller={controller} state={state} labels={text} components={components} disabled={pending || uncertain} readOnly={state.readOnly} setError={setError} run={run} onSaveResult={result => { if (result.kind !== 'conflict') report(result); onSaveResult?.(result); }} />}
+    {receipt.current !== null && !conflict && <p className="boring-markdown-notice" data-testid="markdown-save-receipt" data-revision={receipt.current} title={receipt.current}>{text.savedRevision(receipt.current.slice(0, 8))}</p>}
     {(outcome?.kind === 'denied' || outcome?.kind === 'unavailable' || outcome?.kind === 'file_too_large') && <p role="alert" className="boring-markdown-alert">{outcome.reason}</p>}
     {error && <p role="alert" className="boring-markdown-alert">{error}</p>}
     {state.proposals.map(proposal => <article key={proposal.id} data-boring="proposal" className="boring-markdown-proposal">
