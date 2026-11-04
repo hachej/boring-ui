@@ -195,6 +195,7 @@ export const defaultChatLabels = {
   noConversations: 'No conversations yet.',
   loadingConversations: 'Loading conversations…',
   actionFailed: 'That did not work. Try again.',
+  searchFailed: 'Search failed. Try again.',
   rename: 'Rename',
   renameItem: (title: string) => `Rename ${title}`,
   conversationName: 'Conversation name',

@@ -1,5 +1,7 @@
 # Unreleased
 
+- **A failed History search says so (`pi-chat`; D-1562).** Reinstall `pi-chat`. A search the server refuses, or that fails, now shows `searchFailed` (« Search failed. Try again. ») in `ConversationList` and `ConversationHistory` instead of « No conversation matches ». A real no-match keeps its text. New label `searchFailed`: a host that passes a complete labels object of its own adds it. A host with its own `search` that resolves `[]` on an error keeps showing the no-match text until it rejects instead.
+
 # Migrating to 0.4.57
 
 - **A long conversation list stays inside its sheet (`pi-chat`; D-1528).** Reinstall `pi-chat`. No host change. In the workspace bar's History and in `ConversationHistory`, the rows no longer draw past the popover or take clicks over the message box, and on a phone the rest of the list can now be scrolled to. `ConversationList` no longer needs a parent with a set height.

@@ -152,6 +152,7 @@ export const frenchChatLabels: ChatLabels = {
   noConversations: 'Aucune conversation pour le moment.',
   loadingConversations: 'Chargement des conversations…',
   actionFailed: 'Cela n’a pas fonctionné. Réessayez.',
+  searchFailed: 'La recherche a échoué. Réessayez.',
   rename: 'Renommer',
   renameItem: title => `Renommer ${title}`,
   conversationName: 'Nom de la conversation',
