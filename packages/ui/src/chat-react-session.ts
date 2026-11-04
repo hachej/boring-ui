@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ChatAttachment, ChatController, ChatSnapshot } from './native-chat.js';
-import { derive, isFileBlock, object, queuedMessages, waitingForAnswer as waitsForAnswer } from './chat-view.js';
+import { derive, isFileBlock, object, queuedMessages, waitingPart } from './chat-view.js';
 import type { ChatCard, DeriveOptions, Mode, QueuedMessage, Row } from './chat-view.js';
 import { appendToDraft, displayName, kindMentionDraft, looksLikeMarkdown, mentionKind, mentionToken, pieces, prependToDraft, withoutKindMentions, writeKindMentionDraft } from './chat-text.js';
 
@@ -44,7 +44,11 @@ export interface ChatSessionOptions<Content = unknown> extends Partial<DeriveOpt
   readonly activeController: { readonly current: ChatController };
   readonly mode: Mode;
   readonly labels: ChatSessionLabels;
-  readonly actions?: { readonly withdraw?: ((id: QueuedMessage['id']) => Promise<unknown>) | undefined } | undefined;
+  readonly actions?: {
+    readonly withdraw?: ((id: QueuedMessage['id']) => Promise<unknown>) | undefined;
+    /** Resolves a waiting question. With it, a message typed while a question waits is that question's answer. */
+    readonly answer?: ((questionId: string, answer: string) => Promise<{ readonly kind: string; readonly reason?: string | undefined }>) | undefined;
+  } | undefined;
   readonly toolRenderers?: Readonly<Record<string, (call: ToolCall, result: ToolResultMessage | undefined) => ChatCard<Content> | undefined>> | undefined;
   readonly artifacts?: (NonNullable<DeriveOptions<Content>['artifacts']> & { readonly open?: ((artifact: never) => void) | undefined }) | undefined;
   readonly mentions?: { readonly open?: ((path: string) => void) | undefined; readonly kinds?: Readonly<Record<string, unknown>> | undefined } | undefined;
@@ -192,7 +196,23 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
   // Working from the moment of sending: the status shows before the server has taken the message.
   const sending = Boolean(echo?.some(item => item.state === 'sending'));
   const working = Boolean(run) || sending;
-  const waitingForAnswer = waitsForAnswer(derived.rows);
+  const waitingFor = waitingPart(derived.rows);
+  const waitingForAnswer = waitingFor !== undefined;
+  // The run waits for this answer, so a message queued behind it would never go: what the person types answers the question.
+  const question = waitingFor?.kind === 'question' ? waitingFor.questionId : undefined;
+  const answersQuestion = question !== undefined && actions?.answer !== undefined && (state.draft.text.trim() !== '' || state.draft.attachments.length > 0);
+  /**
+   * Answers the waiting question with this message. A picture cannot be part of an answer, so it follows as its own message. A question that
+   * cannot take the message (options only, too long, not started) is superseded: the run that holds it stops, or the message would wait behind it.
+   */
+  const deliver = async (text: string, images: readonly ChatAttachment[], restore: { readonly text: string; readonly attachments: readonly ChatAttachment[] }) => {
+    if (question !== undefined && actions?.answer) {
+      const outcome = await actions.answer(question, text.trim() || images.map(image => image.name).join(', '));
+      if (outcome.kind === 'answered') return images.length ? await controller.send('followUp', { text: '', attachments: images, restore: { text: '', attachments: images } }) ?? true : true;
+      if ((outcome.kind === 'denied' || outcome.kind === 'unknown-question') && run) await controller.stop();
+    }
+    return controller.send('followUp', { text, attachments: images, restore });
+  };
   const send = () => {
     if (sendBlocked || !current()) return;
     const attach = feedback && feedback.count > 0 ? feedback.attach : undefined;
@@ -208,7 +228,7 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
         if (attached.kind === 'refused') { putBack(typed.text, typed.attachments); throw new Error(attached.reason); }
         if (!current()) { putBack(typed.text, typed.attachments); return; }
         try {
-          const submission = await controller.send('followUp', { text: attached.text, attachments: typed.attachments, restore: { text: withoutKindMentions(typed.text, mentions), attachments: typed.attachments } });
+          const submission = await deliver(attached.text, typed.attachments, { text: withoutKindMentions(typed.text, mentions), attachments: typed.attachments });
           if (submission) feedback?.sent();
         } catch (cause) { putBack(typed.text, typed.attachments); throw cause; }
       });
@@ -218,10 +238,10 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
     }
     const typed = controller.getSnapshot().draft;
     const words = withoutKindMentions(typed.text, mentions);
-    if (words !== typed.text) {
+    if (words !== typed.text || answersQuestion) {
       controller.setText(''); controller.setAttachments([]);
       act(async () => {
-        try { await controller.send('followUp', { text: typed.text, attachments: typed.attachments, restore: { text: words, attachments: typed.attachments } }); }
+        try { await deliver(typed.text, typed.attachments, { text: words, attachments: typed.attachments }); }
         catch (cause) { putBack(words, typed.attachments); throw cause; }
       });
     } else act(() => controller.send('followUp'));
@@ -351,7 +371,7 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
   };
   const empty = connected && !state.view?.entries.length && !rows.length;
   const loading = (state.connection.kind === 'idle' || state.connection.kind === 'connecting') && !state.view && !echo?.length;
-  return { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, sendBlocked, error, setError, report, act, current,
+  return { state, derived, rows, queued, queueActions, working, waitingForAnswer, answersQuestion, connected, sendBlocked, error, setError, report, act, current,
     files, empty, loading, developer, natural, sending, send, putBack, upload, pasteText, picked, pending, uploading, activateMention,
     pickMention: (path: string) => setPicked(value => value.includes(path) ? value : [...value, path]),
     dismissUpload: (id: string) => setPending(items => items.filter(item => item.id !== id)),

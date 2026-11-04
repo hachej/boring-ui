@@ -1,5 +1,6 @@
 # Unreleased
 
+- **A typed message answers a waiting question (`pi-chat`; D-1489).** Reinstall `pi-chat`. With `actions.answer` bound, text typed while an `ask_user` card waits makes the primary button Send and resolves the question, instead of queueing behind a run that waits for it; no host change. A question that cannot take the message (options only, over 2000 characters, not started yet) is superseded: the run stops and the message is sent. `presentation="natural"` no longer draws a failed question, and the question card no longer shows `<harness>` text, live or after reload.
 # Migrating to 0.4.52
 
 - **A switch for developer mode (`pi-chat`; D-1470).** Reinstall `pi-chat`. Additive: `?chatMode=developer` turns developer mode on in that browser until `?chatMode=expert`, so « answered by provider/model » can be seen on a live app with no code change. Nothing changes for anyone who does not ask.
