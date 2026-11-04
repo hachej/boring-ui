@@ -6,7 +6,6 @@ import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ToolStatus, ToolEntry as ViewToolEntry } from '@hachej/boring-ui-kit/chat-view';
 import { WrenchIcon } from '../_shared/icons';
 import { TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceDescription, TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
-import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { defaultChatLabels, useChatText } from './labels';
@@ -27,7 +26,7 @@ export function preview(args: ToolCall['arguments']): string {
 }
 
 function Section({ title, children }: { readonly title: string; readonly children: ReactNode }) {
-  return <div className="space-y-1.5"><h4 className="m-0 text-xs font-medium tracking-wider text-muted-foreground uppercase">{title}</h4>{children}</div>;
+  return <div className="flex flex-col gap-1.5"><h4 className="m-0 text-xs font-medium tracking-wider text-muted-foreground uppercase">{title}</h4>{children}</div>;
 }
 
 /** A short live label for a call: "Reading notes/consultation.md", "Running bash", "Running working_git" (`labels.toolActivity`). */
@@ -44,20 +43,24 @@ export function ToolCard({ entry, onOpenImage, details = true }: { readonly entr
   const hint = preview(call.arguments);
   const line = <TraceLine {...(status === 'running' ? { status: 'running' } : status === 'failed' ? { status: 'error' } : {})}>
     <TraceIcon><WrenchIcon /></TraceIcon>
-    <TraceTitle><span data-testid="tool-name">{call.name}</span>{hint && ` · ${hint}`}</TraceTitle>
+    <TraceTitle><span data-testid="tool-name">{labels.toolName(call.name)}</span>{hint && ` · ${hint}`}</TraceTitle>
     <TraceDescription data-testid="tool-status">{labels[STATUS_LABEL[status]]}</TraceDescription>
   </TraceLine>;
+  const resultBody = result && <>
+    {result.content.map((part, index) => part.type === 'text'
+      ? <pre key={index} className="m-0 max-h-72 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{part.text}</pre>
+      : <Button key={index} variant="outline" size="sm" className="max-md:min-h-12! pointer-coarse:min-h-12!" disabled={!onOpenImage} onClick={() => onOpenImage?.(part)}>{labels.openImageResult}</Button>)}
+    {result.content.length === 0 && <span>{labels.emptyResult}</span>}
+  </>;
   return <TraceCollapsible data-testid="tool-card" data-boring="tool-card" data-status={status} data-tool={call.name} data-call-id={call.id} open={open} onOpenChange={setChosen}>
     {details ? <TraceCollapsibleTrigger className="min-h-8 max-md:min-h-11 pointer-coarse:min-h-11">{line}</TraceCollapsibleTrigger> : line}
     {details && <TraceCollapsibleContent><div data-testid="tool-details" className="flex flex-col gap-3">
-      <Section title={labels.arguments}><Card><CardContent><pre className="m-0 max-h-60 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{JSON.stringify(call.arguments, null, 2)}</pre></CardContent></Card></Section>
+      <Section title={labels.arguments}><pre className="m-0 max-h-60 overflow-auto bg-muted p-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{JSON.stringify(call.arguments, null, 2)}</pre></Section>
       {result && <Section title={result.isError ? labels.error : labels.result}>
-        <Alert variant={result.isError ? 'destructive' : 'default'} role={result.isError ? 'alert' : 'status'}><AlertDescription>
-          {result.content.map((part, index) => part.type === 'text'
-            ? <pre key={index} className="m-0 max-h-72 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{part.text}</pre>
-            : <Button key={index} variant="outline" size="sm" className="max-md:min-h-12! pointer-coarse:min-h-12!" disabled={!onOpenImage} onClick={() => onOpenImage?.(part)}>{labels.openImageResult}</Button>)}
-          {result.content.length === 0 && <span>{labels.emptyResult}</span>}
-        </AlertDescription></Alert></Section>}
+        {result.isError
+          ? <Alert variant="destructive" role="alert"><AlertDescription>{resultBody}</AlertDescription></Alert>
+          : <div role="status" className="flex flex-col gap-2 bg-muted p-2">{resultBody}</div>}
+      </Section>}
     </div></TraceCollapsibleContent>}
   </TraceCollapsible>;
 }

@@ -1,9 +1,10 @@
 /* The chat's words in French, the `locale="fr"` base of `PiChat`, `AmbientChat` and `AgentWorkspace`. Typed as `ChatLabels`, so a key added in English must be added here too. */
-import { formatClock, formatTimestamp } from './labels';
+import { formatClock, formatTimestamp, humanToolName } from './labels';
 import type { ChatLabels } from './labels';
 
 const TOOL_VERBS: Readonly<Record<string, string>> = { read: 'Lecture', write: 'Écriture', edit: 'Modification', ls: 'Liste', list_files: 'Liste', find: 'Recherche', grep: 'Recherche', load_skill: 'Chargement de la compétence', bash: 'Exécution bash' };
 const TOOL_NOUNS: Readonly<Record<string, string>> = { bash: 'commande', read: 'lecture', write: 'écriture', edit: 'modification', find: 'recherche', grep: 'recherche', ls: 'liste' };
+const TOOL_NAMES: Readonly<Record<string, string>> = { bash: 'Commande shell', read: 'Lecture', write: 'Écriture', edit: 'Modification', ls: 'Liste', list_files: 'Liste des fichiers', find: 'Recherche', grep: 'Recherche', load_skill: 'Chargement de la compétence' };
 const EFFORT_NAMES: Readonly<Record<string, string>> = { off: 'Désactivé', minimal: 'Minimal', low: 'Faible', medium: 'Moyen', high: 'Élevé', xhigh: 'Très élevé', max: 'Maximum' };
 const EFFORT_DETAILS: Readonly<Record<string, string>> = { off: 'Sans réflexion supplémentaire', minimal: 'Presque aucune réflexion', low: 'Réflexion légère', medium: 'Réflexion équilibrée', high: 'Réflexion approfondie', xhigh: 'Réflexion très approfondie', max: 'Réflexion maximale' };
 
@@ -207,7 +208,7 @@ export const frenchChatLabels: ChatLabels = {
   previousImage: 'Image précédente',
   nextImage: 'Image suivante',
   systemContext: 'Contexte système',
-  toolFailed: tool => `Échec de ${tool}`,
+  toolFailed: tool => `Échec de ${TOOL_NAMES[tool] ?? humanToolName(tool)}`,
   event: label => `Événement : ${label}`,
   reasoning: 'Réflexion',
   thinkingStep: 'Réflexion',
@@ -222,10 +223,11 @@ export const frenchChatLabels: ChatLabels = {
   openImageResult: 'Ouvrir l’image du résultat',
   emptyResult: 'Résultat vide',
   toolActivity: (tool, hint) => {
-    const verb = TOOL_VERBS[tool] ?? `Exécution de ${tool}`;
+    const verb = TOOL_VERBS[tool] ?? `Exécution de ${humanToolName(tool).toLowerCase()}`;
     return hint ? `${verb}${tool === 'bash' ? ' :' : ''} ${hint}` : verb;
   },
-  toolNoun: tool => TOOL_NOUNS[tool] ?? tool,
+  toolNoun: tool => TOOL_NOUNS[tool] ?? humanToolName(tool).toLowerCase(),
+  toolName: tool => TOOL_NAMES[tool] ?? humanToolName(tool),
   approvalNeeded: 'Approbation requise',
   needsApproval: 'Votre approbation est nécessaire',
   approve: 'Approuver',
