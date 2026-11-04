@@ -393,7 +393,8 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const latestExpand = useRef(expand);
   useLayoutEffect(() => { latestExpand.current = expand; });
   useEffect(() => {
-    if (expanded && !globalThis.matchMedia?.('(pointer: coarse)').matches) textarea.current?.focus();
+    // Not from a field in use: a person's, or the one holding what is typed after New chat, where a dead key may still be open.
+    if (expanded && !globalThis.matchMedia?.('(pointer: coarse)').matches && !globalThis.document?.activeElement?.matches('input, textarea, select, [contenteditable]')) textarea.current?.focus();
   }, [expanded, textarea]);
   // The title is disabled while the window is open, so focus goes back to it once the bar is showing again.
   const refocusTitle = useRef(false);

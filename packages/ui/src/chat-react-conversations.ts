@@ -15,7 +15,7 @@ export interface ConversationsClient {
   readonly activeId: string | undefined;
   /** New or fork is on its way: the conversation on screen is about to be left, so it must take no message (`PiChat` disables its composer). */
   readonly creating: boolean;
-  /** The conversation New or fork just opened, for up to three seconds: `PiChat` puts the cursor in its box once, then calls `openedSeen`, so a later remount does not. */
+  /** The conversation New or fork just opened, for up to three seconds: `PiChat` puts the cursor in its box once, then calls `openedSeen`, so a later remount does not. Undefined while a dead key or IME composition is open in the hidden field, however long it stays open. */
   readonly opened: string | undefined;
   /** Ends `opened` and returns what the person typed since New, for the new box. */
   readonly openedSeen: () => string;
@@ -65,21 +65,27 @@ const OPENED_MS = 3000;
 /**
  * The clicked button keeps the focus until the new box is back, so a Space typed then would press New again, and the box is held, so the start of a message would be lost.
  * The focus goes to a hidden field until then: it outlives the chat's remount, and dead keys, IME and Backspace work there. Not on a phone, where it would open the keyboard.
+ * A composition still open must finish there: its accent is only a preview in the value, and the keyboard commits the letter to whatever has the focus.
  */
-function holdTyping() {
+function holdTyping(onComposing: (composing: boolean) => void) {
   const page = globalThis.document, focused = page?.activeElement as HTMLElement | null | undefined;
   if (!page || focused?.matches('input, textarea, select, [contenteditable]')) return undefined;
   focused?.blur();
-  if (globalThis.matchMedia?.('(pointer: coarse)').matches) return { field: undefined };
+  if (globalThis.matchMedia?.('(pointer: coarse)').matches) return { field: undefined, composing: false };
   const field = page.createElement('textarea');
   field.dataset.testid = 'new-chat-typing';
   field.tabIndex = -1;
   field.setAttribute('aria-hidden', 'true');
   field.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;opacity:0;font-size:16px';
   field.addEventListener('keydown', event => { if (event.key === 'Enter') event.preventDefault(); });
+  const held = { field, composing: false };
+  const composing = (value: boolean) => { held.composing = value; onComposing(value); };
+  field.addEventListener('compositionstart', () => composing(true));
+  field.addEventListener('compositionend', () => composing(false));
+  field.addEventListener('blur', () => composing(false));
   page.body.append(field);
   field.focus();
-  return { field };
+  return held;
 }
 
 export function useConversationsClient({ endpoint, fetch, activeId, onSelect, onChange, pollMs = 4000, openTimeoutMs = 15000 }: ConversationsClientOptions): ConversationsClient | undefined {
@@ -88,17 +94,24 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
   const [opened, setOpened] = useState<string | undefined>();
   const [failedNew, setFailedNew] = useState<{ readonly at: string | undefined; readonly typed: boolean } | undefined>();
   const typing = useRef<ReturnType<typeof holdTyping>>(undefined);
+  const [composing, setComposing] = useState(false);
   // What was typed goes nowhere else, so nothing reaches the conversation being left. The focus does not go back to the button: the next Space would press New again, and a create that works would take the rest of the text as a partial message.
   const dropTyping = useCallback(() => {
     const held = typing.current;
     typing.current = undefined;
     held?.field?.remove();
+    setComposing(false);
   }, []);
   useEffect(() => dropTyping, [dropTyping]);
   const openedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const markOpened = useCallback((id: string | undefined) => {
     clearTimeout(openedTimer.current);
-    if (id !== undefined) openedTimer.current = setTimeout(() => { dropTyping(); setOpened(undefined); }, OPENED_MS);
+    const expire = () => {
+      if (typing.current?.composing) { openedTimer.current = setTimeout(expire, OPENED_MS); return; }
+      dropTyping();
+      setOpened(undefined);
+    };
+    if (id !== undefined) openedTimer.current = setTimeout(expire, OPENED_MS);
     else dropTyping();
     setOpened(id);
   }, [dropTyping]);
@@ -179,7 +192,8 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
       }
     };
     return {
-      items, activeId, creating, opened, reload,
+      items, activeId, creating, reload,
+      opened: composing ? undefined : opened,
       newFailed: failedNew && failedNew.at === activeId ? { typed: failedNew.typed } : undefined,
       newFailedSeen: () => setFailedNew(undefined),
       openedSeen: () => {
@@ -191,7 +205,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
       },
       onSelect: (id: string) => { forget(); setFailedNew(undefined); markOpened(undefined); latest.current.onSelect(id); },
       onNew: () => {
-        if (!opening.current) { setFailedNew(undefined); markOpened(undefined); typing.current = holdTyping(); }
+        if (!opening.current) { setFailedNew(undefined); markOpened(undefined); typing.current = holdTyping(setComposing); }
         else typing.current?.field?.focus();
         void open('create', {}).catch(() => {});
       },
@@ -206,7 +220,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
         await open('fork', { conversationId: from, at });
       },
     };
-  }, [items, activeId, creating, opened, failedNew, base, call, reload, forget, markOpened, dropTyping, failNew]);
+  }, [items, activeId, creating, opened, composing, failedNew, base, call, reload, forget, markOpened, dropTyping, failNew]);
 }
 
 /** Compatibility spelling retained for one release. */
