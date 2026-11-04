@@ -70,8 +70,8 @@ export function MaquetteBlockView({ block, links, labels }: { readonly block: Ma
 function BlockBody({ block, links, labels }: { readonly block: MaquetteBlock; readonly links: MaquetteLinks; readonly labels: MaquetteLabels }): ReactNode {
   const children = block.children.map((child, index) => <MaquetteBlockView key={index} block={child} links={links} labels={labels} />);
   switch (block.type) {
-    case 'heading': return <h4 className="m-0 text-base font-semibold text-balance">{block.label}</h4>;
-    case 'text': return <p className="m-0 text-sm text-pretty text-muted-foreground">{block.label}</p>;
+    case 'heading': return <h4 className="m-0 text-sm font-semibold text-balance">{block.label}</h4>;
+    case 'text': return <p className="m-0 text-xs text-pretty text-muted-foreground">{block.label}</p>;
     case 'button': case 'link': return <GotoButton block={block} links={links} label={block.label} />;
     case 'input': return <Label className="flex-col items-stretch gap-1.5">{block.label}
       <Input className="pointer-coarse:min-h-11" placeholder={block.placeholder} defaultValue={block.value} /></Label>;
@@ -81,7 +81,7 @@ function BlockBody({ block, links, labels }: { readonly block: MaquetteBlock; re
       </NativeSelect></Label>;
     case 'badge': return <Badge variant="secondary">{block.label}</Badge>;
     case 'list': return <ItemGroup className="gap-2">
-      {block.label && <p className="m-0 text-sm font-medium">{block.label}</p>}
+      {block.label && <p className="m-0 text-xs font-medium">{block.label}</p>}
       {block.items.map((item, index) => <Item key={index} variant="outline" size="sm"><ItemContent><ItemTitle>{item}</ItemTitle></ItemContent></Item>)}
     </ItemGroup>;
     case 'table': return <div className="min-w-0 overflow-x-auto"><Table>
@@ -105,7 +105,7 @@ function BlockBody({ block, links, labels }: { readonly block: MaquetteBlock; re
     case 'document': return <Card size="sm">
       {block.label && <CardHeader><CardTitle>{block.label}</CardTitle></CardHeader>}
       <CardContent className="flex flex-col gap-2">
-        {block.lines.length ? block.lines.map((line, index) => <p key={index} className="m-0 text-sm text-muted-foreground">{line}</p>)
+        {block.lines.length ? block.lines.map((line, index) => <p key={index} className="m-0 text-xs text-muted-foreground">{line}</p>)
           : SKELETON.map(width => <span key={width} aria-hidden="true" className="block h-2 bg-muted" style={{ width: `${width}%` }} />)}
         {children}
       </CardContent>

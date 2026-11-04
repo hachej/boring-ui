@@ -10,7 +10,6 @@ import { appendToDraft } from '@hachej/boring-ui-kit/chat-text';
 import { createPicker, createPrivacyPolicy, isExcluded } from '@hachej/boring-feedback/page';
 import type { Picker } from '@hachej/boring-feedback/page';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Message, MessageContent } from '@/components/ui/message';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { useAgentLayer } from '../app-shell/agent-layer';
@@ -108,7 +107,7 @@ export function AgentTargetMode({ enabled, transcribe, onSettled, labels, attrib
   const viewport = useVisualViewport();
   const session = useRef<Session | null>(null);
   const picker = useRef<Picker | null>(null);
-  const box = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLElement>(null);
   const latest = useRef({ onSettled, words });
   useLayoutEffect(() => { latest.current = { onSettled, words }; });
   const [shown, setShown] = useState<Presentation | null>(null);
@@ -244,17 +243,18 @@ export function AgentTargetMode({ enabled, transcribe, onSettled, labels, attrib
 
   if (!enabled || !active || !shown || typeof document === 'undefined') return null;
   const phase = shown.stage === 'dictating' ? dictation.phase : shown.stage;
-  return createPortal(<Card ref={box} size="sm" data-feedback-ignore="" data-boring="agent-target" data-testid="agent-target-bar" data-phase={phase}
-    role="region" aria-label={words.title} className="app-shell fixed z-50" style={place}>
-    <CardHeader><CardTitle>{words.title}</CardTitle></CardHeader>
-    <CardContent>
-      {shown.problem ? <p role="alert" data-testid="agent-target-problem">{shown.problem}</p>
+  // A floating surface on popover tokens: no shadcn Card ring or shadow, the radius from the theme.
+  return createPortal(<section ref={box} data-feedback-ignore="" data-boring="agent-target" data-testid="agent-target-bar" data-phase={phase}
+    role="region" aria-label={words.title} className="app-shell fixed z-50 flex min-w-0 flex-col gap-2 rounded-[var(--radius-lg)] bg-popover p-3 text-xs text-popover-foreground" style={place}>
+    <h2 className="m-0 text-sm font-semibold">{words.title}</h2>
+    <div className="flex min-w-0 flex-col gap-2">
+      {shown.problem ? <p role="alert" data-testid="agent-target-problem" className="m-0 text-destructive">{shown.problem}</p>
         : shown.reply ? <Message align="start"><MessageContent><Bubble variant="secondary"><BubbleContent data-testid="agent-target-reply" className="whitespace-pre-wrap">{shown.reply}</BubbleContent></Bubble></MessageContent></Message>
-          : <p role="status">{phase === 'starting' ? words.opening : phase === 'recording' ? words.listening(dictation.seconds) : phase === 'transcribing' ? words.transcribing : phase === 'settled' ? words.answered : words.waiting}</p>}
-    </CardContent>
-    <CardFooter className="flex gap-2">
+          : <p role="status" className="m-0">{phase === 'starting' ? words.opening : phase === 'recording' ? words.listening(dictation.seconds) : phase === 'transcribing' ? words.transcribing : phase === 'settled' ? words.answered : words.waiting}</p>}
+    </div>
+    <div className="flex gap-2">
       {shown.stage === 'dictating' && <Button data-testid="agent-target-stop" className="min-h-11 min-w-11" disabled={phase !== 'recording'} onClick={dictation.finish}>{words.stop}</Button>}
       <Button variant="ghost" data-testid="agent-target-close" className="min-h-11 min-w-11" onClick={cancel}>{shown.stage === 'settled' ? words.close : words.cancel}</Button>
-    </CardFooter>
-  </Card>, document.body);
+    </div>
+  </section>, document.body);
 }

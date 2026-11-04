@@ -8,7 +8,6 @@ import { CanvasProjection } from '@hachej/boring-ui-kit/canvas-editor';
 import type { TextBuffer } from '@hachej/boring-ui-kit/text-buffer';
 import { HandIcon, MousePointer2Icon, StickyNoteIcon, MaximizeIcon, Undo2Icon, Redo2Icon, MessageSquarePlusIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { MockupViewer } from '../mockup-viewer/mockup-viewer';
 import { usePhone } from '../utils/use-media';
@@ -41,15 +40,16 @@ function FrameContent({ shape, editor }: { readonly shape: BoardFrame; readonly 
   const shown = parsed?.kind === 'ok' ? parsed.maquette.screens.find(item => item.id === screen) : undefined;
   return <HTMLContainer className="flex flex-col" style={{ width: shape.props.w, height: shape.props.h }}>
     <div className="pointer-events-none absolute -top-8 left-0 whitespace-nowrap text-muted-foreground" data-testid="board-frame-title">{title}</div>
-    <Card className="min-h-0 flex-1 overflow-hidden" data-testid="board-frame" data-frame={id}>
-      <CardContent className="min-h-0 flex-1 overflow-hidden" style={{ pointerEvents: editing || board.comments?.active ? 'auto' : 'none' }}>
+    {/* One flat surface per frame on the board's muted canvas: no outline, no shadow, no card inside a card. */}
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-lg)] bg-card text-card-foreground" data-testid="board-frame" data-frame={id}>
+      <div className="min-h-0 flex-1 overflow-hidden" style={{ pointerEvents: editing || board.comments?.active ? 'auto' : 'none' }}>
         {kind === 'html' ? <MockupViewer text={text} path={src} comments={board.comments} />
           : shown && parsed?.kind === 'ok' ? <MaquetteScreenView maquette={parsed.maquette} screen={shown} labels={defaultMaquetteLabels}
             links={{ go: target => board.go(id, target), hint: target => `Opens ${target}`,
               target: block => `board:${board.path}#frame=${id}&block=${block.id}`,
               pins: block => board.comments?.pins.filter(pin => pin.target === `board:${board.path}#frame=${id}&block=${block.id}`).map(pin => pin.number) ?? [] }}  /> : <p role="alert">Unreadable maquette {src}</p>}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   </HTMLContainer>;
 }
 
@@ -169,10 +169,10 @@ export default function BoardCanvas({ buffer, files, assetUrls, licenseKey, onEd
     const bounds = target && native?.getShapePageBounds(target);
     if (native && bounds) native.zoomToBounds(bounds, { animation: { duration: 200 }, inset: 24 });
   } }), [files, comments, state.base.target.resource.path]);
-  return <Context.Provider value={context}><div data-testid="board" data-phone={phone} className="relative min-h-0 flex-1 overscroll-contain" style={{ touchAction: 'none' }}>
+  return <Context.Provider value={context}><div data-testid="board" data-phone={phone} className="relative min-h-0 flex-1 overscroll-contain bg-muted" style={{ touchAction: 'none' }}>
     <CanvasProjection assetUrls={assetUrls} licenseKey={licenseKey} hideUi shapeUtils={shapeUtils} onMount={attach} />
     {editor && <BoardTools editor={editor} blocked={blocked} comments={comments} />}
-    {problem && <p role="alert" className="absolute bottom-2 left-2 text-muted-foreground">{problem}</p>}
+    {problem && <p role="alert" className="absolute bottom-2 left-2 m-0 text-xs text-destructive">{problem}</p>}
   </div></Context.Provider>;
 }
 
