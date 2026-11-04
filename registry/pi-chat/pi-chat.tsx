@@ -2,7 +2,7 @@
 
 import { useKeyboardInset } from '../utils/use-media';
 
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { viewHasEarlier } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
@@ -158,8 +158,27 @@ export interface PiChatProps extends ChatFeatureProps {
 type TranscriptRow = { readonly key: string; readonly kind: 'native'; readonly row: Row }
   | { readonly key: string; readonly kind: 'voice'; readonly voice: PendingVoice };
 
+const DEVELOPER_SWITCH = 'boring-ui:chat-mode';
+/** `?chatMode=developer` turns developer mode on in this browser until `?chatMode=expert`: the same transcript the browser already holds, drawn with its details. */
+function developerSwitch(): boolean {
+  if (typeof window === 'undefined') return false;
+  const asked = new URLSearchParams(window.location.search).get('chatMode');
+  try {
+    if (asked === 'developer') window.localStorage.setItem(DEVELOPER_SWITCH, 'developer');
+    if (asked === 'expert') window.localStorage.removeItem(DEVELOPER_SWITCH);
+    return asked !== 'expert' && (asked === 'developer' || window.localStorage.getItem(DEVELOPER_SWITCH) === 'developer');
+  } catch { return asked === 'developer'; }
+}
+const neverChanges = () => () => {};
+
 /** Borrows a concrete native controller; unmount releases presentation and uploads only. */
-export function PiChat(props: PiChatProps) {
+export function PiChat(hostProps: PiChatProps) {
+  const developer = useSyncExternalStore(neverChanges, developerSwitch, () => false);
+  const props = useMemo<PiChatProps>(() => {
+    if (!developer) return hostProps;
+    const { presentation: _natural, ...rest } = hostProps;
+    return { ...rest, mode: 'developer' };
+  }, [developer, hostProps]);
   const active = useRef(props.controller);
   useLayoutEffect(() => { active.current = props.controller; });
   // A new controller or a new voice recorder hook starts a fresh session, so the recorder's hooks keep their order.
