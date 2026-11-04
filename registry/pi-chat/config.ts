@@ -127,6 +127,10 @@ export interface ConversationsConfig {
   /** The conversation New or fork just opened: once it is `activeId`, the cursor goes to its message box, on a computer. */
   readonly opened?: string | undefined;
   readonly openedSeen?: (() => string) | undefined;
+  /** New chat was refused or got no answer in time: the chat says so. `typed`: what the person typed meanwhile was dropped. */
+  readonly newFailed?: { readonly typed: boolean } | undefined;
+  /** The person closed that message. */
+  readonly newFailedSeen?: (() => void) | undefined;
   readonly loading?: boolean | undefined;
   /**
    * Server-side search: with it, a typed query (or the Archived filter) lists what this returns instead of filtering `items`

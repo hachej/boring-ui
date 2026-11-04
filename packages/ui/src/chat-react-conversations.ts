@@ -19,6 +19,10 @@ export interface ConversationsClient {
   readonly opened: string | undefined;
   /** Ends `opened` and returns what the person typed since New, for the new box. */
   readonly openedSeen: () => string;
+  /** New chat was refused or got no answer in time, in the conversation on screen. `typed`: the person's text was dropped. `PiChat` and `AmbientChat` say so. */
+  readonly newFailed: { readonly typed: boolean } | undefined;
+  /** The person closed that message. */
+  readonly newFailedSeen: () => void;
   readonly reload: () => Promise<void>;
   readonly onSelect: (id: string) => void;
   readonly onNew: () => void;
@@ -82,6 +86,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
   const [items, setItems] = useState<readonly ConversationItem[] | undefined>();
   const [creating, setCreating] = useState(false);
   const [opened, setOpened] = useState<string | undefined>();
+  const [failedNew, setFailedNew] = useState<{ readonly at: string | undefined; readonly typed: boolean } | undefined>();
   const typing = useRef<ReturnType<typeof holdTyping>>(undefined);
   // What was typed goes nowhere else, so nothing reaches the conversation being left. The focus does not go back to the button: the next Space would press New again, and a create that works would take the rest of the text as a partial message.
   const dropTyping = useCallback(() => {
@@ -100,9 +105,14 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
   // The New or fork on its way; forgetting it gives the composer back, and its late answer then moves nobody.
   const opening = useRef<object | undefined>(undefined);
   const forget = useCallback(() => { opening.current = undefined; setCreating(false); }, []);
-  const latest = useRef({ fetch, onSelect, onChange, activeId, openTimeoutMs });
-  useLayoutEffect(() => { latest.current = { fetch, onSelect, onChange, activeId, openTimeoutMs }; });
   const base = endpoint === undefined ? undefined : String(endpoint);
+  const latest = useRef({ fetch, onSelect, onChange, activeId, openTimeoutMs, base });
+  useLayoutEffect(() => { latest.current = { fetch, onSelect, onChange, activeId, openTimeoutMs, base }; });
+  // The text is not given back: it stays out of the draft being left, and the message says it is gone.
+  const failNew = useCallback(() => {
+    setFailedNew({ at: latest.current.activeId, typed: Boolean(typing.current?.field?.value) });
+    dropTyping();
+  }, [dropTyping]);
   const call = useCallback(async (params: Record<string, string>, body?: unknown, signal?: AbortSignal) => {
     if (base === undefined) throw new Error('No conversations endpoint');
     const url = new URL(base, globalThis.location?.href);
@@ -125,7 +135,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
   const reload = useCallback(() => list(), [list]);
   // Another endpoint (another owner's list) starts empty; switching conversations only reloads.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- a new endpoint clears the old owner's list once, after commit
-  useEffect(() => { setItems(undefined); markOpened(undefined); forget(); }, [base, forget, markOpened]);
+  useEffect(() => { setItems(undefined); setFailedNew(undefined); markOpened(undefined); forget(); }, [base, forget, markOpened]);
   useEffect(() => {
     if (base === undefined) return;
     let off = false;
@@ -141,22 +151,27 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
     // Selects last: a host may open a conversation only once its list holds it. Until then a message would go to the conversation being left.
     const open = async (name: string, body: unknown) => {
       if (opening.current) return;
+      const gaveUp = name === 'create' ? failNew : dropTyping;
       const run = {};
       opening.current = run;
       setCreating(true);
-      const timer = setTimeout(() => { if (opening.current === run) { forget(); dropTyping(); } }, latest.current.openTimeoutMs);
+      const timer = setTimeout(() => { if (opening.current === run) { forget(); gaveUp(); } }, latest.current.openTimeoutMs);
       let selected = false;
       try {
         const { conversationId } = await op(name, body);
         await changed();
         if (conversationId !== undefined && opening.current === run) { selected = true; markOpened(String(conversationId)); latest.current.onSelect(String(conversationId)); }
+        // Nobody waits for it any more, so it would stay in the list as an empty row, unless the person already opened it. Another owner's list is not this one's to change.
+        else if (name === 'create' && conversationId !== undefined && latest.current.base === base && latest.current.activeId !== String(conversationId)) { await op('delete', { conversationId }); await changed(); }
       } finally {
         clearTimeout(timer);
-        if (opening.current === run) { forget(); if (!selected) dropTyping(); }
+        if (opening.current === run) { forget(); if (!selected) gaveUp(); }
       }
     };
     return {
       items, activeId, creating, opened, reload,
+      newFailed: failedNew && failedNew.at === activeId ? { typed: failedNew.typed } : undefined,
+      newFailedSeen: () => setFailedNew(undefined),
       openedSeen: () => {
         const typed = typing.current?.field?.value ?? '';
         typing.current?.field?.remove();
@@ -164,9 +179,9 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
         markOpened(undefined);
         return typed;
       },
-      onSelect: (id: string) => { forget(); markOpened(undefined); latest.current.onSelect(id); },
+      onSelect: (id: string) => { forget(); setFailedNew(undefined); markOpened(undefined); latest.current.onSelect(id); },
       onNew: () => {
-        if (!opening.current) { markOpened(undefined); typing.current = holdTyping(); }
+        if (!opening.current) { setFailedNew(undefined); markOpened(undefined); typing.current = holdTyping(); }
         else typing.current?.field?.focus();
         void open('create', {}).catch(() => {});
       },
@@ -181,7 +196,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
         await open('fork', { conversationId: from, at });
       },
     };
-  }, [items, activeId, creating, opened, call, reload, forget, markOpened, dropTyping]);
+  }, [items, activeId, creating, opened, failedNew, base, call, reload, forget, markOpened, dropTyping, failNew]);
 }
 
 /** Compatibility spelling retained for one release. */
