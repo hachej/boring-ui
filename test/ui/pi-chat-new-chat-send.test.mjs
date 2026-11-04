@@ -41,7 +41,7 @@ test('a message sent right after New chat does not reach the conversation being 
   };
 
   let drawn = 0;
-  const open = async ({ create = held(), reload, change, oldText = 'Bonjour', Chat = PiChat, chatProps = {}, options = {}, oldDocs } = {}) => {
+  const open = async ({ create = held(), reload, change, oldText = 'Bonjour', Chat = PiChat, chatProps = {}, options = {}, oldDocs, selectLag = 0 } = {}) => {
     const chats = { old: chat('old', oldText, oldDocs), new: chat('new', 'Salut'), other: chat('other', '') };
     const page = { chats, creates: 0, create, selected: 'old', endpoint: undefined };
     let listed = ['old'];
@@ -64,7 +64,7 @@ test('a message sent right after New chat does not reach the conversation being 
       page.remount = () => setMount(value => value + 1);
       page.endpoint = setEndpoint;
       page.selected = id;
-      page.client = useConversationsClient({ endpoint, fetch, activeId: id, onSelect: setId, pollMs: 1000000, ...(change ? { onChange: () => change.promise } : {}), ...options });
+      page.client = useConversationsClient({ endpoint, fetch, activeId: id, onSelect: selected => { if (selectLag) setTimeout(() => setId(selected), selectLag); else setId(selected); }, pollMs: 1000000, ...(change ? { onChange: () => change.promise } : {}), ...options });
       // As the example apps do: a selection the list does not hold yet goes back to the first row.
       const items = page.client?.items;
       useEffect(() => { if (items?.length && !items.some(item => item.id === id)) setId(items[0].id); }, [items, id]);
@@ -240,10 +240,49 @@ test('a message sent right after New chat does not reach the conversation being 
     await page.onNew();
     await settle(() => page.create.resolve(answer()));
     const button = document.createElement('button'); document.body.append(button); button.focus();
-    await act(async () => { await new Promise(done => setTimeout(done, 1100)); });
+    await act(async () => { await new Promise(done => setTimeout(done, 3100)); });
     await settle(() => page.remount());
     assert.equal(document.activeElement === button, true);
     button.remove();
+  });
+
+  await t.test('a key pressing New again as the new conversation opens makes no second conversation', async () => {
+    const page = await open();
+    await page.onNew();
+    await settle(() => page.create.resolve(answer()));
+    assert.equal(page.selected, 'new');
+    await page.onNew();
+    await settle();
+    assert.equal(page.creates, 1);
+  });
+
+  await t.test('the cursor still arrives when the host opens the conversation late', async () => {
+    const page = await open({ selectLag: 1200 });
+    await page.onNew();
+    await settle(() => page.create.resolve(answer()));
+    await act(async () => { await new Promise(done => setTimeout(done, 1300)); });
+    assert.equal(page.selected, 'new');
+    assert.equal(document.activeElement === input(), true);
+  });
+
+  await t.test('New works again once the moment has passed', async () => {
+    const page = await open();
+    await page.onNew();
+    await settle(() => page.create.resolve(answer()));
+    await act(async () => { await new Promise(done => setTimeout(done, 3100)); });
+    await page.onNew();
+    await settle();
+    assert.equal(page.creates, 2);
+  });
+
+  await t.test('New works at once after picking another conversation', async () => {
+    const page = await open();
+    await page.onNew();
+    await settle(() => page.create.resolve(answer()));
+    await settle(() => page.client.onSelect('old'));
+    await page.onNew();
+    await settle();
+    assert.equal(page.creates, 2);
   });
 
   await t.test('coming back to a conversation made earlier does not take the cursor again', async () => {
