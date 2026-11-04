@@ -15,13 +15,15 @@ mkdirSync(evidence, { recursive: true });
 
 const COMPUTER = { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false };
 const WORKSPACE_BAR = q('[data-testid=workspace-bar-history]'), CHAT_HEADER = q('[data-testid=history-open]'), SESSIONS_TOGGLE = q('[data-testid=sessions-toggle]');
+// The sessions pane keeps the test id `conversations` beside the chat's sheet, which is the dialog.
+const CHAT_SHEET = '[data-testid=conversations][role=dialog]';
 const PLACES = [
-  { name: 'computer-workspace-bar', query: 'app=pm&embedded', sheet: 'workspace-history', opener: WORKSPACE_BAR, shortSheet: true },
-  { name: 'computer-chat-header', query: 'app=pm&popover-history', sheet: 'conversations', opener: CHAT_HEADER, shortSheet: true },
-  { name: 'computer-sessions-column', query: 'app=pm', sheet: 'conversations', staysOpen: true },
-  { name: 'phone-workspace-bar', phone: true, query: 'app=pm&embedded', sheet: 'workspace-history', opener: WORKSPACE_BAR },
-  { name: 'phone-chat-header', phone: true, query: 'app=pm&popover-history', sheet: 'conversations', opener: CHAT_HEADER },
-  { name: 'phone-sessions-drawer', phone: true, query: 'app=pm', sheet: 'conversations', opener: SESSIONS_TOGGLE },
+  { name: 'computer-workspace-bar', query: 'app=pm&embedded', sheet: '[data-testid=workspace-history]', opener: WORKSPACE_BAR, shortSheet: true },
+  { name: 'computer-chat-header', query: 'app=pm&popover-history', sheet: CHAT_SHEET, opener: CHAT_HEADER, shortSheet: true },
+  { name: 'computer-sessions-column', query: 'app=pm', sheet: '[data-testid=conversations]', staysOpen: true },
+  { name: 'phone-workspace-bar', phone: true, query: 'app=pm&embedded', sheet: '[data-testid=workspace-history]', opener: WORKSPACE_BAR },
+  { name: 'phone-chat-header', phone: true, query: 'app=pm&popover-history', sheet: CHAT_SHEET, opener: CHAT_HEADER },
+  { name: 'phone-sessions-drawer', phone: true, query: 'app=pm', sheet: '[data-testid=conversations]', opener: SESSIONS_TOGGLE },
 ];
 
 const app = await startAppShell({ directory: mkdtempSync(join(tmpdir(), 'boring-history-list-')) });
@@ -42,7 +44,7 @@ try {
     await browser.until('the message box', `!!${q('[data-testid=composer-input]')} && !${q('[data-testid=composer-input]')}.disabled && !${q('[data-testid=connecting]')}`, 30000);
   };
   const press = (place, selector) => place.phone ? browser.tap(selector) : browser.click(selector);
-  const sheetOf = place => `[data-testid=${place.sheet}]`;
+  const sheetOf = place => place.sheet;
   const rowsOf = place => qa(`${sheetOf(place)} [data-testid=conversation-row]`);
   const viewportOf = place => q(`${sheetOf(place)} [data-slot=scroll-area-viewport]`);
 

@@ -1,5 +1,6 @@
 # Unreleased
 
+- **A long conversation list stays inside its sheet (`pi-chat`; D-1528).** Reinstall `pi-chat`. No host change. In the workspace bar's History and in `ConversationHistory`, the rows no longer draw past the popover or take clicks over the message box, and on a phone the rest of the list can now be scrolled to. `ConversationList` no longer needs a parent with a set height.
 - **Markdown editor: conflict choices, saved revision, tabs and large notes (`@hachej/boring-ui-kit`; D-1221).** No host change is needed. A refused save now offers Keep mine, Take theirs and Review diff in place of Check saved version and Discard local changes. The `checkSavedVersion` and `discardLocal` labels still type-check but are no longer drawn: a host that overrode them sets `keepMine`, `takeTheirs` and `reviewDiff` instead. New controller actions `keepLocal` and `readRemote`. A save shows its revision under the header. By default a save tells other tabs of the same note, in the same browser, to refresh through the existing path: `crossTabRefresh={false}` turns it off, and without BroadcastChannel it does nothing. A note over 512 KiB opens in source mode and cannot switch to rich mode: `richSizeLimit` changes the limit (`Infinity` for none), and `checkMarkdownRichSafety` takes `{ maxBytes }`.
 
 # Migrating to 0.4.56
