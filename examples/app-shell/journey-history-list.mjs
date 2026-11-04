@@ -147,22 +147,35 @@ try {
     if (!place.staysOpen) await browser.until('the sheet closes', `!${q(place.sheet)}`, 5000);
   };
 
-  /** With History open, a real click on the box lands in it, under the sheet's columns where the rows used to be drawn when there is such a point. */
+  /** With History open, real clicks: where the rows used to be drawn the box takes the press (when the box reaches below the sheet there), and in the text field the cursor lands and words go in. */
   const clickBox = async place => {
+    const pressAt = async point => {
+      await browser.evaluate(`document.addEventListener('mousedown', event => { window.__pressed = { inBox: !!event.target.closest('[data-slot=input-group]'), onRow: !!event.target.closest('[data-testid=conversation-row]') }; }, { capture: true, once: true })`);
+      for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: point.x, y: point.y, button: 'left', clickCount: 1 });
+      await pause(300);
+      return browser.evaluate(`({ ...window.__pressed, focused: document.activeElement === ${q('[data-testid=composer-input]')} })`);
+    };
     await open(place, 50);
-    const point = await browser.evaluate(`(() => {
-      const sheet = ${q(place.sheet)}.getBoundingClientRect(), input = ${q('[data-testid=composer-input]')}.getBoundingClientRect();
-      const y = input.top + input.height / 2, sheetClear = y < sheet.top || y > sheet.bottom;
-      const x = sheetClear && sheet.left > input.left && sheet.left + 12 < input.right ? sheet.left + 12 : Math.min(input.left + 24, sheet.left > input.left ? sheet.left - 12 : input.left + 24);
-      return { x, y };
+    const underRows = await browser.evaluate(`(() => {
+      const sheet = ${q(place.sheet)}.getBoundingClientRect(), box = ${BOX}.getBoundingClientRect(), x = sheet.left + 40, y = box.bottom - 12;
+      return x > box.left && x < box.right && y > sheet.bottom ? { x, y } : null;
     })()`);
-    await browser.evaluate(`document.addEventListener('mousedown', event => { window.__pressed = !!event.target.closest('[data-testid=composer-input]'); }, { capture: true, once: true })`);
-    for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: point.x, y: point.y, button: 'left', clickCount: 1 });
-    await pause(300);
-    const seen = await browser.evaluate(`({ pressed: window.__pressed === true, focused: document.activeElement === ${q('[data-testid=composer-input]')}, sheetOpen: !!${q(place.sheet)} })`);
-    console.log(`    ${place.name} click at ${JSON.stringify(point)} ${JSON.stringify(seen)}`);
-    assert.ok(seen.pressed, 'the box takes the click');
-    assert.ok(seen.focused, 'the cursor is in the box');
+    if (underRows) {
+      const seen = await pressAt(underRows);
+      console.log(`    ${place.name} press under the rows' column ${JSON.stringify(underRows)} ${JSON.stringify(seen)}`);
+      assert.equal(seen.onRow, false, 'a row takes the click on the box');
+      assert.equal(seen.inBox, true, 'the box takes the click');
+      await open(place, 50);
+    } else console.log(`    ${place.name} the box does not reach below the sheet in the rows' column`);
+    const inField = await browser.evaluate(`(() => {
+      const sheet = ${q(place.sheet)}.getBoundingClientRect(), input = ${q('[data-testid=composer-input]')}.getBoundingClientRect(), y = input.top + input.height / 2;
+      const clear = y < sheet.top || y > sheet.bottom;
+      return { x: clear && sheet.left > input.left && sheet.left + 40 < input.right ? sheet.left + 40 : input.left + 24, y };
+    })()`);
+    const seen = await pressAt(inField);
+    console.log(`    ${place.name} click in the field ${JSON.stringify(inField)} ${JSON.stringify(seen)}`);
+    assert.equal(seen.onRow, false, 'a row takes the click on the field');
+    assert.equal(seen.focused, true, 'the cursor is in the box');
     await send('Input.insertText', { text: 'Fictional words' });
     await browser.until('typed in the box', `${q('[data-testid=composer-input]')}.value.includes('Fictional words')`, 3000);
   };
