@@ -1,6 +1,6 @@
 # Unreleased
 
-- **The first message after New chat goes to the new conversation (`@hachej/boring-ui-kit`, `pi-chat`; D-1499).** Reinstall `pi-chat`. `useConversationsClient` now selects as soon as the create or fork call answers, before the list reloads, and returns `creating`. `ConversationsConfig` gains an optional `creating`, which disables the composer. A host with its own `onNew` that moves the selection late can pass it too.
+- **The first message after New chat goes to the new conversation (`@hachej/boring-ui-kit`, `pi-chat`, `pi-ambient`; D-1499).** Reinstall `pi-chat` and `pi-ambient`. `useConversationsClient` returns `creating`, true from New or fork until the conversation is selected, and takes `openTimeoutMs` (default 15 s). `ConversationsConfig` gains an optional `creating`, which holds the composer, voice button and suggestions in `PiChat` and the composer in `AmbientChat`. A second New while one is on its way does nothing. A host with its own `onNew` can pass `creating` too.
 
 # Migrating to 0.4.54
 
