@@ -31,6 +31,16 @@ export function formatClock(at: string, locale: string) {
 
 const TOOL_VERBS: Readonly<Record<string, string>> = { read: 'Reading', write: 'Writing', edit: 'Editing', ls: 'Listing', list_files: 'Listing', find: 'Searching', grep: 'Searching', load_skill: 'Loading skill', bash: 'Running bash' };
 const TOOL_NOUNS: Readonly<Record<string, string>> = { bash: 'command', read: 'read', write: 'write', edit: 'edit', find: 'find', grep: 'search', ls: 'list' };
+/** A built-in tool's name as a person reads it. Any other tool falls back to `humanToolName`. */
+const TOOL_NAMES: Readonly<Record<string, string>> = { bash: 'Shell', read: 'Read', write: 'Write', edit: 'Edit', ls: 'List', list_files: 'List files', find: 'Find', grep: 'Search', load_skill: 'Load skill' };
+
+/** A tool id as a person reads it: `piece_save` is « Piece save », `web-fetch` is « Web fetch ». Never a raw id on screen. */
+export function humanToolName(id: string): string {
+  const words = id.replace(/[_\-.]+/g, ' ').trim().toLowerCase();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : id;
+}
+/** The name of a tool: the built-in name, or the humanised id. `labels.toolName` returns this by default. */
+export const defaultToolName = (tool: string): string => TOOL_NAMES[tool] ?? humanToolName(tool);
 
 const EFFORT_NAMES: Readonly<Record<string, string>> = { off: 'Off', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' };
 const EFFORT_DETAILS: Readonly<Record<string, string>> = { off: 'No extra reasoning', minimal: 'Barely any reasoning', low: 'Light reasoning', medium: 'Balanced reasoning', high: 'Deep reasoning', xhigh: 'Deeper reasoning', max: 'Maximum reasoning' };
@@ -251,7 +261,7 @@ export const defaultChatLabels = {
   previousImage: 'Previous image',
   nextImage: 'Next image',
   systemContext: 'System context',
-  toolFailed: (tool: string) => `${tool} failed`,
+  toolFailed: (tool: string) => `${defaultToolName(tool)} failed`,
   event: (label: string) => `Event: ${label}`,
   // Activity and tools
   reasoning: 'Reasoning',
@@ -268,11 +278,13 @@ export const defaultChatLabels = {
   emptyResult: 'Empty result',
   /** The live line of a running tool call; `hint` is what it acts on (a path, a command), possibly empty. */
   toolActivity: (tool: string, hint: string) => {
-    const verb = TOOL_VERBS[tool] ?? `Running ${tool}`;
+    const verb = TOOL_VERBS[tool] ?? `Running ${humanToolName(tool).toLowerCase()}`;
     return hint ? `${verb}${tool === 'bash' ? ':' : ''} ${hint}` : verb;
   },
   /** How a tool is named in a finished activity summary ("Used read ×3 · command"). */
-  toolNoun: (tool: string) => TOOL_NOUNS[tool] ?? tool,
+  toolNoun: (tool: string) => TOOL_NOUNS[tool] ?? humanToolName(tool).toLowerCase(),
+  /** The name a tool call shows (the card's title). Override it per tool id; anything left out is `humanToolName`. */
+  toolName: (tool: string) => defaultToolName(tool),
   // Approval and question cards
   approvalNeeded: 'Approval needed',
   needsApproval: 'Needs your approval',

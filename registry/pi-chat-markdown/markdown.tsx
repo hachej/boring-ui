@@ -108,8 +108,8 @@ function cells(value: unknown, header: boolean, context: Context): ReactNode {
 }
 
 const HEADINGS: Record<number, string> = {
-  1: 'mt-6 mb-2 text-xl font-semibold tracking-tight', 2: 'mt-5 mb-2 text-base font-semibold tracking-tight', 3: 'mt-4 mb-1.5 text-sm font-semibold',
-  4: 'mt-4 mb-1 text-sm font-semibold', 5: 'mt-3 mb-1 text-sm font-medium', 6: 'mt-3 mb-1 text-sm font-medium text-muted-foreground',
+  1: 'mt-6 mb-2 text-sm font-semibold tracking-tight', 2: 'mt-5 mb-2 text-sm font-semibold tracking-tight', 3: 'mt-4 mb-1.5 text-xs font-semibold',
+  4: 'mt-4 mb-1 text-xs font-semibold', 5: 'mt-3 mb-1 text-xs font-medium', 6: 'mt-3 mb-1 text-xs font-medium text-muted-foreground',
 };
 
 // Marked's extension token includes arbitrary fields. Narrow those fields here before creating React nodes.
@@ -136,7 +136,7 @@ function renderToken(value: unknown, context: Context, before = '', after = ''):
     case 'blockquote': return <blockquote className="my-3 px-4 py-2 text-muted-foreground [&_p]:my-1">{children(value['tokens'], context)}</blockquote>;
     case 'br': return <br />;
     case 'hr': return <hr className="my-5 border-border" />;
-    case 'codespan': return <code className="bg-muted px-1.5 py-0.5 font-mono text-sm whitespace-pre-wrap">{content}</code>;
+    case 'codespan': return <code className="bg-muted px-1.5 py-0.5 font-mono text-xs whitespace-pre-wrap">{content}</code>;
     case 'code': return <CodeBlock code={content} {...(typeof value['lang'] === 'string' && value['lang'] ? { language: value['lang'] } : {})} {...(context.onCopy ? { onCopy: context.onCopy } : {})} />;
     case 'html': return value['block'] === true ? <pre className="my-3 overflow-x-auto font-mono text-xs whitespace-pre-wrap">{raw}</pre> : literal(raw);
     case 'image': return literal(decodeHTML(content) || raw);
