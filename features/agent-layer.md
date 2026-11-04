@@ -12,6 +12,7 @@ The agent the shell mounts once: a bottom drawer on a phone, a right panel on a 
 - `layer-launch-link` `agentLink` / `parseAgentLink` open the layer from a URL or a home-screen shortcut. `registry/app-shell/agent-link.ts`.
 - `layer-loan` `useAgentLoan` lends a workspace's controller to the layer at peek. `registry/app-shell/agent-layer.tsx`.
 - `layer-improve` second agent under « Améliorer l'app » in the account menu (`improve` prop). `registry/app-shell/account.tsx`.
+- `layer-improve-no-row` `ShellPanel.menu: false`: no account menu row, compact or expanded; the panel's Provider, Layout and page keep working. `registry/app-shell/shell-panel.tsx`.
 - `layer-together` from 1360px (`TOGETHER_FROM`) the assistant dock and the PM column are open side by side: opening one leaves the other, the dock's Close and the PM's own close (and its Back entry) close only their own, and a view of the app (`useShellLayer`) closes both; `close()` closes what `showing` names. Below 1360px and on a phone they stay one at a time. `registry/app-shell/agent-layer.tsx`.
 
 ## How to get to it (user POV)
@@ -31,6 +32,7 @@ Preconditions: as `app-shell.md`.
 - **Launch link.** `layer-launch-link`: open `/?agent=coach&open=full`; the layer opens once and the query is cleaned.
 - **Loan.** `layer-loan`: `npm run app-shell:journey:placed`, collapse the workspace on a phone; the layer opens at peek.
 - **Improve.** `layer-improve`: open the account menu, choose « Améliorer l'app ».
+- **No row.** `layer-improve-no-row`: `node --test test/contracts/app-shell-render.test.mjs` (the row is absent with `menu: false` and present without; Provider and Layout mount in both).
 - **Together.** `layer-together`: at 1440px open the assistant, then « Améliorer l'app »; both show and both answer; close one, the other stays; at 390px opening one closes the other. `node --test test/contracts/app-shell-render.impl.mjs --test-name-pattern="wide enough for both"`.
 - **Proof.** ARIA snapshot and screenshot per state, a second read of the conversation after a send.
 

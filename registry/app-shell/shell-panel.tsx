@@ -40,6 +40,8 @@ export interface ShellPanel {
   readonly Layout: ComponentType<ShellPanelLayoutProps>;
   /** The account menu's row and the layer's title. Default: the shell's « Améliorer l'app ». */
   readonly label?: string;
+  /** `false`: no account menu row for the panel, which still mounts (a host that already shows the panel, around a framed app). Default: the row. */
+  readonly menu?: false;
   /** The panel's language, for the shell's own words when the app has no agent to say it. */
   readonly locale?: string | undefined;
   /** Changes when the panel's conversation changes; a launch link's focus waits on it. */

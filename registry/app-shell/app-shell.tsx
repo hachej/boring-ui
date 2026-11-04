@@ -82,7 +82,7 @@ function Screens({ items, activeId, scrolls, slot }: { readonly items: readonly 
 }
 
 function Shell({ compactNav, layout, rail, title, nav, agent, panel, account, route, text }: { readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
-  const improve = panel ? panel.label ?? text.improve : undefined;
+  const improve = panel && panel.menu !== false ? panel.label ?? text.improve : undefined;
   const Layout = panel?.Layout ?? NoPanelLayout;
   const compact = useIsCompact();
   const sheet = compact && compactNav === 'sheet';
