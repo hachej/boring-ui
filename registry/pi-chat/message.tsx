@@ -19,7 +19,7 @@ import type { AudioUrlRead, MentionsConfig, PreviewRead, SentContent } from './c
 import { voiceClock } from './config';
 import { Spinner } from '@/components/ui/spinner';
 import { isFileBlock, segments, targetContent, waits } from './rows';
-import type { DeriveOptions, Row } from './rows';
+import type { DeriveOptions, Row, Segment, Step } from './rows';
 import { Button } from '@/components/ui/button';
 import { BlockActions } from '../button/actions';
 import type { BlockAction } from '../button/actions';
@@ -386,6 +386,14 @@ const TranscriptRow = memo(function TranscriptRow({ row, context }: { readonly r
   return <div data-row-key={row.key} className="min-w-0 shrink-0"><RowView row={row} context={context} /></div>;
 });
 
+const failedStep = (step: Step) => step.kind === 'tool' && step.entry.status === 'failed';
+const finishedStep = (step: Step) => step.kind === 'tool' && step.entry.status === 'completed';
+/** A later step finished, or the agent went on to write, after this block's last failed step: nothing is left for a person to act on. */
+function gotPast(steps: readonly Step[], later: readonly Segment[]): boolean {
+  return steps.slice(steps.map(failedStep).lastIndexOf(true) + 1).some(finishedStep)
+    || later.some(next => next.kind === 'activity' ? next.steps.some(finishedStep) : next.part.kind === 'text');
+}
+
 export function RowView({ row, context }: { readonly row: Row; readonly context: RowContext }) {
   const images = messageImages(row);
   const [selection, setSelection] = useState<{ readonly index: number; readonly images: readonly ImageContent[]; readonly key: string; readonly opener: RowContext['onOpenImage'] }>();
@@ -446,7 +454,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
         <div className="flex flex-col gap-3">
           {chunks.map((chunk, at) => {
             if (chunk.kind === 'activity') {
-              const failed = chunk.steps.some(step => step.kind === 'tool' && step.entry.status === 'failed');
+              const failed = chunk.steps.some(failedStep) && (context.developer || (!active && !gotPast(chunk.steps, chunks.slice(at + 1))));
               const unfinished = chunk.steps.some(step => step.kind === 'tool' && step.entry.status === 'unfinished');
               const state: ActivityState = failed || row.stopReason === 'error' ? 'failed' : row.stopReason === 'aborted' || (!active && unfinished) ? 'stopped' : active && at === chunks.length - 1 ? 'running' : 'done';
               return <ActivityBlock key={chunk.key} steps={chunk.steps} state={state} streaming={row.streaming} developer={context.developer} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
