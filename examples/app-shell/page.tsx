@@ -267,6 +267,11 @@ function RedactionApp() {
   </div>;
 }
 
+/** Host panels of three sizes, for the journey that measures what the workspace bar's sheet does to them: a short one, a long one that scrolls itself, a long one that does not. */
+const fictionalPanel = (id: string, lines: number, scrolls = false) => ({ id, label: `Fictional ${id}`, icon: MessagesSquareIcon,
+  content: () => <div data-testid={`${id}-body`} className={scrolls ? 'min-h-0 flex-1 overflow-auto' : undefined}>{Array.from({ length: lines }, (_, line) => <p key={line} className="m-0 py-1">Fictional note {line + 1}</p>)}</div> });
+const FICTIONAL_BAR_PANELS = [fictionalPanel('host-short', 3), fictionalPanel('host-scrolls', 40, true), fictionalPanel('host-plain', 40)];
+
 // ---- Layout C: the workspace-app's AgentWorkspace as the one screen. No shell agent: the page is the chat.
 function PmApp() {
   const manager = useRemoteChat({ conversationId: conversations.pm, endpoint: endpoint('pm'), fetch: authorized, identity, requestContext: readAgentContext });
@@ -280,7 +285,7 @@ function PmApp() {
   const chat = useRemoteChat({ conversationId: active, endpoint: id => new URL(`/api/chat?agent=writer&conversation=${id}`, location.href), fetch: authorized, identity });
   if (manager.status !== 'ready' || !revisionProvider) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
   const nav = [{ id: 'atelier', label: 'Atelier', icon: MessagesSquareIcon, render: () => <main data-testid="app" data-conversation={active} className="flex h-full min-h-0">
-    <AgentWorkspace artifactKinds={englishKinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout={query.has('embedded') ? 'embedded' : 'default'}
+    <AgentWorkspace artifactKinds={englishKinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout={query.has('embedded') ? 'embedded' : 'default'} {...(query.has('popover-history') ? { history: 'popover' as const } : {})} {...(query.has('bar-panels') ? { barPanels: FICTIONAL_BAR_PANELS } : {})}
       chat={{ labels: { title: 'Writer' }, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }} connecting={<p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>} />
   </main> }];
   const account = { name: 'Camille Martin', email: 'camille@example.invalid', menu: [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }] };
