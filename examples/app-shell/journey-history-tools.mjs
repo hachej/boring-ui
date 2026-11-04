@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { launch, pause, q, qa } from '@hachej/boring-testing/browser';
 
 process.env.STUDIO_MODEL = 'scripted';
