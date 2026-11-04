@@ -127,7 +127,7 @@ export const defaultChatLabels = {
   slashGroup: (group: string) => group,
   skillBadge: 'skill',
   workspaceFiles: 'Workspace files',
-  searchFailed: 'Search failed',
+  searchFailed: 'Search failed. Try again.',
   model: 'Model',
   effort: 'Effort',
   effortDefault: 'Default',

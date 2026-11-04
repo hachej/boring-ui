@@ -1,5 +1,6 @@
 # Unreleased
 
+- **A failed History search says so (`pi-chat`; D-1562).** Reinstall `pi-chat`. A search the server refuses, or that fails, now shows `searchFailed` (« Search failed. Try again. ») in `ConversationList` and `ConversationHistory` instead of « No conversation matches ». A real no-match keeps its text. The label `searchFailed` already existed; its text is now longer. A host with its own `search` that resolves `[]` on an error keeps showing the no-match text until it rejects instead.
 - **After a refused New chat the focus stays off the button (`@hachej/boring-ui-kit`; D-1529).** No host change is needed. A Space typed after a refused create pressed New again, and a create that worked took the rest of the text as a partial message. A person using the keyboard starts again from the page after a refused create.
 
 # Migrating to 0.4.57

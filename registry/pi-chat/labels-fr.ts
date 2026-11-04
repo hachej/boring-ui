@@ -116,7 +116,7 @@ export const frenchChatLabels: ChatLabels = {
   slashGroup: group => group === 'skills' ? 'compétences' : group === 'built-in' ? 'intégrées' : group,
   skillBadge: 'compétence',
   workspaceFiles: 'Fichiers de l’espace',
-  searchFailed: 'La recherche a échoué',
+  searchFailed: 'La recherche a échoué. Réessayez.',
   model: 'Modèle',
   effort: 'Effort',
   effortDefault: 'Par défaut',
