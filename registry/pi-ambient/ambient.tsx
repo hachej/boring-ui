@@ -36,7 +36,7 @@ import type { ArtifactShown, ArtifactFailed } from '@hachej/boring-ui-kit/chat-r
 import { createTaskArtifact, pendingPresents, taskSubjectKey } from '../pi-artifacts/artifact';
 import type { ArtifactDescriptor, PresentedArtifact, ArtifactsConfig } from '../pi-artifacts/artifact';
 import { artifactCards } from '../pi-artifacts/artifact-card';
-import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from '../pi-chat/session';
+import { PAGE_FIRST, PAGE_MORE, useChatSession, useCursorInOpened, useRowChunks, useTranscript } from '../pi-chat/session';
 import type { ChatFeatureProps } from '../pi-chat/session';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
 import type { WorkspacePanelApi } from '../pi-workspace/workspace';
@@ -307,6 +307,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const session = useChatSession({ controller, activeController, mode, presentation, voiceReplay, targetLabel, actions, renderEntry, hideLine, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, sendContext, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
+  useCursorInOpened(textarea, conversations, composer, conversations?.creating === true, state.conversationId);
   const empty = session.empty;
   const transcript = useTranscript(rows, displayLimit ?? paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
   const { stick: { scrollRef, isAtBottom, scrollToBottom: stickToBottom }, hidden } = transcript;

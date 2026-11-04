@@ -17,7 +17,8 @@ export interface ConversationsClient {
   readonly creating: boolean;
   /** The conversation New or fork just opened, for up to three seconds: `PiChat` puts the cursor in its box once, then calls `openedSeen`, so a later remount does not. */
   readonly opened: string | undefined;
-  readonly openedSeen: () => void;
+  /** Ends `opened` and returns what the person typed since New, for the new box. */
+  readonly openedSeen: () => string;
   readonly reload: () => Promise<void>;
   readonly onSelect: (id: string) => void;
   readonly onNew: () => void;
@@ -57,24 +58,47 @@ const item = (served: ServedConversation): ConversationItem => ({ id: String(ser
  */
 const OPENED_MS = 3000;
 
-/** The clicked button keeps the focus until the new box is back, so a Space typed then would press New again. */
-function letGoOfButton() {
-  const focused = globalThis.document?.activeElement;
-  if (!focused?.matches('button, [role="button"]')) return undefined;
-  (focused as HTMLElement).blur();
-  return focused as HTMLElement;
+/**
+ * The clicked button keeps the focus until the new box is back, so a Space typed then would press New again, and the box is held, so the start of a message would be lost.
+ * The focus goes to a hidden field until then: it outlives the chat's remount, and dead keys, IME and Backspace work there. Not on a phone, where it would open the keyboard.
+ */
+function holdTyping() {
+  const page = globalThis.document, focused = page?.activeElement as HTMLElement | null | undefined;
+  if (!page || focused?.matches('input, textarea, select, [contenteditable]')) return undefined;
+  const from = focused?.matches('button, [role="button"]') ? focused : undefined;
+  focused?.blur();
+  if (globalThis.matchMedia?.('(pointer: coarse)').matches) return { from, field: undefined };
+  const field = page.createElement('textarea');
+  field.dataset.testid = 'new-chat-typing';
+  field.tabIndex = -1;
+  field.setAttribute('aria-hidden', 'true');
+  field.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:0;opacity:0;font-size:16px';
+  field.addEventListener('keydown', event => { if (event.key === 'Enter') event.preventDefault(); });
+  page.body.append(field);
+  field.focus();
+  return { from, field };
 }
 
 export function useConversationsClient({ endpoint, fetch, activeId, onSelect, onChange, pollMs = 4000, openTimeoutMs = 15000 }: ConversationsClientOptions): ConversationsClient | undefined {
   const [items, setItems] = useState<readonly ConversationItem[] | undefined>();
   const [creating, setCreating] = useState(false);
   const [opened, setOpened] = useState<string | undefined>();
+  const typing = useRef<ReturnType<typeof holdTyping>>(undefined);
+  // What was typed goes nowhere else, so nothing reaches the conversation being left. The focus goes back unless the person moved.
+  const dropTyping = useCallback(() => {
+    const held = typing.current;
+    typing.current = undefined;
+    held?.field?.remove();
+    if (globalThis.document?.activeElement === globalThis.document?.body) held?.from?.focus();
+  }, []);
+  useEffect(() => dropTyping, [dropTyping]);
   const openedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const markOpened = useCallback((id: string | undefined) => {
     clearTimeout(openedTimer.current);
-    if (id !== undefined) openedTimer.current = setTimeout(() => setOpened(undefined), OPENED_MS);
+    if (id !== undefined) openedTimer.current = setTimeout(() => { dropTyping(); setOpened(undefined); }, OPENED_MS);
+    else dropTyping();
     setOpened(id);
-  }, []);
+  }, [dropTyping]);
   // The New or fork on its way; forgetting it gives the composer back, and its late answer then moves nobody.
   const opening = useRef<object | undefined>(undefined);
   const forget = useCallback(() => { opening.current = undefined; setCreating(false); }, []);
@@ -122,23 +146,31 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
       const run = {};
       opening.current = run;
       setCreating(true);
-      const timer = setTimeout(() => { if (opening.current === run) forget(); }, latest.current.openTimeoutMs);
+      const timer = setTimeout(() => { if (opening.current === run) { forget(); dropTyping(); } }, latest.current.openTimeoutMs);
+      let selected = false;
       try {
         const { conversationId } = await op(name, body);
         await changed();
-        if (conversationId !== undefined && opening.current === run) { markOpened(String(conversationId)); latest.current.onSelect(String(conversationId)); }
+        if (conversationId !== undefined && opening.current === run) { selected = true; markOpened(String(conversationId)); latest.current.onSelect(String(conversationId)); }
       } finally {
         clearTimeout(timer);
-        if (opening.current === run) forget();
+        if (opening.current === run) { forget(); if (!selected) dropTyping(); }
       }
     };
     return {
       items, activeId, creating, opened, reload,
-      openedSeen: () => markOpened(undefined),
+      openedSeen: () => {
+        const typed = typing.current?.field?.value ?? '';
+        typing.current?.field?.remove();
+        typing.current = undefined;
+        markOpened(undefined);
+        return typed;
+      },
       onSelect: (id: string) => { forget(); markOpened(undefined); latest.current.onSelect(id); },
       onNew: () => {
-        const button = letGoOfButton();
-        void open('create', {}).catch(() => { if (globalThis.document?.activeElement === globalThis.document?.body) button?.focus(); });
+        if (!opening.current) { markOpened(undefined); typing.current = holdTyping(); }
+        else typing.current?.field?.focus();
+        void open('create', {}).catch(() => {});
       },
       search: async (query: string, { archived }: { readonly archived: boolean }, signal: AbortSignal) =>
         ((await call({ ...(query ? { q: query } : {}), ...(archived ? { archived: '1' } : {}) }, undefined, signal)).conversations ?? []).map(item),
@@ -151,7 +183,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
         await open('fork', { conversationId: from, at });
       },
     };
-  }, [items, activeId, creating, opened, call, reload, forget, markOpened]);
+  }, [items, activeId, creating, opened, call, reload, forget, markOpened, dropTyping]);
 }
 
 /** Compatibility spelling retained for one release. */
