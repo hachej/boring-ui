@@ -15,8 +15,9 @@ export interface ConversationsClient {
   readonly activeId: string | undefined;
   /** New or fork is on its way: the conversation on screen is about to be left, so it must take no message (`PiChat` disables its composer). */
   readonly creating: boolean;
-  /** The conversation New or fork just opened, for three seconds: `PiChat` puts the cursor in its box once, a later remount does not, and New does nothing meanwhile. */
+  /** The conversation New or fork just opened, for up to three seconds: `PiChat` puts the cursor in its box once, then calls `openedSeen`, so a later remount does not. */
   readonly opened: string | undefined;
+  readonly openedSeen: () => void;
   readonly reload: () => Promise<void>;
   readonly onSelect: (id: string) => void;
   readonly onNew: () => void;
@@ -56,15 +57,22 @@ const item = (served: ServedConversation): ConversationItem => ({ id: String(ser
  */
 const OPENED_MS = 3000;
 
+/** The clicked button keeps the focus until the new box is back, so a Space typed then would press New again. */
+function letGoOfButton() {
+  const focused = globalThis.document?.activeElement;
+  if (!focused?.matches('button, [role="button"]')) return undefined;
+  (focused as HTMLElement).blur();
+  return focused as HTMLElement;
+}
+
 export function useConversationsClient({ endpoint, fetch, activeId, onSelect, onChange, pollMs = 4000, openTimeoutMs = 15000 }: ConversationsClientOptions): ConversationsClient | undefined {
   const [items, setItems] = useState<readonly ConversationItem[] | undefined>();
   const [creating, setCreating] = useState(false);
   const [opened, setOpened] = useState<string | undefined>();
-  // The button that was clicked keeps the focus until the new box is back, so a Space typed then would press New again: the conversation just opened is already new and empty.
-  const justOpened = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const openedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const markOpened = useCallback((id: string | undefined) => {
-    clearTimeout(justOpened.current);
-    justOpened.current = id === undefined ? undefined : setTimeout(() => { justOpened.current = undefined; setOpened(undefined); }, OPENED_MS);
+    clearTimeout(openedTimer.current);
+    if (id !== undefined) openedTimer.current = setTimeout(() => setOpened(undefined), OPENED_MS);
     setOpened(id);
   }, []);
   // The New or fork on its way; forgetting it gives the composer back, and its late answer then moves nobody.
@@ -126,8 +134,12 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
     };
     return {
       items, activeId, creating, opened, reload,
+      openedSeen: () => markOpened(undefined),
       onSelect: (id: string) => { forget(); markOpened(undefined); latest.current.onSelect(id); },
-      onNew: () => { if (!justOpened.current) void open('create', {}).catch(() => {}); },
+      onNew: () => {
+        const button = letGoOfButton();
+        void open('create', {}).catch(() => { if (globalThis.document?.activeElement === globalThis.document?.body) button?.focus(); });
+      },
       search: async (query: string, { archived }: { readonly archived: boolean }, signal: AbortSignal) =>
         ((await call({ ...(query ? { q: query } : {}), ...(archived ? { archived: '1' } : {}) }, undefined, signal)).conversations ?? []).map(item),
       rename: async (id: string, title: string) => { await op('rename', { conversationId: id, title }); await changed(); },
