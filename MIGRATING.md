@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.56
+
 - **The cursor goes to the message box after New chat (`@hachej/boring-ui-kit`, `pi-chat`; D-1501).** Reinstall `pi-chat`. `useConversationsClient` returns `opened`, and `ConversationsConfig` gains an optional `opened`. A host that passes the client on gets this with no change.
 
 # Migrating to 0.4.55
