@@ -310,7 +310,7 @@ test('a panel with menu: false has no account row, and its Provider and Layout k
   await t.test('compact: the sheet', async t => {
     const without = await openAccount(t, { account, panel: panel({ menu: false }), locale: 'fr' });
     assert.ok(without.window.document.querySelector('[data-testid=app-sheet]'), 'the account sheet is open');
-    assert.equal(without.window.document.querySelector('[data-testid=account-improve]'), null, 'no row');
+    assert.equal(Boolean(without.window.document.querySelector('[data-testid=account-improve]')), false, 'no row');
     assert.ok(without.window.document.querySelector('[data-testid=own-provider] [data-testid=own-layout]'), 'Provider and Layout still mount');
     await without.unmount?.();
   });
