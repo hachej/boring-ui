@@ -181,7 +181,8 @@ export function useChatSession(options: ChatSessionOptions) {
     text: state.draft.text, onText: (text: string) => controller.setText(text), onKeyDown: onComposerKeyDown, textareaRef: textarea,
     attachments: state.draft.attachments.map(item => ({ id: item.id, name: item.name, mimeType: item.content.mimeType, data: item.content.data })),
     onRemoveAttachment: (id: string) => controller.setAttachments(controller.getSnapshot().draft.attachments.filter(item => item.id !== id)),
-    working, sendBlocked, disabled: state.disposed, stopRequested: state.stop === 'requested',
+    // A typed message answers the waiting question, so the primary button sends it.
+    working: working && !session.answersQuestion, sendBlocked, disabled: state.disposed, stopRequested: state.stop === 'requested',
     onSend: session.send, onStop: () => act(controller.stop),
     hasFiles: Boolean(composerHasContent),
     uploading: session.uploading > 0, canAttach: Boolean(onPickFiles || onFiles || attachments), ...(camera ? { camera } : {}), fileAccept: attachments ? attachments.accept ?? '' : fileAccept, onPickFiles: (files: readonly File[]) => { void session.upload(files); },

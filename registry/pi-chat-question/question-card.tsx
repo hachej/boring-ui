@@ -66,7 +66,8 @@ function splitFormAnswer(items: readonly FormQuestion[], text: string): readonly
 /** The answered text from a result such as `{"kind":"answered","answer":"..."}`; undefined when the call did not produce an answer. */
 export function parseAnswer(result: ToolResultMessage | undefined): { readonly answer: string } | { readonly failure: string } | undefined {
   if (!result) return undefined;
-  const text = result.content.map(part => part.type === 'text' ? part.text : '').join('');
+  // Pi appends its diagnostics to a result as a `<harness>` block of their own, for the model: never for the person.
+  const text = result.content.map(part => part.type === 'text' && !/^<harness>[\s\S]*<\/harness>$/.test(part.text) ? part.text : '').join('');
   if (!result.isError) {
     try {
       const value: unknown = JSON.parse(text);
