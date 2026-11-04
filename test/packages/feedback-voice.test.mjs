@@ -360,7 +360,7 @@ test('createVoiceCapture: real PCM levels, pause excludes samples and elapsed ti
   assert.equal(capture.pause(), false, 'ended capture cannot pause');
   const result = await capture.stop();
   assert.equal(result.truncated, true);
-  assert.equal(result.endedAt - result.startedAt, 250);
+  assert.equal(Math.round(result.endedAt - result.startedAt), 250, "page-clock floats: 250.0000000000291 is 250");
   assert.equal(new DataView(await result.audio.arrayBuffer()).getUint32(40, true), 8000, 'paused samples never enter the WAV');
   assert.equal(capture.progress(), null);
 });
