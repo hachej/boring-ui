@@ -109,6 +109,9 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
   const latest = useRef({ fetch, onSelect, onChange, activeId, openTimeoutMs, base });
   // Every conversation this person has had open here: a late create's cleanup must never remove one of them.
   const visited = useRef(new Set<string>());
+  // Unmounted, it no longer knows what was opened since: its late cleanup removes nothing.
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useLayoutEffect(() => { latest.current = { fetch, onSelect, onChange, activeId, openTimeoutMs, base }; if (activeId !== undefined) visited.current.add(activeId); });
   // The text is not given back: it stays out of the draft being left, and the message says it is gone.
   const failNew = useCallback(() => {
@@ -166,7 +169,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
         if (conversationId !== undefined && opening.current === run) { selected = true; markOpened(String(conversationId)); latest.current.onSelect(String(conversationId)); }
         // Nobody waits for it any more, so it would stay in the list as an empty row. Only that row goes: not one the person has had open here, not one with a message (another tab), not on another owner's list.
         else if (name === 'create' && conversationId !== undefined) {
-          const unused = () => latest.current.base === base && !visited.current.has(String(conversationId));
+          const unused = () => mounted.current && latest.current.base === base &&!visited.current.has(String(conversationId));
           const row = unused() ? (await call({})).conversations?.find(served => String(served.id) === String(conversationId)) : undefined;
           if (row?.lastMessage === null && unused()) { await op('delete', { conversationId }); await changed(); }
         }
