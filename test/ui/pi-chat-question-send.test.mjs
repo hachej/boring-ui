@@ -152,6 +152,11 @@ test('a typed message answers the waiting question, and natural presentation sho
     assert.match(element.querySelector('[data-testid=question-answer]')?.textContent ?? '', /Garder <harness>ceci<\/harness> tel quel\./);
   });
   await t.test('a stopped question leaves no harness text, live or after reload', async () => { await draw(stopped); leaks(); });
+  await t.test('outside natural presentation, a stopped question says so in the chat language', async () => {
+    await draw(stopped, {}, { presentation: undefined, locale: 'fr' });
+    assert.match(element.textContent, /La question n’a pas reçu de réponse\./);
+    assert.doesNotMatch(element.textContent, /harness|not answered/);
+  });
   await t.test('a refused question shows neither the validation error nor its arguments', async () => {
     await draw(invalid);
     leaks();

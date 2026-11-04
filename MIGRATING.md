@@ -1,5 +1,7 @@
 # Unreleased
 
+- **A stopped question speaks the chat's language (`pi-chat`, `pi-chat-question`; D-1489).** Reinstall both. New label `questionNotAnswered`: a host that passes a complete labels object of its own adds it.
+
 # Migrating to 0.4.53
 
 - **A typed message answers a waiting question (`pi-chat`; D-1489).** Reinstall `pi-chat`. With `actions.answer` bound, text typed while an `ask_user` card waits makes the primary button Send and resolves the question, instead of queueing behind a run that waits for it; no host change. A question that cannot take the message (options only, over 2000 characters, not started yet) is superseded: the run stops and the message is sent. `presentation="natural"` no longer draws a failed question, and the question card no longer shows `<harness>` text, live or after reload.

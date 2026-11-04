@@ -74,7 +74,7 @@ export function parseAnswer(result: ToolResultMessage | undefined): { readonly a
       if (value !== null && typeof value === 'object' && (value as { kind?: unknown }).kind === 'answered' && typeof (value as { answer?: unknown }).answer === 'string') return { answer: (value as { answer: string }).answer };
     } catch { /* fall through to the failure text */ }
   }
-  return { failure: text || 'The question was not answered.' };
+  return { failure: text };
 }
 
 
@@ -136,7 +136,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
             : <ItemTitle data-testid="question-answer" className={wrap}>{values[i]}</ItemTitle>}
         </div>)}</div>
           : current !== undefined && <ItemTitle className={wrap}><span className="sr-only">{labels.yourAnswer} </span><span data-testid="question-answer" className="whitespace-pre-line">{current}</span></ItemTitle>}
-        {state === 'failed' && settled && 'failure' in settled && <ItemDescription role="alert" className={wrap}>{settled.failure}</ItemDescription>}
+        {state === 'failed' && settled && 'failure' in settled && <ItemDescription role="alert" className={wrap}>{settled.failure || labels.questionNotAnswered}</ItemDescription>}
       </ItemContent>
     </Item>;
   }
