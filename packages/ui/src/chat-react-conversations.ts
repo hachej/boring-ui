@@ -65,9 +65,8 @@ const OPENED_MS = 3000;
 function holdTyping() {
   const page = globalThis.document, focused = page?.activeElement as HTMLElement | null | undefined;
   if (!page || focused?.matches('input, textarea, select, [contenteditable]')) return undefined;
-  const from = focused?.matches('button, [role="button"]') ? focused : undefined;
   focused?.blur();
-  if (globalThis.matchMedia?.('(pointer: coarse)').matches) return { from, field: undefined };
+  if (globalThis.matchMedia?.('(pointer: coarse)').matches) return { field: undefined };
   const field = page.createElement('textarea');
   field.dataset.testid = 'new-chat-typing';
   field.tabIndex = -1;
@@ -76,7 +75,7 @@ function holdTyping() {
   field.addEventListener('keydown', event => { if (event.key === 'Enter') event.preventDefault(); });
   page.body.append(field);
   field.focus();
-  return { from, field };
+  return { field };
 }
 
 export function useConversationsClient({ endpoint, fetch, activeId, onSelect, onChange, pollMs = 4000, openTimeoutMs = 15000 }: ConversationsClientOptions): ConversationsClient | undefined {
@@ -84,12 +83,11 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
   const [creating, setCreating] = useState(false);
   const [opened, setOpened] = useState<string | undefined>();
   const typing = useRef<ReturnType<typeof holdTyping>>(undefined);
-  // What was typed goes nowhere else, so nothing reaches the conversation being left. The focus goes back unless the person moved.
+  // What was typed goes nowhere else, so nothing reaches the conversation being left. The focus does not go back to the button: the next Space would press New again, and a create that works would take the rest of the text as a partial message.
   const dropTyping = useCallback(() => {
     const held = typing.current;
     typing.current = undefined;
     held?.field?.remove();
-    if (globalThis.document?.activeElement === globalThis.document?.body) held?.from?.focus();
   }, []);
   useEffect(() => dropTyping, [dropTyping]);
   const openedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

@@ -1,5 +1,7 @@
 # Unreleased
 
+- **After a refused New chat the focus stays off the button (`@hachej/boring-ui-kit`; D-1529).** No host change is needed. A Space typed after a refused create pressed New again, and a create that worked took the rest of the text as a partial message. A person using the keyboard starts again from the page after a refused create.
+
 # Migrating to 0.4.57
 
 - **A long conversation list stays inside its sheet (`pi-chat`; D-1528).** Reinstall `pi-chat`. No host change. In the workspace bar's History and in `ConversationHistory`, the rows no longer draw past the popover or take clicks over the message box, and on a phone the rest of the list can now be scrolled to. `ConversationList` no longer needs a parent with a set height.
