@@ -298,7 +298,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
       <div className="mx-auto w-full max-w-[720px] space-y-2">
         <div {...(session.natural ? {} : { 'aria-live': 'polite' as const })} className="space-y-2 empty:hidden">
           <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} sending={session.sending} />
-          <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} />
+          <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} conversations={conversations} />
         </div>
         <div>
           <ConversationFiles files={[...conversationFiles.values()]} />

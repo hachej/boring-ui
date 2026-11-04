@@ -70,6 +70,8 @@ export const defaultChatLabels = {
   retrySame: 'Retry same request',
   stopRequested: 'Stop requested. Waiting for native confirmation.',
   stopUnconfirmed: 'Stop is unconfirmed. Work may still be running.',
+  newChatFailed: "The new conversation wasn't made. You are still in this one.",
+  newChatFailedTyped: "The new conversation wasn't made, and what you typed wasn't kept. You are still in this one.",
   steerRefused: 'The message could not be steered; it is back in the message box.',
   tooLate: 'Too late: that message has already started.',
   tooLateToRemove: 'Too late to remove: that message has already started.',

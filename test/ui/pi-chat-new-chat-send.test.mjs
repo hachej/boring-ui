@@ -43,9 +43,11 @@ test('a message sent right after New chat does not reach the conversation being 
   let drawn = 0;
   const open = async ({ create = held(), reload, change, oldText = 'Bonjour', Chat = PiChat, chatProps = {}, options = {}, oldDocs, selectLag = 0, newText = 'Salut', controllerLag = 0 } = {}) => {
     const chats = { old: chat('old', oldText, oldDocs), new: chat('new', newText), other: chat('other', '') };
-    const page = { chats, creates: 0, create, selected: 'old', endpoint: undefined };
+    const page = { chats, creates: 0, deletes: [], create, selected: 'old', endpoint: undefined };
     let listed = ['old'];
+    page.list = ids => { listed = ids; };
     const fetch = async request => {
+      if (request.url.includes('op=delete')) { const { conversationId } = await request.json(); page.deletes.push(conversationId); listed = listed.filter(id => id !== conversationId); return Response.json({ deleted: true }); }
       if (request.method === 'POST') { page.creates += 1; const reply = await page.create.promise; if (reply.ok) listed = ['old', 'new']; return reply; }
       if (request.url.includes('/two')) return Response.json({ conversations: [row('other')] });
       // One poll is asked before the create and answers late; the first read after the create is the client's reload, and later polls stay out.
@@ -55,7 +57,8 @@ test('a message sent right after New chat does not reach the conversation being 
         page.lagging.reloaded = true;
       }
       if (listed.length > 1) await reload?.promise;
-      return Response.json({ conversations: listed.map(row) });
+      if (page.holdAfter !== undefined && page.holdAfter-- === 0) await page.listHold.promise;
+      return Response.json({ conversations: listed.map(id => ({ ...row(id), lastMessage: page.said?.[id] ?? null })) });
     };
     const Host = () => {
       const [id, setId] = useState('old');
@@ -66,6 +69,7 @@ test('a message sent right after New chat does not reach the conversation being 
       useEffect(() => { if (!controllerLag) return undefined; const timer = setTimeout(() => setShown(id), controllerLag); return () => clearTimeout(timer); }, [id]);
       page.remount = () => setMount(value => value + 1);
       page.endpoint = setEndpoint;
+      page.go = setId;
       page.selected = id;
       page.client = useConversationsClient({ endpoint, fetch, activeId: id, onSelect: selected => { if (selectLag) setTimeout(() => setId(selected), selectLag); else setId(selected); }, pollMs: 1000000, ...(change ? { onChange: () => change.promise } : {}), ...options });
       // As the example apps do: a selection the list does not hold yet goes back to the first row.
@@ -73,7 +77,8 @@ test('a message sent right after New chat does not reach the conversation being 
       useEffect(() => { if (items?.length && !items.some(item => item.id === id)) setId(items[0].id); }, [items, id]);
       return page.client ? createElement(Chat, { key: `${id}:${mount}`, controller: chats[controllerLag ? shown : id].controller, header: false, conversations: page.client, ...chatProps }) : null;
     };
-    await act(async () => root.render(createElement(Host, { key: drawn++ })));
+    page.rebuild = () => act(async () => root.render(createElement(Host, { key: drawn++ })));
+    await page.rebuild();
     page.onNew = () => act(async () => { page.client.onNew(); });
     return page;
   };
@@ -395,6 +400,197 @@ test('a message sent right after New chat does not reach the conversation being 
     assert.equal(noHeldField(), true);
     assert.equal(document.activeElement === button, false, 'a Space typed next must not press New again');
     button.remove();
+  });
+
+  const failed = () => element.querySelector('[data-testid=new-chat-failed]');
+  const hasFailed = () => failed() !== null;
+  const rest = () => act(async () => { await new Promise(done => setTimeout(done, 30)); });
+
+  await t.test('a refused create says the conversation was not made, and that what was typed was not kept', async () => {
+    const page = await open();
+    const button = await pressNew(page);
+    document.activeElement.value = 'first';
+    assert.equal(hasFailed(), false, 'nothing is wrong yet');
+    await settle(() => page.create.resolve(new Response('no', { status: 500 })));
+    assert.equal(failed()?.getAttribute('role'), 'alert');
+    assert.match(failed()?.textContent ?? '', /wasn't made/);
+    assert.match(failed()?.textContent ?? '', /typed wasn't kept/);
+    assert.equal(page.chats.old.typed.length, 0, 'the old draft is untouched');
+    assert.equal(page.chats.old.sends.length, 0, 'nothing is sent');
+    assert.equal(enabled(), true, 'the composer works again');
+    button.remove();
+  });
+
+  await t.test('a refused create with nothing typed does not talk about typed text', async () => {
+    const page = await open();
+    await page.onNew();
+    await settle(() => page.create.resolve(new Response('no', { status: 500 })));
+    assert.match(failed()?.textContent ?? '', /wasn't made/);
+    assert.doesNotMatch(failed()?.textContent ?? '', /typed/);
+  });
+
+  await t.test('a create answered without a conversation says so too', async () => {
+    const page = await open();
+    await page.onNew();
+    await settle(() => page.create.resolve(Response.json({})));
+    assert.match(failed()?.textContent ?? '', /wasn't made/);
+  });
+
+  await t.test('no answer in time says so, and the late answer leaves no empty row', async () => {
+    const page = await open({ options: { openTimeoutMs: 20 } });
+    const button = await pressNew(page);
+    document.activeElement.value = 'first';
+    await act(async () => { await new Promise(done => setTimeout(done, 60)); });
+    assert.match(failed()?.textContent ?? '', /typed wasn't kept/);
+    await settle(() => page.create.resolve(answer()));
+    await rest();
+    assert.equal(page.deletes.join(), 'new', 'the conversation the person was told does not exist is removed');
+    assert.equal(page.client.items.map(item => item.id).join(), 'old');
+    assert.equal(page.selected, 'old');
+    assert.equal(page.creates, 1);
+    assert.equal(page.chats.old.typed.length, 0);
+    button.remove();
+  });
+
+  await t.test('a late answer for a conversation the person already opened leaves it', async () => {
+    const page = await open({ options: { openTimeoutMs: 20 } });
+    await page.onNew();
+    await act(async () => { await new Promise(done => setTimeout(done, 60)); });
+    page.list(['old', 'new']);
+    await settle(() => page.client.reload());
+    await settle(() => page.client.onSelect('new'));
+    await settle(() => page.create.resolve(answer()));
+    await rest();
+    assert.equal(page.deletes.length, 0);
+    assert.equal(page.selected, 'new');
+  });
+
+  await t.test('a late answer for a conversation the person opened and left leaves it', async () => {
+    const page = await open({ options: { openTimeoutMs: 20 } });
+    await page.onNew();
+    await act(async () => { await new Promise(done => setTimeout(done, 60)); });
+    page.list(['old', 'new']);
+    await settle(() => page.client.reload());
+    await settle(() => page.client.onSelect('new'));
+    await settle(() => page.client.onSelect('old'));
+    await settle(() => page.create.resolve(answer()));
+    await rest();
+    assert.equal(page.deletes.length, 0);
+    assert.equal(page.client.items.map(item => item.id).join(), 'old,new');
+  });
+
+  await t.test('a conversation opened while the late answer checks the list stays', async () => {
+    const page = await open({ options: { openTimeoutMs: 20 } });
+    await page.onNew();
+    await act(async () => { await new Promise(done => setTimeout(done, 60)); });
+    page.listHold = held();
+    page.holdAfter = 1; // The client's reload passes; its check of the row waits.
+    await settle(() => page.create.resolve(answer()));
+    await rest();
+    await settle(() => page.client.onSelect('new'));
+    await settle(() => page.listHold.resolve());
+    await rest();
+    assert.equal(page.deletes.length, 0);
+    assert.equal(page.selected, 'new');
+  });
+
+  await t.test('a conversation opened after the chat was rebuilt stays when the late answer comes', async () => {
+    const page = await open({ options: { openTimeoutMs: 20 } });
+    await page.onNew();
+    await act(async () => { await new Promise(done => setTimeout(done, 60)); });
+    page.list(['old', 'new']); // The server has made it; its answer is still on the way.
+    await page.rebuild();
+    await rest();
+    await settle(() => page.client.onSelect('new'));
+    await settle(() => page.client.onSelect('old'));
+    await settle(() => page.create.resolve(answer()));
+    await rest();
+    assert.equal(page.deletes.length, 0);
+  });
+
+  await t.test('a late answer for a conversation that has a message, from another tab, leaves it', async () => {
+    const page = await open({ options: { openTimeoutMs: 20 } });
+    await page.onNew();
+    await act(async () => { await new Promise(done => setTimeout(done, 60)); });
+    page.said = { new: 'a message from another tab' };
+    await settle(() => page.create.resolve(answer()));
+    await rest();
+    assert.equal(page.deletes.length, 0);
+    assert.equal(page.client.items.map(item => item.id).join(), 'old,new');
+  });
+
+  await t.test('a host refresh that fails after a create that worked still opens it, with no message', async () => {
+    const change = {};
+    change.promise = new Promise((_, refuse) => { change.refuse = refuse; });
+    change.promise.catch(() => {});
+    const page = await open({ change });
+    await page.onNew();
+    await settle(() => page.create.resolve(answer()));
+    await settle(() => change.refuse(new Error('the host could not refresh')));
+    await rest();
+    assert.equal(hasFailed(), false, 'the conversation was made');
+    assert.equal(page.selected, 'new');
+    assert.equal(page.deletes.length, 0);
+  });
+
+  await t.test('picking a conversation during the hold says nothing, and its late answer leaves no empty row', async () => {
+    const page = await open();
+    await page.onNew();
+    await settle(() => page.client.onSelect('old'));
+    await settle(() => page.create.resolve(answer()));
+    await rest();
+    assert.equal(hasFailed(), false);
+    assert.equal(page.deletes.join(), 'new');
+  });
+
+  await t.test('the message goes on the next New, a picked conversation, another conversation, or when closed', async () => {
+    const refuse = async page => { page.create = held(); await page.onNew(); await settle(() => page.create.resolve(new Response('no', { status: 500 }))); assert.equal(hasFailed(), true); };
+    const page = await open();
+    await refuse(page);
+    await settle(() => failed().querySelector('button').click());
+    assert.equal(hasFailed(), false, 'closed');
+    await refuse(page);
+    await settle(() => page.client.onSelect('old'));
+    assert.equal(hasFailed(), false, 'picked');
+    await refuse(page);
+    page.list(['old', 'new']);
+    await settle(() => page.client.reload());
+    await settle(() => page.go('new'));
+    assert.equal(hasFailed(), false, 'the host moved to another conversation');
+    await settle(() => page.go('old'));
+    assert.equal(hasFailed(), true, 'it belongs to the conversation the person stayed in');
+    page.create = held();
+    await page.onNew();
+    assert.equal(hasFailed(), false, 'a new try');
+    await settle(() => page.create.resolve(answer()));
+    assert.equal(page.selected, 'new');
+    assert.equal(hasFailed(), false);
+  });
+
+  await t.test('a working New chat shows no message', async () => {
+    const page = await open();
+    await page.onNew();
+    await settle(() => page.create.resolve(answer()));
+    assert.equal(page.selected, 'new');
+    assert.equal(hasFailed(), false);
+    assert.equal(page.deletes.length, 0);
+  });
+
+  await t.test('the ambient chat shows the message too', async () => {
+    const page = await open({ Chat: AmbientChat, chatProps: { defaultState: 'expanded' } });
+    await page.onNew();
+    await settle(() => page.create.resolve(new Response('no', { status: 500 })));
+    assert.match(failed()?.textContent ?? '', /wasn't made/);
+  });
+
+  await t.test('another owner\'s list leaves the late conversation where it is, with no message', async () => {
+    const page = await open();
+    await page.onNew();
+    await settle(() => page.endpoint('https://fictional.invalid/two'));
+    await settle(() => page.create.resolve(answer()));
+    await rest();
+    assert.equal(hasFailed(), false);
+    assert.equal(page.deletes.length, 0);
   });
 
   await t.test('picking the old conversation during the hold leaves its draft untouched', async () => {

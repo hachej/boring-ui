@@ -490,7 +490,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
       <div className={cn('shrink-0', phone && 'pb-[env(safe-area-inset-bottom)]')}>
         <div className="space-y-2 px-3 empty:hidden [&:has(*)]:pt-2">
           <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} sending={session.sending} />
-          <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} />
+          <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} conversations={conversations} />
           {!expanded && <ChatConnectionNotice compact fallback={{ error: labels.loadFailedShort, closed: labels.disconnectedShort }} state={state} renderConnectionError={renderConnectionError} onReconnect={() => act(controller.connect)} />}
         </div>
         <div className="px-3 pt-2 pb-3">

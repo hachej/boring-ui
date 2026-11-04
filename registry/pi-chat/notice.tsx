@@ -5,6 +5,7 @@ import type { ChatSnapshot } from '@hachej/boring-ui-kit/native-chat';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { Shimmer } from './shimmer';
+import type { ConversationsConfig } from './config';
 import { useChatText } from './labels';
 
 export function Notice({ tone = 'error', children, testid }: { readonly tone?: 'error' | 'info'; readonly children: ReactNode; readonly testid?: string }) {
@@ -13,17 +14,20 @@ export function Notice({ tone = 'error', children, testid }: { readonly tone?: '
 }
 
 /** What went wrong with sending or stopping, and the recovery for an unknown submission. Shared by every chat surface. */
-export function ChatNotices({ state, error, onReconcile, onRetry, natural = false }: {
+export function ChatNotices({ state, error, onReconcile, onRetry, natural = false, conversations }: {
   readonly state: Pick<ChatSnapshot, 'send' | 'stop'>;
   readonly error: string | null;
   readonly onReconcile: () => void;
   readonly onRetry: () => void;
   /** `presentation="natural"`: a blocked send shows a plain label, not the controller's reason. */
   readonly natural?: boolean;
+  readonly conversations?: Pick<ConversationsConfig, 'newFailed' | 'newFailedSeen'> | undefined;
 }) {
   const { labels } = useChatText();
   return <>
     {error && <Notice testid="chat-error">{error}</Notice>}
+    {conversations?.newFailed && <Notice testid="new-chat-failed"><span className="flex-1">{conversations.newFailed.typed ? labels.newChatFailedTyped : labels.newChatFailed}</span>
+      {conversations.newFailedSeen && <Button size="sm" variant="outline" onClick={conversations.newFailedSeen}>{labels.close}</Button>}</Notice>}
     {state.send.kind === 'blocked' && <Notice testid="send-blocked">{natural ? labels.sendUnavailable : state.send.reason}</Notice>}
     {state.send.kind === 'unknown' && <Notice testid="send-unknown"><span className="flex-1">{'reason' in state.send ? state.send.reason : labels.sendUnknown}</span>
       <Button size="sm" variant="outline" onClick={onReconcile}>{labels.checkSubmission}</Button>
