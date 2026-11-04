@@ -24,6 +24,17 @@ const borderWidth = /(?<![\w-])border(?:-[trblxyse])?(?:-(?:\d+|\[(?:\d|\.)[^\]]
 const color = /#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla|oklch|oklab)\([^)]*\)|\b(?:bg|text|border|ring|fill|stroke|outline|decoration|shadow)-(?:white|black|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3})(?:\/\d+)?\b/g;
 const font = /\bfont-\[(?!var\(|--)[^\]]+\]|\bfont-family\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+|\bfontFamily\s*:\s*['"](?!var\()[^'"]+['"]|\bfont\s*:\s*[^;\n}]*\b(?:serif|monospace|system-ui)\b[^;\n}]*/g;
 
+/**
+ * `design-no-x-scroll`: a file that renders a table holds no horizontal scroll container (`overflow-x-auto`, `overflow-x-scroll`, the
+ * CSS or React style property). Tables truncate their cells and stack below their container width instead. Lexical and file-scoped: the
+ * shadcn `table` wrapper (`overflow-x-auto`) must not be imported by a file that renders a table.
+ */
+const tableMarkup = /<table\b|<Table\b|@\/components\/ui\/table\b|\bDataTable\b|role=["']table["']|\bdisplay\s*:\s*['"]?table\b/;
+const horizontalScroll = /(?<![\w-])overflow-x-(?:auto|scroll)(?![\w-])|\boverflowX\s*:\s*['"]?(?:auto|scroll)\b|\boverflow-x\s*:\s*(?:auto|scroll)\b/g;
+export function noXScroll(source) {
+  return tableMarkup.test(source) ? [...source.matchAll(horizontalScroll)] : [];
+}
+
 /** The repository's rules (registry blocks and kit sources). */
 export const DESIGN_RULES = [
   ['shadow', shadow],
@@ -34,6 +45,7 @@ export const DESIGN_RULES = [
   ['motion', /\b(?:duration|delay)-\d+\b|\b(?:transition(?:-[\w-]+)?|animation(?:-[\w-]+)?|transitionDuration|animationDuration)\s*:\s*[^;\n}]*?\b\d*\.?\d+m?s\b[^;\n}]*/g],
   ['style', /\bradix(?:-[\w-]+)?\b/gi],
   ['primitive', /\b(?:function|const|class)\s+(?:Button|IconButton|ActionMenu|\w*Popover|\w*Tooltip|\w*Dialog|\w*Menu)\b|<(?:button|input|textarea|select)\b/g],
+  ['design-no-x-scroll', noXScroll],
 ];
 
 /**
@@ -51,13 +63,14 @@ export const APP_RULES = [
   ['font', /\bfont-family\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+|\bfontFamily\s*:\s*['"](?!var\()[^'"]+['"]|\bfont\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+/g],
   ['literal-value', /\b(?:border-radius|borderRadius|box-shadow|boxShadow|font-size|fontSize|letter-spacing|letterSpacing)\s*:\s*['"]?(?!\s*(?:var\(|calc\(\s*var\(|inherit\b|initial\b|unset\b|none\b|0(?![\w.])))(?=[^;\n}"']*\d)[^;\n}"']*/g],
   ['dark', /(?<![\w-])dark:[^\s"'`]+/g],
+  ['design-no-x-scroll', noXScroll],
 ];
 
 /** Findings `{ file, line, column, rule, value }` of `rules` in `text`; CSS block comments are ignored. */
 export function scanDesign(file, text, rules = DESIGN_RULES) {
   const findings = [];
   const source = text.replace(/\/\*[\s\S]*?\*\//g, match => match.replace(/[^\n]/g, ' '));
-  for (const [rule, pattern] of rules) for (const match of source.matchAll(pattern)) {
+  for (const [rule, pattern] of rules) for (const match of typeof pattern === 'function' ? pattern(source) : source.matchAll(pattern)) {
     const before = text.slice(0, match.index), line = before.split('\n').length;
     findings.push({ file, line, column: match.index - before.lastIndexOf('\n'), rule, value: match[0] });
   }
