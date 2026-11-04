@@ -81,7 +81,7 @@ test('Markdown editor conflicts, revision receipt, cross-tab refresh and size li
         });
       };
       const settled = () => until(() => controller.getSnapshot().save.kind !== 'pending', 'publication settles');
-      const save = async () => { await click('Save'); await settled(); };
+      const save = async () => { await click(props.locale === 'fr' ? 'Enregistrer' : 'Save'); await settled(); };
       const strip = () => container.querySelector('[data-boring="conflict-choices"]');
       const receipt = () => container.querySelector('[data-testid="markdown-save-receipt"]');
       const text = () => controller.getSnapshot().text;
