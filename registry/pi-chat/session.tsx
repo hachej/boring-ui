@@ -137,18 +137,19 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
   readonly sendContext?: import('@hachej/boring-ui-kit/chat-react').ChatSessionFeedback | undefined;
 }
 
-/** After New or fork the cursor goes to the new conversation's box, unless the person moved to another field. Not on a phone, where it would open the keyboard. */
-export function useCursorInOpened(textarea: { readonly current: HTMLTextAreaElement | null }, conversations: { readonly opened?: string | undefined; readonly openedSeen?: (() => void) | undefined; readonly activeId?: string | undefined } | undefined, disabled: boolean) {
+/** After New or fork what the person typed meanwhile goes in the new conversation's box, and the cursor too, unless the person moved to another field. Not on a phone, where it would open the keyboard. */
+export function useCursorInOpened(textarea: { readonly current: HTMLTextAreaElement | null }, conversations: { readonly opened?: string | undefined; readonly openedSeen?: (() => string) | undefined; readonly activeId?: string | undefined } | undefined, composer: { readonly disabled: boolean; readonly text: string; readonly onText: (text: string) => void }, leaving: boolean) {
   const opened = conversations?.opened, activeId = conversations?.activeId, openedSeen = conversations?.openedSeen;
   const done = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (opened === undefined || opened !== activeId || disabled || done.current === opened) return;
+    if (opened === undefined || opened !== activeId || composer.disabled || leaving || done.current === opened) return;
     done.current = opened;
-    openedSeen?.();
+    const typed = openedSeen?.();
+    if (typed) composer.onText(composer.text + typed);
     if (globalThis.matchMedia?.('(pointer: coarse)').matches) return;
     if (globalThis.document?.activeElement?.matches('input, textarea, select, [contenteditable]')) return;
     textarea.current?.focus();
-  }, [textarea, opened, activeId, disabled, openedSeen]);
+  }, [textarea, opened, activeId, composer, leaving, openedSeen]);
 }
 
 /** Presentation adapter; all session state and controller protocols live in the kit. */
