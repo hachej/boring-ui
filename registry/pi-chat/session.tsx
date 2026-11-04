@@ -138,18 +138,20 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
 }
 
 /** After New or fork what the person typed meanwhile goes in the new conversation's box, and the cursor too, unless the person moved to another field. Not on a phone, where it would open the keyboard. */
-export function useCursorInOpened(textarea: { readonly current: HTMLTextAreaElement | null }, conversations: { readonly opened?: string | undefined; readonly openedSeen?: (() => string) | undefined; readonly activeId?: string | undefined } | undefined, composer: { readonly disabled: boolean; readonly text: string; readonly onText: (text: string) => void }, leaving: boolean) {
+export function useCursorInOpened(textarea: { readonly current: HTMLTextAreaElement | null }, conversations: { readonly opened?: string | undefined; readonly openedSeen?: (() => string) | undefined; readonly activeId?: string | undefined } | undefined, composer: { readonly disabled: boolean; readonly text: string; readonly onText: (text: string) => void }, leaving: boolean, conversationId: string | number) {
   const opened = conversations?.opened, activeId = conversations?.activeId, openedSeen = conversations?.openedSeen;
   const done = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (opened === undefined || opened !== activeId || composer.disabled || leaving || done.current === opened) return;
+    // A host can change its active conversation before its controller: this box may still be the one being left.
+    if (String(conversationId) !== opened) return;
     done.current = opened;
     const typed = openedSeen?.();
     if (typed) composer.onText(composer.text + typed);
     if (globalThis.matchMedia?.('(pointer: coarse)').matches) return;
     if (globalThis.document?.activeElement?.matches('input, textarea, select, [contenteditable]')) return;
     textarea.current?.focus();
-  }, [textarea, opened, activeId, composer, leaving, openedSeen]);
+  }, [textarea, opened, activeId, composer, leaving, openedSeen, conversationId]);
 }
 
 /** Presentation adapter; all session state and controller protocols live in the kit. */

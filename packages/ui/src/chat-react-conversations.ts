@@ -168,7 +168,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
       },
       onSelect: (id: string) => { forget(); markOpened(undefined); latest.current.onSelect(id); },
       onNew: () => {
-        if (!opening.current) { dropTyping(); typing.current = holdTyping(); }
+        if (!opening.current) { markOpened(undefined); typing.current = holdTyping(); }
         void open('create', {}).catch(() => {});
       },
       search: async (query: string, { archived }: { readonly archived: boolean }, signal: AbortSignal) =>
