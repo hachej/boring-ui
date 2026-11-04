@@ -165,9 +165,10 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
         await changed().catch(() => {});
         if (conversationId !== undefined && opening.current === run) { selected = true; markOpened(String(conversationId)); latest.current.onSelect(String(conversationId)); }
         // Nobody waits for it any more, so it would stay in the list as an empty row. Only that row goes: not one the person has had open here, not one with a message (another tab), not on another owner's list.
-        else if (name === 'create' && conversationId !== undefined && latest.current.base === base && !visited.current.has(String(conversationId))) {
-          const row = (await call({})).conversations?.find(served => String(served.id) === String(conversationId));
-          if (row && row.lastMessage === null) { await op('delete', { conversationId }); await changed(); }
+        else if (name === 'create' && conversationId !== undefined) {
+          const unused = () => latest.current.base === base && !visited.current.has(String(conversationId));
+          const row = unused() ? (await call({})).conversations?.find(served => String(served.id) === String(conversationId)) : undefined;
+          if (row?.lastMessage === null && unused()) { await op('delete', { conversationId }); await changed(); }
         }
       } finally {
         clearTimeout(timer);
