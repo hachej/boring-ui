@@ -7,7 +7,7 @@ import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 
 const call = id => ({ type: 'toolCall', id, name: 'bash', arguments: { command: `fictional-${id}` } });
-const assistant = content => ({ role: 'assistant', content, api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: 1 });
+const assistant = content => ({ role: 'assistant', content, api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: content.some(part => part.type === 'toolCall') ? 'toolUse' : 'stop', timestamp: 1 });
 const result = (id, isError = false) => ({ role: 'toolResult', toolCallId: id, toolName: 'bash', content: [{ type: 'text', text: isError ? 'Fictional command refused' : 'fictional output' }], isError, timestamp: 2 });
 const user = { id: 1, kind: 'message', model: [{ role: 'user', content: 'Quel est le nom du port ?', timestamp: 0 }] };
 const round = (id, ...model) => ({ id, kind: 'message', byTaskId: 1, model });
@@ -17,6 +17,8 @@ const recoveredBySteps = { entries: [user, round(2, assistant([call('a')])), rou
 const recoveredByWriting = { entries: [user, round(2, assistant([call('a')])), round(3, result('a', true), answer)], docs: {} };
 const endsOnFailure = { entries: [user, round(2, assistant([call('a')])), round(3, result('a', true))], docs: {} };
 const failsAgainLast = { entries: [user, round(2, assistant([call('a')])), round(3, result('a', true), assistant([call('b')])), round(4, result('b'), assistant([call('c')])), round(5, result('c', true))], docs: {} };
+const wroteBeforeFailing = { entries: [user, round(2, assistant([call('a'), { type: 'text', text: 'Je regarde le port.' }])), round(3, result('a', true))], docs: {} };
+const recoveredByCard = { entries: [user, round(2, assistant([call('a')])), round(3, result('a', true), assistant([call('b')])), round(4, result('b'), assistant([]))], docs: {} };
 const stillWorking = { entries: [user, round(2, assistant([call('a')])), round(3, result('a', true), assistant([call('b')]))], docs: { 'pi.live': { run: { taskId: 1 } } } };
 
 test('a failed step the agent got past is quiet for a person, and still there to open', { timeout: 30000 }, async t => {
@@ -40,9 +42,9 @@ test('a failed step the agent got past is quiet for a person, and still there to
   let snapshot;
   const controller = new Proxy({ getSnapshot: () => snapshot, subscribe: () => () => {} }, { get: (target, key) => key in target ? target[key] : async () => {} });
   let drawn = 0;
-  const draw = async (view, mode = 'expert') => {
+  const draw = async (view, mode = 'expert', props = {}) => {
     snapshot = { identity: {}, conversationId: 'fictional', connection: { kind: 'connected' }, view, draft: { text: '', attachments: [], version: 0 }, outbox: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
-    await act(async () => root.render(createElement(PiChat, { key: drawn++, controller, header: false, mode })));
+    await act(async () => root.render(createElement(PiChat, { key: drawn++, controller, header: false, mode, ...props })));
     return element.querySelector('[data-testid=activity]');
   };
   const headerStatus = block => block.querySelector('[data-testid=activity-label]').closest('[data-slot=trace-line]').getAttribute('data-status');
@@ -72,6 +74,11 @@ test('a failed step the agent got past is quiet for a person, and still there to
   await t.test('still working after a failed step: no flash of red', async () => { quiet(await draw(stillWorking), 'running'); });
   await t.test('a run that ends on the failure still says so', async () => { alarmed(await draw(endsOnFailure)); });
   await t.test('a step that went well, then a last one that failed: still says so', async () => { alarmed(await draw(failsAgainLast)); });
+  await t.test('text written in the round of the failing call is not a recovery', async () => { alarmed(await draw(wroteBeforeFailing)); });
+  await t.test('a host card after the failure, then a normal end with no words: quiet', async () => {
+    quiet(await draw(recoveredByCard, 'expert', { renderTool: call => call.id === 'b' ? { content: createElement('div', null, 'Carte du port'), inline: true } : undefined }));
+    assert.match(element.textContent, /Carte du port/);
+  });
   await t.test('developer mode stays red and open', async () => {
     alarmed(await draw(recoveredBySteps, 'developer'));
     alarmed(await draw(stillWorking, 'developer'));
