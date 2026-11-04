@@ -5,7 +5,6 @@ import type { ReactNode } from 'react';
 import { CheckIcon } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { MockupViewer } from '../mockup-viewer/mockup-viewer';
 import { usePhone } from '../utils/use-media';
@@ -139,7 +138,7 @@ export function LooksViewer({ text, path = '', read, onPick, locale = 'en', onRe
     </section>}
     {spec.layouts.length > 0 && <section aria-label={labels.layouts} data-testid="layouts-grid" className="flex flex-col gap-3">
       {spec.looks.length > 1 && <h2 className="text-sm font-semibold">{labels.layouts}</h2>}
-      <p className="text-sm text-muted-foreground">{labels.layoutsIn(inLook.label)}</p>
+      <p className="text-xs text-muted-foreground">{labels.layoutsIn(inLook.label)}</p>
       <div className={spec.layouts.length > 2 ? 'grid gap-4 md:grid-cols-2 xl:grid-cols-3' : 'grid gap-4 md:grid-cols-2'}>
         {spec.layouts.map(item => <Choice key={item.id} testId={`layout-${item.id}`} title={item.label} line={item.why} chosen={layout === item.id} labels={labels} onPick={() => pick('layout', item.id, item.label)}>
           <ScaledMockup text={files.texts.get(item.mockup)!} theme={inLook.theme} mode={mode} title={labels.layout(item.label)} onReady={frameReady(`layout:${item.id}`)} />
@@ -150,17 +149,18 @@ export function LooksViewer({ text, path = '', read, onPick, locale = 'en', onRe
 }
 
 function Choice({ testId, title, line, chosen, labels, onPick, extra, children }: { readonly testId: string; readonly title: string; readonly line?: string | undefined; readonly chosen: boolean; readonly labels: (typeof LABELS)['en' | 'fr']; readonly onPick: () => void; readonly extra?: ReactNode; readonly children: ReactNode }) {
-  return <Card data-testid={testId} data-chosen={chosen ? '' : undefined}>
-    <CardContent>{children}</CardContent>
-    <CardHeader>
-      <CardTitle>{title}</CardTitle>
-      {line && <CardDescription>{line}</CardDescription>}
-      <CardAction>
+  // A flat token surface, not a shadcn Card: no ring or shadow, and never a card inside a card.
+  return <section data-testid={testId} data-chosen={chosen ? '' : undefined} className="flex min-w-0 flex-col gap-2 rounded-[var(--radius-lg)] bg-card p-3 text-card-foreground">
+    <div className="min-w-0">{children}</div>
+    <header className="flex min-w-0 flex-col gap-1">
+      <h3 className="m-0 text-sm font-semibold">{title}</h3>
+      {line && <p className="m-0 text-xs text-muted-foreground">{line}</p>}
+      <div className="flex justify-end">
         <Button size="sm" variant={chosen ? 'default' : 'outline'} aria-pressed={chosen} data-testid={`${testId}-pick`} onClick={onPick}>
           {chosen && <CheckIcon data-icon="inline-start" aria-hidden="true" />}{chosen ? labels.picked : labels.pick}
         </Button>
-      </CardAction>
+      </div>
       {extra}
-    </CardHeader>
-  </Card>;
+    </header>
+  </section>;
 }

@@ -12,7 +12,6 @@ import type { KeyboardEvent, ReactNode, TouchEvent } from 'react';
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CompassIcon, EllipsisIcon, InfoIcon, MessageSquarePlusIcon, TriangleAlertIcon, WorkflowIcon, XIcon } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -119,7 +118,7 @@ function HowItWorks({ maquette, source, labels, open, onOpenChange }: {
       <DialogHeader><DialogTitle>{labels.howItWorks}</DialogTitle></DialogHeader>
       {diagram ? <DiagramView diagram={diagram} highlight={highlighted.find(item => item.name === shown)?.path ?? diagram.path} labels={labels} />
         : diagram === null ? <Alert variant="destructive" data-testid="maquette-how-error"><TriangleAlertIcon aria-hidden="true" /><AlertTitle>{labels.diagramUnavailable}</AlertTitle></Alert>
-          : <p role="status" className="m-0 text-sm text-muted-foreground">{labels.loading}</p>}
+          : <p role="status" className="m-0 text-xs text-muted-foreground">{labels.loading}</p>}
       {highlighted.length > 0 && <div role="group" className="flex flex-wrap gap-2">
         {highlighted.map(item => <Button key={item.name} type="button" size="sm" variant={shown === item.name ? 'default' : 'outline'} aria-pressed={shown === item.name}
           data-testid="maquette-case" className="pointer-coarse:min-h-11" onClick={() => setShown(current => current === item.name ? null : item.name)}>{item.name}</Button>)}
@@ -222,7 +221,7 @@ function Walkthrough({ maquette, labels, fragment, path, comments, read, publish
       <div className="flex flex-1 items-center justify-center gap-1">
         <Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.previous} data-testid="maquette-previous" disabled={index <= 0} onClick={() => step(-1)}><ChevronLeftIcon aria-hidden="true" /></Button>
         {tour ? <Dots count={count} index={index} label={labels.tourStep(index + 1, count)} />
-          : <span data-testid="maquette-position" className="min-w-10 text-center text-sm text-muted-foreground tabular-nums">{index + 1} / {count}</span>}
+          : <span data-testid="maquette-position" className="min-w-10 text-center text-xs text-muted-foreground tabular-nums">{index + 1} / {count}</span>}
         <Button type="button" variant="ghost" size="icon-sm" className={ICON} aria-label={labels.next} data-testid="maquette-next" disabled={index >= count - 1} onClick={() => step(1)}><ChevronRightIcon aria-hidden="true" /></Button>
       </div>
       {comments && <Tooltip><TooltipTrigger render={<Toggle className={ICON} aria-label={labels.comment} pressed={comments.active}
@@ -237,13 +236,14 @@ function Walkthrough({ maquette, labels, fragment, path, comments, read, publish
           </DropdownMenuContent>
         </DropdownMenu>}
     </nav>
-    {caption && <p data-testid="maquette-caption" className="m-0 line-clamp-2 px-1 text-sm text-pretty text-muted-foreground">{caption}</p>}
+    {caption && <p data-testid="maquette-caption" className="m-0 line-clamp-2 px-1 text-xs text-pretty text-muted-foreground">{caption}</p>}
 
     <div className={maquette.device === 'phone' ? 'mx-auto flex w-full max-w-sm flex-col gap-2' : 'flex min-w-0 flex-col gap-2'}>
       <div className="min-w-0" data-hint={firstView ? 'pulse' : undefined} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-        <Card data-testid="maquette-frame" data-device={maquette.device ?? 'panel'}><CardContent>
+        {/* One flat surface for the screen; the blocks inside are the app's own components, not a card in a card. */}
+        <div data-testid="maquette-frame" data-device={maquette.device ?? 'panel'} className="rounded-[var(--radius-lg)] bg-card p-3 text-card-foreground">
           <MaquetteScreenView key={current.id} maquette={maquette} screen={current} links={links} labels={labels} headingRef={heading} />
-        </CardContent></Card>
+        </div>
       </div>
       {current.note && <div className="flex min-w-0 items-center gap-1 px-1">
         <p data-testid="maquette-note" title={current.note} className="m-0 min-w-0 flex-1 truncate text-xs text-muted-foreground">{current.note}</p>
