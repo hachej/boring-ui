@@ -196,6 +196,8 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
   // Working from the moment of sending: the status shows before the server has taken the message.
   const sending = Boolean(echo?.some(item => item.state === 'sending'));
   const working = Boolean(run) || sending;
+  const delivering = useRef<Promise<unknown>>(Promise.resolve());
+  const settledQuestion = useRef<string | undefined>(undefined);
   const waitingFor = waitingPart(derived.rows);
   const waitingForAnswer = waitingFor !== undefined;
   // The run waits for this answer, so a message queued behind it would never go: what the person types answers the question.
@@ -204,18 +206,25 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
   /**
    * Answers the waiting question with this message. A picture cannot be part of an answer, so it follows as its own message. A question that
    * cannot take the message (options only, too long, not started) is superseded: the run that holds it stops, or the message would wait behind it.
+   * One at a time and once per question: a second message goes after the first, as an ordinary message, and stops nothing.
    */
-  const deliver = async (text: string, images: readonly ChatAttachment[], restore: { readonly text: string; readonly attachments: readonly ChatAttachment[] }) => {
-    if (question !== undefined && actions?.answer) {
-      const outcome = await actions.answer(question, text.trim() || images.map(image => image.name).join(', '));
-      if (outcome.kind === 'answered') return images.length ? await controller.send('followUp', { text: '', attachments: images, restore: { text: '', attachments: images } }) ?? true : true;
-      if ((outcome.kind === 'denied' || outcome.kind === 'unknown-question') && run) await controller.stop();
-    }
-    return controller.send('followUp', { text, attachments: images, restore });
+  const deliver = (text: string, images: readonly ChatAttachment[], restore: { readonly text: string; readonly attachments: readonly ChatAttachment[] }) => {
+    const turn = delivering.current.catch(() => {}).then(async () => {
+      if (question !== undefined && actions?.answer && settledQuestion.current !== question) {
+        const outcome = await actions.answer(question, text.trim() || images.map(image => image.name).join(', '));
+        settledQuestion.current = question;
+        if (outcome.kind === 'answered') return images.length ? await controller.send('followUp', { text: '', attachments: images, restore: { text: '', attachments: images } }) ?? true : true;
+        if ((outcome.kind === 'denied' || outcome.kind === 'unknown-question') && run) await controller.stop();
+      }
+      return controller.send('followUp', { text, attachments: images, restore });
+    });
+    delivering.current = turn;
+    return turn;
   };
   const send = () => {
     if (sendBlocked || !current()) return;
-    const attach = feedback && feedback.count > 0 ? feedback.attach : undefined;
+    // An answer is what the person typed, shown on the card as is: pending feedback stays for their next message.
+    const attach = feedback && feedback.count > 0 && !answersQuestion ? feedback.attach : undefined;
     if (attach) {
       // The pending feedback goes with this message: the host attaches it to the text, then the native send reads the draft.
       act(async () => {
@@ -228,7 +237,7 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
         if (attached.kind === 'refused') { putBack(typed.text, typed.attachments); throw new Error(attached.reason); }
         if (!current()) { putBack(typed.text, typed.attachments); return; }
         try {
-          const submission = await deliver(attached.text, typed.attachments, { text: withoutKindMentions(typed.text, mentions), attachments: typed.attachments });
+          const submission = await controller.send('followUp', { text: attached.text, attachments: typed.attachments, restore: { text: withoutKindMentions(typed.text, mentions), attachments: typed.attachments } });
           if (submission) feedback?.sent();
         } catch (cause) { putBack(typed.text, typed.attachments); throw cause; }
       });
