@@ -126,6 +126,7 @@ export interface ConversationsConfig {
   readonly creating?: boolean | undefined;
   /** The conversation New or fork just opened: once it is `activeId`, the cursor goes to its message box, on a computer. */
   readonly opened?: string | undefined;
+  readonly openedSeen?: (() => void) | undefined;
   readonly loading?: boolean | undefined;
   /**
    * Server-side search: with it, a typed query (or the Archived filter) lists what this returns instead of filtering `items`

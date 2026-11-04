@@ -15,8 +15,9 @@ export interface ConversationsClient {
   readonly activeId: string | undefined;
   /** New or fork is on its way: the conversation on screen is about to be left, so it must take no message (`PiChat` disables its composer). */
   readonly creating: boolean;
-  /** The conversation New or fork just opened, for a second: `PiChat` puts the cursor in its box once, and a later remount does not. */
+  /** The conversation New or fork just opened, for up to three seconds: `PiChat` puts the cursor in its box once, then calls `openedSeen`, so a later remount does not. */
   readonly opened: string | undefined;
+  readonly openedSeen: () => void;
   readonly reload: () => Promise<void>;
   readonly onSelect: (id: string) => void;
   readonly onNew: () => void;
@@ -54,10 +55,26 @@ const item = (served: ServedConversation): ConversationItem => ({ id: String(ser
  * delete and fork. New and fork select the conversation they made through `onSelect`. `onChange` runs after every change the person made
  * (the host may reload what depends on the list). `fetch` is the host's authenticated fetch. Returns `undefined` until the first list arrives.
  */
+const OPENED_MS = 3000;
+
+/** The clicked button keeps the focus until the new box is back, so a Space typed then would press New again. */
+function letGoOfButton() {
+  const focused = globalThis.document?.activeElement;
+  if (!focused?.matches('button, [role="button"]')) return undefined;
+  (focused as HTMLElement).blur();
+  return focused as HTMLElement;
+}
+
 export function useConversationsClient({ endpoint, fetch, activeId, onSelect, onChange, pollMs = 4000, openTimeoutMs = 15000 }: ConversationsClientOptions): ConversationsClient | undefined {
   const [items, setItems] = useState<readonly ConversationItem[] | undefined>();
   const [creating, setCreating] = useState(false);
   const [opened, setOpened] = useState<string | undefined>();
+  const openedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const markOpened = useCallback((id: string | undefined) => {
+    clearTimeout(openedTimer.current);
+    if (id !== undefined) openedTimer.current = setTimeout(() => setOpened(undefined), OPENED_MS);
+    setOpened(id);
+  }, []);
   // The New or fork on its way; forgetting it gives the composer back, and its late answer then moves nobody.
   const opening = useRef<object | undefined>(undefined);
   const forget = useCallback(() => { opening.current = undefined; setCreating(false); }, []);
@@ -86,7 +103,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
   const reload = useCallback(() => list(), [list]);
   // Another endpoint (another owner's list) starts empty; switching conversations only reloads.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- a new endpoint clears the old owner's list once, after commit
-  useEffect(() => { setItems(undefined); setOpened(undefined); forget(); }, [base, forget]);
+  useEffect(() => { setItems(undefined); markOpened(undefined); forget(); }, [base, forget, markOpened]);
   useEffect(() => {
     if (base === undefined) return;
     let off = false;
@@ -109,7 +126,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
       try {
         const { conversationId } = await op(name, body);
         await changed();
-        if (conversationId !== undefined && opening.current === run) { setOpened(String(conversationId)); setTimeout(() => setOpened(undefined), 1000); latest.current.onSelect(String(conversationId)); }
+        if (conversationId !== undefined && opening.current === run) { markOpened(String(conversationId)); latest.current.onSelect(String(conversationId)); }
       } finally {
         clearTimeout(timer);
         if (opening.current === run) forget();
@@ -117,8 +134,12 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
     };
     return {
       items, activeId, creating, opened, reload,
-      onSelect: (id: string) => { forget(); setOpened(undefined); latest.current.onSelect(id); },
-      onNew: () => { void open('create', {}).catch(() => {}); },
+      openedSeen: () => markOpened(undefined),
+      onSelect: (id: string) => { forget(); markOpened(undefined); latest.current.onSelect(id); },
+      onNew: () => {
+        const button = letGoOfButton();
+        void open('create', {}).catch(() => { if (globalThis.document?.activeElement === globalThis.document?.body) button?.focus(); });
+      },
       search: async (query: string, { archived }: { readonly archived: boolean }, signal: AbortSignal) =>
         ((await call({ ...(query ? { q: query } : {}), ...(archived ? { archived: '1' } : {}) }, undefined, signal)).conversations ?? []).map(item),
       rename: async (id: string, title: string) => { await op('rename', { conversationId: id, title }); await changed(); },
@@ -130,7 +151,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
         await open('fork', { conversationId: from, at });
       },
     };
-  }, [items, activeId, creating, opened, call, reload, forget]);
+  }, [items, activeId, creating, opened, call, reload, forget, markOpened]);
 }
 
 /** Compatibility spelling retained for one release. */
