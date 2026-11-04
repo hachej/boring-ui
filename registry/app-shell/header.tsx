@@ -113,7 +113,7 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text, slotRef, me
     {compact ? (back ?? (menu ? <SidebarTrigger /> : avatar)) : <><SidebarTrigger />{back}</>}
     {spec?.leading != null && <div data-testid="header-leading" className="flex shrink-0 items-center gap-1">{spec.leading}</div>}
     <div className="min-w-0 flex-1 px-1">
-      <h1 data-testid="header-title" className={`m-0 truncate text-base leading-tight font-semibold ${spec?.titleFace === 'sans' ? 'font-sans' : '[font-family:var(--font-display,var(--font-sans))]'}`}>{spec?.title ?? fallbackTitle}</h1>
+      <h1 data-testid="header-title" className={`m-0 truncate text-sm leading-tight font-semibold ${spec?.titleFace === 'sans' ? 'font-sans' : '[font-family:var(--font-display,var(--font-sans))]'}`}>{spec?.title ?? fallbackTitle}</h1>
       {spec?.subtitle && <p data-testid="header-subtitle" className="m-0 truncate text-xs text-muted-foreground">{spec.subtitle}</p>}
     </div>
     {/* An embedded page's own controls (`ScreenHeaderSlotContext`, for example AgentWorkspace layout="embedded"), so it needs no second row. */}
