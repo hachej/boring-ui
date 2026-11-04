@@ -19,6 +19,7 @@ The npm side of the kit: Pi-based agent definitions and handlers, the workspace 
 - `pkg-agent-room-metering` shared-room entries, native usage metering and per-request context; host policy remains external. `packages/agent/src/room/`, `metering.ts`.
 - `pkg-agent-runs` one-call runs: the result protocol (schema, validator, repair budget), the run ends and their delivery once, the outbox of starts, and the runner over a person's SQLite store. `packages/agent/src/run-result.ts`, `runs.ts`, `run-ledger.ts`, `run-outbox.ts`. Drive: `test/packages/agent-runs.test.mjs`.
 - `pkg-files-workspace` one workspace provider, journal, SQLite, revision handler. `packages/files/src/workspace.ts`, `revision-handler.ts`.
+- `pkg-files-sniff` a file's media type from its bytes; office documents whatever their zip entry order, from a head or the whole file. `packages/files/src/file-types.ts`.
 - `pkg-execution` virtual bash and git, remote shell and files, AWS interpreter. `packages/execution/src/`.
 - `pkg-ui-kit` headless controllers, editors and viewers, registry items under `r/`. `packages/ui/src/`.
 - `pkg-ui-markdown-labels` Markdown editor English/French text and per-key `labels` overrides, including accessible names, proposal diff, preserved blocks and recovery controls; source textarea placeholders. `packages/ui/src/markdown-editor-labels.ts`, `markdown-editor.tsx`.
@@ -47,7 +48,7 @@ Preconditions: `npm ci`; run from the repository root.
 - **Unlisted skills.** `pkg-agent-skills-unlisted`: `node --test test/packages/agent-skills-unlisted.test.mjs`.
 - **Actions.** `pkg-agent-actions`: `node --test test/packages/agent-actions.test.mjs`; `npm run test:definitions-consumer -- --actions` repeats public behavior and strict types from packed output.
 - **Agent.** `pkg-agent-define`, `pkg-agent-transport`, `pkg-agent-capabilities`, `pkg-agent-context`, `pkg-agent-questions-delivery`, `pkg-agent-room-metering`, `pkg-agent-runs`: `npm test`, files `test/packages/agent-*.test.mjs`; background task composition is driven by `npm run workspace-demo:journey` and the native question/delivery tests.
-- **Files.** `pkg-files-workspace`: `npm test`, files `test/packages/files-*.test.mjs`.
+- **Files.** `pkg-files-workspace`, `pkg-files-sniff`: `npm test`, files `test/packages/files-*.test.mjs`.
 - **Execution.** `pkg-execution`: `npm test`, files `test/packages/execution-*.test.mjs`.
 - **UI kit.** `pkg-ui-kit`, `pkg-ui-experiences`, `pkg-ui-remote-chat`: `npm test`, files `test/packages/ui-*.test.mjs`; drive the experience flow with `npm run morning:journey` and remote chat with `npm run workspace-app:journey`.
 - **Markdown localization.** `pkg-ui-markdown-labels`: mount `MarkdownEditor` with `locale="fr"`, edit/save and review a proposal; set `labels={{ saved: 'Conservé', sourceName: title => title }}` and switch to source to check the exact name and placeholder. Drive `node --test test/packages/ui-markdown-editor.test.mjs test/packages/ui-markdown-proposals.test.mjs`.
