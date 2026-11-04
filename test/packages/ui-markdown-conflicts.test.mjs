@@ -106,8 +106,8 @@ test('Markdown editor conflicts, revision receipt, cross-tab refresh and size li
     return { n, tab, remoteRevision };
   }
 
-  /** Nothing the reader could not undo happened: same text, same base, same buffer. */
-  const frozen = tab => { const { text, base, bufferVersion, dirty, remote } = tab.controller.getSnapshot(); return JSON.stringify({ text, base, bufferVersion, dirty, remote }); };
+  /** Reviewing changes nothing of the person's: same text, same base, same buffer. What the editor knows of the remote may move. */
+  const frozen = tab => { const { text, base, bufferVersion, dirty } = tab.controller.getSnapshot(); return JSON.stringify({ text, base, bufferVersion, dirty }); };
 
   await t.test('a conflict result shows the ConflictChoices strip with exactly the three actions', async t => {
     const { tab } = await conflicted(t);
@@ -224,6 +224,81 @@ test('Markdown editor conflicts, revision receipt, cross-tab refresh and size li
     await tab.click('Keep mine');
     await until(() => tab.controller.getSnapshot().save.result?.kind === 'saved', 'keep mine saves');
     assert.equal(await n.saved(), 'local\n');
+  });
+
+  const reviewPanel = tab => tab.container.querySelector('[data-boring="conflict-choices"] [data-boring="proposal-diff"]');
+  const removedLines = tab => [...reviewPanel(tab).querySelectorAll('[data-diff="remove"] [data-diff-text]')].map(node => node.textContent);
+
+  await t.test('Review diff opens on a remote newer than the one the tab knew, and Keep mine acts on what was shown', async t => {
+    const n = await note(t, 'original\n');
+    const tab = await n.openTab({ crossTabRefresh: false });
+    await tab.input('local\n');
+    const r1 = await n.writeElsewhere('remote one\n');
+    await act(async () => { await tab.controller.actions.refresh(); });
+    assert.equal(tab.controller.getSnapshot().remote?.target.revision, r1, 'the tab knows R1');
+    const r2 = await n.writeElsewhere('remote two\n');
+    const before = frozen(tab), writes = n.writes();
+    await tab.click('Review diff');
+    await until(() => reviewPanel(tab) !== null, 'the diff opens on the first click');
+    assert.deepEqual(removedLines(tab), ['remote two'], 'it shows the newest saved text');
+    assert.equal(frozen(tab), before, 'the local text and base are untouched');
+    assert.equal(n.writes(), writes);
+    assert.equal(await n.saved(), 'remote two\n');
+    await tab.click('Keep mine');
+    await until(() => tab.controller.getSnapshot().save.result?.kind === 'saved', 'keep mine saves first time');
+    assert.equal(tab.controller.getSnapshot().save.result.receipt.changes[0].before.revision, r2, 'over the revision reviewed');
+    assert.equal(tab.container.textContent.includes('changed again'), false, 'no needless second conflict');
+    assert.equal(await n.saved(), 'local\n');
+  });
+
+  await t.test('after a refused save, reviewing a newer remote also lets Keep mine go over it', async t => {
+    const { n, tab } = await conflicted(t);
+    const r2 = await n.writeElsewhere('remote two\n');
+    await tab.click('Review diff');
+    await until(() => reviewPanel(tab) !== null, 'the diff opens');
+    assert.deepEqual(removedLines(tab), ['remote two']);
+    await tab.click('Keep mine');
+    await until(() => tab.controller.getSnapshot().save.result?.kind === 'saved', 'keep mine saves first time');
+    assert.equal(tab.controller.getSnapshot().save.result.receipt.changes[0].before.revision, r2);
+    assert.equal(tab.container.textContent.includes('changed again'), false);
+  });
+
+  await t.test('a revision landing after the review is still a new conflict with no write, and can be reviewed', async t => {
+    const n = await note(t, 'original\n');
+    const tab = await n.openTab({ crossTabRefresh: false });
+    await tab.input('local\n');
+    await n.writeElsewhere('remote one\n');
+    await act(async () => { await tab.controller.actions.refresh(); });
+    await n.writeElsewhere('remote two\n');
+    await tab.click('Review diff');
+    await until(() => reviewPanel(tab) !== null, 'the diff opens');
+    const r3 = await n.writeElsewhere('remote three\n');
+    const writes = n.writes();
+    await tab.click('Keep mine');
+    await until(() => tab.controller.getSnapshot().remote?.target.revision === r3, 'the new revision is noticed');
+    assert.equal(n.writes(), writes, 'nothing was published');
+    assert.equal(await n.saved(), 'remote three\n');
+    assert.equal(tab.text(), 'local\n');
+    assert.ok(tab.container.textContent.includes('The saved document changed again. Nothing was saved.'));
+    await until(() => !tab.button('Review diff').disabled, 'the strip is free again');
+    await tab.click('Review diff');
+    await until(() => reviewPanel(tab) !== null, 'the diff opens again');
+    assert.deepEqual(removedLines(tab), ['remote three']);
+  });
+
+  await t.test('reviewing from a clean tab with a refused save never replaces its text', async t => {
+    const n = await note(t, 'original\n');
+    const tab = await n.openTab({ crossTabRefresh: false });
+    await n.writeElsewhere('remote one\n');
+    await act(async () => { await tab.controller.flush(tab.controller.actions.selection()); });
+    assert.equal(tab.controller.getSnapshot().save.result?.kind, 'conflict');
+    assert.equal(tab.controller.getSnapshot().dirty, false);
+    const r2 = await n.writeElsewhere('remote two\n');
+    await tab.click('Review diff');
+    await until(() => reviewPanel(tab) !== null, 'the diff opens');
+    assert.equal(tab.text(), 'original\n', 'a clean tab keeps its text too');
+    assert.equal(tab.container.querySelector('textarea').value, 'original\n');
+    assert.equal(tab.controller.getSnapshot().remote?.target.revision, r2);
   });
 
   await t.test('a remote that was deleted can only be recreated on purpose', async t => {
