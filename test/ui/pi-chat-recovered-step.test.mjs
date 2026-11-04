@@ -50,7 +50,7 @@ test('a failed step the agent got past is quiet for a person, and still there to
     assert.equal(block.dataset.state, state);
     assert.equal(block.dataset.open, 'false', 'not opened by itself');
     assert.notEqual(headerStatus(block), 'error', 'not red');
-    assert.equal(element.querySelector('[role=alert]'), null, 'no failure text on the page');
+    assert.equal(Boolean(element.querySelector('[role=alert]')), false, 'no failure text on the page');
     assert.doesNotMatch(element.textContent, /fictional-a|Fictional command refused/, 'no shell text on the page');
   };
   const alarmed = block => {
