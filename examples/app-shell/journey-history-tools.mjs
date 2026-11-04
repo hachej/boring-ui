@@ -80,8 +80,9 @@ try {
   const wheelTo = async (deltaY, done) => {
     const centre = await browser.evaluate(`(() => { const box = ${viewport}.getBoundingClientRect(); return { x: box.left + box.width / 2, y: box.top + Math.min(box.height, innerHeight - box.top) / 2 }; })()`);
     for (let turn = 0; turn < 60 && !await browser.evaluate(done); turn++) { await browser.wheel(centre.x, centre.y, deltaY); await pause(100); }
-    for (let extra = 0; extra < 5; extra++) { await browser.wheel(centre.x, centre.y, deltaY); await pause(100); }
-    await pause(300);
+    // Chromium keeps a run of wheel events on the scroller it started on: apart, each is a new gesture, and that is the one that goes on to the page at the list's end.
+    await pause(1000);
+    for (let gesture = 0; gesture < 3; gesture++) { await browser.wheel(centre.x, centre.y, deltaY); await pause(1000); }
   };
   const lastInView = `(() => { const row = ${rowsOf}.at(-1).getBoundingClientRect(), box = ${viewport}.getBoundingClientRect(), panel = ${q(SHEET)}.getBoundingClientRect(); return row.top >= box.top - 1 && row.bottom <= box.bottom + 1 && row.bottom <= panel.bottom + 1 && row.bottom <= innerHeight; })()`;
 
