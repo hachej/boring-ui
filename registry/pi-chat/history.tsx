@@ -154,7 +154,7 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
       {navigation}
       {failure && <p role="alert" className="m-0 shrink-0 px-3 pt-2 text-xs text-destructive">{failure}</p>}
       {/* A sheet has only a max-height, so the viewport's stock height of 100% resolves to its content: a flex column makes it shrink to the room left, and fill it in a parent with a set height. */}
-      <ScrollArea className="flex min-h-0 flex-1 flex-col [&>[data-slot=scroll-area-viewport]]:h-auto [&>[data-slot=scroll-area-viewport]]:grow" aria-busy={loading ? 'true' : undefined}>
+      <ScrollArea className="flex min-h-0 flex-1 flex-col [&>[data-slot=scroll-area-viewport]]:h-auto [&>[data-slot=scroll-area-viewport]]:grow [&>[data-slot=scroll-area-viewport]]:overscroll-contain" aria-busy={loading ? 'true' : undefined}>
         {found?.failed && <p role="alert" data-testid="conversations-search-failed" className="m-0 px-3 py-8 text-center text-sm text-destructive">{labels.searchFailed}</p>}
         {total === 0 && !found?.failed && <p role="status" data-testid="conversations-empty" className="m-0 px-3 py-8 text-center text-sm text-muted-foreground">
           {loading ? labels.loadingConversations : query.trim() ? labels.noMatch(query.trim()) : archived ? labels.noArchived : labels.noConversations}</p>}

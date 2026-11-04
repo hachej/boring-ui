@@ -81,6 +81,11 @@ jobs:
           path: ${{ runner.temp }}/evidence/app-shell
           retention-days: 7
           if-no-files-found: warn
+      - name: History in PiChat tools (5, 9, 12 rows at 1280x800, real wheel)
+        if: matrix.shard == 'workspace'
+        run: node scripts/retry-journey.mjs app-shell:journey:history-tools
+        env:
+          APP_EVIDENCE: ${{ runner.temp }}/evidence/history-tools
       - name: Long conversation list stays inside its sheet, every place it is drawn
         if: matrix.shard == 'workspace'
         run: node scripts/retry-journey.mjs app-shell:journey:history-list

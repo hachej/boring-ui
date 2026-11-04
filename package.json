@@ -56,6 +56,7 @@
     "app-shell:journey": "node examples/app-shell/journey.mjs",
     "app-shell:journey:workspace": "node examples/app-shell/journey-workspace.mjs",
     "app-shell:journey:history-list": "node examples/app-shell/journey-history-list.mjs",
+    "app-shell:journey:history-tools": "node examples/app-shell/journey-history-tools.mjs",
     "app-shell:journey:placed": "node examples/app-shell/journey-placed.mjs",
     "app-shell:journey:target": "node examples/app-shell/journey-target.mjs",
     "app-shell:journey:documents": "node examples/app-shell/journey-documents.mjs",
