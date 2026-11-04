@@ -30,22 +30,29 @@ test('a message sent right after New chat does not reach the conversation being 
     for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
   });
 
-  const chat = (id, text) => {
-    const sends = [], typed = [];
-    const snapshot = { identity: {}, conversationId: id, connection: { kind: 'connected' }, view: { entries: [], docs: {} }, draft: { text, attachments: [], version: 0 }, outbox: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
-    return { sends, typed, controller: new Proxy({
+  const chat = (id, text, docs = {}) => {
+    const sends = [], typed = [], stops = [];
+    const snapshot = { identity: {}, conversationId: id, connection: { kind: 'connected' }, view: { entries: [], docs }, draft: { text, attachments: [], version: 0 }, outbox: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
+    return { sends, typed, stops, controller: new Proxy({
       getSnapshot: () => snapshot, subscribe: () => () => {}, setText: value => { typed.push(value); }, setAttachments: () => {},
       send: async (kind, content) => { sends.push({ kind, content }); return { id: 'fictional-submission' }; },
+      stop: async () => { stops.push('stop'); },
     }, { get: (target, key) => key in target ? target[key] : async () => {} }) };
   };
 
   let drawn = 0;
-  const open = async ({ create = held(), reload, change, oldText = 'Bonjour', Chat = PiChat, chatProps = {}, options = {} } = {}) => {
-    const chats = { old: chat('old', oldText), new: chat('new', 'Salut') };
+  const open = async ({ create = held(), reload, change, oldText = 'Bonjour', Chat = PiChat, chatProps = {}, options = {}, oldDocs } = {}) => {
+    const chats = { old: chat('old', oldText, oldDocs), new: chat('new', 'Salut') };
     const page = { chats, creates: 0, create, selected: 'old', endpoint: undefined };
     let listed = ['old'];
     const fetch = async request => {
       if (request.method === 'POST') { page.creates += 1; const reply = await create.promise; if (reply.ok) listed = ['old', 'new']; return reply; }
+      // One poll is asked before the create and answers late; the first read after the create is the client's reload, and later polls stay out.
+      if (page.lagging) {
+        if (!page.lagging.asked) { page.lagging.asked = true; const rows = listed; await page.lagging.promise; return Response.json({ conversations: rows.map(row) }); }
+        if (listed.length === 1 || page.lagging.reloaded) return new Promise(() => {});
+        page.lagging.reloaded = true;
+      }
       if (listed.length > 1) await reload?.promise;
       return Response.json({ conversations: listed.map(row) });
     };
@@ -156,6 +163,38 @@ test('a message sent right after New chat does not reach the conversation being 
     assert.equal(page.chats.old.typed.length, 0);
     await settle(() => page.create.resolve(answer()));
   });
+
+  await t.test('a poll asked before the create and answering after the reload does not take the new conversation back', async () => {
+    const change = held();
+    const page = await open({ change, options: { pollMs: 5 } });
+    page.lagging = held();
+    await act(async () => { await new Promise(done => setTimeout(done, 30)); });
+    assert.equal(page.lagging.asked, true, 'the poll is out');
+    await page.onNew();
+    await settle(() => page.create.resolve(answer()));
+    await settle(() => page.lagging.resolve());
+    await settle(() => change.resolve());
+    assert.equal(page.selected, 'new', 'it did not fall back to the old conversation');
+    await submit();
+    assert.equal(page.chats.new.sends.length, 1, 'the message goes to the new conversation');
+    assert.equal(page.chats.old.sends.length, 0);
+  });
+
+  for (const [name, Chat, chatProps] of [['PiChat', PiChat, {}], ['AmbientChat', AmbientChat, { defaultState: 'expanded' }]]) {
+    await t.test(`${name}: a running reply can still be stopped while leaving`, async () => {
+      const page = await open({ Chat, chatProps, oldDocs: { 'pi.live': { run: { taskId: 1 } } } });
+      await page.onNew();
+      assert.equal(enabled(), false, 'the composer waits for the new conversation');
+      const stop = element.querySelector('[data-testid=composer-submit]');
+      assert.equal(stop.getAttribute('data-state'), 'stop');
+      assert.equal(stop.disabled, false, 'Stop stays available');
+      await act(async () => { stop.click(); });
+      assert.equal(page.chats.old.stops.length, 1, 'the reply is stopped');
+      await submit();
+      assert.equal(page.chats.old.sends.length, 0, 'and nothing was queued on the old conversation');
+      await settle(() => page.create.resolve(answer()));
+    });
+  }
 
   await t.test('AmbientChat waits too', async () => {
     const page = await open({ Chat: AmbientChat, chatProps: { defaultState: 'expanded' } });
