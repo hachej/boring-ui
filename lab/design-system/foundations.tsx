@@ -1,7 +1,8 @@
 import { Block, Section } from './kit';
 
 const core = ['background', 'card', 'foreground', 'primary', 'secondary', 'accent', 'muted', 'muted-foreground', 'border', 'ring', 'sidebar'];
-const status = ['destructive', 'success', 'warning', 'info'];
+/** Warning and info are optional template extras: the theme item does not set them, and blocks derive `--chat-warning` from a shadcn role. */
+const status = ['destructive', 'success', 'chat-warning'];
 const chart = ['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5'];
 
 function Swatches({ names }: { readonly names: readonly string[] }) {
@@ -12,13 +13,13 @@ const roles: ReadonlyArray<readonly [string, string, string]> = [
   ['Title', 'text-[length:var(--text-title)] font-semibold', 'Page and card titles, 14px semibold'],
   ['Body', 'text-[length:var(--text-body)]', 'Everything else, 12px'],
   ['Muted', 'text-[length:var(--text-body)] text-muted-foreground', 'Secondary lines, labels, hints'],
-  ['Mono', 'font-mono text-[length:var(--text-body)]', 'Numbers, ids, code'],
+  ['Mono', 'font-mono text-[length:var(--text-body)]', 'Code only; numbers stay in the sans face with tabular figures'],
 ];
 
 export function Foundations() {
   return <Section id="foundations" title="Foundations" lead="Semantic tokens only. A block never names a colour, a size or a radius: it reads these.">
     <Block name="Tokens: core" tokens="--background --card --foreground --primary --border"><Swatches names={core} /></Block>
-    <Block name="Tokens: status" tokens="--destructive --success --warning --info"><Swatches names={status} /></Block>
+    <Block name="Tokens: status" tokens="--destructive --success --warning (optional)" note="--warning and --info are optional extras an app may set; without them the chat falls back to a shadcn role."><Swatches names={status} /></Block>
     <Block name="Tokens: chart" tokens="--chart-1 .. --chart-5"><Swatches names={chart} /></Block>
     <Block name="Type roles" tokens="--text-title --text-body --font-sans --font-mono">
       <div className="gx-stack">{roles.map(([name, cls, use]) => <div key={name} className="gx-row"><span className="gx-kicker">{name}</span><span className={cls}>The quick brown fox, 1 204,50</span><span className="text-muted-foreground">{use}</span></div>)}</div>

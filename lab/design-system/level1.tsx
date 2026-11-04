@@ -33,7 +33,7 @@ const orders: Order[] = [
 ];
 const columns = [
   { id: 'client', header: 'Client', priority: 1 as const, cell: (r: Order) => r.client },
-  { id: 'id', header: 'Order', priority: 2 as const, cell: (r: Order) => <span className="font-mono">{r.id}</span> },
+  { id: 'id', header: 'Order', priority: 2 as const, cell: (r: Order) => <span className="tabular-nums text-muted-foreground">{r.id}</span> },
   { id: 'status', header: 'Status', priority: 2 as const, cell: (r: Order) => <Badge variant="secondary">{r.status}</Badge> },
   { id: 'total', header: 'Total', priority: 2 as const, numeric: true, cell: (r: Order) => r.total },
   { id: 'date', header: 'Date', priority: 3 as const, cell: (r: Order) => r.date },
@@ -82,7 +82,7 @@ export function Level1() {
     </Block>
     <Block name="Table" tokens="--border --muted-foreground">
       <Table><TableHeader><TableRow><TableHead>Client</TableHead><TableHead>Order</TableHead><TableHead className="text-right">Total</TableHead></TableRow></TableHeader>
-        <TableBody>{orders.map(o => <TableRow key={o.id}><TableCell>{o.client}</TableCell><TableCell className="font-mono">{o.id}</TableCell><TableCell className="text-right font-mono">{o.total}</TableCell></TableRow>)}</TableBody></Table>
+        <TableBody>{orders.map(o => <TableRow key={o.id}><TableCell>{o.client}</TableCell><TableCell className="tabular-nums text-muted-foreground">{o.id}</TableCell><TableCell className="text-right tabular-nums">{o.total}</TableCell></TableRow>)}</TableBody></Table>
     </Block>
     <Block name="DataTable (wide)" tokens="--border --muted-foreground; container query" className="gx-span"><DataTable caption="Orders" columns={columns} rows={orders} rowKey={r => r.id} /></Block>
     <Block name="DataTable (stacked, 360px container)" tokens="same block, narrow container"><div style={{ maxWidth: 360 }}><DataTable caption="Orders" columns={columns} rows={orders} rowKey={r => r.id} /></div></Block>

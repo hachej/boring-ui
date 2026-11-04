@@ -53,7 +53,7 @@ export function TaskListViewer({ controller, title = 'Tasks', className }: TaskL
   // One flat surface on the canvas: no outline, no shadow, no card in a card. Rows are flat and wash on hover; the phone row is a 44px target.
   return <section className={['boring-task-list-recipe flex min-w-0 flex-col gap-2 rounded-[var(--radius-lg)] bg-card p-3 text-card-foreground', className].filter(Boolean).join(' ')} data-boring="task-list-viewer">
     <h2 className="m-0 text-sm font-semibold">{title}</h2>
-    <p role="status" aria-live="polite" className={`m-0 font-mono text-xs ${state.lifecycle === 'disposed' || notice ? 'text-destructive' : state.dirty ? 'text-foreground' : 'text-muted-foreground'}`}>{state.lifecycle === 'disposed' ? 'Closed' : state.readOnly ? 'Read only' : state.dirty ? 'Unsaved changes' : 'Saved'}
+    <p role="status" aria-live="polite" className={`m-0 text-xs tabular-nums ${state.lifecycle === 'disposed' || notice ? 'text-destructive' : state.dirty ? 'text-foreground' : 'text-muted-foreground'}`}>{state.lifecycle === 'disposed' ? 'Closed' : state.readOnly ? 'Read only' : state.dirty ? 'Unsaved changes' : 'Saved'}
       {state.save.kind === 'pending' ? ' · Saving' : save ? ` · ${save.kind}${'reason' in save ? `: ${save.reason}` : ''}` : ''}
       {state.remote ? ' · Remote changes available' : ''}</p>
     <ul className="m-0 flex list-none flex-col p-0">{state.document.items.map(item => <li key={item.id} data-task-id={item.id}

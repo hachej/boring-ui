@@ -23,6 +23,7 @@ const workspacePlugin = {
       const entry = manifest.exports?.[sub ? `.${sub}` : '.'];
       const target = typeof entry === 'string' ? entry : entry?.import ?? entry?.default;
       if (!target) return { errors: [{ text: `no export ${args.path}` }] };
+      if (!target.startsWith('./dist/')) return { path: join(root, 'packages', directory, target) };
       const base = join(root, 'packages', directory, target.replace(/^\.\/dist\//, 'src/').replace(/\.js$/, ''));
       const found = ['.ts', '.tsx'].map(ext => base + ext).find(existsSync);
       return found ? { path: found } : { errors: [{ text: `no source for ${args.path}` }] };
@@ -63,7 +64,8 @@ const js = bundle.outputFiles.find(file => file.path.endsWith('.js')).text;
 const bundledCss = bundle.outputFiles.filter(file => file.path.endsWith('.css')).map(file => file.text).join('\n');
 
 const itemCss = manifest.items.filter(item => item.css && !['theme'].includes(item.name)).map(registryCss).join('\n');
-const tailwind = await buildTailwind({ extraDirectories: [...subdirs('registry'), 'shadcn/ui', 'lab/design-system'], extraCss: itemCss });
+// shadcn/tailwind.css is the import `shadcn init` adds to an app's globals.css: the data-open, data-active, data-horizontal ... variants.
+const tailwind = await buildTailwind({ extraDirectories: [...subdirs('registry'), 'shadcn/ui', 'lab/design-system'], extraCss: `@import "shadcn/tailwind.css";\n${itemCss}` });
 // The gallery's own toggle decides the mode: the OS preference must not switch `dark:` utilities behind it.
 const css = [fontFaces(), tailwind.replace(/@media \(prefers-color-scheme: ?dark\)/g, '@media not all'), bundledCss, readFileSync(here('./gallery.css'), 'utf8')].join('\n');
 
