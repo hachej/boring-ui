@@ -360,7 +360,7 @@ test('a message sent right after New chat does not reach the conversation being 
   });
 
   await t.test('a double click on New: what is typed after it still reaches the box', async () => {
-    const page = await open();
+    const page = await open({ newText: '' });
     const button = await pressNew(page);
     document.activeElement.value = 'first ';
     button.focus();
@@ -369,7 +369,7 @@ test('a message sent right after New chat does not reach the conversation being 
     assert.equal(document.activeElement === typing, true, 'the keys still go to the hidden field');
     typing.value += 'second';
     await settle(() => page.create.resolve(answer()));
-    assert.equal(input().value, 'first second');
+    assert.equal(page.chats.new.typed.at(-1), 'first second');
     assert.equal(page.creates, 1);
     button.remove();
   });
