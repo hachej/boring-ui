@@ -13,6 +13,8 @@ export interface ConversationItem {
 export interface ConversationsClient {
   readonly items: readonly ConversationItem[];
   readonly activeId: string | undefined;
+  /** New or fork is on its way: the conversation on screen is about to be left, so it must take no message (`PiChat` disables its composer). */
+  readonly creating: boolean;
   readonly reload: () => Promise<void>;
   readonly onSelect: (id: string) => void;
   readonly onNew: () => void;
@@ -50,6 +52,7 @@ const item = (served: ServedConversation): ConversationItem => ({ id: String(ser
  */
 export function useConversationsClient({ endpoint, fetch, activeId, onSelect, onChange, pollMs = 4000 }: ConversationsClientOptions): ConversationsClient | undefined {
   const [items, setItems] = useState<readonly ConversationItem[] | undefined>();
+  const [creating, setCreating] = useState(false);
   const latest = useRef({ fetch, onSelect, onChange, activeId });
   useLayoutEffect(() => { latest.current = { fetch, onSelect, onChange, activeId }; });
   const base = endpoint === undefined ? undefined : String(endpoint);
@@ -78,10 +81,19 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
     if (!items) return undefined;
     const changed = async () => { await reload().catch(() => {}); await latest.current.onChange?.(); };
     const op = (name: string, body: unknown) => call({ op: name }, body);
+    // Selects as soon as the server answers, not after the list reload: until then a message would go to the conversation being left.
+    const open = async (name: string, body: unknown) => {
+      setCreating(true);
+      try {
+        const { conversationId } = await op(name, body);
+        if (conversationId !== undefined) latest.current.onSelect(String(conversationId));
+      } finally { setCreating(false); }
+      await changed();
+    };
     return {
-      items, activeId, reload,
+      items, activeId, creating, reload,
       onSelect: (id: string) => latest.current.onSelect(id),
-      onNew: () => { void op('create', {}).then(async result => { await changed(); if (result.conversationId !== undefined) latest.current.onSelect(String(result.conversationId)); }).catch(() => {}); },
+      onNew: () => { void open('create', {}).catch(() => {}); },
       search: async (query: string, { archived }: { readonly archived: boolean }, signal: AbortSignal) =>
         ((await call({ ...(query ? { q: query } : {}), ...(archived ? { archived: '1' } : {}) }, undefined, signal)).conversations ?? []).map(item),
       rename: async (id: string, title: string) => { await op('rename', { conversationId: id, title }); await changed(); },
@@ -90,12 +102,10 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
       fork: async (at: string) => {
         const from = latest.current.activeId;
         if (from === undefined) return;
-        const { conversationId } = await op('fork', { conversationId: from, at });
-        await changed();
-        if (conversationId !== undefined) latest.current.onSelect(String(conversationId));
+        await open('fork', { conversationId: from, at });
       },
     };
-  }, [items, activeId, call, reload]);
+  }, [items, activeId, creating, call, reload]);
 }
 
 /** Compatibility spelling retained for one release. */

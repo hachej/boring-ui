@@ -1,5 +1,7 @@
 # Unreleased
 
+- **The first message after New chat goes to the new conversation (`@hachej/boring-ui-kit`, `pi-chat`; D-1499).** Reinstall `pi-chat`. `useConversationsClient` now selects as soon as the create or fork call answers, before the list reloads, and returns `creating`. `ConversationsConfig` gains an optional `creating`, which disables the composer. A host with its own `onNew` that moves the selection late can pass it too.
+
 # Migrating to 0.4.54
 
 - **No draft card for a malformed question (`@hachej/boring-ui-kit`; D-1494).** With `presentation="natural"`, an `ask_user` call with no question text draws no card and does not count as waiting, so a message typed then is queued as usual. No host change.
