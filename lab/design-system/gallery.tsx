@@ -8,6 +8,8 @@ import { isDark, setDark, setLocale, useDark, useLocale } from './kit';
 import type { Locale } from './kit';
 import { Foundations } from './foundations';
 import { Level1 } from './level1';
+import { Chat, Layouts, Pm, Tasks } from './sections';
+import { FloatingWindow, WindowLauncher, WindowLayer } from '../../registry/windows/windows';
 
 /** Demos that the iframe embeds render alone (`window.__EMBED__.name`), each in its own viewport. */
 function ShellDemo() {
@@ -25,11 +27,26 @@ function ShellDemo() {
     account={{ name: 'Camille Durand', email: 'camille@example.test', menu: [], theme: { value: isDark() ? 'dark' : 'light', onChange: value => setDark(value === 'dark') } }} />;
 }
 
-const embeds: Record<string, () => ReactNode> = { shell: () => <div className="gx-fixed-shell h-full"><ShellDemo /></div> };
+function WindowsDemo() {
+  return <WindowLayer storageKey="gallery.windows" persist="session">
+    <div className="p-3"><WindowLauncher windows={[{ id: 'notes', title: 'Notes' }, { id: 'planning', title: 'Planning' }]} /></div>
+    <FloatingWindow id="notes" title="Notes" defaultOpen defaultRect={{ x: 24, y: 56, width: 300, height: 160 }}><p className="p-3 text-xs">Fictional note: call Atelier Lumen on Tuesday.</p></FloatingWindow>
+    <FloatingWindow id="planning" title="Planning" defaultRect={{ x: 160, y: 80, width: 260, height: 140 }}><p className="p-3 text-xs">Week 45: three orders.</p></FloatingWindow>
+  </WindowLayer>;
+}
+
+const embeds: Record<string, () => ReactNode> = {
+  shell: () => <div className="gx-fixed-shell h-full"><ShellDemo /></div>,
+  windows: () => <div className="h-full"><WindowsDemo /></div>,
+};
 
 const SECTIONS: ReadonlyArray<readonly [string, string]> = [
   ['foundations', 'Foundations'],
   ['level1', 'Level 1'],
+  ['chat', 'Chat'],
+  ['tasks', 'Tasks'],
+  ['pm', 'PM'],
+  ['layouts', 'Layouts'],
 ];
 
 function Chrome() {
@@ -48,6 +65,10 @@ function Chrome() {
       <p className="gx-lead">Every component below is the real kit. Fictional data only. Each card names its block and the tokens it reads.</p>
       <Foundations />
       <Level1 />
+      <Chat />
+      <Tasks />
+      <Pm />
+      <Layouts />
     </main>
   </div>;
 }
@@ -66,7 +87,7 @@ window.addEventListener('message', event => {
 });
 
 try {
-  if (localStorage.getItem('gallery-dark') === '1') document.documentElement.classList.add('dark');
+  if (localStorage.getItem('gallery-dark') === '1' || location.search.includes('dark=1')) document.documentElement.classList.add('dark');
 } catch { /* storage may be blocked */ }
 
 createRoot(document.getElementById('root') as HTMLElement).render(<App />);
