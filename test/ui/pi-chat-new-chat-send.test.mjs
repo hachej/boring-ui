@@ -57,6 +57,7 @@ test('a message sent right after New chat does not reach the conversation being 
         page.lagging.reloaded = true;
       }
       if (listed.length > 1) await reload?.promise;
+      if (page.holdAfter !== undefined && page.holdAfter-- === 0) await page.listHold.promise;
       return Response.json({ conversations: listed.map(id => ({ ...row(id), lastMessage: page.said?.[id] ?? null })) });
     };
     const Host = () => {
@@ -475,6 +476,21 @@ test('a message sent right after New chat does not reach the conversation being 
     await rest();
     assert.equal(page.deletes.length, 0);
     assert.equal(page.client.items.map(item => item.id).join(), 'old,new');
+  });
+
+  await t.test('a conversation opened while the late answer checks the list stays', async () => {
+    const page = await open({ options: { openTimeoutMs: 20 } });
+    await page.onNew();
+    await act(async () => { await new Promise(done => setTimeout(done, 60)); });
+    page.listHold = held();
+    page.holdAfter = 1; // The client's reload passes; its check of the row waits.
+    await settle(() => page.create.resolve(answer()));
+    await rest();
+    await settle(() => page.client.onSelect('new'));
+    await settle(() => page.listHold.resolve());
+    await rest();
+    assert.equal(page.deletes.length, 0);
+    assert.equal(page.selected, 'new');
   });
 
   await t.test('a late answer for a conversation that has a message, from another tab, leaves it', async () => {
