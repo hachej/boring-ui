@@ -15,7 +15,7 @@ export interface ConversationsClient {
   readonly activeId: string | undefined;
   /** New or fork is on its way: the conversation on screen is about to be left, so it must take no message (`PiChat` disables its composer). */
   readonly creating: boolean;
-  /** The conversation New or fork just opened, until the person picks another: `PiChat` puts the cursor in its box once. */
+  /** The conversation New or fork just opened, for a second: `PiChat` puts the cursor in its box once, and a later remount does not. */
   readonly opened: string | undefined;
   readonly reload: () => Promise<void>;
   readonly onSelect: (id: string) => void;
@@ -109,7 +109,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
       try {
         const { conversationId } = await op(name, body);
         await changed();
-        if (conversationId !== undefined && opening.current === run) { setOpened(String(conversationId)); latest.current.onSelect(String(conversationId)); }
+        if (conversationId !== undefined && opening.current === run) { setOpened(String(conversationId)); setTimeout(() => setOpened(undefined), 1000); latest.current.onSelect(String(conversationId)); }
       } finally {
         clearTimeout(timer);
         if (opening.current === run) forget();
