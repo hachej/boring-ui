@@ -20,7 +20,7 @@
   --primary: oklch(0.92 0 0); --primary-foreground: oklch(0.2 0 0);
   --secondary: oklch(0.27 0 0); --accent: oklch(0.28 0 0); --muted: oklch(0.27 0 0); --border: oklch(1 0 0 / 10%); --input: oklch(1 0 0 / 14%);
   --ring: oklch(0.65 0.02 286); --destructive: oklch(0.7 0.19 22); --success: oklch(0.7 0.17 150); --warning: oklch(0.78 0.15 75); --info: oklch(0.72 0.14 254);
-  --muted-foreground: color-mix(in oklab, var(--foreground) 62%, var(--background));
+  --muted-foreground: color-mix(in oklab, var(--foreground) 72%, var(--background));
   --chart-1: oklch(0.65 0.17 264); --chart-2: oklch(0.72 0.15 160); --chart-3: oklch(0.78 0.15 75); --chart-4: oklch(0.7 0.18 15); --chart-5: oklch(0.7 0.12 300);
   color-scheme: dark;
 }
@@ -43,7 +43,7 @@ body { margin: 0; background: var(--background); color: var(--foreground); font:
 .gx-block { background: var(--card); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .gx-block > header { display: flex; flex-direction: column; gap: 2px; }
 .gx-name { font: 500 11px var(--font-mono); letter-spacing: .02em; }
-.gx-tokens { font: 400 11px var(--font-mono); color: var(--muted-foreground); overflow-wrap: anywhere; }
+.gx-tokens { font: 400 11px var(--font-sans); color: var(--muted-foreground); overflow-wrap: anywhere; }
 .gx-body { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .gx-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .gx-placeholder { border: 1px dashed var(--border); border-radius: var(--radius); padding: 12px; color: var(--muted-foreground); }
@@ -65,3 +65,9 @@ body { margin: 0; background: var(--background); color: var(--foreground); font:
 .gx-radius code { font: 400 11px var(--font-mono); }
 .gx-field { display: flex; flex-direction: column; gap: 4px; }
 .gx-row > .gx-kicker { min-width: 72px; }
+
+.gx-tokens code { font: 400 11px var(--font-mono); }
+@media (max-width: 520px) {
+  .gx-top-in { flex-wrap: wrap; }
+  .gx-nav { flex-basis: 100%; order: 3; flex-wrap: wrap; overflow: visible; }
+}

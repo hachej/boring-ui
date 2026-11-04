@@ -17,12 +17,17 @@ let currentLocale: Locale = 'en';
 export const setLocale = (locale: Locale) => { currentLocale = locale; localeListeners.forEach(listener => listener()); };
 export const useLocale = (): Locale => useSyncExternalStore(listener => { localeListeners.add(listener); return () => localeListeners.delete(listener); }, () => currentLocale, () => 'en');
 
+/** Token names (`--x`) in mono; the words around them in the sans. */
+export function Names({ text }: { readonly text: string }) {
+  return <>{text.split(/(--[a-z0-9-]+)/).map((part, index) => index % 2 ? <code key={index}>{part}</code> : part)}</>;
+}
+
 /** A labelled slot: the block's name and the tokens it reads, so the page doubles as the index. */
 export function Block({ name, tokens, note, children, className }: { readonly name: string; readonly tokens?: string; readonly note?: string; readonly children: ReactNode; readonly className?: string }) {
   return <section className={`gx-block ${className ?? ''}`} data-block={name}>
     <header>
       <span className="gx-name">{name}</span>
-      {tokens ? <span className="gx-tokens">reads {tokens}</span> : null}
+      {tokens ? <span className="gx-tokens">reads <Names text={tokens} /></span> : null}
       {note ? <span className="gx-tokens">{note}</span> : null}
     </header>
     <div className="gx-body"><Safe name={name}>{children}</Safe></div>
