@@ -154,6 +154,10 @@ test('a typed message answers the waiting question, and natural presentation sho
     assert.deepEqual(calls, ['send']);
     assert.equal(sends[0].kind, 'followUp');
   });
+  await t.test('a call Pi accepts by coercing its question stays answerable', async () => {
+    await draw({ entries: [user, round(2, assistant([ask('q', { question: 0, questions: [{ question: 'Quel port ?', options: ['Nord', 'Sud'] }] })]))], docs: running });
+    assert.equal(Boolean(element.querySelector('[data-testid=question-form]')), true, 'the form is there to answer');
+  });
   await t.test('expert mode keeps the card as it was', async () => {
     await draw(malformed, {}, { presentation: undefined });
     assert.equal(Boolean(element.querySelector('[data-testid=question-card]')), true);
