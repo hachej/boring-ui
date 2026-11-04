@@ -4,7 +4,7 @@ import {
   HIDDEN_NAMES, MEDIA_TYPES, SNIFF_BYTES, delimitedTextType, extensionOf, isBinaryKind, isTemporary, mediaTypeOf, sniffMediaType, temporaryFileName, uploadPath, viewerKindOf, workspacePath,
 } from '@hachej/boring-files/file-types';
 import { SNIFF_BYTES as AGENT_SNIFF_BYTES, fileKind, mediaTypeFor, nativeImageType } from '@hachej/boring-agent/file-types';
-import { deflated, docxHead, ftypHead, plainZipHead, storedDocxHead, xlsxHead, zipHead } from '../fixtures/blob-bytes.mjs';
+import { deflated, docxHead, ftypHead, plainZipHead, storedDocxHead, xlsxHead, zipFile, zipHead } from '../fixtures/blob-bytes.mjs';
 
 const UUID = '0b8d2f1e-3c4a-4d5e-8f60-7a8b9c0d1e2f';
 
@@ -130,6 +130,42 @@ test('zip-based office documents from their entries in the head, without inflati
   assert.equal(fileKind('upload.bin', xlsxHead()), 'office', 'the agent routes a sniffed office document to the converter');
   assert.equal(mediaTypeFor('upload.bin', 'office', 'application/octet-stream', docxHead()), DOCX);
   assert.equal(fileKind('notes.zip', plainZipHead()), 'archive');
+});
+
+test('an office document whatever the order of its entries (D-1468): openpyxl does not put [Content_Types].xml first', () => {
+  const contentTypes = { name: '[Content_Types].xml', data: deflated(380) };
+  const order = (office, other) => ({
+    first: [contentTypes, other, office],
+    middle: [other, contentTypes, office],
+    last: [other, office, contentTypes],
+  });
+  for (const [type, office] of [[XLSX, { name: 'xl/workbook.xml', data: deflated(600) }], [DOCX, { name: 'word/document.xml', data: deflated(900) }]]) {
+    for (const [where, entries] of Object.entries(order(office, { name: 'docProps/app.xml', data: deflated(120) }))) {
+      assert.equal(sniffMediaType(zipFile(entries)), type, `${type}: [Content_Types].xml ${where}`);
+      assert.equal(sniffMediaType(zipFile(entries, { descriptor: true })), type, `${type}: [Content_Types].xml ${where}, sizes only in the central directory`);
+    }
+  }
+  assert.equal(fileKind('upload.bin', zipFile(order({ name: 'xl/workbook.xml', data: deflated(600) }, { name: 'docProps/app.xml', data: deflated(120) }).last)), 'office');
+});
+
+test('a workbook bigger than the head: what the head shows decides, [Content_Types].xml being out of sight (D-1468)', () => {
+  const big = zipFile([
+    { name: 'docProps/app.xml', data: deflated(300) }, { name: 'xl/theme/theme1.xml', data: deflated(1600) },
+    { name: 'xl/worksheets/sheet1.xml', data: deflated(200_000) }, { name: '[Content_Types].xml', data: deflated(380) },
+  ]);
+  assert.equal(sniffMediaType(big.subarray(0, SNIFF_BYTES)), XLSX, 'the bytes a host passes');
+  assert.equal(sniffMediaType(big.subarray(0, 64 * 1024)), XLSX, 'more of the head');
+  assert.equal(sniffMediaType(big), XLSX, 'the whole file');
+});
+
+test('still refused (D-1468): no [Content_Types].xml, not a zip, a truncated zip, an archive that only looks like one', () => {
+  const part = { name: 'xl/workbook.xml', data: deflated(600) };
+  assert.equal(sniffMediaType(zipFile([part, { name: 'xl/styles.xml', data: deflated(90) }])), undefined, 'a whole zip with no [Content_Types].xml');
+  assert.equal(sniffMediaType(zipFile([part, { name: 'data.bin', data: deflated(20_000) }])), undefined, 'its directory answers even past the head');
+  assert.equal(sniffMediaType(deflated(4000)), undefined, 'not a zip, whatever its name says');
+  assert.equal(sniffMediaType(zipFile([part, { name: 'notes.txt', data: deflated(5000) }]).subarray(0, 1200)), undefined, 'truncated: shorter than a head, so this is the whole file');
+  assert.equal(sniffMediaType(zipFile([{ name: 'notes/today.txt', data: deflated(20_000) }]).subarray(0, SNIFF_BYTES)), undefined, 'a big archive of something else');
+  assert.equal(sniffMediaType(zipFile([{ name: 'xl/photo.png', data: deflated(20_000) }]).subarray(0, SNIFF_BYTES)), undefined, 'a folder name alone is not an office part');
 });
 
 test('text: valid UTF-8 without NUL is text/plain; binary is never text', () => {

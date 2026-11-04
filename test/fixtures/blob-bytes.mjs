@@ -60,6 +60,31 @@ export function zipHead(entries) {
   return out;
 }
 
+/**
+ * A whole zip file: local headers, central directory and end record, entries in the given order. `descriptor: true` writes as a
+ * streaming archiver does: sizes unknown in the local headers (flag 8), known only to the central directory.
+ */
+export function zipFile(entries, { descriptor = false } = {}) {
+  const encode = text => new TextEncoder().encode(text);
+  const locals = [], centrals = [];
+  let offset = 0;
+  for (const { name, data } of entries) {
+    const nameBytes = encode(name), local = new DataView(new ArrayBuffer(30)), central = new DataView(new ArrayBuffer(46));
+    local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(6, descriptor ? 8 : 0, true); local.setUint16(8, 8, true);
+    if (!descriptor) { local.setUint32(18, data.length, true); local.setUint32(22, data.length, true); }
+    local.setUint16(26, nameBytes.length, true);
+    central.setUint32(0, 0x02014b50, true); central.setUint16(8, descriptor ? 8 : 0, true); central.setUint16(10, 8, true);
+    central.setUint32(20, data.length, true); central.setUint32(24, data.length, true); central.setUint16(28, nameBytes.length, true); central.setUint32(42, offset, true);
+    const trailer = new Uint8Array(descriptor ? 16 : 0);
+    locals.push(new Uint8Array(local.buffer), nameBytes, data, trailer);
+    centrals.push(new Uint8Array(central.buffer), nameBytes);
+    offset += 30 + nameBytes.length + data.length + trailer.length;
+  }
+  const size = centrals.reduce((sum, part) => sum + part.length, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true); end.setUint32(12, size, true); end.setUint32(16, offset, true);
+  return new Uint8Array(Buffer.concat([...locals, ...centrals, new Uint8Array(end.buffer)]));
+}
+
 /** Fictional deflated bytes: binary noise with NUL bytes, as compressed XML looks to a sniffer. */
 export const deflated = length => Uint8Array.from({ length }, (_, index) => (index * 37 + 11) % 256);
 
