@@ -228,13 +228,13 @@ test('a message sent right after New chat does not reach the conversation being 
     field.remove();
   });
 
-  await t.test('a refused create leaves the cursor where it was', async () => {
+  await t.test('a refused create leaves the focus off the button, where a Space would press New again', async () => {
     const page = await open();
     const button = document.createElement('button'); document.body.append(button); button.focus();
     await page.onNew();
     await settle(() => page.create.resolve(new Response('no', { status: 500 })));
     assert.equal(page.selected, 'old');
-    assert.equal(document.activeElement === button, true);
+    assert.equal(document.activeElement === button, false);
     button.remove();
   });
 
@@ -393,7 +393,7 @@ test('a message sent right after New chat does not reach the conversation being 
     assert.equal(page.selected, 'old');
     assert.equal(page.chats.old.typed.length, 0);
     assert.equal(noHeldField(), true);
-    assert.equal(document.activeElement === button, true);
+    assert.equal(document.activeElement === button, false, 'a Space typed next must not press New again');
     button.remove();
   });
 
