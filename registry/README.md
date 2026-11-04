@@ -460,6 +460,8 @@ A descriptor is metadata, **not a grant to read bytes**. The host owns the read 
 
 With `mode="developer"`, every assistant reply gets one muted line beneath it (`data-testid="answered-by"`): « answered by provider/model ». `answeredBy={reply => record}` gives the host's per-turn record `{ provider, model, fallback? }` for a reply (`reply` is the same `ReplyRef` `replyFooter` receives); when it returns nothing, the line names the reply's own message `provider/model`. `fallback` adds « · fallback: reason » (`data-testid="answered-fallback"`). No model info, no line. User messages and `mode="expert"` never show it. Labels `answeredBy` and `answeredFallback`.
 
+To turn it on with no code change, open the app once with `?chatMode=developer`: developer mode stays on in that browser (it also shows the system, reasoning, tool and error details the transcript holds, and replaces `presentation="natural"`) until `?chatMode=expert`. It only draws what the browser already holds, so it grants nothing. It applies to `PiChat`, so to the assistant and the PM; `PiAmbient` keeps its own `mode`.
+
 ## Reply footer in `pi-chat`
 
 Pass `replyFooter={reply => <small>…</small>}` to `PiChat` or `AmbientChat` and every finished reply gets that node under its actions, including earlier replies in the same transcript. Archived replies keep passive copy and footer content, but cannot revive question answers, fork controls or host mutation actions. `reply` is the
