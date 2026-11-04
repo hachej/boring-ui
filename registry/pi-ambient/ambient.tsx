@@ -495,7 +495,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
         <div className="px-3 pt-2 pb-3">
           <ConversationFiles files={files} />
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
-          {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, disabled: composer.disabled, layout: composerLayout, placeholder: working || waitingForAnswer ? label : labels.placeholder, barStart, barNote, barEnd: tools })}
+          {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, disabled: composer.disabled || conversations?.creating === true, stopOpen: conversations?.creating === true && !composer.disabled, layout: composerLayout, placeholder: working || waitingForAnswer ? label : labels.placeholder, barStart, barNote, barEnd: tools })}
           {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}
         </div>
       </div>

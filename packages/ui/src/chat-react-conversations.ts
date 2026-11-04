@@ -70,18 +70,28 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
     if (!response.ok) throw new Error(`Conversations: ${response.status}`);
     return await response.json() as { conversations?: readonly ServedConversation[]; conversationId?: number | string };
   }, [base]);
-  const reload = useCallback(async () => { const result = await call({}); setItems((result.conversations ?? []).map(item)); }, [call]);
+  // Lists can answer out of order: an older answer must not overwrite a newer one, or a conversation just created leaves the list again.
+  const asked = useRef(0);
+  const shown = useRef(0);
+  const list = useCallback(async (live: () => boolean = () => true) => {
+    const turn = ++asked.current;
+    const result = await call({});
+    if (!live() || turn < shown.current) return;
+    shown.current = turn;
+    setItems((result.conversations ?? []).map(item));
+  }, [call]);
+  const reload = useCallback(() => list(), [list]);
   // Another endpoint (another owner's list) starts empty; switching conversations only reloads.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- a new endpoint clears the old owner's list once, after commit
   useEffect(() => { setItems(undefined); forget(); }, [base, forget]);
   useEffect(() => {
     if (base === undefined) return;
     let off = false;
-    const load = () => call({}).then(result => { if (!off) setItems((result.conversations ?? []).map(item)); }).catch(() => {});
+    const load = () => list(() => !off).catch(() => {});
     void load();
     const timer = setInterval(load, pollMs);
     return () => { off = true; clearInterval(timer); };
-  }, [base, call, pollMs, activeId]);
+  }, [base, list, pollMs, activeId]);
   return useMemo(() => {
     if (!items) return undefined;
     const changed = async () => { await reload().catch(() => {}); await latest.current.onChange?.(); };

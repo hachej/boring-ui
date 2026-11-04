@@ -303,7 +303,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
           <ConversationFiles files={[...conversationFiles.values()]} />
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
           {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
-          {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, disabled: composer.disabled || leaving,
+          {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, disabled: composer.disabled || leaving, stopOpen: leaving && !composer.disabled,
             recording: composerRecording ?? (VoiceButton && (voice.phase === 'starting' || voice.phase === 'recording') ? <VoiceButton voice={voice} /> : undefined), layout: composerLayout,
             placeholder: labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder, barStart, barNote, start: composerStart,
             ...(voiceMessage && VoiceButton && voiceReplacesSend ? { barEnd: tools, whenEmpty: <VoiceButton voice={voice} primary disabled={leaving || state.disposed || !connected || state.send.kind === 'unknown'} /> }

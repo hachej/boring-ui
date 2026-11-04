@@ -90,6 +90,8 @@ export interface ComposerProps {
   /** A send would be refused right now (not connected, a submission in flight, uploading). */
   readonly sendBlocked: boolean;
   readonly disabled: boolean;
+  /** Stop still works while `disabled`: the composer is held, the running reply is still the person's to stop. */
+  readonly stopOpen?: boolean | undefined;
   readonly stopRequested: boolean;
   readonly onSend: () => void;
   readonly onStop: () => void;
@@ -384,7 +386,7 @@ export function Composer(props: ComposerProps) {
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
   const send = working
-    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={disabled || stopRequested} onClick={props.onStop} className="shrink-0">
+    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={(disabled && !props.stopOpen) || stopRequested} onClick={props.onStop} className="shrink-0">
       {stopRequested ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop data-icon="inline-start" aria-hidden="true" />}</Button>
     : props.whenEmpty && !hasContent ? <div data-testid="composer-when-empty" className="flex shrink-0 items-center">{props.whenEmpty}</div>
     : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="shrink-0">
