@@ -359,6 +359,21 @@ test('a message sent right after New chat does not reach the conversation being 
     button.remove();
   });
 
+  await t.test('a double click on New: what is typed after it still reaches the box', async () => {
+    const page = await open();
+    const button = await pressNew(page);
+    document.activeElement.value = 'first ';
+    button.focus();
+    await act(async () => { button.click(); });
+    const typing = document.querySelector('[data-testid=new-chat-typing]');
+    assert.equal(document.activeElement === typing, true, 'the keys still go to the hidden field');
+    typing.value += 'second';
+    await settle(() => page.create.resolve(answer()));
+    assert.equal(input().value, 'first second');
+    assert.equal(page.creates, 1);
+    button.remove();
+  });
+
   await t.test('Enter typed as the conversation opens sends nothing', async () => {
     const page = await open();
     const button = await pressNew(page);
