@@ -1,7 +1,7 @@
 import type { ReadResult, ResourceAccess, ResourceClient, ResourceExpectation, ResourceLocator, ResourceSnapshot } from '@hachej/boring-files';
 import { applyTextEdits, parseTextEdits, type TextEdit } from '@hachej/boring-files/text';
 import type { PresentationCommand, PresentationResult } from './contracts.js';
-import { createTextBuffer, freeze, sameBase } from './text-buffer.js';
+import { createTextBuffer, freeze, sameBase, type TextBufferRemote } from './text-buffer.js';
 import type { EditableViewerController, SaveResult, SaveSelection } from './resources.js';
 import { randomUUID } from '@hachej/boring-files/platform';
 import type { TextDraftActions, TextDraftOptions, TextDraftRecoveryState } from './text-draft-types.js';
@@ -58,13 +58,11 @@ export interface MarkdownActions extends TextDraftActions {
   readonly discardToRemote: () => Promise<ReadResult>;
   /** Keeps the local text over the remote revision already shown and saves it conditionally. A remote that moved since is a new conflict, never an overwrite. */
   readonly keepLocal: () => Promise<SaveResult>;
-  /** Reads the current saved text for review. Changes nothing, not even what the editor knows about the remote. */
+  /** Reads the current saved text for review. The local text and base stay; what the editor knows of the remote moves to the revision returned, so `keepLocal` acts on it. */
   readonly readRemote: () => Promise<MarkdownRemote>;
 }
 
-export type MarkdownRemote = { readonly kind: 'available'; readonly text: string; readonly revision: string }
-  | { readonly kind: 'missing' }
-  | { readonly kind: 'denied' | 'unavailable'; readonly reason: string };
+export type MarkdownRemote = TextBufferRemote;
 
 export interface MarkdownOptions {
   readonly drafts?: TextDraftOptions;
@@ -82,11 +80,10 @@ export type MarkdownController = EditableViewerController<MarkdownState, Markdow
 
 export function createMarkdownController(options: MarkdownOptions): MarkdownController {
   const { drafts, ...bufferOptions } = options;
-  const readText = (snapshot: ResourceSnapshot): string => {
+  const buffer = createTextBuffer({ ...bufferOptions, ...(drafts ? { drafts: { ...drafts, format: 'markdown/v1' } } : {}), mediaType: 'text/markdown', readText: snapshot => {
     if (snapshot.mediaType !== 'text/markdown' && snapshot.mediaType !== 'text/plain') throw new TypeError('Expected Markdown or plain text');
     return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(snapshot.bytes);
-  };
-  const buffer = createTextBuffer({ ...bufferOptions, ...(drafts ? { drafts: { ...drafts, format: 'markdown/v1' } } : {}), mediaType: 'text/markdown', readText });
+  } });
   let state: MarkdownState = freeze({ ...buffer.getSnapshot(), proposals: [] });
   const listeners = new Set<() => void>();
   const update = (next: MarkdownState) => {
@@ -132,14 +129,6 @@ export function createMarkdownController(options: MarkdownOptions): MarkdownCont
     return buffer.flush(adoptedSelection);
   }
 
-  async function readRemote(): Promise<MarkdownRemote> {
-    if (state.lifecycle === 'disposed') return { kind: 'unavailable', reason: 'Viewer is disposed' };
-    const read = await options.client.read({ target: state.base.target, revision: { kind: 'latest' } });
-    if (read.kind !== 'available') return read;
-    try { return { kind: 'available', text: readText(read.snapshot), revision: read.snapshot.ref.revision }; }
-    catch { return { kind: 'unavailable', reason: 'Remote document could not be decoded or validated' }; }
-  }
-
   function commandInput(value: unknown): { expiresAt: number } {
     if (!value || typeof value !== 'object' || !('expiresAt' in value) || typeof value.expiresAt !== 'number' || !Number.isSafeInteger(value.expiresAt)) throw new TypeError('Command expiry is required');
     return { expiresAt: value.expiresAt };
@@ -179,7 +168,7 @@ export function createMarkdownController(options: MarkdownOptions): MarkdownCont
       edit: text => buffer.edit(text),
       propose, accept, reject: proposalId => { if (state.lifecycle !== 'disposed') update({ ...state, proposals: state.proposals.filter(value => value.id !== proposalId) }); },
       checkDrafts: buffer.checkDrafts, checkpointDraft: buffer.checkpointDraft, restoreDraft: buffer.restoreDraft, discardDraft: buffer.discardDraft,
-      selection, refresh: () => buffer.refresh(false), discardToRemote: () => buffer.refresh(true), keepLocal: buffer.rebaseOntoRemote, readRemote, reconcile: buffer.reconcile, abandon: buffer.abandon,
+      selection, refresh: () => buffer.refresh(false), discardToRemote: () => buffer.refresh(true), keepLocal: buffer.rebaseOntoRemote, readRemote: buffer.readRemote, reconcile: buffer.reconcile, abandon: buffer.abandon,
     },
     tools: Object.freeze(tools), flush: buffer.flush,
     dispose: () => { buffer.dispose(); unsubscribe(); listeners.clear(); },

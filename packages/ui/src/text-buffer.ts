@@ -25,6 +25,10 @@ export interface TextBufferOptions {
   readonly readText: (snapshot: ResourceSnapshot) => string;
 }
 
+export type TextBufferRemote = { readonly kind: 'available'; readonly text: string; readonly revision: string }
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'denied' | 'unavailable'; readonly reason: string };
+
 interface SaveAttempt {
   readonly selection: SaveSelection;
   readonly text: string;
@@ -279,6 +283,27 @@ export function createTextBuffer(options: TextBufferOptions) {
     return flush(selection());
   }
 
+  /**
+   * The saved text for a person to review, from one read, so what they see is what Keep mine then acts on. Only what the editor knows of
+   * the remote moves. Unlike refresh, this never replaces the text, even in a clean buffer.
+   */
+  async function readRemote(): Promise<TextBufferRemote> {
+    if (disposed()) return { kind: 'unavailable', reason: 'Viewer is disposed' };
+    const previousBase = state.base;
+    const read = await client.read({ target: previousBase.target, revision: { kind: 'latest' } });
+    if (disposed()) return { kind: 'unavailable', reason: 'Viewer is disposed' };
+    if (read.kind === 'denied' || read.kind === 'unavailable') return read;
+    if (read.kind === 'available' && !sameLocator(read.snapshot.ref, previousBase.target)) return { kind: 'unavailable', reason: 'Read returned a different resource' };
+    let remote: TextBufferRemote;
+    try { remote = read.kind === 'available' ? { kind: 'available', text: options.readText(read.snapshot), revision: read.snapshot.ref.revision } : { kind: 'missing' }; }
+    catch { return { kind: 'unavailable', reason: 'Remote document could not be decoded or validated' }; }
+    const latest: ResourceExpectation = read.kind === 'available' ? { kind: 'revision', target: structuredClone(read.snapshot.ref) } : { kind: 'absent', target: previousBase.target };
+    const inConflict = state.remote !== null || (state.save.kind === 'settled' && state.save.result.kind === 'conflict');
+    const news = !(state.remote && sameBase(state.remote, latest)) && (inConflict || !sameBase(latest, state.base));
+    if (news && !attempt && sameBase(previousBase, state.base)) update({ ...state, remote: latest });
+    return remote;
+  }
+
   /** Give up waiting for an unknown save and refresh, keeping the draft. The save is never reported committed and never replayed. */
   const abandon = async (): Promise<ReadResult> => {
     const current = attempt;
@@ -316,7 +341,7 @@ export function createTextBuffer(options: TextBufferOptions) {
       if (state.readOnly) throw new Error('Viewer is read-only');
       observe(text, force);
     },
-    observe, selection, refresh, rebaseOntoRemote, abandon, reconcile, flush,
+    observe, selection, refresh, rebaseOntoRemote, readRemote, abandon, reconcile, flush,
     dispose: (): void => { if (!disposed()) { drafts?.dispose(); update({ ...state, lifecycle: 'disposed' }); listeners.clear(); } },
   };
 }
