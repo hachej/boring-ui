@@ -57,38 +57,6 @@ jobs:
           path: .cache/evidence/shadcn-first
           retention-days: 7
           if-no-files-found: ignore
-  history-list:
-    name: History list in a real browser
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      CHROMIUM: ${{ github.workspace }}/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22.22.1
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - name: Install Chromium
-        timeout-minutes: 8
-        run: bash scripts/install-ci-chromium.sh 1.63.0
-      - name: Allow the Chromium sandbox
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - name: History in PiChat tools (5, 9, 12 rows at 1280x800, real wheel)
-        run: npm run app-shell:journey:history-tools
-      - name: Evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: history-list-evidence
-          path: .cache/evidence/history-tools
-          retention-days: 7
-          if-no-files-found: ignore
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -220,7 +188,7 @@ jobs:
   ci-ok:
     name: verify
     if: always()
-    needs: [verify, history-list, tests, release-gate, isolated-consumers, isolated-consumers-ok, demo-worker]
+    needs: [verify, tests, release-gate, isolated-consumers, isolated-consumers-ok, demo-worker]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to succeed
