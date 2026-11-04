@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.58
+
 - **The wheel over the History list stays in it (`pi-chat`; D-1577).** Reinstall `pi-chat`. A host on a kit older than 0.4.57 also gets the fix for rows running out of the sheet (D-1528).
 - **No stray accent when the box returns after New chat (`@hachej/boring-ui-kit`, `pi-ambient`; D-1564).** Reinstall `pi-ambient`. `conversations.opened` stays undefined while a dead key or IME composition is open in the hidden field; a host reading it directly sees it later in that case. `AmbientChat` coming up open no longer takes the focus from a field that holds it: a host that opens it from another field and wants the cursor in its box must focus the box.
 - **A failed History search says so (`pi-chat`; D-1562).** Reinstall `pi-chat`. A search the server refuses, or that fails, now shows `searchFailed` (« Search failed. Try again. ») in `ConversationList` and `ConversationHistory` instead of « No conversation matches ». A real no-match keeps its text. The label `searchFailed` already existed; its text is now longer. A host with its own `search` that resolves `[]` on an error keeps showing the no-match text until it rejects instead.
