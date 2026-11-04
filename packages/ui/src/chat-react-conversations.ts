@@ -13,6 +13,8 @@ export interface ConversationItem {
 export interface ConversationsClient {
   readonly items: readonly ConversationItem[];
   readonly activeId: string | undefined;
+  /** New or fork is on its way: the conversation on screen is about to be left, so it must take no message (`PiChat` disables its composer). */
+  readonly creating: boolean;
   readonly reload: () => Promise<void>;
   readonly onSelect: (id: string) => void;
   readonly onNew: () => void;
@@ -29,6 +31,8 @@ export interface ConversationsClientOptions {
   readonly onSelect: (id: string) => void;
   readonly onChange?: (() => void | Promise<void>) | undefined;
   readonly pollMs?: number;
+  /** How long New or fork may hold the composer (`creating`) before the person gets it back and a late answer no longer moves them. Default 15 s. */
+  readonly openTimeoutMs?: number;
 }
 
 /** One row as `createConversationsHandler` of `@hachej/boring-agent/conversations` returns it. */
@@ -48,10 +52,14 @@ const item = (served: ServedConversation): ConversationItem => ({ id: String(ser
  * delete and fork. New and fork select the conversation they made through `onSelect`. `onChange` runs after every change the person made
  * (the host may reload what depends on the list). `fetch` is the host's authenticated fetch. Returns `undefined` until the first list arrives.
  */
-export function useConversationsClient({ endpoint, fetch, activeId, onSelect, onChange, pollMs = 4000 }: ConversationsClientOptions): ConversationsClient | undefined {
+export function useConversationsClient({ endpoint, fetch, activeId, onSelect, onChange, pollMs = 4000, openTimeoutMs = 15000 }: ConversationsClientOptions): ConversationsClient | undefined {
   const [items, setItems] = useState<readonly ConversationItem[] | undefined>();
-  const latest = useRef({ fetch, onSelect, onChange, activeId });
-  useLayoutEffect(() => { latest.current = { fetch, onSelect, onChange, activeId }; });
+  const [creating, setCreating] = useState(false);
+  // The New or fork on its way; forgetting it gives the composer back, and its late answer then moves nobody.
+  const opening = useRef<object | undefined>(undefined);
+  const forget = useCallback(() => { opening.current = undefined; setCreating(false); }, []);
+  const latest = useRef({ fetch, onSelect, onChange, activeId, openTimeoutMs });
+  useLayoutEffect(() => { latest.current = { fetch, onSelect, onChange, activeId, openTimeoutMs }; });
   const base = endpoint === undefined ? undefined : String(endpoint);
   const call = useCallback(async (params: Record<string, string>, body?: unknown, signal?: AbortSignal) => {
     if (base === undefined) throw new Error('No conversations endpoint');
@@ -62,26 +70,52 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
     if (!response.ok) throw new Error(`Conversations: ${response.status}`);
     return await response.json() as { conversations?: readonly ServedConversation[]; conversationId?: number | string };
   }, [base]);
-  const reload = useCallback(async () => { const result = await call({}); setItems((result.conversations ?? []).map(item)); }, [call]);
+  // Lists can answer out of order: an older answer must not overwrite a newer one, or a conversation just created leaves the list again.
+  const asked = useRef(0);
+  const shown = useRef(0);
+  const list = useCallback(async (live: () => boolean = () => true) => {
+    const turn = ++asked.current;
+    const result = await call({});
+    if (!live() || turn < shown.current) return;
+    shown.current = turn;
+    setItems((result.conversations ?? []).map(item));
+  }, [call]);
+  const reload = useCallback(() => list(), [list]);
   // Another endpoint (another owner's list) starts empty; switching conversations only reloads.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- a new endpoint clears the old owner's list once, after commit
-  useEffect(() => { setItems(undefined); }, [base]);
+  useEffect(() => { setItems(undefined); forget(); }, [base, forget]);
   useEffect(() => {
     if (base === undefined) return;
     let off = false;
-    const load = () => call({}).then(result => { if (!off) setItems((result.conversations ?? []).map(item)); }).catch(() => {});
+    const load = () => list(() => !off).catch(() => {});
     void load();
     const timer = setInterval(load, pollMs);
     return () => { off = true; clearInterval(timer); };
-  }, [base, call, pollMs, activeId]);
+  }, [base, list, pollMs, activeId]);
   return useMemo(() => {
     if (!items) return undefined;
     const changed = async () => { await reload().catch(() => {}); await latest.current.onChange?.(); };
     const op = (name: string, body: unknown) => call({ op: name }, body);
+    // Selects last: a host may open a conversation only once its list holds it. Until then a message would go to the conversation being left.
+    const open = async (name: string, body: unknown) => {
+      if (opening.current) return;
+      const run = {};
+      opening.current = run;
+      setCreating(true);
+      const timer = setTimeout(() => { if (opening.current === run) forget(); }, latest.current.openTimeoutMs);
+      try {
+        const { conversationId } = await op(name, body);
+        await changed();
+        if (conversationId !== undefined && opening.current === run) latest.current.onSelect(String(conversationId));
+      } finally {
+        clearTimeout(timer);
+        if (opening.current === run) forget();
+      }
+    };
     return {
-      items, activeId, reload,
-      onSelect: (id: string) => latest.current.onSelect(id),
-      onNew: () => { void op('create', {}).then(async result => { await changed(); if (result.conversationId !== undefined) latest.current.onSelect(String(result.conversationId)); }).catch(() => {}); },
+      items, activeId, creating, reload,
+      onSelect: (id: string) => { forget(); latest.current.onSelect(id); },
+      onNew: () => { void open('create', {}).catch(() => {}); },
       search: async (query: string, { archived }: { readonly archived: boolean }, signal: AbortSignal) =>
         ((await call({ ...(query ? { q: query } : {}), ...(archived ? { archived: '1' } : {}) }, undefined, signal)).conversations ?? []).map(item),
       rename: async (id: string, title: string) => { await op('rename', { conversationId: id, title }); await changed(); },
@@ -90,12 +124,10 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
       fork: async (at: string) => {
         const from = latest.current.activeId;
         if (from === undefined) return;
-        const { conversationId } = await op('fork', { conversationId: from, at });
-        await changed();
-        if (conversationId !== undefined) latest.current.onSelect(String(conversationId));
+        await open('fork', { conversationId: from, at });
       },
     };
-  }, [items, activeId, call, reload]);
+  }, [items, activeId, creating, call, reload, forget]);
 }
 
 /** Compatibility spelling retained for one release. */

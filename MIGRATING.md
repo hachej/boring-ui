@@ -1,5 +1,7 @@
 # Unreleased
 
+- **The first message after New chat goes to the new conversation (`@hachej/boring-ui-kit`, `pi-chat`, `pi-ambient`; D-1499).** Reinstall `pi-chat` and `pi-ambient`. `useConversationsClient` returns `creating`, true from New or fork until the conversation is selected, and takes `openTimeoutMs` (default 15 s). `ConversationsConfig` gains an optional `creating`, which holds the composer, voice button and suggestions in `PiChat` and the composer in `AmbientChat`. Stop on a running reply still works: a custom composer gets `stopOpen` alongside `disabled`. A second New while one is on its way does nothing. A host with its own `onNew` can pass `creating` too.
+
 # Migrating to 0.4.54
 
 - **No draft card for a malformed question (`@hachej/boring-ui-kit`; D-1494).** With `presentation="natural"`, an `ask_user` call with no question text draws no card and does not count as waiting, so a message typed then is queued as usual. No host change.
