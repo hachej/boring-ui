@@ -439,6 +439,18 @@ test('a message sent right after New chat does not reach the conversation being 
     button.remove();
   });
 
+  await t.test('AmbientChat coming up open leaves the focus in a field the person is in', async () => {
+    const other = document.createElement('input'); document.body.append(other); other.focus();
+    await open({ Chat: AmbientChat, chatProps: { defaultState: 'expanded' } });
+    assert.equal(document.activeElement === other, true);
+    other.remove();
+  });
+
+  await t.test('AmbientChat coming up open with no field in use puts the cursor in its box', async () => {
+    await open({ Chat: AmbientChat, chatProps: { defaultState: 'expanded' } });
+    assert.equal(document.activeElement === input(), true);
+  });
+
   await t.test('a host whose controller comes after its active conversation: the text waits, and the old draft is untouched', async () => {
     const page = await open({ controllerLag: 100, newText: '' });
     const button = await pressNew(page);
