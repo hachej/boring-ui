@@ -48,6 +48,17 @@ function nestedCards(source) {
   return found;
 }
 
+/**
+ * `design-no-x-scroll`: a file that renders a table holds no horizontal scroll container (`overflow-x-auto`, `overflow-x-scroll`, the
+ * CSS or React style property). Tables truncate their cells and stack below their container width instead. Lexical and file-scoped: the
+ * shadcn `table` wrapper (`overflow-x-auto`) must not be imported by a file that renders a table.
+ */
+const tableMarkup = /<table\b|<Table\b|@\/components\/ui\/table\b|\bDataTable\b|role=["']table["']|\bdisplay\s*:\s*['"]?table\b/;
+const horizontalScroll = /(?<![\w-])overflow-x-(?:auto|scroll)(?![\w-])|\boverflowX\s*:\s*['"]?(?:auto|scroll)\b|\boverflow-x\s*:\s*(?:auto|scroll)\b/g;
+export function noXScroll(source) {
+  return tableMarkup.test(source) ? [...source.matchAll(horizontalScroll)].map(match => ({ index: match.index, value: match[0] })) : [];
+}
+
 /** The repository's rules (registry blocks and kit sources). A rule is a global regex, or a function from the source to `{ index, value }` findings. */
 export const DESIGN_RULES = [
   ['design-card-flat', cardFlat],
@@ -60,6 +71,7 @@ export const DESIGN_RULES = [
   ['motion', /\b(?:duration|delay)-\d+\b|\b(?:transition(?:-[\w-]+)?|animation(?:-[\w-]+)?|transitionDuration|animationDuration)\s*:\s*[^;\n}]*?\b\d*\.?\d+m?s\b[^;\n}]*/g],
   ['style', /\bradix(?:-[\w-]+)?\b/gi],
   ['primitive', /\b(?:function|const|class)\s+(?:Button|IconButton|ActionMenu|\w*Popover|\w*Tooltip|\w*Dialog|\w*Menu)\b|<(?:button|input|textarea|select)\b/g],
+  ['design-no-x-scroll', noXScroll],
 ];
 
 /**
@@ -79,6 +91,7 @@ export const APP_RULES = [
   ['font', /\bfont-family\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+|\bfontFamily\s*:\s*['"](?!var\()[^'"]+['"]|\bfont\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+/g],
   ['literal-value', /\b(?:border-radius|borderRadius|box-shadow|boxShadow|font-size|fontSize|letter-spacing|letterSpacing)\s*:\s*['"]?(?!\s*(?:var\(|calc\(\s*var\(|inherit\b|initial\b|unset\b|none\b|0(?![\w.])))(?=[^;\n}"']*\d)[^;\n}"']*/g],
   ['dark', /(?<![\w-])dark:[^\s"'`]+/g],
+  ['design-no-x-scroll', noXScroll],
 ];
 
 /** Findings `{ file, line, column, rule, value }` of `rules` in `text`; CSS block comments are ignored. */
