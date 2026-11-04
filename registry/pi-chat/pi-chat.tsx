@@ -28,7 +28,7 @@ import { markLeads } from './rows';
 import type { Row } from './rows';
 import { MessageQueue } from './queue';
 import { ChatNotices, ChatConnectionNotice, ChatStatusLine } from './notice';
-import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from './session';
+import { PAGE_FIRST, PAGE_MORE, useChatSession, useCursorInOpened, useRowChunks, useTranscript } from './session';
 import { useChatDraft } from './use-chat-draft';
 import { useChatPlacement } from './use-remote-chat';
 import type { ChatPlacement } from './use-remote-chat';
@@ -224,6 +224,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const { state, derived, rows: nativeRows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   // New or fork is on its way: nothing may go to this conversation (D-1499).
   const leaving = conversations?.creating === true;
+  useCursorInOpened(textarea, conversations, composer.disabled || leaving);
   const voiceRows = pendingVoice ?? voice.pending;
   const VoiceButton = voiceMessage?.Button, VoiceBubbleView = voiceMessage?.Bubble ?? NoVoiceBubble;
   const rows = useMemo(() => messageStyle === 'messaging' ? markLeads(nativeRows) : nativeRows, [nativeRows, messageStyle]);

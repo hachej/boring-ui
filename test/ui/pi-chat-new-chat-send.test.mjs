@@ -60,13 +60,15 @@ test('a message sent right after New chat does not reach the conversation being 
     const Host = () => {
       const [id, setId] = useState('old');
       const [endpoint, setEndpoint] = useState('https://fictional.invalid/one');
+      const [mount, setMount] = useState(0);
+      page.remount = () => setMount(value => value + 1);
       page.endpoint = setEndpoint;
       page.selected = id;
       page.client = useConversationsClient({ endpoint, fetch, activeId: id, onSelect: setId, pollMs: 1000000, ...(change ? { onChange: () => change.promise } : {}), ...options });
       // As the example apps do: a selection the list does not hold yet goes back to the first row.
       const items = page.client?.items;
       useEffect(() => { if (items?.length && !items.some(item => item.id === id)) setId(items[0].id); }, [items, id]);
-      return page.client ? createElement(Chat, { key: id, controller: chats[id].controller, header: false, conversations: page.client, ...chatProps }) : null;
+      return page.client ? createElement(Chat, { key: `${id}:${mount}`, controller: chats[id].controller, header: false, conversations: page.client, ...chatProps }) : null;
     };
     await act(async () => root.render(createElement(Host, { key: drawn++ })));
     page.onNew = () => act(async () => { page.client.onNew(); });
@@ -198,6 +200,63 @@ test('a message sent right after New chat does not reach the conversation being 
       await settle(() => page.create.resolve(answer()));
     });
   }
+
+  // D-1501: the New chat button keeps the focus otherwise, so typing goes nowhere and Space makes another conversation.
+  for (const [name, Chat, chatProps] of [['PiChat', PiChat, {}], ['AmbientChat', AmbientChat, { defaultState: 'expanded' }]]) {
+    await t.test(`${name}: the cursor is in the new conversation's box once it opens`, async () => {
+      const page = await open({ Chat, chatProps });
+      const button = document.createElement('button'); document.body.append(button); button.focus();
+      await page.onNew();
+      await settle(() => page.create.resolve(answer()));
+      assert.equal(page.selected, 'new');
+      assert.equal(document.activeElement === input(), true, 'the person can type at once');
+      button.remove();
+    });
+  }
+
+  await t.test('a field the person moved to keeps the cursor', async () => {
+    const page = await open();
+    const field = document.createElement('input'); document.body.append(field);
+    await page.onNew();
+    field.focus();
+    await settle(() => page.create.resolve(answer()));
+    assert.equal(page.selected, 'new');
+    assert.equal(document.activeElement === field, true);
+    field.remove();
+  });
+
+  await t.test('a refused create leaves the cursor where it was', async () => {
+    const page = await open();
+    const button = document.createElement('button'); document.body.append(button); button.focus();
+    await page.onNew();
+    await settle(() => page.create.resolve(new Response('no', { status: 500 })));
+    assert.equal(page.selected, 'old');
+    assert.equal(document.activeElement === button, true);
+    button.remove();
+  });
+
+  await t.test('a later remount of the new conversation does not take the cursor again', async () => {
+    const page = await open();
+    await page.onNew();
+    await settle(() => page.create.resolve(answer()));
+    const button = document.createElement('button'); document.body.append(button); button.focus();
+    await act(async () => { await new Promise(done => setTimeout(done, 1100)); });
+    await settle(() => page.remount());
+    assert.equal(document.activeElement === button, true);
+    button.remove();
+  });
+
+  await t.test('coming back to a conversation made earlier does not take the cursor again', async () => {
+    const page = await open();
+    await page.onNew();
+    await settle(() => page.create.resolve(answer()));
+    await settle(() => page.client.onSelect('old'));
+    const button = document.createElement('button'); document.body.append(button); button.focus();
+    await settle(() => page.client.onSelect('new'));
+    assert.equal(page.selected, 'new');
+    assert.equal(document.activeElement === button, true);
+    button.remove();
+  });
 
   await t.test('AmbientChat waits too', async () => {
     const page = await open({ Chat: AmbientChat, chatProps: { defaultState: 'expanded' } });

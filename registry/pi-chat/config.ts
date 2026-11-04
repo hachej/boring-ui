@@ -124,6 +124,8 @@ export interface ConversationsConfig {
   readonly onNew?: (() => void) | undefined;
   /** New or fork is on its way: the composer is disabled, so no message goes to the conversation being left. */
   readonly creating?: boolean | undefined;
+  /** The conversation New or fork just opened: once it is `activeId`, the cursor goes to its message box, on a computer. */
+  readonly opened?: string | undefined;
   readonly loading?: boolean | undefined;
   /**
    * Server-side search: with it, a typed query (or the Archived filter) lists what this returns instead of filtering `items`
