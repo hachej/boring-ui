@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import type { EntryRecord, JsonObject } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
@@ -135,6 +135,19 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
   /** The optional annotate toggle: when notes are pending (`count` > 0), Send attaches them to the message first. */
   readonly feedback?: ComposerFeedback | undefined;
   readonly sendContext?: import('@hachej/boring-ui-kit/chat-react').ChatSessionFeedback | undefined;
+}
+
+/** After New or fork the cursor goes to the new conversation's box, unless the person moved to another field. Not on a phone, where it would open the keyboard. */
+export function useCursorInOpened(textarea: { readonly current: HTMLTextAreaElement | null }, conversations: { readonly opened?: string | undefined; readonly activeId?: string | undefined } | undefined, disabled: boolean) {
+  const opened = conversations?.opened, activeId = conversations?.activeId;
+  const done = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (opened === undefined || opened !== activeId || disabled || done.current === opened) return;
+    done.current = opened;
+    if (globalThis.matchMedia?.('(pointer: coarse)').matches) return;
+    if (globalThis.document?.activeElement?.matches('input, textarea, select, [contenteditable]')) return;
+    textarea.current?.focus();
+  }, [textarea, opened, activeId, disabled]);
 }
 
 /** Presentation adapter; all session state and controller protocols live in the kit. */

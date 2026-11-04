@@ -15,6 +15,8 @@ export interface ConversationsClient {
   readonly activeId: string | undefined;
   /** New or fork is on its way: the conversation on screen is about to be left, so it must take no message (`PiChat` disables its composer). */
   readonly creating: boolean;
+  /** The conversation New or fork just opened, until the person picks another: `PiChat` puts the cursor in its box once. */
+  readonly opened: string | undefined;
   readonly reload: () => Promise<void>;
   readonly onSelect: (id: string) => void;
   readonly onNew: () => void;
@@ -55,6 +57,7 @@ const item = (served: ServedConversation): ConversationItem => ({ id: String(ser
 export function useConversationsClient({ endpoint, fetch, activeId, onSelect, onChange, pollMs = 4000, openTimeoutMs = 15000 }: ConversationsClientOptions): ConversationsClient | undefined {
   const [items, setItems] = useState<readonly ConversationItem[] | undefined>();
   const [creating, setCreating] = useState(false);
+  const [opened, setOpened] = useState<string | undefined>();
   // The New or fork on its way; forgetting it gives the composer back, and its late answer then moves nobody.
   const opening = useRef<object | undefined>(undefined);
   const forget = useCallback(() => { opening.current = undefined; setCreating(false); }, []);
@@ -83,7 +86,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
   const reload = useCallback(() => list(), [list]);
   // Another endpoint (another owner's list) starts empty; switching conversations only reloads.
   // eslint-disable-next-line react-hooks/set-state-in-effect -- a new endpoint clears the old owner's list once, after commit
-  useEffect(() => { setItems(undefined); forget(); }, [base, forget]);
+  useEffect(() => { setItems(undefined); setOpened(undefined); forget(); }, [base, forget]);
   useEffect(() => {
     if (base === undefined) return;
     let off = false;
@@ -106,15 +109,15 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
       try {
         const { conversationId } = await op(name, body);
         await changed();
-        if (conversationId !== undefined && opening.current === run) latest.current.onSelect(String(conversationId));
+        if (conversationId !== undefined && opening.current === run) { setOpened(String(conversationId)); latest.current.onSelect(String(conversationId)); }
       } finally {
         clearTimeout(timer);
         if (opening.current === run) forget();
       }
     };
     return {
-      items, activeId, creating, reload,
-      onSelect: (id: string) => { forget(); latest.current.onSelect(id); },
+      items, activeId, creating, opened, reload,
+      onSelect: (id: string) => { forget(); setOpened(undefined); latest.current.onSelect(id); },
       onNew: () => { void open('create', {}).catch(() => {}); },
       search: async (query: string, { archived }: { readonly archived: boolean }, signal: AbortSignal) =>
         ((await call({ ...(query ? { q: query } : {}), ...(archived ? { archived: '1' } : {}) }, undefined, signal)).conversations ?? []).map(item),
@@ -127,7 +130,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
         await open('fork', { conversationId: from, at });
       },
     };
-  }, [items, activeId, creating, call, reload, forget]);
+  }, [items, activeId, creating, opened, call, reload, forget]);
 }
 
 /** Compatibility spelling retained for one release. */

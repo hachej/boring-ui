@@ -1,5 +1,7 @@
 # Unreleased
 
+- **The cursor goes to the message box after New chat (`@hachej/boring-ui-kit`, `pi-chat`; D-1501).** Reinstall `pi-chat`. `useConversationsClient` returns `opened`, and `ConversationsConfig` gains an optional `opened`. A host that passes the client on gets this with no change.
+
 # Migrating to 0.4.55
 
 - **The first message after New chat goes to the new conversation (`@hachej/boring-ui-kit`, `pi-chat`, `pi-ambient`; D-1499).** Reinstall `pi-chat` and `pi-ambient`. `useConversationsClient` returns `creating`, true from New or fork until the conversation is selected, and takes `openTimeoutMs` (default 15 s). `ConversationsConfig` gains an optional `creating`, which holds the composer, voice button and suggestions in `PiChat` and the composer in `AmbientChat`. Stop on a running reply still works: a custom composer gets `stopOpen` alongside `disabled`. A second New while one is on its way does nothing. A host with its own `onNew` can pass `creating` too.
