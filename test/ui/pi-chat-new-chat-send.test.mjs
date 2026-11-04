@@ -41,12 +41,12 @@ test('a message sent right after New chat does not reach the conversation being 
   };
 
   let drawn = 0;
-  const open = async ({ create = held(), reload, change, oldText = 'Bonjour', Chat = PiChat, chatProps = {}, options = {}, oldDocs, selectLag = 0, newText = 'Salut' } = {}) => {
+  const open = async ({ create = held(), reload, change, oldText = 'Bonjour', Chat = PiChat, chatProps = {}, options = {}, oldDocs, selectLag = 0, newText = 'Salut', controllerLag = 0 } = {}) => {
     const chats = { old: chat('old', oldText, oldDocs), new: chat('new', newText), other: chat('other', '') };
     const page = { chats, creates: 0, create, selected: 'old', endpoint: undefined };
     let listed = ['old'];
     const fetch = async request => {
-      if (request.method === 'POST') { page.creates += 1; const reply = await create.promise; if (reply.ok) listed = ['old', 'new']; return reply; }
+      if (request.method === 'POST') { page.creates += 1; const reply = await page.create.promise; if (reply.ok) listed = ['old', 'new']; return reply; }
       if (request.url.includes('/two')) return Response.json({ conversations: [row('other')] });
       // One poll is asked before the create and answers late; the first read after the create is the client's reload, and later polls stay out.
       if (page.lagging) {
@@ -61,6 +61,9 @@ test('a message sent right after New chat does not reach the conversation being 
       const [id, setId] = useState('old');
       const [endpoint, setEndpoint] = useState('https://fictional.invalid/one');
       const [mount, setMount] = useState(0);
+      // A host can change its active conversation before its controller catches up.
+      const [shown, setShown] = useState('old');
+      useEffect(() => { if (!controllerLag) return undefined; const timer = setTimeout(() => setShown(id), controllerLag); return () => clearTimeout(timer); }, [id]);
       page.remount = () => setMount(value => value + 1);
       page.endpoint = setEndpoint;
       page.selected = id;
@@ -68,7 +71,7 @@ test('a message sent right after New chat does not reach the conversation being 
       // As the example apps do: a selection the list does not hold yet goes back to the first row.
       const items = page.client?.items;
       useEffect(() => { if (items?.length && !items.some(item => item.id === id)) setId(items[0].id); }, [items, id]);
-      return page.client ? createElement(Chat, { key: `${id}:${mount}`, controller: chats[id].controller, header: false, conversations: page.client, ...chatProps }) : null;
+      return page.client ? createElement(Chat, { key: `${id}:${mount}`, controller: chats[controllerLag ? shown : id].controller, header: false, conversations: page.client, ...chatProps }) : null;
     };
     await act(async () => root.render(createElement(Host, { key: drawn++ })));
     page.onNew = () => act(async () => { page.client.onNew(); });
@@ -326,6 +329,35 @@ test('a message sent right after New chat does not reach the conversation being 
       button.remove();
     });
   }
+
+  await t.test('a host whose controller comes after its active conversation: the text waits, and the old draft is untouched', async () => {
+    const page = await open({ controllerLag: 100, newText: '' });
+    const button = await pressNew(page);
+    document.activeElement.value = 'first';
+    await settle(() => page.create.resolve(answer()));
+    assert.equal(page.selected, 'new');
+    assert.equal(page.chats.old.typed.length, 0);
+    await act(async () => { await new Promise(done => setTimeout(done, 200)); });
+    assert.equal(page.chats.old.typed.length, 0);
+    assert.equal(page.chats.new.typed.at(-1), 'first');
+    assert.equal(document.activeElement === input(), true);
+    button.remove();
+  });
+
+  await t.test('a second New keeps its typing past the first one\'s wait', async () => {
+    const page = await open({ selectLag: 5000 });
+    const button = await pressNew(page);
+    await settle(() => page.create.resolve(answer()));
+    await act(async () => { await new Promise(done => setTimeout(done, 1000)); });
+    page.create = held();
+    button.focus();
+    await act(async () => { button.click(); });
+    document.activeElement.value = 'second';
+    await act(async () => { await new Promise(done => setTimeout(done, 2200)); });
+    assert.equal(document.querySelector('[data-testid=new-chat-typing]')?.value, 'second');
+    await settle(() => page.create.resolve(new Response('no', { status: 500 })));
+    button.remove();
+  });
 
   await t.test('Enter typed as the conversation opens sends nothing', async () => {
     const page = await open();
