@@ -111,6 +111,27 @@ test('a typed message answers the waiting question, and natural presentation sho
     assert.deepEqual(calls, ['send'], 'answered elsewhere: the run goes on');
     assert.equal(sends[0].content.text, 'Le port du nord.');
   });
+  await t.test('a second message sent before the first is settled does not stop the first', async () => {
+    let refuse;
+    const held = async (id, text) => { answers.push({ id, text }); await new Promise(resolve => { refuse = resolve; }); return { kind: 'denied' }; };
+    await draw(waiting, { text: 'Premier.' }, { actions: { answer: held } });
+    await submit();
+    setDraft({ text: 'Second.' });
+    await submit();
+    await act(async () => { refuse(); await new Promise(resolve => setTimeout(resolve, 0)); });
+    assert.equal(answers.length, 1, 'the question is tried once');
+    assert.deepEqual(calls, ['stop', 'send', 'send'], 'one stop, then both messages in order');
+    assert.deepEqual(sends.map(item => item.content.text), ['Premier.', 'Second.']);
+  });
+  await t.test('pending feedback stays out of the answer, and stays pending', async () => {
+    let attached = 0, marked = 0;
+    const sendContext = { count: 1, attach: async text => { attached++; return { kind: 'ok', text: `${text}\n[rapport fictif]` }; }, sent: () => { marked++; } };
+    await draw(waiting, { text: 'Le port du nord.' }, { sendContext });
+    await submit();
+    assert.deepEqual(answers.map(item => item.text), ['Le port du nord.']);
+    assert.equal(attached, 0, 'not attached to the answer');
+    assert.equal(marked, 0, 'still to send');
+  });
   await t.test('a host with no answer path keeps queueing', async () => {
     await draw(waiting, { text: 'Le port du nord.' }, { actions: {} });
     assert.equal(button(), 'stop');
@@ -124,6 +145,11 @@ test('a typed message answers the waiting question, and natural presentation sho
     await draw(warned);
     assert.doesNotMatch(element.textContent, /harness|Fictional output note|"kind"/);
     assert.match(element.querySelector('[data-testid=question-answer]')?.textContent ?? '', /Le port du nord\./);
+  });
+  await t.test('an answer that itself mentions harness tags is shown whole', async () => {
+    const quoted = JSON.stringify({ kind: 'answered', answer: 'Garder <harness>ceci</harness> tel quel.' });
+    await draw({ entries: [user, round(2, assistant([ask('q')])), round(3, answered(quoted))], docs: running });
+    assert.match(element.querySelector('[data-testid=question-answer]')?.textContent ?? '', /Garder <harness>ceci<\/harness> tel quel\./);
   });
   await t.test('a stopped question leaves no harness text, live or after reload', async () => { await draw(stopped); leaks(); });
   await t.test('a refused question shows neither the validation error nor its arguments', async () => {
