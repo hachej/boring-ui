@@ -1,0 +1,22 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "page-header",
+  "title": "Page header",
+  "description": "A 14px semibold title, an optional badge, an actions slot, and one `assistant` prop that says where the assistant opens (beside the page or over it).",
+  "dependencies": [
+    "react@^19.0.0"
+  ],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.57/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.57/r/_shared.json"
+  ],
+  "files": [
+    {
+      "path": "registry/page-header/page-header.tsx",
+      "content": "import type { ReactNode } from 'react';\nimport { Badge } from '@/components/ui/badge';\nimport { Button } from '@/components/ui/button';\nimport { cn } from '../utils/utils';\nimport { PanelBottom, PanelRight } from '../_shared/icons';\n\nexport type PageHeaderProps = {\n  title: string;\n  badge?: string;\n  /** Right-aligned controls, before the assistant trigger. */\n  actions?: ReactNode;\n  /**\n   * Where the assistant opens. One prop: the trigger's icon and its label follow `opensIn`. `panel` opens beside the page, `sheet` over it.\n   */\n  assistant?: { opensIn: 'panel' | 'sheet'; onOpen: () => void; label?: string };\n  className?: string;\n};\n\nexport function PageHeader({ title, badge, actions, assistant, className }: PageHeaderProps) {\n  const Opener = assistant?.opensIn === 'sheet' ? PanelBottom : PanelRight;\n  return (\n    <header className={cn('flex min-h-11 min-w-0 items-center gap-2', className)}>\n      <h1 className=\"truncate text-sm font-semibold\">{title}</h1>\n      {badge ? <Badge variant=\"secondary\">{badge}</Badge> : null}\n      <div className=\"ml-auto flex shrink-0 items-center gap-2\">\n        {actions}\n        {assistant ? (\n          <Button\n            variant=\"ghost\"\n            size=\"icon\"\n            aria-label={assistant.label ?? (assistant.opensIn === 'sheet' ? 'Open assistant over the page' : 'Open assistant beside the page')}\n            onClick={assistant.onOpen}\n          >\n            <Opener aria-hidden />\n          </Button>\n        ) : null}\n      </div>\n    </header>\n  );\n}\n",
+      "type": "registry:component",
+      "target": "components/page-header/page-header.tsx"
+    }
+  ],
+  "type": "registry:component"
+}
