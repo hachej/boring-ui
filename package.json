@@ -118,6 +118,7 @@
     "check:pack": "node scripts/check-npm-packages.mjs",
     "verify:repo": "node scripts/verify-repo.mjs",
     "draft-recovery:journey": "node examples/draft-recovery/journey.mjs",
+    "markdown-tabs:journey": "node examples/markdown-tabs/journey.mjs",
     "release:preflight": "npm run check && npm run typecheck && node scripts/release-preflight.mjs",
     "release:version": "node scripts/release-version.mjs",
     "file-tree:journey": "node examples/file-tree/journey.mjs && node examples/file-tree/journey-library.mjs",
