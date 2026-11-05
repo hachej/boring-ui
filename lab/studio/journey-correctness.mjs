@@ -129,8 +129,11 @@ try {
     await browser.until('conflict shown', `document.body.innerText.includes('Your local text has been kept.')`);
     assert.equal(await browser.evaluate(`${source}.value`), draft);
     assert.equal(await savedText(), '# External fictional revision\n');
-    await browser.click(button('Check saved version'));
-    await browser.click(button('Discard local changes and reload'));
+    await browser.click(button('Review diff'));
+    await browser.until('review shows the local draft against the saved text without changing it', `document.querySelector('[data-boring=conflict-choices] [data-boring=proposal-diff]')?.textContent.includes('External fictional revision')`);
+    assert.equal(await browser.evaluate(`${source}.value`), draft);
+    assert.equal(await savedText(), '# External fictional revision\n');
+    await browser.click(button('Take theirs'));
     await browser.until('explicit discard loads external content', `${source}?.value === '# External fictional revision\\n'`);
   });
   await step('reload reconnects to the same native transcript and saved document', async () => {

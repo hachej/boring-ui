@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import type { EntryRecord, JsonObject } from '@earendil-works/pi-durable';
 import type { ImageContent, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
@@ -137,6 +137,23 @@ export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeature
   readonly sendContext?: import('@hachej/boring-ui-kit/chat-react').ChatSessionFeedback | undefined;
 }
 
+/** After New or fork what the person typed meanwhile goes in the new conversation's box, and the cursor too, unless the person moved to another field. Not on a phone, where it would open the keyboard. */
+export function useCursorInOpened(textarea: { readonly current: HTMLTextAreaElement | null }, conversations: { readonly opened?: string | undefined; readonly openedSeen?: (() => string) | undefined; readonly activeId?: string | undefined } | undefined, composer: { readonly disabled: boolean; readonly text: string; readonly onText: (text: string) => void }, leaving: boolean, conversationId: string | number) {
+  const opened = conversations?.opened, activeId = conversations?.activeId, openedSeen = conversations?.openedSeen;
+  const done = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (opened === undefined || opened !== activeId || composer.disabled || leaving || done.current === opened) return;
+    // A host can change its active conversation before its controller: this box may still be the one being left.
+    if (String(conversationId) !== opened) return;
+    done.current = opened;
+    const typed = openedSeen?.();
+    if (typed) composer.onText(composer.text + typed);
+    if (globalThis.matchMedia?.('(pointer: coarse)').matches) return;
+    if (globalThis.document?.activeElement?.matches('input, textarea, select, [contenteditable]')) return;
+    textarea.current?.focus();
+  }, [textarea, opened, activeId, composer, leaving, openedSeen, conversationId]);
+}
+
 /** Presentation adapter; all session state and controller protocols live in the kit. */
 export function useChatSession(options: ChatSessionOptions) {
   const { controller, activeController, mode, presentation, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
@@ -181,7 +198,8 @@ export function useChatSession(options: ChatSessionOptions) {
     text: state.draft.text, onText: (text: string) => controller.setText(text), onKeyDown: onComposerKeyDown, textareaRef: textarea,
     attachments: state.draft.attachments.map(item => ({ id: item.id, name: item.name, mimeType: item.content.mimeType, data: item.content.data })),
     onRemoveAttachment: (id: string) => controller.setAttachments(controller.getSnapshot().draft.attachments.filter(item => item.id !== id)),
-    working, sendBlocked, disabled: state.disposed, stopRequested: state.stop === 'requested',
+    // A typed message answers the waiting question, so the primary button sends it.
+    working: working && !session.answersQuestion, sendBlocked, disabled: state.disposed, stopRequested: state.stop === 'requested',
     onSend: session.send, onStop: () => act(controller.stop),
     hasFiles: Boolean(composerHasContent),
     uploading: session.uploading > 0, canAttach: Boolean(onPickFiles || onFiles || attachments), ...(camera ? { camera } : {}), fileAccept: attachments ? attachments.accept ?? '' : fileAccept, onPickFiles: (files: readonly File[]) => { void session.upload(files); },

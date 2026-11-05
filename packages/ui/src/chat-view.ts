@@ -189,7 +189,9 @@ export function derive<Content = unknown>(view: ConversationView | undefined, op
   const status = (result: ToolResultMessage | undefined): ToolStatus => result ? (result.isError ? 'failed' : 'completed') : run ? 'running' : 'unfinished';
   function toolPart(call: ToolCall, key: string, committed: boolean): P | undefined {
     const result = results.get(call);
-    if (call.name === ASK_USER_TOOL) return { kind: 'question', key, call, result, live: !committed, questionId: questionIds.get(call) };
+    // A question that failed (stopped, refused arguments) has nothing a reader can act on, and its result is harness text with the model's arguments.
+    // Nor has a call with no question: still being written, or about to be refused, since `ask_user` requires one even for a form. Only missing or empty: Pi coerces `0` to text and accepts it.
+    if (call.name === ASK_USER_TOOL) return natural && (result?.isError || !result && (call.arguments?.['question'] ?? '') === '') ? undefined : { kind: 'question', key, call, result, live: !committed, questionId: questionIds.get(call) };
     // A call gated by `requireApproval` identifies itself: it publishes its summary under APPROVAL_DETAILS before it asks.
     const slotDetails = result ? undefined : (Array.isArray(live?.['tools']) ? live['tools'] : []).map(object).find(slot => slot?.['callId'] === call.id)?.['details'];
     const record = approvalRecord(result ? result.details : slotDetails);

@@ -36,7 +36,7 @@ import type { ArtifactShown, ArtifactFailed } from '@hachej/boring-ui-kit/chat-r
 import { createTaskArtifact, pendingPresents, taskSubjectKey } from '../pi-artifacts/artifact';
 import type { ArtifactDescriptor, PresentedArtifact, ArtifactsConfig } from '../pi-artifacts/artifact';
 import { artifactCards } from '../pi-artifacts/artifact-card';
-import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from '../pi-chat/session';
+import { PAGE_FIRST, PAGE_MORE, useChatSession, useCursorInOpened, useRowChunks, useTranscript } from '../pi-chat/session';
 import type { ChatFeatureProps } from '../pi-chat/session';
 import { ArtifactWorkspace } from '../pi-workspace/workspace';
 import type { WorkspacePanelApi } from '../pi-workspace/workspace';
@@ -307,6 +307,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const session = useChatSession({ controller, activeController, mode, presentation, voiceReplay, targetLabel, actions, renderEntry, hideLine, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, sendContext, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
+  useCursorInOpened(textarea, conversations, composer, conversations?.creating === true, state.conversationId);
   const empty = session.empty;
   const transcript = useTranscript(rows, displayLimit ?? paging?.first ?? PAGE_FIRST, paging?.more ?? PAGE_MORE, { state: state.history, connected: !state.disposed && connected, load: controller.loadEarlier }, displayLimit === undefined);
   const { stick: { scrollRef, isAtBottom, scrollToBottom: stickToBottom }, hidden } = transcript;
@@ -392,7 +393,8 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const latestExpand = useRef(expand);
   useLayoutEffect(() => { latestExpand.current = expand; });
   useEffect(() => {
-    if (expanded && !globalThis.matchMedia?.('(pointer: coarse)').matches) textarea.current?.focus();
+    // Not from a field in use: a person's, or the one holding what is typed after New chat, where a dead key may still be open.
+    if (expanded && !globalThis.matchMedia?.('(pointer: coarse)').matches && !globalThis.document?.activeElement?.matches('input, textarea, select, [contenteditable]')) textarea.current?.focus();
   }, [expanded, textarea]);
   // The title is disabled while the window is open, so focus goes back to it once the bar is showing again.
   const refocusTitle = useRef(false);
@@ -489,13 +491,13 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
       <div className={cn('shrink-0', phone && 'pb-[env(safe-area-inset-bottom)]')}>
         <div className="space-y-2 px-3 empty:hidden [&:has(*)]:pt-2">
           <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} sending={session.sending} />
-          <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} />
+          <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} conversations={conversations} />
           {!expanded && <ChatConnectionNotice compact fallback={{ error: labels.loadFailedShort, closed: labels.disconnectedShort }} state={state} renderConnectionError={renderConnectionError} onReconnect={() => act(controller.connect)} />}
         </div>
         <div className="px-3 pt-2 pb-3">
           <ConversationFiles files={files} />
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
-          {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, layout: composerLayout, placeholder: working || waitingForAnswer ? label : labels.placeholder, barStart, barNote, barEnd: tools })}
+          {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, disabled: composer.disabled || conversations?.creating === true, stopOpen: conversations?.creating === true && !composer.disabled, layout: composerLayout, placeholder: working || waitingForAnswer ? label : labels.placeholder, barStart, barNote, barEnd: tools })}
           {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}
         </div>
       </div>

@@ -28,7 +28,7 @@ import { markLeads } from './rows';
 import type { Row } from './rows';
 import { MessageQueue } from './queue';
 import { ChatNotices, ChatConnectionNotice, ChatStatusLine } from './notice';
-import { PAGE_FIRST, PAGE_MORE, useChatSession, useRowChunks, useTranscript } from './session';
+import { PAGE_FIRST, PAGE_MORE, useChatSession, useCursorInOpened, useRowChunks, useTranscript } from './session';
 import { useChatDraft } from './use-chat-draft';
 import { useChatPlacement } from './use-remote-chat';
 import type { ChatPlacement } from './use-remote-chat';
@@ -222,6 +222,9 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const session = useChatSession({ controller, activeController: active, mode, presentation, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => timeline ? timeline.afterSend?.() : scrollToBottom.current(), feedback, sendContext, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
   const { state, derived, rows: nativeRows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
+  // New or fork is on its way: nothing may go to this conversation (D-1499).
+  const leaving = conversations?.creating === true;
+  useCursorInOpened(textarea, conversations, composer, leaving, state.conversationId);
   const voiceRows = pendingVoice ?? voice.pending;
   const VoiceButton = voiceMessage?.Button, VoiceBubbleView = voiceMessage?.Bubble ?? NoVoiceBubble;
   const rows = useMemo(() => messageStyle === 'messaging' ? markLeads(nativeRows) : nativeRows, [nativeRows, messageStyle]);
@@ -287,7 +290,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
       {(empty || loading) && <div className="pointer-events-none absolute inset-0">
         <div className="pointer-events-auto h-full">
           {loading ? <p role="status" data-testid="loading" className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>
-            : emptyState ?? <EmptyState title={title} description={labels.emptyDescription} {...(avatar ? { avatar } : {})} {...(suggestions ? { suggestions } : {})} onSelect={text => { controller.setText(text); textarea.current?.focus(); }} />}
+            : emptyState ?? <EmptyState title={title} description={labels.emptyDescription} {...(avatar ? { avatar } : {})} {...(suggestions ? { suggestions } : {})} onSelect={text => { if (leaving) return; controller.setText(text); textarea.current?.focus(); }} />}
         </div></div>}
     </div>
 
@@ -295,17 +298,17 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
       <div className="mx-auto w-full max-w-[720px] space-y-2">
         <div {...(session.natural ? {} : { 'aria-live': 'polite' as const })} className="space-y-2 empty:hidden">
           <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} sending={session.sending} />
-          <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} />
+          <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} conversations={conversations} />
         </div>
         <div>
           <ConversationFiles files={[...conversationFiles.values()]} />
           <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
           {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
-          {(renderComposer ?? (value => <Composer {...value} />))({ ...composer,
+          {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, disabled: composer.disabled || leaving, stopOpen: leaving && !composer.disabled,
             recording: composerRecording ?? (VoiceButton && (voice.phase === 'starting' || voice.phase === 'recording') ? <VoiceButton voice={voice} /> : undefined), layout: composerLayout,
             placeholder: labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder, barStart, barNote, start: composerStart,
-            ...(voiceMessage && VoiceButton && voiceReplacesSend ? { barEnd: tools, whenEmpty: <VoiceButton voice={voice} primary disabled={state.disposed || !connected || state.send.kind === 'unknown'} /> }
-              : { barEnd: voiceMessage && VoiceButton ? <>{tools}<VoiceButton voice={voice} disabled={state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools }),
+            ...(voiceMessage && VoiceButton && voiceReplacesSend ? { barEnd: tools, whenEmpty: <VoiceButton voice={voice} primary disabled={leaving || state.disposed || !connected || state.send.kind === 'unknown'} /> }
+              : { barEnd: voiceMessage && VoiceButton ? <>{tools}<VoiceButton voice={voice} disabled={leaving || state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools }),
           })}
           {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}
         </div>

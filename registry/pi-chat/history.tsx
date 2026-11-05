@@ -97,7 +97,7 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
   const [searchOpen, setSearchOpen] = useState(autoFocus || searchMode === 'inline');
   const [archived, setArchived] = useState(false);
   // Server-side results while a query is typed or the Archived filter is on (when the host offers `search`).
-  const [found, setFound] = useState<{ readonly items: readonly ConversationItem[]; readonly loading: boolean } | null>(null);
+  const [found, setFound] = useState<{ readonly items: readonly ConversationItem[]; readonly loading: boolean; readonly failed?: boolean } | null>(null);
   const [revision, setRevision] = useState(0);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -116,7 +116,7 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
     setFound(previous => ({ items: previous?.items ?? [], loading: true }));
     const timer = setTimeout(() => {
       serverSearch(needle, { archived }, controller.signal).then(items => { if (!controller.signal.aborted) setFound({ items, loading: false }); })
-        .catch(() => { if (!controller.signal.aborted) setFound({ items: [], loading: false }); });
+        .catch(() => { if (!controller.signal.aborted) setFound({ items: [], loading: false, failed: true }); });
     }, 150);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [serverSearch, query, archived, revision]);
@@ -153,8 +153,10 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
       </div>}
       {navigation}
       {failure && <p role="alert" className="m-0 shrink-0 px-3 pt-2 text-xs text-destructive">{failure}</p>}
-      <ScrollArea className="min-h-0 flex-1" aria-busy={loading ? 'true' : undefined}>
-        {total === 0 && <p role="status" data-testid="conversations-empty" className="m-0 px-3 py-8 text-center text-sm text-muted-foreground">
+      {/* A sheet has only a max-height, so the viewport's stock height of 100% resolves to its content: a flex column makes it shrink to the room left, and fill it in a parent with a set height. */}
+      <ScrollArea className="flex min-h-0 flex-1 flex-col [&>[data-slot=scroll-area-viewport]]:h-auto [&>[data-slot=scroll-area-viewport]]:grow [&>[data-slot=scroll-area-viewport]]:overscroll-contain" aria-busy={loading ? 'true' : undefined}>
+        {found?.failed && <p role="alert" data-testid="conversations-search-failed" className="m-0 px-3 py-8 text-center text-sm text-destructive">{labels.searchFailed}</p>}
+        {total === 0 && !found?.failed && <p role="status" data-testid="conversations-empty" className="m-0 px-3 py-8 text-center text-sm text-muted-foreground">
           {loading ? labels.loadingConversations : query.trim() ? labels.noMatch(query.trim()) : archived ? labels.noArchived : labels.noConversations}</p>}
         {shown.map(group => <SidebarGroup key={group.key} aria-label={labels[group.key]} role="group">
           <SidebarGroupLabel render={<h4 />}>{labels[group.key]}</SidebarGroupLabel>

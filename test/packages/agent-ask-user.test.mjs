@@ -185,6 +185,18 @@ test('a pending question survives closing and reopening the harness on the same 
   await until('model continues after reopen', async () => finalText(await view(remote)) === 'Plan uses {"kind":"answered","answer":"lake"}');
 });
 
+test('a message sent right after stopping a waiting question reaches the model', async t => {
+  const f = await fixture(t);
+  await f.remote.conversation.submit({ type: 'input', requestId: 'r1', content: 'Plan a picnic.' }, f.remote.context);
+  await waitPending(f.remote);
+  await f.remote.conversation.abort(f.remote.context);
+  await f.remote.conversation.submit({ type: 'input', requestId: 'r2', content: 'Forget the picnic.', whenBusy: 'followUp' }, f.remote.context);
+  await until('the model answers the new message', async () => f.asker.requests.includes('after-answer'));
+  const settled = await view(f.remote);
+  assert.ok(messages(settled).some(m => m.role === 'user' && JSON.stringify(m.content).includes('Forget the picnic.')), 'the message is in the transcript');
+  assert.deepEqual(pending(settled), []);
+});
+
 test('withdraw removes a queued follow-up and reports messages that already ran', async t => {
   const f = await fixture(t);
   const first = await f.remote.conversation.submit({ type: 'input', requestId: 'first', content: 'Plan a picnic.' }, f.remote.context);

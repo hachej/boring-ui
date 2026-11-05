@@ -8,7 +8,7 @@
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIcon, ArchiveIcon, CalendarDaysIcon, CalendarPlusIcon, ClipboardListIcon, DatabaseIcon, HomeIcon, MessageCircleIcon, MessagesSquareIcon, Share2Icon, MicIcon, MoonIcon, MoonStarIcon, PlusIcon, TargetIcon, UsersIcon, UploadIcon } from 'lucide-react';
 import { stubPanel, stubPanelWith } from './stub-slot';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card';
 import { Documents } from '../../registry/documents/documents.tsx';
 import { DocumentSheet } from '../../registry/documents/document-sheet.tsx';
 import { AgentWorkspace, useConversations } from '../../registry/pi-app/agent-workspace.tsx';
+import { ConversationHistory } from '../../registry/pi-chat/history.tsx';
 import { PlacedAgentWorkspace, usePlacedAgentState } from '../../registry/placed-agent/placed-agent-workspace.tsx';
 import { defaultKinds } from '../../registry/pi-app-kinds/pi-app-kinds.ts';
 import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
@@ -41,6 +42,8 @@ const send = query.get('send') === 'message' ? 'message' : query.get('send') ===
 const documents = query.get('documents') === '1' || send === 'message';
 const targets = query.get('targets') === '1';
 const noAgent = query.get('agent') === 'none';
+// `?tools-history`: History as a host mounts it from the agent layer, ConversationHistory `above` in PiChat `tools` (journey-history-tools.mjs).
+const toolsHistory = query.has('tools-history');
 const authorized = (request: Request) => { const headers = new Headers(request.headers); headers.set('authorization', `Bearer ${token}`); return fetch(new Request(request, { headers })); };
 const endpoint = (agent: string) => (id: string) => new URL(`/api/chat?agent=${agent}&conversation=${id}`, location.href);
 
@@ -154,6 +157,9 @@ function App() {
   const coach = useRemoteChat({ conversationId: noAgent ? undefined : conversations.coach, endpoint: endpoint('coach'), fetch: authorized, identity, requestContext: readAgentContext });
   const manager = useRemoteChat({ conversationId: conversations.pm, endpoint: endpoint('pm'), fetch: authorized, identity, requestContext: readAgentContext });
   const [route, setRoute] = useState(() => location.hash.slice(1));
+  const [pickingHistory, setPickingHistory] = useState(false);
+  const closeHistory = useCallback(() => setPickingHistory(false), []);
+  const listed = useConversations({ endpoint: toolsHistory ? new URL('/api/conversations', location.href) : undefined, fetch: authorized, onSelect: id => { window.__pickedConversation = id; } });
   const waiting = (!noAgent && coach.status !== 'ready') || manager.status !== 'ready' || (send === 'message' && !docs);
   if (waiting) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
   // A test seam: a send that fails the way an unconfirmed earlier submission does (the controller throws).
@@ -169,7 +175,7 @@ function App() {
   const agent = noAgent ? undefined : {
     controller: coach.controller,
     // Three actions: the first two in the title row, the third (a link) in « … ».
-    headerActions: [
+    headerActions: toolsHistory ? [{ id: 'history', label: 'History', icon: MessagesSquareIcon, onSelect: () => setPickingHistory(true) }] : [
       ...seeSheet,
       { id: 'whatsapp', label: 'Discuter avec Max sur WhatsApp', icon: MessageCircleIcon, href: '/whatsapp/open?app=fitness', onSelect: () => window.__did.push('whatsapp') },
       { id: 'share', label: 'Partager ma semaine', icon: Share2Icon, onSelect: () => window.__did.push('share') },
@@ -182,7 +188,7 @@ function App() {
         let binary = '';
         for (const byte of bytes) binary += String.fromCharCode(byte);
         return { id: `photo-${Date.now()}-${index}`, name: file.name, content: { type: 'image' as const, data: btoa(binary), mimeType: file.type || 'image/jpeg' } };
-      })),tools: <span data-testid="host-tool" className="sr-only">outil</span>, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
+      })),tools: pickingHistory && listed ? <ConversationHistory conversations={listed} onClose={closeHistory} placement="above" /> : <span data-testid="host-tool" className="sr-only">outil</span>, suggestions: [{ label: 'Résumé de la semaine', text: 'Fais le résumé de ma semaine' }] },
     ...(app === 'empty' ? {} : { voice: { transcribe: async () => {
       if (send === 'message') { await new Promise(resolve => setTimeout(resolve, 1500)); if (window.__voiceFail) throw new Error('Fictional transcription failure'); }
       return window.__transcript ?? (send === 'message' ? 'Je mange une salade' : 'Combien de pas hier ?');
@@ -267,6 +273,11 @@ function RedactionApp() {
   </div>;
 }
 
+/** Host panels of three sizes, for the journey that measures what the workspace bar's sheet does to them: a short one, a long one that scrolls itself, a long one that does not. */
+const fictionalPanel = (id: string, lines: number, scrolls = false) => ({ id, label: `Fictional ${id}`, icon: MessagesSquareIcon,
+  content: () => <div data-testid={`${id}-body`} className={scrolls ? 'min-h-0 flex-1 overflow-auto' : undefined}>{Array.from({ length: lines }, (_, line) => <p key={line} className="m-0 py-1">Fictional note {line + 1}</p>)}</div> });
+const FICTIONAL_BAR_PANELS = [fictionalPanel('host-short', 3), fictionalPanel('host-scrolls', 40, true), fictionalPanel('host-plain', 40)];
+
 // ---- Layout C: the workspace-app's AgentWorkspace as the one screen. No shell agent: the page is the chat.
 function PmApp() {
   const manager = useRemoteChat({ conversationId: conversations.pm, endpoint: endpoint('pm'), fetch: authorized, identity, requestContext: readAgentContext });
@@ -280,7 +291,7 @@ function PmApp() {
   const chat = useRemoteChat({ conversationId: active, endpoint: id => new URL(`/api/chat?agent=writer&conversation=${id}`, location.href), fetch: authorized, identity });
   if (manager.status !== 'ready' || !revisionProvider) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
   const nav = [{ id: 'atelier', label: 'Atelier', icon: MessagesSquareIcon, render: () => <main data-testid="app" data-conversation={active} className="flex h-full min-h-0">
-    <AgentWorkspace artifactKinds={englishKinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout={query.has('embedded') ? 'embedded' : 'default'}
+    <AgentWorkspace artifactKinds={englishKinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout={query.has('embedded') ? 'embedded' : 'default'} {...(query.has('popover-history') ? { history: 'popover' as const } : {})} {...(query.has('bar-panels') ? { barPanels: FICTIONAL_BAR_PANELS } : {})}
       chat={{ labels: { title: 'Writer' }, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }} connecting={<p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>} />
   </main> }];
   const account = { name: 'Camille Martin', email: 'camille@example.invalid', menu: [{ label: 'Réglages', onSelect: () => window.__did.push('settings') }] };

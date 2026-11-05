@@ -66,14 +66,15 @@ function splitFormAnswer(items: readonly FormQuestion[], text: string): readonly
 /** The answered text from a result such as `{"kind":"answered","answer":"..."}`; undefined when the call did not produce an answer. */
 export function parseAnswer(result: ToolResultMessage | undefined): { readonly answer: string } | { readonly failure: string } | undefined {
   if (!result) return undefined;
-  const text = result.content.map(part => part.type === 'text' ? part.text : '').join('');
+  // Pi appends its diagnostics to a result as a `<harness>` block of their own, for the model: never for the person.
+  const text = result.content.map(part => part.type === 'text' && !/^<harness>[\s\S]*<\/harness>$/.test(part.text) ? part.text : '').join('');
   if (!result.isError) {
     try {
       const value: unknown = JSON.parse(text);
       if (value !== null && typeof value === 'object' && (value as { kind?: unknown }).kind === 'answered' && typeof (value as { answer?: unknown }).answer === 'string') return { answer: (value as { answer: string }).answer };
     } catch { /* fall through to the failure text */ }
   }
-  return { failure: text || 'The question was not answered.' };
+  return { failure: text };
 }
 
 
@@ -135,7 +136,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
             : <ItemTitle data-testid="question-answer" className={wrap}>{values[i]}</ItemTitle>}
         </div>)}</div>
           : current !== undefined && <ItemTitle className={wrap}><span className="sr-only">{labels.yourAnswer} </span><span data-testid="question-answer" className="whitespace-pre-line">{current}</span></ItemTitle>}
-        {state === 'failed' && settled && 'failure' in settled && <ItemDescription role="alert" className={wrap}>{settled.failure}</ItemDescription>}
+        {state === 'failed' && settled && 'failure' in settled && <ItemDescription role="alert" className={wrap}>{settled.failure || labels.questionNotAnswered}</ItemDescription>}
       </ItemContent>
     </Item>;
   }

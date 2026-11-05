@@ -52,7 +52,7 @@ function BarPanel({ id, label, icon: Icon, dot, narrow, open, onOpenChange, chil
   </>;
   return <Popover open={open} onOpenChange={onOpenChange}>
     <Hinted label={label} narrow={false} trigger={<PopoverTrigger render={button} />} />
-    <PopoverContent data-testid={`workspace-${id}`} aria-label={label} align="end" className="pi-chat w-[23rem] max-w-[calc(100vw-1rem)] max-h-[min(34rem,70dvh)]">{children}</PopoverContent>
+    <PopoverContent data-testid={`workspace-${id}`} aria-label={label} align="end" className="pi-chat w-[23rem] max-w-[calc(100vw-1rem)] max-h-[min(30rem,70dvh)]">{children}</PopoverContent>
   </Popover>;
 }
 
