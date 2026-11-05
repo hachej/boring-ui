@@ -7,8 +7,8 @@
     "react@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.57/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.57/r/_shared.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/_shared.json"
   ],
   "files": [
     {
