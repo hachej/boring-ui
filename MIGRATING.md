@@ -3,6 +3,7 @@
 - **`board-viewer` pins tldraw 5.6.0 and `viewer-pdf` pins pdfjs-dist 6.5.438 (D-1588).** Reinstall `board-viewer` and `viewer-pdf` to take them; an app that already installed a block keeps its own versions until it does. `@hachej/boring-ui-kit` now peers `tldraw`, `@tldraw/editor`, `@tldraw/store` and `@tldraw/tlschema` at `^5.6.0`. The tldraw asset recipe now matches: install `@tldraw/assets@5.6.0` with `tldraw@5.6.0`.
 - **`pi-chat-markdown` now declares `entities@^9.0.0` (D-1588).** Reinstall `pi-chat-markdown`. Only `decodeHTML` is used, which is unchanged in 9.0.0; a host that also imports `entities` encoders or streaming decoders should read its 9.0.0 release notes.
 - **Chat style v1 (`pi-chat`, `pi-chat-markdown`, `pi-chat-approval`, `pi-chat-subagent`, `pi-app`).** Re-sync these registry items. Tool steps now show human names instead of raw tool ids (new labels, English and French), chat body text is 12px and titles 14px through the `--text-body` and `--text-title` roles, and the composer is flat with a radius derived from `--radius`. A host that overrides `labels` should add the new tool-name labels.
+- **Style v1 pattern blocks (`@hachej/boring-ui-kit`, registry `_shared`, `kpi-stat`, `list-row`, `empty-state`, `page-header`, `data-table`).** Re-sync the registry items to add the pattern blocks; the theme gains a `success` colour token, so re-sync `theme` too. The blocks lint rule `design-no-x-scroll` now fails a file that renders a table inside a horizontal scroll container.
 
 # Migrating to 0.4.58
 

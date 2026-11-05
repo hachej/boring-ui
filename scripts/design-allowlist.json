@@ -17,6 +17,7 @@
     { "file": "registry/shared-chat/messages.tsx", "rules": ["shadcn-restyle"], "pattern": "^(?:Avatar|AvatarFallback) className changes appearance: .*rounded-md.*$", "exception": "agent-avatar-shape" },
     { "file": "registry/drawing-viewer/excalidraw-render.ts", "rules": ["color"], "pattern": "^#ffffff$", "exception": "drawing-document" },
     { "file": "registry/drawing-viewer/drawio-frame.ts", "rules": ["color"], "pattern": "^#f{3}(?:f{3})?$", "exception": "drawing-document" },
-    { "file": "packages/ui/src/vendor/drawio-viewer-static.ts", "rules": ["shadow", "radius", "border-width", "color", "font", "motion", "primitive"], "pattern": ".*", "exception": "drawing-document" }
+    { "file": "packages/ui/src/vendor/drawio-viewer-static.ts", "rules": ["shadow", "radius", "border-width", "color", "font", "motion", "primitive"], "pattern": ".*", "exception": "drawing-document" },
+    { "file": "registry/pi-chat-markdown/markdown.tsx", "rules": ["design-no-x-scroll"], "pattern": "^overflow-x-auto$", "exception": "editor-document" }
   ]
 }

@@ -17,7 +17,7 @@ import { Item, ItemContent, ItemGroup, ItemTitle } from '@/components/ui/item';
 import { Label } from '@/components/ui/label';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Separator } from '@/components/ui/separator';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DataTable } from '../data-table/data-table';
 import type { Maquette, MaquetteBlock, MaquetteScreen } from './maquette';
 import type { MaquetteLabels } from './maquette-labels';
 
@@ -84,10 +84,12 @@ function BlockBody({ block, links, labels }: { readonly block: MaquetteBlock; re
       {block.label && <p className="m-0 text-sm font-medium">{block.label}</p>}
       {block.items.map((item, index) => <Item key={index} variant="outline" size="sm"><ItemContent><ItemTitle>{item}</ItemTitle></ItemContent></Item>)}
     </ItemGroup>;
-    case 'table': return <div className="min-w-0 overflow-x-auto"><Table>
-      <TableHeader><TableRow>{block.columns.map((column, index) => <TableHead key={index}>{column}</TableHead>)}</TableRow></TableHeader>
-      <TableBody>{block.rows.map((row, index) => <TableRow key={index}>{row.map((cell, column) => <TableCell key={column}>{cell}</TableCell>)}</TableRow>)}</TableBody>
-    </Table></div>;
+    case 'table': return <DataTable
+      caption={block.columns.join(', ')}
+      columns={block.columns.map((header, column) => ({ id: String(column), header, priority: column === 0 ? 1 : 2, cell: (row: { index: number; cells: readonly string[] }) => row.cells[column] }))}
+      rows={block.rows.map((cells, index) => ({ index, cells }))}
+      rowKey={row => String(row.index)}
+    />;
     case 'card': return <Card size="sm">
       {block.label && <CardHeader><CardTitle>{block.label}</CardTitle></CardHeader>}
       {children.length > 0 && <CardContent className="flex flex-col gap-3">{children}</CardContent>}

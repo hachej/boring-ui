@@ -1,0 +1,18 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "_shared",
+  "title": "Kit icons",
+  "description": "The one module the pattern blocks import icons from (`icons.ts`, lucide-react behind it). A Phosphor swap changes this file only.",
+  "dependencies": [
+    "lucide-react@^1.51.0"
+  ],
+  "files": [
+    {
+      "path": "registry/_shared/icons.ts",
+      "content": "// The one module the kit names its icons from. Blocks import these names and never a library, so the Phosphor swap is this file.\nexport {\n  ArrowDownIcon as ArrowDown,\n  ArrowUpIcon as ArrowUp,\n  ChevronRightIcon as ChevronRight,\n  InboxIcon as Inbox,\n  MinusIcon as Minus,\n  PanelBottomIcon as PanelBottom,\n  PanelRightIcon as PanelRight,\n  SparklesIcon as Sparkles,\n} from 'lucide-react';\n",
+      "type": "registry:lib",
+      "target": "components/_shared/icons.ts"
+    }
+  ],
+  "type": "registry:lib"
+}
