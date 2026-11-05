@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { checkDesign, designRoot, readDesignConfig, scanDesign } from '../scripts/check-design.mjs';
+import { scanAppDesign } from '../packages/ui/bin/boring-ui-blocks.mjs';
 
 function fixture(t, source, dependencies = []) {
   const root = mkdtempSync(join(tmpdir(), 'boring-design-'));
@@ -29,6 +30,26 @@ for (const [rule, source] of [
 ]) test(`design scanner detects ${rule} with a file and line`, () => {
   const findings = scanDesign('registry/button/button.tsx', `\n${source}`);
   assert.ok(findings.some(finding => finding.rule === rule && finding.line === 2 && finding.column > 0), JSON.stringify(findings));
+});
+
+test('a Card carries no border, shadow or ring: the flat card is the default', () => {
+  const findings = scanDesign('registry/pi-chat/tool.tsx', '\n<Card className="gap-2 border shadow-sm" />\n<Card className="ring-1" />\n<Card className="gap-2 p-3" />');
+  assert.deepEqual(findings.filter(finding => finding.rule === 'design-card-flat').map(finding => finding.line), [2, 3]);
+  assert.equal(scanDesign('registry/pi-chat/tool.tsx', '<CardContent className="border" />').filter(finding => finding.rule === 'design-card-flat').length, 0);
+});
+
+test('no Card is nested inside another Card; a sibling or a render prop is not nesting', () => {
+  const nested = '<Card>\n  <CardContent>\n    <Card className="p-2">x</Card>\n  </CardContent>\n</Card>';
+  const findings = scanDesign('registry/feedback/feedback-list.tsx', nested).filter(finding => finding.rule === 'design-no-nested-card');
+  assert.deepEqual(findings.map(finding => finding.line), [3]);
+  const flat = '<Card><CardContent /></Card>\n<Card />\n<Collapsible render={<Card {...card} />}><Card>x</Card></Collapsible>';
+  assert.deepEqual(scanDesign('registry/feedback/feedback-list.tsx', flat).filter(finding => finding.rule === 'design-no-nested-card'), []);
+});
+
+test('app code gets the same card rules through the app profile', () => {
+  const text = '<Card className="shadow-md"><Card /></Card>';
+  const rules = new Set(scanAppDesign('src/app/page.tsx', text).map(finding => finding.rule));
+  assert.ok(rules.has('design-card-flat') && rules.has('design-no-nested-card'));
 });
 
 test('token references and layout do not become visual literals', () => {
@@ -100,6 +121,20 @@ test('shipped CSS objects are checked as declarations, not quoted JSON keys', t 
   f.write('registry.json', JSON.stringify({ items: [{ name: 'button', files: [{ path: 'registry/button/button.tsx' }], css: { '@layer components': { '.fixture': { 'border-width': '2px', 'border-radius': '0.5rem', 'box-shadow': '0 1px 5px black', 'font-family': 'Arial', 'transition-duration': '150ms' } } } }] }));
   const rules = new Set(checkDesign(f.root, f).findings.filter(finding => finding.file.endsWith('/@css')).map(finding => finding.rule));
   for (const rule of ['border-width', 'radius', 'shadow', 'font', 'motion']) assert.ok(rules.has(rule), `${rule} must inspect shipped CSS declarations`);
+});
+
+test('the theme gives the type roles and the sidebar surface as tokens, bound to the Tailwind size and colour utilities', () => {
+  const theme = JSON.parse(readFileSync(join(designRoot, 'registry.json'), 'utf8')).items.find(item => item.name === 'theme').cssVars;
+  assert.equal(theme.light['text-body'], '0.75rem');
+  assert.equal(theme.light['text-title'], '0.875rem');
+  assert.equal(theme.theme['text-xs'], 'var(--text-body)');
+  assert.equal(theme.theme['text-sm'], 'var(--text-title)');
+  for (const mode of ['light', 'dark']) {
+    // Defined in both modes: a .dark subtree redefines --background, so an inherited value would go stale.
+    assert.equal(theme[mode].sidebar, 'var(--background)', `${mode}: sidebar is the canvas`);
+    assert.equal(theme[mode]['sidebar-accent'], 'var(--accent)', `${mode}: active item is the accent`);
+  }
+  assert.equal(theme.theme['color-sidebar'], 'var(--sidebar)');
 });
 
 test('the committed inventory covers all source and every shipped CSS item, with no unowned group', () => {
