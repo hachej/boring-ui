@@ -393,7 +393,10 @@ test('CanvasEditor DOM controls with fictional fonts and assets (not browser, fo
     assert.equal(f.writes, 1);
     assert.equal(button(f.container, 'Save').disabled, true);
     assert.ok(fontRequests.length > 0);
-    assert.ok(requests.includes(assets.translations.en));
+    // The canvas is English by design and tldraw 5.6 ships English built in, so no catalog is fetched; any translation-looking
+    // request (the fictional fetch records it before asserting, so a swallowed throw cannot hide one) must come from the host's asset map.
+    const hostTranslations = new Set(Object.values(assets.translations));
+    assert.deepEqual(requests.filter(url => /translations?\b|\/[a-z]{2}(?:-[A-Za-z]+)?\.json(?:$|\?)/.test(url) && !hostTranslations.has(url)), []);
     assert.equal(f.editor.hasExternalAssetHandler('file'), false);
     assert.equal(f.editor.hasExternalAssetHandler('url'), false);
   });

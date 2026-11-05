@@ -70,7 +70,7 @@ export function MaquetteBlockView({ block, links, labels }: { readonly block: Ma
 function BlockBody({ block, links, labels }: { readonly block: MaquetteBlock; readonly links: MaquetteLinks; readonly labels: MaquetteLabels }): ReactNode {
   const children = block.children.map((child, index) => <MaquetteBlockView key={index} block={child} links={links} labels={labels} />);
   switch (block.type) {
-    case 'heading': return <h4 className="m-0 text-base font-semibold text-balance">{block.label}</h4>;
+    case 'heading': return <h4 className="m-0 text-sm font-semibold text-balance">{block.label}</h4>;
     case 'text': return <p className="m-0 text-sm text-pretty text-muted-foreground">{block.label}</p>;
     case 'button': case 'link': return <GotoButton block={block} links={links} label={block.label} />;
     case 'input': return <Label className="flex-col items-stretch gap-1.5">{block.label}
