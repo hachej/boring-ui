@@ -24,6 +24,18 @@ const borderWidth = /(?<![\w-])border(?:-[trblxyse])?(?:-(?:\d+|\[(?:\d|\.)[^\]]
 const color = /#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla|oklch|oklab)\([^)]*\)|\b(?:bg|text|border|ring|fill|stroke|outline|decoration|shadow)-(?:white|black|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3})(?:\/\d+)?\b/g;
 const font = /\bfont-\[(?!var\(|--)[^\]]+\]|\bfont-family\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+|\bfontFamily\s*:\s*['"](?!var\()[^'"]+['"]|\bfont\s*:\s*[^;\n}]*\b(?:serif|monospace|system-ui)\b[^;\n}]*/g;
 
+/**
+ * `design-no-x-scroll`: a file that renders a table holds no horizontal scroll container (`overflow-x-auto`, `overflow-x-scroll`, the
+ * CSS or React style property). Tables truncate their cells and stack below their container width instead. Lexical and file-scoped: the
+ * shadcn `table` wrapper (`overflow-x-auto`) must not be imported by a file that renders a table.
+ */
+const tableMarkup = /<table\b|<Table\b|@\/components\/ui\/table\b|\bDataTable\b|role=["']table["']|\bdisplay\s*:\s*['"]?table\b/;
+const horizontalScroll = /(?<![\w-])overflow-x-(?:auto|scroll)(?![\w-])|\boverflowX\s*:\s*['"]?(?:auto|scroll)\b|\boverflow-x\s*:\s*(?:auto|scroll)\b/g;
+export function noXScroll(source) {
+  return tableMarkup.test(source) ? [...source.matchAll(horizontalScroll)].map(match => ({ index: match.index, value: match[0] })) : [];
+}
+
+
 // The flat card: a Card's own className carries no border, shadow or ring. The shadcn Card's ring lives in its generated file, which blocks never restyle.
 const cardFlat = /<Card\b[^>]*?\bclassName\s*=\s*(?:"[^"]*\b(?:border|shadow|ring)\b[^"]*"|\{[^}\n]*\b(?:border|shadow|ring)\b[^}\n]*\})/g;
 
@@ -60,6 +72,7 @@ export const DESIGN_RULES = [
   ['motion', /\b(?:duration|delay)-\d+\b|\b(?:transition(?:-[\w-]+)?|animation(?:-[\w-]+)?|transitionDuration|animationDuration)\s*:\s*[^;\n}]*?\b\d*\.?\d+m?s\b[^;\n}]*/g],
   ['style', /\bradix(?:-[\w-]+)?\b/gi],
   ['primitive', /\b(?:function|const|class)\s+(?:Button|IconButton|ActionMenu|\w*Popover|\w*Tooltip|\w*Dialog|\w*Menu)\b|<(?:button|input|textarea|select)\b/g],
+  ['design-no-x-scroll', noXScroll],
 ];
 
 /**
@@ -79,6 +92,7 @@ export const APP_RULES = [
   ['font', /\bfont-family\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+|\bfontFamily\s*:\s*['"](?!var\()[^'"]+['"]|\bfont\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+/g],
   ['literal-value', /\b(?:border-radius|borderRadius|box-shadow|boxShadow|font-size|fontSize|letter-spacing|letterSpacing)\s*:\s*['"]?(?!\s*(?:var\(|calc\(\s*var\(|inherit\b|initial\b|unset\b|none\b|0(?![\w.])))(?=[^;\n}"']*\d)[^;\n}"']*/g],
   ['dark', /(?<![\w-])dark:[^\s"'`]+/g],
+  ['design-no-x-scroll', noXScroll],
 ];
 
 /** Findings `{ file, line, column, rule, value }` of `rules` in `text`; CSS block comments are ignored. */

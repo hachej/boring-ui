@@ -1,0 +1,22 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "empty-state",
+  "title": "Empty state",
+  "description": "An icon, a title, an optional hint and an optional action, as a plain centred column on the surface.",
+  "dependencies": [
+    "react@^19.0.0"
+  ],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/_shared.json"
+  ],
+  "files": [
+    {
+      "path": "registry/empty-state/blank-state.tsx",
+      "content": "import type { ReactNode } from 'react';\nimport { cn } from '../utils/utils';\nimport { Inbox } from '../_shared/icons';\n\nexport type EmptyStateProps = {\n  title: string;\n  hint?: string;\n  /** Defaults to the inbox icon from the kit's icon module. */\n  icon?: ReactNode;\n  /** One action, usually a Button from the app's ui set. */\n  action?: ReactNode;\n  className?: string;\n};\n\n/** Plain column, no dashed border: the shadcn Empty adds one, which the flat surface rule forbids and blocks may not restyle. */\nexport function EmptyState({ title, hint, icon, action, className }: EmptyStateProps) {\n  return (\n    <div className={cn('flex w-full min-w-0 flex-col items-center justify-center gap-2 p-6 text-center', className)}>\n      <span className=\"flex size-6 items-center justify-center text-muted-foreground\">{icon ?? <Inbox aria-hidden className=\"size-6\" />}</span>\n      <span className=\"text-sm font-medium\">{title}</span>\n      {hint ? <span className=\"max-w-prose text-xs text-muted-foreground\">{hint}</span> : null}\n      {action ? <div className=\"pt-1\">{action}</div> : null}\n    </div>\n  );\n}\n",
+      "type": "registry:component",
+      "target": "components/empty-state/blank-state.tsx"
+    }
+  ],
+  "type": "registry:component"
+}

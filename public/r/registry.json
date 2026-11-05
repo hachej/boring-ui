@@ -25,6 +25,7 @@
           "color-accent": "var(--accent)",
           "color-accent-foreground": "var(--accent-foreground)",
           "color-destructive": "var(--destructive)",
+          "color-success": "var(--success)",
           "color-border": "var(--border)",
           "color-input": "var(--input)",
           "color-ring": "var(--ring)",
@@ -101,6 +102,7 @@
           "accent": "oklch(0.955 0.003 286.375)",
           "accent-foreground": "oklch(0.21 0.006 285.885)",
           "destructive": "oklch(0.577 0.245 27.325)",
+          "success": "oklch(0.527 0.154 150)",
           "border": "oklch(0.92 0.004 286.32)",
           "input": "oklch(0.89 0.005 286.32)",
           "ring": "oklch(0.55 0.02 286.067)",
@@ -172,6 +174,7 @@
           "accent": "oklch(0.3 0.006 286.033)",
           "accent-foreground": "oklch(0.985 0 0)",
           "destructive": "oklch(0.704 0.191 22.216)",
+          "success": "oklch(0.7 0.17 150)",
           "border": "oklch(1 0 0 / 11%)",
           "input": "oklch(1 0 0 / 16%)",
           "ring": "oklch(0.65 0.02 286.067)",
@@ -1291,7 +1294,8 @@
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/diagram-viewer.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/diagram-viewer.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/data-table.json"
       ],
       "files": [
         {
@@ -3133,6 +3137,120 @@
           "path": "registry/spaces/members-sheet.tsx",
           "type": "registry:component",
           "target": "components/spaces/members-sheet.tsx"
+        }
+      ]
+    },
+    {
+      "name": "_shared",
+      "type": "registry:lib",
+      "title": "Kit icons",
+      "description": "The one module the pattern blocks import icons from (`icons.ts`, lucide-react behind it). A Phosphor swap changes this file only.",
+      "dependencies": [
+        "lucide-react@^1.51.0"
+      ],
+      "files": [
+        {
+          "path": "registry/_shared/icons.ts",
+          "type": "registry:lib",
+          "target": "components/_shared/icons.ts"
+        }
+      ]
+    },
+    {
+      "name": "kpi-stat",
+      "type": "registry:component",
+      "title": "KPI stat and row",
+      "description": "A muted label, a title-size value in tabular mono numerals and an optional delta (up in success, down in destructive; an unchanged value shows none). `KpiRow` is the one surface that holds a row of stats.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/_shared.json"
+      ],
+      "files": [
+        {
+          "path": "registry/kpi-stat/kpi-stat.tsx",
+          "type": "registry:component",
+          "target": "components/kpi-stat/kpi-stat.tsx"
+        }
+      ]
+    },
+    {
+      "name": "list-row",
+      "type": "registry:component",
+      "title": "List row",
+      "description": "A row with a leading slot, a title, a muted subtitle and a trailing slot. Hover wash, no separator lines, 44px touch target on phones, truncation instead of wrapping.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "registry/list-row/list-row.tsx",
+          "type": "registry:component",
+          "target": "components/list-row/list-row.tsx"
+        }
+      ]
+    },
+    {
+      "name": "empty-state",
+      "type": "registry:component",
+      "title": "Empty state",
+      "description": "An icon, a title, an optional hint and an optional action, as a plain centred column on the surface.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/_shared.json"
+      ],
+      "files": [
+        {
+          "path": "registry/empty-state/blank-state.tsx",
+          "type": "registry:component",
+          "target": "components/empty-state/blank-state.tsx"
+        }
+      ]
+    },
+    {
+      "name": "page-header",
+      "type": "registry:component",
+      "title": "Page header",
+      "description": "A 14px semibold title, an optional badge, an actions slot, and one `assistant` prop that says where the assistant opens (beside the page or over it).",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/_shared.json"
+      ],
+      "files": [
+        {
+          "path": "registry/page-header/page-header.tsx",
+          "type": "registry:component",
+          "target": "components/page-header/page-header.tsx"
+        }
+      ]
+    },
+    {
+      "name": "data-table",
+      "type": "registry:component",
+      "title": "Data table",
+      "description": "A fixed-layout table that never scrolls sideways. Columns carry a priority; cells truncate; numbers are mono and right-aligned; below 520px of container width the rows stack as label/value pairs.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "registry/data-table/data-table.tsx",
+          "type": "registry:component",
+          "target": "components/data-table/data-table.tsx"
         }
       ]
     }
