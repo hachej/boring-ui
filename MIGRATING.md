@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`board-viewer` pins tldraw 5.6.0 and `viewer-pdf` pins pdfjs-dist 6.5.438 (D-1588).** Reinstall `board-viewer` and `viewer-pdf` to take them; an app that already installed a block keeps its own versions until it does. The tldraw asset recipe now matches: install `@tldraw/assets@5.6.0` with `tldraw@5.6.0`.
+
 # Migrating to 0.4.58
 
 - **The wheel over the History list stays in it (`pi-chat`; D-1577).** Reinstall `pi-chat`. A host on a kit older than 0.4.57 also gets the fix for rows running out of the sheet (D-1528).

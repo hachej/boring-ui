@@ -1332,7 +1332,7 @@
         "@hachej/boring-files@^0.4.58",
         "react@^19.0.0",
         "lucide-react@1.51.0",
-        "tldraw@5.5.2"
+        "tldraw@5.6.0"
       ],
       "registryDependencies": [
         "@boring-ui/maquette-viewer",
@@ -2756,7 +2756,7 @@
         "@hachej/boring-files@^0.4.58",
         "react@^19.0.0",
         "lucide-react@^1.51.0",
-        "pdfjs-dist@6.4.299"
+        "pdfjs-dist@6.5.438"
       ],
       "registryDependencies": [
         "@boring-ui/viewer-frame",
