@@ -125,7 +125,7 @@ export function LooksViewer({ text, path = '', read, onPick, locale = 'en', onRe
   const pick = (kind: LookPick['kind'], id: string, label: string) => { if (kind === 'look') setLook(id); else setLayout(id); onPick?.({ kind, id, label, path }); };
   return <div data-boring="looks-viewer" className="flex flex-col gap-6 p-3 md:p-4">
     <div className="flex items-center justify-between gap-3">
-      <h2 className="text-lg font-semibold">{spec.looks.length > 1 ? labels.looks : labels.layouts}</h2>
+      <h2 className="text-sm font-semibold">{spec.looks.length > 1 ? labels.looks : labels.layouts}</h2>
       <ToggleGroup value={[mode ?? 'host']} onValueChange={(value: unknown[]) => { const next = value[0]; setMode(next === 'light' || next === 'dark' ? next : undefined); }} aria-label={`${labels.light} / ${labels.dark}`}>
         <ToggleGroupItem value="light" data-testid="looks-light">{labels.light}</ToggleGroupItem>
         <ToggleGroupItem value="dark" data-testid="looks-dark">{labels.dark}</ToggleGroupItem>
@@ -138,7 +138,7 @@ export function LooksViewer({ text, path = '', read, onPick, locale = 'en', onRe
       </Choice>)}
     </section>}
     {spec.layouts.length > 0 && <section aria-label={labels.layouts} data-testid="layouts-grid" className="flex flex-col gap-3">
-      {spec.looks.length > 1 && <h2 className="text-lg font-semibold">{labels.layouts}</h2>}
+      {spec.looks.length > 1 && <h2 className="text-sm font-semibold">{labels.layouts}</h2>}
       <p className="text-sm text-muted-foreground">{labels.layoutsIn(inLook.label)}</p>
       <div className={spec.layouts.length > 2 ? 'grid gap-4 md:grid-cols-2 xl:grid-cols-3' : 'grid gap-4 md:grid-cols-2'}>
         {spec.layouts.map(item => <Choice key={item.id} testId={`layout-${item.id}`} title={item.label} line={item.why} chosen={layout === item.id} labels={labels} onPick={() => pick('layout', item.id, item.label)}>

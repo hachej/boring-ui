@@ -1,0 +1,22 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "kpi-stat",
+  "title": "KPI stat and row",
+  "description": "A muted label, a title-size value in tabular mono numerals and an optional delta (up in success, down in destructive; an unchanged value shows none). `KpiRow` is the one surface that holds a row of stats.",
+  "dependencies": [
+    "react@^19.0.0"
+  ],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.57/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.57/r/_shared.json"
+  ],
+  "files": [
+    {
+      "path": "registry/kpi-stat/kpi-stat.tsx",
+      "content": "import type { ReactNode } from 'react';\nimport { cn } from '../utils/utils';\nimport { ArrowDown, ArrowUp } from '../_shared/icons';\n\n/** A change between two readings. `null` says nothing: equal values, no base to compare with, or a change that rounds to 0%. */\nexport type KpiChange = { direction: 'up' | 'down'; percent: number };\n\nexport function kpiChange(current: number, previous: number): KpiChange | null {\n  if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0 || current === previous) return null;\n  const percent = Math.round(((current - previous) / Math.abs(previous)) * 100);\n  if (percent === 0) return null;\n  return { direction: current > previous ? 'up' : 'down', percent };\n}\n\nexport type KpiStatProps = {\n  label: string;\n  /** Already formatted by the caller (currency, locale, unit). */\n  value: string;\n  /** The delta shows only when the two readings differ. */\n  compare?: { current: number; previous: number };\n  className?: string;\n};\n\nexport function KpiStat({ label, value, compare, className }: KpiStatProps) {\n  const change = compare ? kpiChange(compare.current, compare.previous) : null;\n  return (\n    <div className={cn('flex min-w-0 flex-col gap-0.5', className)}>\n      <span className=\"truncate text-xs text-muted-foreground\">{label}</span>\n      <span className=\"truncate font-mono text-sm font-semibold tabular-nums\">{value}</span>\n      {change ? <KpiDelta change={change} /> : null}\n    </div>\n  );\n}\n\nfunction KpiDelta({ change }: { change: KpiChange }) {\n  const up = change.direction === 'up';\n  const Arrow = up ? ArrowUp : ArrowDown;\n  return (\n    <span className={cn('inline-flex items-center gap-0.5 font-mono text-xs tabular-nums', up ? 'text-success' : 'text-destructive')}>\n      <Arrow aria-hidden className=\"size-3\" />\n      <span className=\"sr-only\">{up ? 'Up' : 'Down'} </span>\n      {up ? '+' : '−'}\n      {Math.abs(change.percent)}%\n    </span>\n  );\n}\n\nexport type KpiRowProps = { children: ReactNode; className?: string };\n\n/** One surface holds the whole row of stats; never one card per stat. */\nexport function KpiRow({ children, className }: KpiRowProps) {\n  return (\n    <div className={cn('grid grid-cols-[repeat(auto-fit,minmax(6rem,1fr))] gap-x-6 gap-y-4 rounded-(--radius) bg-card p-4', className)}>\n      {children}\n    </div>\n  );\n}\n",
+      "type": "registry:component",
+      "target": "components/kpi-stat/kpi-stat.tsx"
+    }
+  ],
+  "type": "registry:component"
+}

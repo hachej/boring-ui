@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "list-row",
+  "title": "List row",
+  "description": "A row with a leading slot, a title, a muted subtitle and a trailing slot. Hover wash, no separator lines, 44px touch target on phones, truncation instead of wrapping.",
+  "dependencies": [
+    "react@^19.0.0"
+  ],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.57/r/utils.json"
+  ],
+  "files": [
+    {
+      "path": "registry/list-row/list-row.tsx",
+      "content": "import type { ReactNode } from 'react';\nimport { Button } from '@/components/ui/button';\nimport { cn } from '../utils/utils';\n\nexport type ListRowProps = {\n  title: string;\n  subtitle?: string;\n  /** An avatar, icon or any leading control. */\n  leading?: ReactNode;\n  /** Metadata or an action, right-aligned. */\n  trailing?: ReactNode;\n  /** Makes the row a button. Without it the row is static text. */\n  onSelect?: () => void;\n  className?: string;\n};\n\n/** No separator lines: the hover wash marks the row. 44px tall on phones (touch target), 36px from md up. */\nexport function ListRow({ title, subtitle, leading, trailing, onSelect, className }: ListRowProps) {\n  const content = (\n    <>\n      {leading ? <span className=\"flex shrink-0 items-center\">{leading}</span> : null}\n      <span className=\"flex min-w-0 flex-1 flex-col text-left\">\n        <span className=\"truncate text-sm font-medium\">{title}</span>\n        {subtitle ? <span className=\"truncate text-xs text-muted-foreground\">{subtitle}</span> : null}\n      </span>\n      {trailing ? <span className=\"flex shrink-0 items-center gap-2 text-xs text-muted-foreground\">{trailing}</span> : null}\n    </>\n  );\n  const box = 'flex min-h-11 w-full min-w-0 items-center gap-3 px-2 py-2 md:min-h-9';\n  // The Button keeps the app's ghost wash on hover; the static row adds the same wash itself.\n  if (onSelect) {\n    return (\n      <Button variant=\"ghost\" className={cn(box, 'h-auto justify-start', className)} onClick={onSelect}>\n        {content}\n      </Button>\n    );\n  }\n  return <div className={cn(box, 'rounded-(--radius) hover:bg-accent', className)}>{content}</div>;\n}\n",
+      "type": "registry:component",
+      "target": "components/list-row/list-row.tsx"
+    }
+  ],
+  "type": "registry:component"
+}

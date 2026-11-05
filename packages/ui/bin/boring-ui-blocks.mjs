@@ -32,11 +32,38 @@ const font = /\bfont-\[(?!var\(|--)[^\]]+\]|\bfont-family\s*:\s*(?!\s*(?:var\(|i
 const tableMarkup = /<table\b|<Table\b|@\/components\/ui\/table\b|\bDataTable\b|role=["']table["']|\bdisplay\s*:\s*['"]?table\b/;
 const horizontalScroll = /(?<![\w-])overflow-x-(?:auto|scroll)(?![\w-])|\boverflowX\s*:\s*['"]?(?:auto|scroll)\b|\boverflow-x\s*:\s*(?:auto|scroll)\b/g;
 export function noXScroll(source) {
-  return tableMarkup.test(source) ? [...source.matchAll(horizontalScroll)] : [];
+  return tableMarkup.test(source) ? [...source.matchAll(horizontalScroll)].map(match => ({ index: match.index, value: match[0] })) : [];
 }
 
-/** The repository's rules (registry blocks and kit sources). */
+
+// The flat card: a Card's own className carries no border, shadow or ring. The shadcn Card's ring lives in its generated file, which blocks never restyle.
+const cardFlat = /<Card\b[^>]*?\bclassName\s*=\s*(?:"[^"]*\b(?:border|shadow|ring)\b[^"]*"|\{[^}\n]*\b(?:border|shadow|ring)\b[^}\n]*\})/g;
+
+/** `<Card` tags opened inside another open `<Card>` (a self-closing Card and a Card in a prop are not nesting). Lexical, over JSX tags. */
+function nestedCards(source) {
+  const found = [], open = [], tag = /<(\/?)Card\b/g;
+  for (let match; (match = tag.exec(source));) {
+    if (match[1]) { open.pop(); continue; }
+    let depth = 0, quote = null, end = match.index + match[0].length;
+    for (; end < source.length; end++) {
+      const char = source[end];
+      if (quote) { if (char === quote) quote = null; }
+      else if (/["'`]/.test(char)) quote = char;
+      else if (char === '{') depth++;
+      else if (char === '}') depth--;
+      else if (char === '>' && depth === 0) break;
+    }
+    if (open.length) found.push({ index: match.index, value: source.slice(match.index, end + 1).split('\n')[0] });
+    if (source[end - 1] !== '/') open.push(match.index);
+    tag.lastIndex = end + 1;
+  }
+  return found;
+}
+
+/** The repository's rules (registry blocks and kit sources). A rule is a global regex, or a function from the source to `{ index, value }` findings. */
 export const DESIGN_RULES = [
+  ['design-card-flat', cardFlat],
+  ['design-no-nested-card', nestedCards],
   ['shadow', shadow],
   ['radius', radius],
   ['border-width', borderWidth],
@@ -56,6 +83,8 @@ export const DESIGN_RULES = [
  */
 const LENGTH = String.raw`(?<![\w.#-])(?!1px\b)\d*\.?\d+(?:px|rem|em)\b`;
 export const APP_RULES = [
+  ['design-card-flat', cardFlat],
+  ['design-no-nested-card', nestedCards],
   ['color', color],
   ['arbitrary-value', /(?<![\w-])(?:bg|text|border(?:-[trblxyse])?|ring(?:-offset)?|outline|fill|stroke|decoration|shadow|drop-shadow|inset-shadow|rounded(?:-[trblse]{1,2})?|font|tracking|leading|from|via|to|divide(?:-[xy])?|placeholder|caret|accent)-\[(?!var\(|--|#|(?:rgb|rgba|hsl|hsla|oklch|oklab)\()[^\]]+\]/g],
   ['border-width', /(?<![\w-])border(?:-[trblxyse])?-(?!0(?![\w.]))\d+(?![\w-])/g],
@@ -70,9 +99,12 @@ export const APP_RULES = [
 export function scanDesign(file, text, rules = DESIGN_RULES) {
   const findings = [];
   const source = text.replace(/\/\*[\s\S]*?\*\//g, match => match.replace(/[^\n]/g, ' '));
-  for (const [rule, pattern] of rules) for (const match of typeof pattern === 'function' ? pattern(source) : source.matchAll(pattern)) {
-    const before = text.slice(0, match.index), line = before.split('\n').length;
-    findings.push({ file, line, column: match.index - before.lastIndexOf('\n'), rule, value: match[0] });
+  for (const [rule, pattern] of rules) {
+    const matches = typeof pattern === 'function' ? pattern(source) : [...source.matchAll(pattern)].map(match => ({ index: match.index, value: match[0] }));
+    for (const { index, value } of matches) {
+      const before = text.slice(0, index), line = before.split('\n').length;
+      findings.push({ file, line, column: index - before.lastIndexOf('\n'), rule, value });
+    }
   }
   return findings;
 }

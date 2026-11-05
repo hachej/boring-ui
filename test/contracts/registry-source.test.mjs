@@ -102,7 +102,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
       assert.equal(item.type, 'registry:theme');
       assert.equal(item.files, undefined); assert.equal(item.dependencies, undefined); assert.equal(item.css, undefined);
       const { theme, light, dark } = item.cssVars;
-      assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).filter(name => name !== 'radius').sort(), 'dark redefines every color token');
+      assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).filter(name => name !== 'radius' && !/^text-(body|title)$/.test(name)).sort(), 'dark redefines every color token (radius and the mode-independent text-body/text-title type roles live in light only)');
       for (const [name, value] of Object.entries(theme)) {
         if (name === 'default-border-width') {
           assert.equal(value, 'var(--border-width, 1px)', 'optional host border width keeps the stock Tailwind fallback');
@@ -236,7 +236,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
           assert.ok(dependency && item.registryDependencies?.includes('@boring-ui/' + dependency.name) && dependency.files.some(entry => entry.path.replace(/\.tsx?$/, '') === `registry/${dependency.name}/${sibling[2]}`), `${file.path} imports unshipped or undeclared ${imported}`);
           continue;
         }
-        if (item.name === 'board-viewer' || item.name === 'mockup-viewer' || item.name === 'looks-viewer' || item.name === 'highlights' || item.name === 'markdown-editor' || item.name === 'spaces') {
+        if (item.name === 'board-viewer' || item.name === 'mockup-viewer' || item.name === 'looks-viewer' || item.name === 'highlights' || item.name === 'markdown-editor' || item.name === 'spaces' || ['_shared', 'kpi-stat', 'list-row', 'empty-state', 'page-header', 'data-table'].includes(item.name)) {
           if (imported.startsWith('./')) assert.ok(item.files.some(entry => entry.path.replace(/\.tsx?$/, '').endsWith('/' + imported.slice(2))), `${file.path} imports unshipped ${imported}`);
           else {
             const pkg = imported.startsWith('@') ? imported.split('/').slice(0, 2).join('/') : imported.split('/')[0];
