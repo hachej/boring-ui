@@ -108,14 +108,14 @@ export function RunCard({ run: given, fetchRun, pollMs = 2000, now: clock = Date
   const body = run.output !== undefined ? (typeof run.output === 'string' ? renderText({ text: run.output, streaming: false }) : <CodeBlock code={JSON.stringify(run.output, null, 2)} language="json" />)
     : run.text ? renderText({ text: run.text, streaming: false }) : undefined;
 
-  return <Item variant="outline" size="sm" render={<section />} data-testid="run-card" data-state={run.status} data-run-id={run.id} aria-label={run.agent ?? labels.run} aria-busy={!settled} className="my-2 text-start">
+  return <Item variant="muted" size="sm" render={<section />} data-testid="run-card" data-state={run.status} data-run-id={run.id} aria-label={run.agent ?? labels.run} aria-busy={!settled} className="my-2 text-start">
     <ItemMedia variant="icon">
       {settled ? run.status === 'completed' ? <CheckIcon aria-hidden="true" /> : <CircleAlertIcon aria-hidden="true" /> : <Spinner data-testid="run-spinner" aria-label={labels.runStatus(run.status)} />}
     </ItemMedia>
     <ItemContent className="min-w-0 basis-0">
       <ItemTitle className="line-clamp-none [overflow-wrap:anywhere]">{run.agent ?? labels.run}</ItemTitle>
       <ItemDescription className="line-clamp-none flex flex-wrap items-center gap-2">
-        <Badge data-testid="run-status" variant={run.status === 'failed' ? 'destructive' : run.status === 'completed' ? 'secondary' : 'outline'}>{labels.runStatus(run.status)}</Badge>
+        <Badge data-testid="run-status" variant={run.status === 'failed' ? 'destructive' : run.status === 'completed' ? 'secondary' : 'ghost'}>{labels.runStatus(run.status)}</Badge>
         {timing && <span data-testid="run-time">{timing}</span>}
       </ItemDescription>
     </ItemContent>

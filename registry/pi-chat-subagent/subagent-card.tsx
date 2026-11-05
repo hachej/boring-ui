@@ -92,7 +92,7 @@ export function SubagentCard({ details, onOpen, now: clock = Date.now }: {
   const tokens = labels.subagentTokens(details.tokens.input, details.tokens.output);
   const calls = labels.subagentToolCalls(details.toolCalls);
   const time = `${labels.subagentTime}: ${span(elapsed)}`;
-  return <Item variant="outline" size="xs" render={<section />} data-testid="subagent-card" data-state={details.status} data-conversation-id={details.conversationId}
+  return <Item variant="muted" size="xs" render={<section />} data-testid="subagent-card" data-state={details.status} data-conversation-id={details.conversationId}
     aria-label={`${details.agent}, ${status}`} aria-busy={running} className="my-1 text-start">
     <ItemMedia variant="icon" data-testid="subagent-status" role="img" aria-label={status} title={status}>
       <span className={details.status === 'failed' ? 'contents text-destructive' : details.status === 'done' ? 'contents' : 'contents text-muted-foreground'}>

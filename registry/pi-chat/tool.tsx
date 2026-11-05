@@ -6,7 +6,6 @@ import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ToolStatus, ToolEntry as ViewToolEntry } from '@hachej/boring-ui-kit/chat-view';
 import { WrenchIcon } from 'lucide-react';
 import { TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceDescription, TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { defaultChatLabels, useChatText } from './labels';
 import type { ChatLabels } from './labels';
@@ -49,7 +48,7 @@ export function ToolCard({ entry, onOpenImage, details = true }: { readonly entr
   const resultBody = result && <>
     {result.content.map((part, index) => part.type === 'text'
       ? <pre key={index} className="m-0 max-h-72 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">{part.text}</pre>
-      : <Button key={index} variant="outline" size="sm" className="max-md:min-h-12! pointer-coarse:min-h-12!" disabled={!onOpenImage} onClick={() => onOpenImage?.(part)}>{labels.openImageResult}</Button>)}
+      : <Button key={index} variant="secondary" size="sm" className="max-md:min-h-12! pointer-coarse:min-h-12!" disabled={!onOpenImage} onClick={() => onOpenImage?.(part)}>{labels.openImageResult}</Button>)}
     {result.content.length === 0 && <span>{labels.emptyResult}</span>}
   </>;
   return <TraceCollapsible data-testid="tool-card" data-boring="tool-card" data-status={status} data-tool={call.name} data-call-id={call.id} open={open} onOpenChange={setChosen}>
@@ -58,7 +57,7 @@ export function ToolCard({ entry, onOpenImage, details = true }: { readonly entr
       <Section title={labels.arguments}><pre className="m-0 max-h-60 overflow-auto bg-muted p-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{JSON.stringify(call.arguments, null, 2)}</pre></Section>
       {result && <Section title={result.isError ? labels.error : labels.result}>
         {result.isError
-          ? <Alert variant="destructive" role="alert"><AlertDescription>{resultBody}</AlertDescription></Alert>
+          ? <div role="alert" className="flex flex-col gap-2 bg-destructive/10 p-2 text-destructive">{resultBody}</div>
           : <div role="status" className="flex flex-col gap-2 bg-muted p-2">{resultBody}</div>}
       </Section>}
     </div></TraceCollapsibleContent>}

@@ -26,8 +26,8 @@ export function CopyButton({ text, label: given, onCopy, className, iconOnly = f
 export function CodeBlock({ code, language, onCopy }: { readonly code: string; readonly language?: string; readonly onCopy?: (text: string) => Promise<void> }) {
   const { labels } = useChatText();
   const label = language?.trim().split(/\s+/)[0]?.slice(0, 24);
-  // shadcn's own Code Block installs a syntax highlighter (shiki) this block never uses, so the frame is an outline Item.
-  return <Item variant="outline" size="xs" data-testid="code-block" className="my-3 flex-col items-stretch text-start">
+  // shadcn's own Code Block installs a syntax highlighter (shiki) this block never uses, so the frame is a muted Item.
+  return <Item variant="muted" size="xs" data-testid="code-block" className="my-3 flex-col items-stretch text-start">
     <ItemHeader>
       <ItemTitle data-testid="code-language" className="lowercase">{label || 'text'}</ItemTitle>
       <CopyButton text={code} label={labels.copyCode} {...(onCopy ? { onCopy } : {})} />

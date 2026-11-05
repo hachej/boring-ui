@@ -47,8 +47,8 @@ export function PendingVoiceBubble({ pending }: PendingVoiceBubbleProps) {
       <span>{pending.phase === 'upload-failed' ? labels.uploadFailedShort : pending.phase === 'transcribe-failed' ? labels.voiceTranscribeFailed : pending.phase === 'blocked' ? labels.voiceBlocked : pending.phase === 'unconfirmed' ? labels.voiceUnconfirmed : labels.voicePreparing}</span>
     </div>
     {(failed || blocked) && <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)_auto] gap-2">
-      {failed && <Button size="sm" className="h-auto min-h-11 min-w-0 whitespace-normal" variant="outline" data-testid="voice-retry" onClick={pending.retry}>{labels.retry}</Button>}
-      {pending.audioOnly && <Button size="sm" className="h-auto min-h-11 min-w-0 whitespace-normal" variant="outline" data-testid="voice-audio-only" onClick={pending.audioOnly}>{labels.voiceAudioOnly}</Button>}
+      {failed && <Button size="sm" className="h-auto min-h-11 min-w-0 whitespace-normal" variant="secondary" data-testid="voice-retry" onClick={pending.retry}>{labels.retry}</Button>}
+      {pending.audioOnly && <Button size="sm" className="h-auto min-h-11 min-w-0 whitespace-normal" variant="secondary" data-testid="voice-audio-only" onClick={pending.audioOnly}>{labels.voiceAudioOnly}</Button>}
       {pending.phase !== 'unconfirmed' && <Button size="sm" className="h-auto min-h-11 min-w-0 whitespace-normal" variant="ghost" data-testid="voice-discard" onClick={pending.discard}>{labels.voiceDiscard}</Button>}
     </div>}
   </BubbleContent></Bubble></MessageContent></Message>;

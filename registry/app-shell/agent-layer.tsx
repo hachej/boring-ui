@@ -728,7 +728,9 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
               '[&_[data-testid=composer]_[data-slot=input-group]]:flex-row! [&_[data-testid=composer]_[data-slot=input-group]]:items-center',
               '[&_[data-testid=composer-input]]:min-h-11 [&_[data-testid=composer-input]]:max-h-11 [&_[data-testid=composer-input]]:flex-1 [&_[data-testid=composer-input]]:px-4 [&_[data-testid=composer-input]]:py-2.5',
               voice.phase !== 'starting' && voice.phase !== 'recording' && '[&_[data-testid=composer-controls]]:w-auto [&_[data-testid=composer-controls]]:shrink-0 [&_[data-testid=composer-controls]]:py-0 [&_[data-testid=composer-controls]>span.flex-1]:hidden',
-              '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-annotate]]:hidden'])}>
+              '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-annotate]]:hidden [&_[data-testid=composer-tools]]:hidden [&_[data-testid=composer-pickers]]:hidden',
+              // The one-line input keeps its placeholder on one line (clipped), never wrapped into the row's height.
+              '[&_[data-testid=composer-input]]:min-w-0 [&_[data-testid=composer-input]]:truncate'])}>
           {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} />}
           {!peek && <VoiceProblem />}
           {peek && recording && <div aria-hidden="true" data-testid="agent-listening" data-phase={voice.phase} className="sr-only">

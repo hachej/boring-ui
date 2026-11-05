@@ -6,8 +6,6 @@ import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import { CheckIcon, CircleSlashIcon, SendIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Spinner } from '@/components/ui/spinner';
 import { useChatText } from '../pi-chat/labels';
@@ -141,17 +139,18 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
     </Item>;
   }
 
-  const option = (value: string, selected: boolean, onClick: () => void) => <Button key={value} variant={selected ? 'secondary' : 'outline'} data-testid="question-option" data-option={value}
+  const option = (value: string, selected: boolean, onClick: () => void) => <Button key={value} variant={selected ? 'default' : 'secondary'} data-testid="question-option" data-option={value}
     aria-pressed={question.items.length > 0 ? selected : undefined} disabled={unavailable} onClick={onClick} className="h-auto min-h-8 w-full justify-start whitespace-normal text-start">
     {selected && <CheckIcon data-icon="inline-start" aria-hidden="true" />}{value}
   </Button>;
 
-  return <Card role="group" data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}>
-    <CardHeader>
-      <CardDescription>{labels.questionForYou}</CardDescription>
-      <CardTitle data-testid="question-text" className="[overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</CardTitle>
-    </CardHeader>
-    <CardContent className="flex flex-col gap-4">
+  // A muted Item like the approval card: the prompt is a wash in the transcript, not a box with boxes inside it.
+  return <Item variant="muted" role="group" data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question} className="my-2 text-start">
+    <ItemContent className="min-w-0 gap-4">
+      <div className="flex min-w-0 flex-col gap-1">
+        <ItemDescription className={wrap}>{labels.questionForYou}</ItemDescription>
+        <ItemTitle data-testid="question-text" className={wrap}>{question.question || labels.askedQuestion}</ItemTitle>
+      </div>
       {question.items.length > 0 ? <form data-testid="question-form" onSubmit={onSubmitForm} className="flex flex-col gap-4">
         {question.items.map((item, i) => <div key={i} role="group" aria-labelledby={`${formId}-${i}`} data-testid="question-item" className="flex min-w-0 flex-col gap-2">
           <p id={`${formId}-${i}`} className="m-0 [overflow-wrap:anywhere]">{i + 1}. {item.question}</p>
@@ -172,9 +171,9 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
           <Button type="submit" data-testid="question-submit" disabled={unavailable || !text.trim()}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button>
         </form>}
       </>}
-      {live && <CardDescription>{labels.stillWritingQuestion}</CardDescription>}
-      {!answer && !live && <CardDescription>{labels.answeringUnavailable}</CardDescription>}
-      {refusal && <Alert variant="destructive" data-testid="question-refusal"><AlertDescription>{refusal}</AlertDescription></Alert>}
-    </CardContent>
-  </Card>;
+      {live && <ItemDescription className={wrap}>{labels.stillWritingQuestion}</ItemDescription>}
+      {!answer && !live && <ItemDescription className={wrap}>{labels.answeringUnavailable}</ItemDescription>}
+      {refusal && <p role="alert" data-testid="question-refusal" className="m-0 text-xs text-destructive [overflow-wrap:anywhere]">{refusal}</p>}
+    </ItemContent>
+  </Item>;
 }

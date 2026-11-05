@@ -180,7 +180,7 @@ export function ConversationList({ conversations, onPicked, autoFocus = false, s
                     <Input name="title" autoFocus defaultValue={title} maxLength={200} aria-label={labels.conversationName} data-testid="conversation-rename-input"
                       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setRenaming(null); } }}
                       className="min-w-0 flex-1" />
-                    <Button type="submit" size="sm" variant="outline" data-testid="conversation-rename-save">{labels.save}</Button>
+                    <Button type="submit" size="sm" variant="secondary" data-testid="conversation-rename-save">{labels.save}</Button>
                   </form>
                 </SidebarMenuItem>;
               }
@@ -237,7 +237,7 @@ export function ConversationHistory({ conversations, onClose, placement = 'below
       <header className="flex shrink-0 items-center gap-2 px-3 py-2.5 max-md:pt-[max(0.625rem,env(safe-area-inset-top))]">
         <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} data-testid="conversations-close" onClick={onClose} className="md:hidden"><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>
         <h3 className="m-0 min-w-0 flex-1 text-sm font-semibold">{labels.history}</h3>
-        {conversations.onNew && <Button size="sm" variant="outline" data-testid="conversation-new" onClick={() => { conversations.onNew!(); onClose(); }}><icons.newChat data-icon="inline-start" aria-hidden="true" />{labels.newConversation}</Button>}
+        {conversations.onNew && <Button size="sm" variant="secondary" data-testid="conversation-new" onClick={() => { conversations.onNew!(); onClose(); }}><icons.newChat data-icon="inline-start" aria-hidden="true" />{labels.newConversation}</Button>}
         <Button size="icon-sm" variant="ghost" aria-label={labels.closeHistory} title={labels.close} onClick={onClose} className="max-md:hidden"><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
       </header>
       <Separator />

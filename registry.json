@@ -103,7 +103,7 @@
           "accent-foreground": "oklch(0.2 0 0)",
           "destructive": "oklch(0.577 0.2 27)",
           "success": "oklch(0.527 0.154 150)",
-          "border": "oklch(0.91 0 0)",
+          "border": "oklch(0.93 0 0)",
           "input": "var(--border)",
           "ring": "oklch(0.55 0.02 286)",
           "chart-1": "oklch(0.55 0.17 264)",
@@ -159,23 +159,23 @@
           "pm-mark-width": "2px"
         },
         "dark": {
-          "background": "oklch(0.17 0 0)",
+          "background": "oklch(0.15 0 0)",
           "foreground": "oklch(0.96 0 0)",
-          "card": "oklch(0.215 0 0)",
+          "card": "oklch(0.205 0 0)",
           "card-foreground": "oklch(0.96 0 0)",
-          "popover": "oklch(0.215 0 0)",
+          "popover": "oklch(0.22 0 0)",
           "popover-foreground": "oklch(0.96 0 0)",
           "primary": "oklch(0.92 0 0)",
           "primary-foreground": "oklch(0.2 0 0)",
-          "secondary": "oklch(0.26 0 0)",
+          "secondary": "oklch(0.255 0 0)",
           "secondary-foreground": "oklch(0.96 0 0)",
-          "muted": "oklch(0.25 0 0)",
+          "muted": "oklch(0.245 0 0)",
           "muted-foreground": "oklch(0.66 0 0)",
           "accent": "oklch(0.265 0 0)",
           "accent-foreground": "oklch(0.96 0 0)",
           "destructive": "oklch(0.7 0.19 22)",
           "success": "oklch(0.7 0.17 150)",
-          "border": "oklch(1 0 0 / 9%)",
+          "border": "oklch(1 0 0 / 7%)",
           "input": "var(--border)",
           "ring": "oklch(0.65 0.02 286)",
           "chart-1": "oklch(0.65 0.17 264)",
@@ -703,18 +703,22 @@
           ".pi-chat": {
             "font-size": "var(--chat-text-body)",
             "line-height": "1.5"
-          },
-          ".pi-chat [data-testid=\"composer\"] [data-slot=\"input-group\"]": {
-            "background-color": "var(--card)",
-            "border-color": "var(--card)",
-            "border-radius": "var(--chat-composer-radius)",
-            "box-shadow": "none"
-          },
-          ".pi-chat [data-testid=\"composer\"] [data-slot=\"input-group\"]:focus-within": {
-            "border-color": "var(--ring)"
           }
         },
         "@layer utilities": {
+          ".pi-chat [data-testid=\"composer\"] [data-slot=\"input-group\"]": {
+            "background-color": "var(--card)",
+            "border-color": "transparent",
+            "border-radius": "var(--chat-composer-radius)",
+            "box-shadow": "none"
+          },
+          ".pi-chat [data-slot=\"alert\"]": {
+            "border-color": "transparent",
+            "background-color": "var(--muted)"
+          },
+          ".pi-chat [data-slot=\"alert\"][role=\"alert\"]": {
+            "background-color": "color-mix(in oklab, var(--destructive) 10%, transparent)"
+          },
           "@media (width < 768px), (pointer: coarse)": {
             ".pi-chat :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
               "min-height": "2.75rem",

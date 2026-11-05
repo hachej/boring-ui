@@ -67,18 +67,18 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
   const status = open ? labels.needsApproval : approved ? labels.approved : denied ? labels.denied : labels.notDecided;
   const unavailable = !answer || !questionId || busy;
 
-  // shadcn's Confirmation recipe: an outline Item with the question and Approve/Deny actions; pending approvals are prompts, not activity.
-  return <Item variant="outline" size="sm" render={<section />} data-testid="approval-card" data-state={state} data-call-id={call.id} data-tool={call.name} aria-label={labels.approvalNeeded} className="my-2 text-start">
+  // shadcn's Confirmation recipe: a muted Item (a wash, not a box) with the question and Approve/Deny actions; pending approvals are prompts, not activity.
+  return <Item variant="muted" size="sm" render={<section />} data-testid="approval-card" data-state={state} data-call-id={call.id} data-tool={call.name} aria-label={labels.approvalNeeded} className="my-2 text-start">
     <ItemMedia variant="icon">
       {approved ? <CheckIcon aria-hidden="true" /> : denied ? <XIcon aria-hidden="true" /> : <ShieldAlertIcon aria-hidden="true" />}
     </ItemMedia>
-    <ItemContent className="min-w-0 basis-0">
-      <ItemDescription className="line-clamp-none"><Badge variant={open ? 'outline' : denied ? 'destructive' : 'secondary'}>{status}</Badge></ItemDescription>
+    <ItemContent className="min-w-[min(100%,14rem)] basis-0">
+      <ItemDescription className="line-clamp-none"><Badge variant={open ? 'secondary' : denied ? 'destructive' : 'secondary'}>{status}</Badge></ItemDescription>
       {summary && <ItemTitle data-testid="approval-summary" className="line-clamp-none [overflow-wrap:anywhere]">{summary}</ItemTitle>}
       <ItemDescription data-testid="approval-tool" className="line-clamp-none [overflow-wrap:anywhere]">{labels.wantsToRun} <code className="font-mono">{call.name}</code></ItemDescription>
       {args.length > 0 && (() => {
-        const list = <dl data-testid="approval-args" className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-          {args.map(item => [<dt key={`${item.name}:n`} className="text-muted-foreground">{item.name}</dt>, <dd key={`${item.name}:v`} className="m-0 font-mono whitespace-pre-wrap [overflow-wrap:anywhere]">{item.value}</dd>])}
+        const list = <dl data-testid="approval-args" className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+          {args.map(item => [<dt key={`${item.name}:n`} className="text-muted-foreground">{item.name}</dt>, <dd key={`${item.name}:v`} className="m-0 line-clamp-4 min-w-0 font-mono break-all whitespace-pre-wrap">{item.value}</dd>])}
         </dl>;
         // With a summary the raw arguments are the detail behind it; without one they are all the person has to decide on.
         return summary ? <details data-testid="approval-details" className="text-xs"><summary className="inline-flex min-h-8 cursor-pointer items-center text-muted-foreground select-none max-sm:min-h-11 pointer-coarse:min-h-11">{labels.arguments}</summary>{list}</details> : list;
@@ -86,7 +86,7 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
     </ItemContent>
     {open && <ItemActions role="group" aria-label={labels.decision}>
       <Button variant="default" data-testid="approval-approve" disabled={unavailable} onClick={() => { void decide(APPROVE); }}><CheckIcon data-icon="inline-start" aria-hidden="true" />{labels.approve}</Button>
-      <Button variant="outline" data-testid="approval-deny" disabled={unavailable} onClick={() => { void decide(DENY); }}><XIcon data-icon="inline-start" aria-hidden="true" />{labels.deny}</Button>
+      <Button variant="secondary" data-testid="approval-deny" disabled={unavailable} onClick={() => { void decide(DENY); }}><XIcon data-icon="inline-start" aria-hidden="true" />{labels.deny}</Button>
     </ItemActions>}
     {(open && (live || !answer || !questionId)) && <ItemFooter><ItemDescription>{live ? labels.stillWritingCall : labels.decidingUnavailable}</ItemDescription></ItemFooter>}
     {/* Decided, the gated call not finished yet: whoever decided, the run carries on by itself. */}

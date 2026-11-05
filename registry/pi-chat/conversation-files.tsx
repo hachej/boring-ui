@@ -21,7 +21,7 @@ export function ConversationFiles({ files }: { readonly files: readonly Conversa
   useEffect(() => { setOpen(false); }, [phone]);
   const available = files.filter(file => file.open);
   if (!available.length) return null;
-  const trigger = <Button variant="outline" data-testid="conversation-files" className="mb-3 max-w-full gap-2"><ShapesIcon data-icon="inline-start" aria-hidden="true" />{labels.artifacts}<span className="text-muted-foreground">· {available.length}</span></Button>;
+  const trigger = <Button variant="secondary" data-testid="conversation-files" className="mb-3 max-w-full gap-2"><ShapesIcon data-icon="inline-start" aria-hidden="true" />{labels.artifacts}<span className="text-muted-foreground">· {available.length}</span></Button>;
   const label = (file: ConversationFile) => <><FileTextIcon data-icon="inline-start" className="shrink-0" aria-hidden="true" /><span className="min-w-0 truncate">{file.name}</span></>;
   const select = (file: ConversationFile) => { setOpen(false); file.open?.(); };
   return phone ? <Drawer open={open} onOpenChange={setOpen} showSwipeHandle><DrawerTrigger render={trigger} /><DrawerContent data-testid="conversation-files-list" className="pi-chat max-h-[80dvh]">

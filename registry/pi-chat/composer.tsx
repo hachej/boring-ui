@@ -375,7 +375,7 @@ export function Composer(props: ComposerProps) {
       {...(slash || mentions ? { role: 'combobox', 'aria-expanded': menuOpen, 'aria-haspopup': 'listbox', 'aria-autocomplete': 'list' } as const : {})}
       onChange={onChange} onKeyDown={onKeyDown} onPaste={onPaste} onKeyUp={event => trackCaret(event.currentTarget)} onClick={event => trackCaret(event.currentTarget)}
       onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
-      className={cn(props.markMentionQuery && 'relative', pill ? 'max-h-52 min-h-0 min-w-0' : 'max-h-52 min-h-11')} />;
+      className={cn(props.markMentionQuery && 'relative', pill ? 'max-h-52 min-h-0 min-w-28 placeholder-shown:truncate' : 'max-h-52 min-h-11')} />;
   // The query mark is a backdrop with the textarea's own metrics behind its transparent text: the text the person edits stays the textarea's.
   const marked = props.markMentionQuery && mentionOpen && trigger ? <QueryBackdrop text={text} start={trigger.start} end={trigger.end} /> : null;
   // eslint-disable-next-line react-hooks/refs -- renderInput receives event callbacks, not ref values; an input calls them only on interaction
@@ -397,7 +397,7 @@ export function Composer(props: ComposerProps) {
     {props.barNote}
     {uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
     {!pill && <span className="min-w-0 flex-1" />}
-    {props.barEnd && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.barEnd}</div>}
+    {props.barEnd && <div data-testid="composer-tools" className="flex min-w-0 shrink items-center gap-2 overflow-hidden">{props.barEnd}</div>}
     {working && hasContent && <Button variant="ghost" size="icon" data-testid="composer-queue" aria-label={labels.queue} title={labels.queue} disabled={!canSubmit} onClick={props.onSend} className="shrink-0">
       <icons.queue data-icon="inline-start" aria-hidden="true" /></Button>}
     {send}
@@ -417,7 +417,7 @@ export function Composer(props: ComposerProps) {
     </InputGroup> : pill ? <InputGroup>
       <InputGroupAddon>{startAndPlus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
       {input}
-      <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>
+      <InputGroupAddon align="inline-end" data-testid="composer-controls" className="min-w-0">{end}</InputGroupAddon>
     </InputGroup> : <InputGroup>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
       {input}

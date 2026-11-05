@@ -192,7 +192,7 @@ export function PiChat(hostProps: PiChatProps) {
 function ConnectionBadge({ kind }: { readonly kind: string }) {
   const { labels } = useChatText();
   const live = kind === 'connected';
-  return <Badge variant={live ? 'outline' : 'secondary'} data-testid="connection" data-state={kind} role="status">
+  return <Badge variant={live ? 'ghost' : 'secondary'} data-testid="connection" data-state={kind} role="status">
     {live ? labels.live : kind === 'connecting' || kind === 'idle' ? labels.connecting : labels.reconnecting}
   </Badge>;
 }

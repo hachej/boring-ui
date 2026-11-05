@@ -58,7 +58,7 @@ export function SlashPicker({ query, items, onSelect, onDismiss }: SlashPickerPr
           <ItemContent className="min-w-0">
             <ItemTitle>/{item.name}
               {item.source === 'skill' && <Badge variant="secondary" data-testid="slash-badge-skill">{labels.skillBadge}</Badge>}
-              {item.sourcePlugin && <Badge variant="outline" data-testid="slash-badge-source">{item.sourcePlugin}</Badge>}
+              {item.sourcePlugin && <Badge variant="secondary" data-testid="slash-badge-source">{item.sourcePlugin}</Badge>}
             </ItemTitle>
             {item.description && <ItemDescription className="m-0 truncate">{item.description}</ItemDescription>}
           </ItemContent>

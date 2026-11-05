@@ -27,11 +27,11 @@ export function ChatNotices({ state, error, onReconcile, onRetry, natural = fals
   return <>
     {error && <Notice testid="chat-error">{error}</Notice>}
     {conversations?.newFailed && <Notice testid="new-chat-failed"><span className="flex-1">{conversations.newFailed.typed ? labels.newChatFailedTyped : labels.newChatFailed}</span>
-      {conversations.newFailedSeen && <Button size="sm" variant="outline" onClick={conversations.newFailedSeen}>{labels.close}</Button>}</Notice>}
+      {conversations.newFailedSeen && <Button size="sm" variant="secondary" onClick={conversations.newFailedSeen}>{labels.close}</Button>}</Notice>}
     {state.send.kind === 'blocked' && <Notice testid="send-blocked">{natural ? labels.sendUnavailable : state.send.reason}</Notice>}
     {state.send.kind === 'unknown' && <Notice testid="send-unknown"><span className="flex-1">{'reason' in state.send ? state.send.reason : labels.sendUnknown}</span>
-      <Button size="sm" variant="outline" onClick={onReconcile}>{labels.checkSubmission}</Button>
-      {(!('retryable' in state.send) || state.send.retryable) && <Button size="sm" variant="outline" onClick={onRetry}>{labels.retrySame}</Button>}</Notice>}
+      <Button size="sm" variant="secondary" onClick={onReconcile}>{labels.checkSubmission}</Button>
+      {(!('retryable' in state.send) || state.send.retryable) && <Button size="sm" variant="secondary" onClick={onRetry}>{labels.retrySame}</Button>}</Notice>}
     {state.stop === 'requested' && <Notice tone="info" testid="stop-requested">{labels.stopRequested}</Notice>}
     {state.stop === 'unconfirmed' && <Notice testid="stop-unconfirmed">{labels.stopUnconfirmed}</Notice>}
   </>;
@@ -61,7 +61,7 @@ export function ChatConnectionNotice({ state, onReconnect, renderConnectionError
   if (connection.kind !== 'error' && connection.kind !== 'closed') return null;
   return <Notice tone={compact ? 'info' : connection.kind === 'error' ? 'error' : 'info'} testid="connection-notice">
     <span className="flex-1">{connection.kind === 'error' ? renderConnectionError ? renderConnectionError(connection.error) : fallback?.error ?? labels.loadFailed : fallback?.closed ?? labels.disconnected}</span>
-    {!state.disposed && <Button size="sm" variant="outline" onClick={onReconnect}>{!compact && <icons.reconnect data-icon="inline-start" aria-hidden="true" />}{labels.reconnect}</Button>}
+    {!state.disposed && <Button size="sm" variant="secondary" onClick={onReconnect}>{!compact && <icons.reconnect data-icon="inline-start" aria-hidden="true" />}{labels.reconnect}</Button>}
   </Notice>;
 }
 
