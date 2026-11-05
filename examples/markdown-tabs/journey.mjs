@@ -173,7 +173,7 @@ try {
     await tab2.until('tab 2 shows tab 1 text', `${SOURCE}?.value === ${JSON.stringify(theirs.text)}`);
     await pause(500);
     const now = await stored(SMALL);
-    check('2 take theirs: tab 2 text is tab 1 text and not what tab 2 typed', await tab2.value() === mine && mine !== theirs.text && (await tab2.state()).dirty === false);
+    check('2 take theirs: tab 2 text is tab 1 text and not what tab 2 typed', await tab2.value() === theirs.text && mine !== theirs.text && (await tab2.state()).dirty === false);
     check('2 take theirs: store unchanged', now.revision === theirs.revision && now.text === theirs.text, `store ${short(now.revision)}, ${now.bytes} bytes`);
     check('2 take theirs: strip closed', await tab2.evaluate(`${CHOICES} === ''`));
     await tab2.shot('2-take-theirs.png');
