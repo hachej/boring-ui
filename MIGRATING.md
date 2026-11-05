@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`pi-chat-markdown` now declares `entities@^9.0.0` (D-1588).** Reinstall `pi-chat-markdown`. Only `decodeHTML` is used, which is unchanged in 9.0.0; a host that also imports `entities` encoders or streaming decoders should read its 9.0.0 release notes.
+
 # Migrating to 0.4.58
 
 - **The wheel over the History list stays in it (`pi-chat`; D-1577).** Reinstall `pi-chat`. A host on a kit older than 0.4.57 also gets the fix for rows running out of the sheet (D-1528).
