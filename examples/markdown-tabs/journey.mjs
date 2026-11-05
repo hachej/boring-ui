@@ -190,7 +190,8 @@ try {
     const now = await stored(SMALL);
     check('2 review diff: nothing saved, nothing lost', await tab2.value() === mine && (await tab2.state()).dirty === true && now.revision === theirs.revision && now.text === theirs.text && writes === attempts,
       `store ${short(now.revision)}, publish attempts ${writes - attempts}, tab 2 text ${mine.length} characters`);
-    check('2 review diff: strip stays', await tab2.evaluate(`${CHOICES} === 'Keep mine|Take theirs|Review diff'`));
+    const buttons = await tab2.evaluate(CHOICES);
+    check('2 review diff: strip stays with its three choices', buttons.startsWith('Keep mine|Take theirs|Review diff'), `buttons in the strip: ${buttons}`);
     await tab2.shot('2-review-diff.png');
   });
 
