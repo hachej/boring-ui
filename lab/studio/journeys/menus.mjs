@@ -96,7 +96,7 @@ async function menus(t) {
 
     await browser.type(MESSAGE, 'Write a short referral letter for the patient in notes/consultation.md.');
     await browser.press('Enter');
-    await browser.until('the agent loaded the skill and finished', `${idle} && /Write a short referral letter/.test(${logText}) && /load_skill/.test(${logText})`, 240000);
+    await browser.until('the agent loaded the skill and finished', `${idle} && /Write a short referral letter/.test(${logText}) && !!document.querySelector('[data-testid=transcript] [data-tool=load_skill]')`, 240000);
     const loaded = (await messages()).flatMap(message => message.role === 'assistant' ? message.content.filter(part => part.type === 'toolCall' && part.name === 'load_skill') : []);
     assert.ok(loaded.some(call => call.arguments.name === 'letter-style'), `load_skill(letter-style) was called: ${JSON.stringify(loaded.map(call => call.arguments))}`);
     assert.equal(await browser.evaluate(`${q('[data-testid=message-skill]')}?.dataset.skill`), 'letter-style', 'the sent token is styled');

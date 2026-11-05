@@ -395,7 +395,7 @@ try {
     await sees('the answer cites the policy and the invoice', 'No. Section 2 of the policy holds an invoice');
     assert.deepEqual(screenOf(app.contexts.at(-1).value), { name: 'Library document', params: { path: 'Policies/AP policy.md' } }, 'the screen context names the open document');
     await expandTrace(browser);
-    const tools = await browser.evaluate(`[...document.querySelectorAll('[data-testid=tool-name]')].map(item => item.textContent.trim()).join(' ')`);
+    const tools = await browser.evaluate(`[...document.querySelectorAll('[data-testid=tool-name]')].map(item => item.closest('[data-tool]')?.dataset.tool ?? item.textContent.trim()).join(' ')`);
     assert.ok(/read/.test(tools) && /get_invoice/.test(tools), `the agent read the document and the invoice: ${tools}`);
     await browser.screenshot('4-policy.png');
     await viewAction('viewer', 'mode-source');
