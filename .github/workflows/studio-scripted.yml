@@ -143,6 +143,19 @@ jobs:
       - name: Document draft recovery with IndexedDB
         if: matrix.shard == 'documents'
         run: node scripts/retry-journey.mjs draft-recovery:journey
+      - name: Markdown editor in two real tabs (cross-tab refresh, conflict choices, receipt, 1 MB note)
+        if: matrix.shard == 'documents'
+        run: node scripts/retry-journey.mjs markdown-tabs:journey
+        env:
+          APP_EVIDENCE: ${{ runner.temp }}/evidence/markdown-tabs
+      - name: Markdown tabs evidence
+        if: always() && matrix.shard == 'documents'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: markdown-tabs-evidence-${{ matrix.shard }}
+          path: ${{ runner.temp }}/evidence/markdown-tabs
+          retention-days: 7
+          if-no-files-found: ignore
       - name: File tree, mentions, uploads and revision history
         if: matrix.shard == 'documents'
         run: node scripts/retry-journey.mjs file-tree:journey
