@@ -102,7 +102,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
       assert.equal(item.type, 'registry:theme');
       assert.equal(item.files, undefined); assert.equal(item.dependencies, undefined); assert.equal(item.css, undefined);
       const { theme, light, dark } = item.cssVars;
-      assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).filter(name => name !== 'radius').sort(), 'dark redefines every color token');
+      assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).filter(name => name !== 'radius' && !/^text-(body|title)$/.test(name)).sort(), 'dark redefines every color token (radius and the mode-independent text-body/text-title type roles live in light only)');
       for (const [name, value] of Object.entries(theme)) {
         if (name === 'default-border-width') {
           assert.equal(value, 'var(--border-width, 1px)', 'optional host border width keeps the stock Tailwind fallback');
