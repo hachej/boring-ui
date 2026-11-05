@@ -25,7 +25,8 @@ const color = /#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla|oklch|oklab)\([^)]*\)|
 const font = /\bfont-\[(?!var\(|--)[^\]]+\]|\bfont-family\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+|\bfontFamily\s*:\s*['"](?!var\()[^'"]+['"]|\bfont\s*:\s*[^;\n}]*\b(?:serif|monospace|system-ui)\b[^;\n}]*/g;
 
 // The flat card: a Card's own className carries no border, shadow or ring. The shadcn Card's ring lives in its generated file, which blocks never restyle.
-const cardFlat = /<Card\b[^>]*?\bclassName\s*=\s*(?:"[^"]*\b(?:border|shadow|ring)\b[^"]*"|\{[^}\n]*\b(?:border|shadow|ring)\b[^}\n]*\})/g;
+const cardLine = String.raw`(?<![\w-])(?:border|shadow|ring)(?!-(?:0|none)(?![\w-]))(?!\w)`; // `border-0`, `shadow-none`, `ring-0` are the flat card itself
+const cardFlat = new RegExp(String.raw`<Card\b[^>]*?\bclassName\s*=\s*(?:"[^"]*${cardLine}[^"]*"|\{[^}\n]*${cardLine}[^}\n]*\})`, 'g');
 
 /** `<Card` tags opened inside another open `<Card>` (a self-closing Card and a Card in a prop are not nesting). Lexical, over JSX tags. */
 function nestedCards(source) {

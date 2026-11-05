@@ -38,6 +38,15 @@ test('a Card carries no border, shadow or ring: the flat card is the default', (
   assert.equal(scanDesign('registry/pi-chat/tool.tsx', '<CardContent className="border" />').filter(finding => finding.rule === 'design-card-flat').length, 0);
 });
 
+test('a flat Card may say so: shadow-none, ring-0 and border-0 are what flat asks for, border-t and hover:shadow-md are not', () => {
+  const flat = source => scanDesign('registry/pi-chat/tool.tsx', source).filter(finding => finding.rule === 'design-card-flat').length;
+  assert.equal(flat('<Card className="gap-2 shadow-none border-0 ring-0" />'), 0);
+  assert.equal(flat('<Card className={cn("border-none shadow-none", className)} />'), 0);
+  assert.equal(flat('<Card className="border-t" />'), 1);
+  assert.equal(flat('<Card className="hover:shadow-md" />'), 1);
+  assert.equal(flat('<Card className="shadow-none ring-1" />'), 1);
+});
+
 test('no Card is nested inside another Card; a sibling or a render prop is not nesting', () => {
   const nested = '<Card>\n  <CardContent>\n    <Card className="p-2">x</Card>\n  </CardContent>\n</Card>';
   const findings = scanDesign('registry/feedback/feedback-list.tsx', nested).filter(finding => finding.rule === 'design-no-nested-card');
