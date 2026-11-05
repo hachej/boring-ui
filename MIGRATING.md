@@ -2,6 +2,7 @@
 
 - **`board-viewer` pins tldraw 5.6.0 and `viewer-pdf` pins pdfjs-dist 6.5.438 (D-1588).** Reinstall `board-viewer` and `viewer-pdf` to take them; an app that already installed a block keeps its own versions until it does. `@hachej/boring-ui-kit` now peers `tldraw`, `@tldraw/editor`, `@tldraw/store` and `@tldraw/tlschema` at `^5.6.0`. The tldraw asset recipe now matches: install `@tldraw/assets@5.6.0` with `tldraw@5.6.0`.
 - **`pi-chat-markdown` now declares `entities@^9.0.0` (D-1588).** Reinstall `pi-chat-markdown`. Only `decodeHTML` is used, which is unchanged in 9.0.0; a host that also imports `entities` encoders or streaming decoders should read its 9.0.0 release notes.
+- **Style v1 pattern blocks (`@hachej/boring-ui-kit`, registry `_shared`, `kpi-stat`, `list-row`, `empty-state`, `page-header`, `data-table`).** Re-sync the registry items to add the pattern blocks; the theme gains a `success` colour token, so re-sync `theme` too. The blocks lint rule `design-no-x-scroll` now fails a file that renders a table inside a horizontal scroll container.
 
 # Migrating to 0.4.58
 
@@ -11,7 +12,6 @@
 - **A refused or unanswered New chat now says so (`@hachej/boring-ui-kit`, `pi-chat`, `pi-ambient`; D-1563): `useConversationsClient` adds `newFailed` and `newFailedSeen`, and `PiChat` and `AmbientChat` show the message when the host passes the client through. A create answered after the person stopped waiting now sends `op=delete` for that conversation, if it is still empty, they never had it open, and the chat was not unmounted meanwhile (an unmounted chat leaves the empty row). An `onChange` that rejects after a create that worked no longer stops the conversation opening. A host that picks fields out of the client must pass the two new ones to get the message.
 - **After a refused New chat the focus stays off the button (`@hachej/boring-ui-kit`; D-1529).** No host change is needed. A Space typed after a refused create pressed New again, and a create that worked took the rest of the text as a partial message. A person using the keyboard starts again from the page after a refused create.
 - **Style v1 foundation: type roles, sidebar tokens and card lint rules (`@hachej/boring-ui-kit`, registry `theme`, `app-shell`).** Re-sync the registry items (`theme`, `app-shell`, `mockup-viewer`, `looks-viewer`, `maquette-viewer`) to pick up the new `text-body` and `text-title` roles and sidebar tokens. They are optional with fallbacks, so an app that does not re-sync sees no change.
-- **Style v1 pattern blocks (`@hachej/boring-ui-kit`, registry `_shared`, `kpi-stat`, `list-row`, `empty-state`, `page-header`, `data-table`).** Re-sync the registry items to add the pattern blocks; the theme gains a `success` colour token, so re-sync `theme` too. The blocks lint rule `design-no-x-scroll` now fails a file that renders a table inside a horizontal scroll container.
 
 # Migrating to 0.4.57
 
