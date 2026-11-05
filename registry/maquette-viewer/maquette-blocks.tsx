@@ -86,7 +86,7 @@ function BlockBody({ block, links, labels }: { readonly block: MaquetteBlock; re
     </ItemGroup>;
     case 'table': return <DataTable
       caption={block.columns.join(', ')}
-      columns={block.columns.map((header, column) => ({ id: String(column), header, priority: column === 0 ? 1 : 2, cell: (row: { index: number; cells: string[] }) => row.cells[column] }))}
+      columns={block.columns.map((header, column) => ({ id: String(column), header, priority: column === 0 ? 1 : 2, cell: (row: { index: number; cells: readonly string[] }) => row.cells[column] }))}
       rows={block.rows.map((cells, index) => ({ index, cells }))}
       rowKey={row => String(row.index)}
     />;

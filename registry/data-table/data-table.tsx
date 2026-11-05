@@ -72,7 +72,7 @@ export function DataTable<Row>({ columns, rows, rowKey, caption, className }: Da
       <ul className="flex flex-col @min-[520px]:hidden">
         {rows.map(row => (
           <li key={rowKey(row)} className="flex min-w-0 flex-col gap-1 rounded-(--radius) px-2 py-2 hover:bg-accent">
-            <span className="truncate text-sm font-medium">{title.cell(row)}</span>
+            <span className="truncate text-sm font-medium">{title?.cell(row)}</span>
             <dl className="flex flex-col gap-1">
               {details.map(column => (
                 <div key={column.id} className="flex min-w-0 items-baseline justify-between gap-3 text-xs">
