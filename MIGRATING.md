@@ -1,6 +1,7 @@
 # Unreleased
 
 - **`board-viewer` pins tldraw 5.6.0 and `viewer-pdf` pins pdfjs-dist 6.5.438 (D-1588).** Reinstall `board-viewer` and `viewer-pdf` to take them; an app that already installed a block keeps its own versions until it does. `@hachej/boring-ui-kit` now peers `tldraw`, `@tldraw/editor`, `@tldraw/store` and `@tldraw/tlschema` at `^5.6.0`. The tldraw asset recipe now matches: install `@tldraw/assets@5.6.0` with `tldraw@5.6.0`.
+- **`pi-chat-markdown` now declares `entities@^9.0.0` (D-1588).** Reinstall `pi-chat-markdown`. Only `decodeHTML` is used, which is unchanged in 9.0.0; a host that also imports `entities` encoders or streaming decoders should read its 9.0.0 release notes.
 
 # Migrating to 0.4.58
 

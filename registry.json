@@ -713,7 +713,7 @@
         "@hachej/boring-ui-kit@^0.4.58",
         "react@^19.0.0",
         "marked@^17.0.6",
-        "entities@^8.1.0"
+        "entities@^9.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/pi-chat"
