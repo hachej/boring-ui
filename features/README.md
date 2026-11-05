@@ -24,3 +24,4 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Packages | agent, files, execution, ui kit and the `boring-ui-blocks` CLI | [packages.md](packages.md) |
 | Drawing viewer | Excalidraw and draw.io files drawn by their own renderers, read-only | [drawing-viewer.md](drawing-viewer.md) |
 | Viewer utilities | shared phone breakpoint, media/keyboard viewport and local layout persistence | [viewer-utilities.md](viewer-utilities.md) |
+| Pattern blocks | KPI stat, list row, empty state, page header, data table | [patterns.md](patterns.md) |
