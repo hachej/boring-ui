@@ -78,7 +78,7 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
       <ItemDescription data-testid="approval-tool" className="line-clamp-none [overflow-wrap:anywhere]">{labels.wantsToRun} <code className="font-mono">{call.name}</code></ItemDescription>
       {args.length > 0 && (() => {
         const list = <dl data-testid="approval-args" className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-          {args.map(item => [<dt key={`${item.name}:n`} className="text-muted-foreground">{item.name}</dt>, <dd key={`${item.name}:v`} className="m-0 font-mono whitespace-pre-wrap [overflow-wrap:anywhere]">{item.value}</dd>])}
+          {args.map(item => [<dt key={`${item.name}:n`} className="text-muted-foreground">{item.name}</dt>, <dd data-mono-id key={`${item.name}:v`} className="m-0 font-mono whitespace-pre-wrap [overflow-wrap:anywhere]">{item.value}</dd>])}
         </dl>;
         // With a summary the raw arguments are the detail behind it; without one they are all the person has to decide on.
         return summary ? <details data-testid="approval-details" className="text-xs"><summary className="inline-flex min-h-8 cursor-pointer items-center text-muted-foreground select-none max-sm:min-h-11 pointer-coarse:min-h-11">{labels.arguments}</summary>{list}</details> : list;

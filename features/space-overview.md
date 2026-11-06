@@ -4,7 +4,7 @@ Generic blocks for the "what is going on across my apps" surfaces: a card per ap
 
 ## Sub-features
 
-- `space-card` `SpaceCard` shows one app or space: its name, the working and waiting counts, and the last ship when known. Both counts at 0 read "Quiet". `activity: 'unknown'` reads "Status unreadable" and hides the last ship: an unreadable app is never shown as Quiet. It is a button when `onOpen` is given. `registry/space-card/space-card.tsx`.
+- `space-card` `SpaceCard` shows one app or space: its name, the working and waiting counts (semibold sans, tabular), and the "Last ship" line (sans, muted; the label is overridable) when known. Both counts at 0 read "Quiet". `activity: 'unknown'` reads "Status unreadable" and hides the last ship: an unreadable app is never shown as Quiet. It is a button when `onOpen` is given. Both forms sit on `--card` (white on the canvas); the initial chip is `--secondary`; the button form hovers to `--accent` (the chip flips to `--card`) and keeps the Button focus ring. `test/ui/surface-cards.test.mjs` renders both and asserts the surfaces (light and dark). `registry/space-card/space-card.tsx`.
 - `wiring-chips` `WiringChips` lists what an app is wired to (domain, repository, channels, connections), one chip each with a state dot: `ok`, `warn` (needs attention, such as a sign-in) or `unknown` (could not be read). `state` is required, and a missing one reads as `unknown`, never ok. The dot is colour only for sighted people (assistive tech also hears the state), so put the state in the chip text when it matters: "Calendar needs sign-in". `registry/wiring-chips/wiring-chips.tsx`.
 
 ## How to get to it (user POV)

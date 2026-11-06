@@ -160,7 +160,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
   // A form of several questions: the same flat warning tint as InlineQuestion.
   return <div role="group" data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question} className="my-2 flex min-w-0 flex-col gap-3 rounded-(--radius) bg-(--chat-warning-soft) p-3 text-start text-(--chat-warning-soft-foreground)">
     <div className="flex min-w-0 flex-col gap-1">
-      <p className="m-0 font-mono text-xs">{labels.questionForYou}</p>
+      <p className="m-0 text-xs">{labels.questionForYou}</p>
       <p data-testid="question-text" className="m-0 text-sm font-medium [overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</p>
     </div>
     <form data-testid="question-form" onSubmit={onSubmitForm} className="flex flex-col gap-4">
