@@ -70,7 +70,7 @@ export function InlineQuestion({ id, kind, text, source, options, answered, onAn
   if (answered !== undefined) {
     const said = decision && answered === 'approve' ? t.approved : decision && answered === 'refuse' ? t.refused : `${t.answered}: ${answered}`;
     return (
-      <div role="group" aria-label={text} className={cn('flex min-w-0 flex-col gap-1 text-muted-foreground', attention && 'rounded-(--radius) bg-muted p-3', className)}>
+      <div role="group" aria-label={text} className={cn('flex min-w-0 flex-col gap-1 text-muted-foreground', attention && 'p-3', className)}>
         <div className="flex items-start gap-2 text-sm font-medium"><CheckIcon aria-hidden className="mt-0.5 size-4 shrink-0" /><span>{text}</span></div>
         <span className="text-xs">{said}</span>
       </div>

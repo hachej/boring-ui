@@ -20,11 +20,14 @@ const entry = `
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement as h } from 'react';
 import { StatusNarrative } from '${join(root, 'registry/status-narrative/status-narrative.tsx')}';
+import { InlineQuestion } from '${join(root, 'registry/inline-question/inline-question.tsx')}';
 import { SpaceCard } from '${join(root, 'registry/space-card/space-card.tsx')}';
 const on = () => {};
 export const html = {
   staticCard: () => renderToStaticMarkup(h(SpaceCard, { name: 'Compta', activity: { working: 2, waiting: 1 }, lastShip: '2h ago' })),
   buttonCard: () => renderToStaticMarkup(h(SpaceCard, { name: 'Compta', activity: { working: 2, waiting: 1 }, lastShip: '2h ago', onOpen: on })),
+  answered: tone => () => renderToStaticMarkup(h(InlineQuestion, { id: 'q1', kind: 'question', text: 'Which ledger?', options: ['A'], answered: 'A', onAnswer: on, tone })),
+  waiting: () => renderToStaticMarkup(h(InlineQuestion, { id: 'q1', kind: 'question', text: 'Which ledger?', options: ['A'], onAnswer: on, tone: 'attention' })),
   narrative: () => renderToStaticMarkup(h(StatusNarrative, { segments: ['x'], at: '2 min ago', by: 'router', needsYou: 3, onRefresh: on })),
 };
 `;
@@ -79,4 +82,29 @@ test('SpaceCard: the clickable card keeps a visible hover (accent) and the chip 
     assert.equal(contrast('accent', 'card', mode) >= MIN, true, `${mode}: hover --accent differs from --card`);
     assert.equal(contrast('card', 'accent', mode) >= MIN, true, `${mode}: the hovered chip (--card) on --accent`);
   }
+});
+
+// An answered question is history, not a card: no fill at all, so it cannot be grey on grey on the canvas or on a chat panel (D-1742 round 3).
+for (const tone of ['neutral', 'attention']) {
+  for (const mode of ['light', 'dark']) {
+    test(`InlineQuestion answered (${tone}): paints no fill, keeps its spacing, check icon and labels, ${mode}`, () => {
+      const root_ = rendered(html.answered(tone)());
+      for (const node of [root_, ...root_.querySelectorAll('*')]) {
+        const token = surfaceOf(classOf(node), mode);
+        assert.equal(token === null || token === undefined, true, `${mode}: <${node.tagName.toLowerCase()}> paints ${token}`);
+        assert.equal(/(^|\s)bg-(?!transparent)/.test(classOf(node)), false, `<${node.tagName.toLowerCase()}> has a bg- class`);
+      }
+      assert.equal(root_.getAttribute('role'), 'group');
+      assert.equal(root_.getAttribute('aria-label'), 'Which ledger?');
+      assert.equal(classes(root_).includes('text-muted-foreground'), true, 'plain muted text');
+      assert.equal(classes(root_).includes('p-3'), tone === 'attention', 'the attention padding is kept so the spacing is unchanged');
+      assert.equal(root_.querySelector('svg')?.getAttribute('aria-hidden'), 'true', 'the check icon is hidden from assistive tech');
+    });
+  }
+}
+
+test('InlineQuestion waiting (attention) stays a tinted fill, not a neutral one', () => {
+  const card = rendered(html.waiting());
+  assert.equal(classes(card).includes('bg-warning-soft'), true);
+  for (const mode of ['light', 'dark']) assert.equal(['muted', 'secondary', 'accent', 'card', 'background'].includes(surfaceOf(classOf(card), mode)), false, `${mode}: tinted`);
 });

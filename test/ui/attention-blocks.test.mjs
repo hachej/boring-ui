@@ -107,7 +107,7 @@ test('answered: the controls give way to the answer, muted; a decision says appr
   assert.doesNotMatch(html.doneDecision(), /<button|<input/); assert.match(html.doneDecision(), /Approved/);
   assert.match(html.doneQuestion(), /Answered: Day 45/); assert.doesNotMatch(html.doneQuestion(), /bg-warning-soft/);
   assert.equal(html.doneQuestion().includes('bg-muted'), false, 'the default answered state is flat');
-  assert.equal(html.doneQuestionAttention().includes('bg-muted'), true, 'attention keeps the muted block');
+  assert.equal(html.doneQuestionAttention().includes('bg-'), false, 'attention keeps the padding but paints no fill: the answer is history');
 });
 
 test('a question shows at most four choices', () => {
