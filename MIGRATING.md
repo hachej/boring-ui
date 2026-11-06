@@ -2,6 +2,9 @@
 
 - **Chat tool steps show human names (`pi-chat`).** A tool id such as `piece_save` is never shown raw, in English or French: built-in tools keep their names, any other id is humanised. Re-sync `pi-chat`; no prop changes. Pattern blocks (`kpi-stat`, `list-row`, `empty-state`, `page-header`, `data-table`) now have their entry in `features/patterns.md`.
 - **`inline-question` block (new).** `InlineQuestion` `{ id, kind, text, options?, onAnswer }`: a `decision` (gate or review) is Approve/Refuse, a `question` takes up to four choices or free text. Props in, `onAnswer(id, value)` out; a decision answers with the stable values `'approve'` or `'refuse'`, never the translated button words; the host posts the answer under the signed-in person's own login. Install it with `shadcn add <registry>/inline-question.json`; nothing existing changes.
+- **`status-narrative` block (new).** `StatusNarrative` `{ segments, at?, by?, needsYou?, onOpen?, onRefresh? }`: the status paragraph with link parts, the time and author, one needs-you count. Props only; no clock read. Install it with `shadcn add <registry>/status-narrative.json`; nothing existing changes.
+- **`space-card` and `wiring-chips` blocks (new).** `SpaceCard` `{ name, activity, lastShip?, onOpen? }`: working and waiting counts, `Quiet` when both are 0, an `'unknown'` activity that is never shown as quiet. `WiringChips` `{ chips: { label, state? }[] }`: state dots for ok, warn and unknown, with `state` required (a missing one reads as unknown) and the state spoken. Props only. Install with `shadcn add <registry>/space-card.json` and `<registry>/wiring-chips.json`; nothing existing changes.
+- **`theme` item declares `@fontsource-variable/geist-mono`.** The default style's mono face (`Geist Mono`) now ships as a dependency, as Phosphor does, so an app made from the template gets it from the kit. Nothing existing changes.
 
 # Migrating to 0.4.59
 
