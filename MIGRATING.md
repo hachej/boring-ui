@@ -1,6 +1,6 @@
 # Unreleased
 
-- **`space-card` and `wiring-chips` blocks (new).** `SpaceCard` `{ name, activity, lastShip?, onOpen? }`: working and waiting counts, `Quiet` when both are 0, an `'unknown'` activity that is never shown as quiet. `WiringChips` `{ chips: { label, state? }[] }`: state dots for ok, warn and unknown, with the state spoken. Props only. Install with `shadcn add <registry>/space-card.json` and `<registry>/wiring-chips.json`; nothing existing changes.
+- **`space-card` and `wiring-chips` blocks (new).** `SpaceCard` `{ name, activity, lastShip?, onOpen? }`: working and waiting counts, `Quiet` when both are 0, an `'unknown'` activity that is never shown as quiet. `WiringChips` `{ chips: { label, state? }[] }`: state dots for ok, warn and unknown, with `state` required (a missing one reads as unknown) and the state spoken. Props only. Install with `shadcn add <registry>/space-card.json` and `<registry>/wiring-chips.json`; nothing existing changes.
 
 # Migrating to 0.4.59
 

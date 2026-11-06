@@ -24,7 +24,8 @@ export const html = {
   unknown: () => r(h(SpaceCard, { name: 'Calendar sync', activity: 'unknown', lastShip: '3d ago' })),
   noShip: () => r(h(SpaceCard, { name: 'Compta', activity: { working: 1, waiting: 0 } })),
   fr: () => r(h(SpaceCard, { name: 'Compta', activity: { working: 0, waiting: 0 }, labels: { quiet: 'Calme' } })),
-  chips: () => r(h(WiringChips, { chips: [{ label: 'notes.demo.boringbots.ai' }, { label: 'Calendar needs sign-in', state: 'warn' }, { label: 'Slack', state: 'unknown' }] })),
+  chips: () => r(h(WiringChips, { chips: [{ label: 'notes.demo.boringbots.ai', state: 'ok' }, { label: 'Calendar needs sign-in', state: 'warn' }, { label: 'Slack', state: 'unknown' }] })),
+  chipNoState: () => r(h(WiringChips, { chips: [{ label: 'Slack' }] })),
   chipsFr: () => r(h(WiringChips, { chips: [{ label: 'Slack', state: 'unknown' }], labels: { unknown: 'illisible' } })),
 };
 `;
@@ -76,4 +77,9 @@ test('space blocks never fetch or touch storage', () => {
   for (const file of ['registry/space-card/space-card.tsx', 'registry/wiring-chips/wiring-chips.tsx']) {
     assert.doesNotMatch(readFileSync(join(root, file), 'utf8'), /\bfetch\s*\(|XMLHttpRequest|useEffect|localStorage|Date\.now|new Date/);
   }
+});
+
+test('a chip with no state reads as unknown, never ok', () => {
+  const markup = html.chipNoState();
+  assert.doesNotMatch(markup, /bg-success/); assert.match(markup, /bg-muted-foreground/); assert.match(markup, /sr-only">not readable</);
 });
