@@ -153,7 +153,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
     {refusal && <Alert variant="destructive" data-testid="question-refusal"><AlertDescription>{refusal}</AlertDescription></Alert>}
   </> : undefined;
   if (question.items.length === 0) return <div data-testid="question-card" data-state={state} data-call-id={call.id} className="my-2 text-start">
-    <InlineQuestion className="bg-(--chat-warning-soft) text-(--chat-warning-soft-foreground)" id={questionId ?? call.id} kind="question" text={question.question || labels.askedQuestion} options={question.options} maxOptions={6} freeText={question.allowFreeText}
+    <InlineQuestion tone="attention" className="bg-(--chat-warning-soft) text-(--chat-warning-soft-foreground)" id={questionId ?? call.id} kind="question" text={question.question || labels.askedQuestion} options={question.options} maxOptions={6} freeText={question.allowFreeText}
       disabled={unavailable} notice={notice} onAnswer={(_, value) => { void submit(value); }}
       labels={{ question: labels.questionForYou, send: labels.answer, placeholder: labels.typeAnswer, placeholderMore: labels.ownAnswer }} />
   </div>;

@@ -42,7 +42,8 @@ test('default theme source and published output expose the original surface, typ
       for (const status of ['success', 'warning', 'info', 'destructive']) {
         const percentage = mode === 'dark' ? 22 : ({ success: 14, warning: 16, info: 12, destructive: 12 })[status];
         assert.equal(vars[`${status}-soft`], `color-mix(in oklab, var(--${status}) ${percentage}%, var(--card))`);
-        assert.equal(vars[`${status}-soft-foreground`], `var(--${status})`);
+        const share = status === 'destructive' ? 85 : mode === 'dark' ? 55 : 75;
+        assert.equal(vars[`${status}-soft-foreground`], `color-mix(in oklab, var(--${status}) ${share}%, var(--foreground))`);
         for (const role of [status, `${status}-soft`, `${status}-soft-foreground`]) assert.equal(theme[`color-${role}`], `var(--${role})`);
       }
       assert.deepEqual(charts[mode].map((_, index) => vars[`chart-${index + 1}`]), charts[mode]);

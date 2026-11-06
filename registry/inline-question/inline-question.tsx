@@ -14,6 +14,9 @@ export type DecisionValue = (typeof DECISION_VALUES)[number];
 /** A `decision` is a gate or a review: approve or refuse. A `question` takes a choice or free text. */
 export type InlineQuestionKind = 'decision' | 'question';
 
+/** `neutral` is flat; `attention` is the warning tint. */
+export type InlineQuestionTone = 'neutral' | 'attention';
+
 export type InlineQuestionLabels = { decision: string; question: string; approve: string; refuse: string; send: string; placeholder: string; placeholderMore: string; replyInChat: string; approved: string; refused: string; answered: string };
 
 export const inlineQuestionLabels: InlineQuestionLabels = {
@@ -46,16 +49,19 @@ export type InlineQuestionProps = {
   /** Opens the full chat for a longer reply. Shown only when given. */
   onReplyInChat?: () => void;
   labels?: Partial<InlineQuestionLabels>;
+  /** Attention is for gates or critical items only. Default `neutral`. */
+  tone?: InlineQuestionTone;
   className?: string;
 };
 
 const tap = 'min-h-11 md:min-h-8';
 
-/** A waiting question shown where it is mentioned. No border: a soft info tint for a decision, a soft warning tint for a question. */
-export function InlineQuestion({ id, kind, text, source, options, answered, onAnswer, onReplyInChat, labels, className, maxOptions = 4, freeText = true, disabled = false, notice }: InlineQuestionProps) {
+/** A waiting question shown where it is mentioned. No border. `tone="neutral"` (default) is flat: no fill, no padding, foreground text, so a list of routine questions stays quiet. `tone="attention"` is a soft warning tint with padding and a chip on the kind label, for a gate or a critical item. */
+export function InlineQuestion({ id, kind, text, source, options, answered, onAnswer, onReplyInChat, labels, className, tone = 'neutral', maxOptions = 4, freeText = true, disabled = false, notice }: InlineQuestionProps) {
   const t = { ...inlineQuestionLabels, ...labels };
   const [draft, setDraft] = useState('');
   const decision = kind === 'decision';
+  const attention = tone === 'attention';
   const choices: readonly { value: string; label: string }[] = decision
     ? [{ value: DECISION_VALUES[0], label: t.approve }, { value: DECISION_VALUES[1], label: t.refuse }]
     : (options ?? []).slice(0, maxOptions).map(option => ({ value: option, label: option }));
@@ -64,16 +70,16 @@ export function InlineQuestion({ id, kind, text, source, options, answered, onAn
   if (answered !== undefined) {
     const said = decision && answered === 'approve' ? t.approved : decision && answered === 'refuse' ? t.refused : `${t.answered}: ${answered}`;
     return (
-      <div role="group" aria-label={text} className={cn('flex min-w-0 flex-col gap-1 rounded-(--radius) bg-muted p-3 text-muted-foreground', className)}>
+      <div role="group" aria-label={text} className={cn('flex min-w-0 flex-col gap-1 text-muted-foreground', attention && 'rounded-(--radius) bg-muted p-3', className)}>
         <div className="flex items-start gap-2 text-sm font-medium"><CheckIcon aria-hidden className="mt-0.5 size-4 shrink-0" /><span>{text}</span></div>
         <span className="font-mono text-xs">{said}</span>
       </div>
     );
   }
   return (
-    <div role="group" aria-label={text} className={cn('flex min-w-0 flex-col gap-2 rounded-(--radius) p-3', decision ? 'bg-info-soft text-info-soft-foreground' : 'bg-warning-soft text-warning-soft-foreground', className)}>
+    <div role="group" aria-label={text} className={cn('flex min-w-0 flex-col gap-2', attention ? 'rounded-(--radius) bg-warning-soft p-3 text-warning-soft-foreground' : 'text-foreground', className)}>
       <div className="flex min-w-0 items-center gap-2 font-mono text-xs">
-        <span className="rounded-(--radius) bg-card px-2 text-card-foreground">{decision ? t.decision : t.question}</span>
+        <span className={attention ? 'rounded-(--radius) bg-card px-2 text-card-foreground' : 'text-muted-foreground'}>{decision ? t.decision : t.question}</span>
         {source ? <span className="truncate opacity-80">{source}</span> : null}
       </div>
       <div className="flex min-w-0 items-start gap-2 text-sm font-medium">
