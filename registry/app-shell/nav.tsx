@@ -130,8 +130,8 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
   const sidebar = <Sidebar collapsible="icon" variant="inset" data-testid="app-sidebar">
     {/* The phone sheet is portaled out of the shell root, so the `.app-shell` reset would not reach its buttons: this wrapper carries it (`contents`: no box of its own). */}
     <div className="app-shell contents">
-    {/* The one toggle: title and button expanded, the button alone on the icon rail, and « close » inside the phone sheet. No hover expand: the header never carries a second one. */}
-    <SidebarHeader className="flex-row items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center"><p data-testid="sidebar-title" className="m-0 min-w-0 truncate px-2 py-1 text-sm font-semibold group-data-[collapsible=icon]:hidden">{title}</p><SidebarTrigger /></SidebarHeader>
+    {/* The one toggle: title and button expanded, the button alone on the icon rail, and « close » inside the phone sheet. The hover rail has none on a wide screen (it opens on hover and focus by itself, and a toggle would fight it), but keeps « close » in the sheet. */}
+    <SidebarHeader className="flex-row items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center"><p data-testid="sidebar-title" className="m-0 min-w-0 truncate px-2 py-1 text-sm font-semibold group-data-[collapsible=icon]:hidden">{title}</p>{(rail !== 'hover' || isMobile) && <SidebarTrigger />}</SidebarHeader>
     <SidebarContent>
       {/* Without the screen's own content, one group in placed order; with it, the before items above it and the rest below. */}
       {items.length > 1 && own != null && navGroup(before, 'shrink-0', 'nav-before')}

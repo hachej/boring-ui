@@ -152,6 +152,15 @@ for (const rail of [undefined, 'icon']) for (const layout of ['screen', 'workspa
   await ui.unmount();
 });
 
+test('a wide screen: the icon rail has one sidebar toggle, the hover rail none (it opens on hover and focus; D-1734)', async t => {
+  for (const [rail, count] of [['hover', 0], ['icon', 1]]) {
+    const ui = await render(t, { rail }, { width: 1440 });
+    const panel = ui.container.querySelector('[data-testid=app-sidebar]');
+    assert.equal(panel.querySelectorAll('[data-slot=sidebar-trigger]').length, count, `rail ${rail}: toggles in the sidebar`);
+    await ui.unmount();
+  }
+});
+
 test('hover rail on a phone keeps the same tab bar and no sidebar', async t => {
   const ui = await render(t, { rail: 'hover', locale: 'fr' });
   assert.equal(ui.container.querySelector('[data-testid=app-sidebar]'), null);
