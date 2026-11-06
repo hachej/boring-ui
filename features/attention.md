@@ -4,7 +4,7 @@ Generic blocks for the "what needs me" surfaces of an app: a waiting question an
 
 ## Sub-features
 
-- `inline-question` `InlineQuestion` shows a waiting question where it is mentioned. `kind: 'decision'` is Approve/Refuse for a gate or review; `kind: 'question'` offers up to four choices plus free text (free text only without options) and an optional "Reply in chat". Once `answered` is set it shows the answer instead. A decision calls `onAnswer(id, 'approve' | 'refuse')` (exported as `DECISION_VALUES`): stable values, never the translated button words, so a host never compares labels; an answered decision reads by those values and any other value shows neutrally as "Answered: <value>". `registry/inline-question/inline-question.tsx`.
+- `inline-question` `InlineQuestion` shows a waiting question where it is mentioned. `kind: 'decision'` is Approve/Refuse for a gate or review; `kind: 'question'` offers up to four choices plus free text (free text only without options) and an optional "Reply in chat". Once `answered` is set it shows the answer instead. A decision calls `onAnswer(id, 'approve' | 'refuse')` (exported as `DECISION_VALUES`): stable values, never the translated button words, so a host never compares labels; an answered decision reads by those values and any other value shows neutrally as "Answered: <value>". `maxOptions` (default 4), `freeText` (false: choices only), `disabled` and `notice` (a line under the controls) let a host such as the chat's `QuestionCard` drive it; the controls carry the test ids `question-option`, `question-input`, `question-submit`. `registry/inline-question/inline-question.tsx`.
 - `status-narrative` `StatusNarrative` is the status paragraph: `segments` are text and link parts `{ label, app?, task? }` in order (code-made or model-made text), `at` is the time already formatted by the host, `by` the author, `needsYou` the one number of things waiting on the person (tasks waiting + open gates + critical security alerts; hidden at 0), `onOpen(link)` and an optional `onRefresh`. `registry/status-narrative/status-narrative.tsx`.
 
 ## How to get to it (user POV)
@@ -26,3 +26,4 @@ Preconditions: `node_modules` installed, so in CI on this VM.
 - Long replies belong in the chat (`onReplyInChat`); the field here is one line.
 - `StatusNarrative` reads no clock: pass `at` already formatted. Pass the same `needsYou` number everywhere on a surface; never sum it twice.
 - Without `onOpen`, link parts show as plain emphasis.
+- In the chat `StatusNarrative` is a host slot (the host supplies the paragraph as the first message through `timeline`, or `belowComposer`); `PiChat` never builds it. The waiting question in the chat is this `InlineQuestion`.

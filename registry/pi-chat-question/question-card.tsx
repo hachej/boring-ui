@@ -7,9 +7,9 @@ import { CheckIcon, CircleSlashIcon, SendIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Spinner } from '@/components/ui/spinner';
+import { InlineQuestion } from '../inline-question/inline-question';
 import { useChatText } from '../pi-chat/labels';
 import { ASK_USER_TOOL } from '../pi-chat/config';
 import type { AnswerOutcome, QuestionCardProps } from '../pi-chat/config';
@@ -91,7 +91,6 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
   const [sent, setSent] = useState<string | undefined>();
   const [sending, setSending] = useState<string | undefined>();
   const [refusal, setRefusal] = useState<string | undefined>();
-  const [text, setText] = useState('');
   const [values, setValues] = useState<readonly string[]>([]);
   const formId = useId();
   const setValue = (i: number, value: string) => setValues(previous => question.items.map((_, j) => j === i ? value : previous[j] ?? ''));
@@ -113,7 +112,6 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
     } catch (cause) { setRefusal(cause instanceof Error ? cause.message : labels.answerNotSent); }
     finally { if (mounted.current) setSending(undefined); }
   }
-  const onSubmit = (event: FormEvent) => { event.preventDefault(); void submit(text); };
   const onSubmitForm = (event: FormEvent) => { event.preventDefault(); if (values.some(value => value.trim())) void submit(formAnswer(question.items, values, labels.skipped)); };
   const busy = sending !== undefined || live;
 
@@ -146,35 +144,36 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
     {selected && <CheckIcon data-icon="inline-start" aria-hidden="true" />}{value}
   </Button>;
 
-  return <Card role="group" data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question}>
-    <CardHeader>
-      <CardDescription>{labels.questionForYou}</CardDescription>
-      <CardTitle data-testid="question-text" className="[overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</CardTitle>
-    </CardHeader>
-    <CardContent className="flex flex-col gap-4">
-      {question.items.length > 0 ? <form data-testid="question-form" onSubmit={onSubmitForm} className="flex flex-col gap-4">
-        {question.items.map((item, i) => <div key={i} role="group" aria-labelledby={`${formId}-${i}`} data-testid="question-item" className="flex min-w-0 flex-col gap-2">
-          <p id={`${formId}-${i}`} className="m-0 [overflow-wrap:anywhere]">{i + 1}. {item.question}</p>
-          {item.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-col gap-2">
-            {item.options.map(value => option(value, values[i] === value, () => setValue(i, values[i] === value ? '' : value)))}
-          </div>}
-          <Input data-testid="question-input" value={item.options.includes(values[i] ?? '') ? '' : values[i] ?? ''} maxLength={2000} disabled={unavailable}
-            placeholder={item.options.length ? labels.ownAnswer : labels.typeAnswer} aria-label={`${labels.yourAnswerInput} ${i + 1}`} onChange={event => setValue(i, event.currentTarget.value)} />
-        </div>)}
-        <div><Button type="submit" data-testid="question-submit" disabled={unavailable || !values.some(value => value.trim())}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button></div>
-      </form> : <>
-        {question.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-col gap-2">
-          {question.options.map(value => option(value, false, () => { void submit(value); }))}
+  // One waiting question is the shared InlineQuestion (one-tap choices, free text); the card keeps its test ids and state. A form (`questions`) stays below.
+  const note = 'm-0 text-sm opacity-80';
+  const hasNotice = live || !answer || !!refusal;
+  const notice = hasNotice ? <>
+    {live && <p className={note}>{labels.stillWritingQuestion}</p>}
+    {!answer && !live && <p className={note}>{labels.answeringUnavailable}</p>}
+    {refusal && <Alert variant="destructive" data-testid="question-refusal"><AlertDescription>{refusal}</AlertDescription></Alert>}
+  </> : undefined;
+  if (question.items.length === 0) return <div data-testid="question-card" data-state={state} data-call-id={call.id} className="my-2 text-start">
+    <InlineQuestion className="bg-(--chat-warning-soft) text-(--chat-warning-soft-foreground)" id={questionId ?? call.id} kind="question" text={question.question || labels.askedQuestion} options={question.options} maxOptions={6} freeText={question.allowFreeText}
+      disabled={unavailable} notice={notice} onAnswer={(_, value) => { void submit(value); }}
+      labels={{ question: labels.questionForYou, send: labels.answer, placeholder: labels.typeAnswer, placeholderMore: labels.ownAnswer }} />
+  </div>;
+  // A form of several questions: the same flat warning tint as InlineQuestion.
+  return <div role="group" data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question} className="my-2 flex min-w-0 flex-col gap-3 rounded-(--radius) bg-(--chat-warning-soft) p-3 text-start text-(--chat-warning-soft-foreground)">
+    <div className="flex min-w-0 flex-col gap-1">
+      <p className="m-0 font-mono text-xs">{labels.questionForYou}</p>
+      <p data-testid="question-text" className="m-0 text-sm font-medium [overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</p>
+    </div>
+    <form data-testid="question-form" onSubmit={onSubmitForm} className="flex flex-col gap-4">
+      {question.items.map((item, i) => <div key={i} role="group" aria-labelledby={`${formId}-${i}`} data-testid="question-item" className="flex min-w-0 flex-col gap-2">
+        <p id={`${formId}-${i}`} className="m-0 [overflow-wrap:anywhere]">{i + 1}. {item.question}</p>
+        {item.options.length > 0 && <div role="group" aria-label={labels.answerOptions} className="flex flex-col gap-2">
+          {item.options.map(value => option(value, values[i] === value, () => setValue(i, values[i] === value ? '' : value)))}
         </div>}
-        {question.allowFreeText && <form onSubmit={onSubmit} className="flex gap-2">
-          <Input data-testid="question-input" value={text} maxLength={2000} disabled={unavailable} placeholder={question.options.length ? labels.ownAnswer : labels.typeAnswer}
-            aria-label={labels.yourAnswerInput} onChange={event => setText(event.currentTarget.value)} />
-          <Button type="submit" data-testid="question-submit" disabled={unavailable || !text.trim()}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button>
-        </form>}
-      </>}
-      {live && <CardDescription>{labels.stillWritingQuestion}</CardDescription>}
-      {!answer && !live && <CardDescription>{labels.answeringUnavailable}</CardDescription>}
-      {refusal && <Alert variant="destructive" data-testid="question-refusal"><AlertDescription>{refusal}</AlertDescription></Alert>}
-    </CardContent>
-  </Card>;
+        <Input data-testid="question-input" value={item.options.includes(values[i] ?? '') ? '' : values[i] ?? ''} maxLength={2000} disabled={unavailable}
+          placeholder={item.options.length ? labels.ownAnswer : labels.typeAnswer} aria-label={`${labels.yourAnswerInput} ${i + 1}`} onChange={event => setValue(i, event.currentTarget.value)} />
+      </div>)}
+      <div><Button type="submit" data-testid="question-submit" disabled={unavailable || !values.some(value => value.trim())}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button></div>
+    </form>
+    {notice}
+  </div>;
 }

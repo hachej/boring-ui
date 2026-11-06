@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Waiting question and approval look flat.** A single `QuestionCard` now renders through `InlineQuestion` (a soft warning tint instead of a bordered card); `pi-chat-question` depends on `inline-question`, so re-run `shadcn add` for it. A form of several questions is a flat tint too, and `ApprovalCard` a muted row instead of an outline row. Test ids, props and answers are unchanged. `InlineQuestion` gains `maxOptions`, `freeText`, `disabled` and `notice`.
+
 # Migrating to 0.4.60
 
 - **Chat tool steps show human names (`pi-chat`).** A tool id such as `piece_save` is never shown raw, in English or French: built-in tools keep their names, any other id is humanised. Re-sync `pi-chat`; no prop changes. Pattern blocks (`kpi-stat`, `list-row`, `empty-state`, `page-header`, `data-table`) now have their entry in `features/patterns.md`.
