@@ -2,7 +2,7 @@
 // names resolve to the shadcn fixtures, the relative imports to the registry folders. Each is rendered to static markup and checked.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -128,7 +128,7 @@ test('a waiting chat question renders through InlineQuestion: a flat warning tin
   const markup = html.waitingQuestion();
   const inner = /<div role="group" aria-label="Day 30 or day 45\?" class="([^"]*)"/.exec(markup);
   assert.ok(inner, 'the InlineQuestion group is there');
-  assert.match(inner[1], /bg-warning-soft/); assert.doesNotMatch(inner[1], /\bborder\b|shadow|ring/);
+  assert.match(inner[1], /bg-\(--chat-warning-soft\)/); assert.doesNotMatch(inner[1], /\bborder\b|shadow|ring/);
   assert.doesNotMatch(markup, /data-slot="card"/);
   for (const id of ['question-card', 'question-text', 'question-option', 'question-input', 'question-submit']) assert.match(markup, new RegExp('data-testid="' + id + '"'), id);
   assert.match(markup, /data-option="Day 45"/);
@@ -144,6 +144,13 @@ test('untrusted question text and choices wrap inside a narrow chat; no empty no
   for (const option of options) { assert.match(option, /max-w-full/); assert.match(option, /\[overflow-wrap:anywhere\]/); }
   assert.doesNotMatch(markup, /<div class="text-sm"><\/div>/, 'no empty notice row');
   assert.doesNotMatch(markup, /<div class="text-sm">\s*<\/div>/);
+});
+
+test('in the chat the waiting question tints with the --chat-* tokens, so a host without the opt-in theme keeps its tint', () => {
+  const markup = html.waitingQuestion();
+  assert.match(markup, /bg-\(--chat-warning-soft\)/); assert.match(markup, /text-\(--chat-warning-soft-foreground\)/);
+  assert.doesNotMatch(markup, /bg-warning-soft|text-warning-soft-foreground/, 'cn replaced the default tint, nothing of it is left');
+  assert.doesNotMatch(readFileSync(join(root, 'registry/pi-chat-question/question-card.tsx'), 'utf8'), /\bbg-warning-soft|\btext-warning-soft-foreground/, 'the form uses the --chat-* tokens too');
 });
 
 test('status narrative never fetches or reads a clock', async () => {

@@ -153,12 +153,12 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
     {refusal && <Alert variant="destructive" data-testid="question-refusal"><AlertDescription>{refusal}</AlertDescription></Alert>}
   </> : undefined;
   if (question.items.length === 0) return <div data-testid="question-card" data-state={state} data-call-id={call.id} className="my-2 text-start">
-    <InlineQuestion id={questionId ?? call.id} kind="question" text={question.question || labels.askedQuestion} options={question.options} maxOptions={6} freeText={question.allowFreeText}
+    <InlineQuestion className="bg-(--chat-warning-soft) text-(--chat-warning-soft-foreground)" id={questionId ?? call.id} kind="question" text={question.question || labels.askedQuestion} options={question.options} maxOptions={6} freeText={question.allowFreeText}
       disabled={unavailable} notice={notice} onAnswer={(_, value) => { void submit(value); }}
       labels={{ question: labels.questionForYou, send: labels.answer, placeholder: labels.typeAnswer, placeholderMore: labels.ownAnswer }} />
   </div>;
   // A form of several questions: the same flat warning tint as InlineQuestion.
-  return <div role="group" data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question} className="my-2 flex min-w-0 flex-col gap-3 rounded-(--radius) bg-warning-soft p-3 text-start text-warning-soft-foreground">
+  return <div role="group" data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question} className="my-2 flex min-w-0 flex-col gap-3 rounded-(--radius) bg-(--chat-warning-soft) p-3 text-start text-(--chat-warning-soft-foreground)">
     <div className="flex min-w-0 flex-col gap-1">
       <p className="m-0 font-mono text-xs">{labels.questionForYou}</p>
       <p data-testid="question-text" className="m-0 text-sm font-medium [overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</p>
