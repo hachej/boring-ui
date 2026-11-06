@@ -60,6 +60,10 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The browser contract tests (compact-primitives, touch-target-dense) read CHROMIUM; with CI set they fail instead of skipping when it is missing.
+    env:
+      CHROMIUM: ${{ github.workspace }}/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,6 +73,12 @@ jobs:
           node-version: 22.22.1
           cache: npm
       - run: npm ci
+      - name: Install Chromium for the browser contract tests
+        timeout-minutes: 8
+        # Ubuntu runners already have Chrome libraries; apt is only a fallback for missing ldd dependencies.
+        run: bash scripts/install-ci-chromium.sh 1.63.0
+      - name: Allow the Chromium sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: npm test -- --exclude-registered
   release-gate:
     runs-on: ubuntu-latest
