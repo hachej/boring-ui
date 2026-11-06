@@ -98,15 +98,23 @@ function FieldContent({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// "bordered" (default) is the choice row: a radio, or a checkbox row that IS the choice, with the selected fill.
+// "flat" is the settings row (switch lists, plain checkbox settings): no border or fill, a hairline --border between rows only.
+// Put flat rows in a FieldGroup with className="gap-0" so they touch.
 function FieldLabel({
   className,
+  variant = "bordered",
   ...props
-}: React.ComponentProps<typeof Label>) {
+}: React.ComponentProps<typeof Label> & { variant?: "bordered" | "flat" }) {
   return (
     <Label
       data-slot="field-label"
+      data-variant={variant}
       className={cn(
-        "group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[>[data-slot=field]]:rounded-md has-[>[data-slot=field]]:border has-[>[data-slot=field]]:not-has-[:disabled,[data-disabled]]:hover:bg-muted/50 has-[>[data-slot=field]]:has-[:focus-visible]:border-ring has-[>[data-slot=field]]:has-[:focus-visible]:ring-3 has-[>[data-slot=field]]:has-[:focus-visible]:ring-ring/50 *:data-[slot=field]:p-3 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10",
+        "group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50",
+        variant === "flat"
+          ? "has-[>[data-slot=field]]:rounded-none has-[>[data-slot=field]]:not-last:border-b has-[>[data-slot=field]]:not-has-[:disabled,[data-disabled]]:hover:bg-muted/50 has-[>[data-slot=field]]:has-[:focus-visible]:ring-3 has-[>[data-slot=field]]:has-[:focus-visible]:ring-inset has-[>[data-slot=field]]:has-[:focus-visible]:ring-ring/50 *:data-[slot=field]:px-0 *:data-[slot=field]:py-3"
+          : "has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[>[data-slot=field]]:rounded-md has-[>[data-slot=field]]:border has-[>[data-slot=field]]:not-has-[:disabled,[data-disabled]]:hover:bg-muted/50 has-[>[data-slot=field]]:has-[:focus-visible]:border-ring has-[>[data-slot=field]]:has-[:focus-visible]:ring-3 has-[>[data-slot=field]]:has-[:focus-visible]:ring-ring/50 *:data-[slot=field]:p-3 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10",
         "has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col",
         // A row that wraps a Field is the control's tap target: 44px on a phone or a coarse pointer, the content centred in it.
         "has-[>[data-slot=field]]:justify-center has-[>[data-slot=field]]:max-md:min-h-11 has-[>[data-slot=field]]:pointer-coarse:min-h-11",

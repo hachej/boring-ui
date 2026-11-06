@@ -13,15 +13,15 @@ const count = (id: string) => { window.counts[id] = (window.counts[id] ?? 0) + 1
 
 const LONG = "Send me a weekly summary of the garden journal, including the notes from every plot, the watering schedule and the planting calendar for the next month"
 
-type RowProps = { id: string; title: string; description?: string; disabled?: boolean }
+type RowProps = { id: string; title: string; description?: string; disabled?: boolean; variant?: "bordered" | "flat" }
 
 function Text({ title, description }: Pick<RowProps, "title" | "description">) {
   return <FieldContent><FieldTitle>{title}</FieldTitle>{description && <FieldDescription>{description}</FieldDescription>}</FieldContent>
 }
 
-function Check({ id, title, description, disabled, defaultChecked }: RowProps & { defaultChecked?: boolean }) {
+function Check({ id, title, description, disabled, defaultChecked, variant }: RowProps & { defaultChecked?: boolean }) {
   return (
-    <FieldLabel data-testid={`row-${id}`}>
+    <FieldLabel data-testid={`row-${id}`} variant={variant}>
       <Field orientation="horizontal" data-disabled={disabled}>
         <Checkbox data-testid={`control-${id}`} disabled={disabled} defaultChecked={defaultChecked} onCheckedChange={() => count(id)} />
         <Text title={title} description={description} />
@@ -30,9 +30,9 @@ function Check({ id, title, description, disabled, defaultChecked }: RowProps & 
   )
 }
 
-function Toggle({ id, title, description, disabled }: RowProps) {
+function Toggle({ id, title, description, disabled, variant }: RowProps) {
   return (
-    <FieldLabel data-testid={`row-${id}`}>
+    <FieldLabel data-testid={`row-${id}`} variant={variant}>
       <Field orientation="horizontal" data-disabled={disabled}>
         <Text title={title} description={description} />
         <Switch data-testid={`control-${id}`} disabled={disabled} onCheckedChange={() => count(id)} />
@@ -41,9 +41,9 @@ function Toggle({ id, title, description, disabled }: RowProps) {
   )
 }
 
-function Choice({ id, title, description, disabled }: RowProps) {
+function Choice({ id, title, description, disabled, variant }: RowProps) {
   return (
-    <FieldLabel data-testid={`row-${id}`}>
+    <FieldLabel data-testid={`row-${id}`} variant={variant}>
       <Field orientation="horizontal" data-disabled={disabled}>
         <RadioGroupItem value={id} data-testid={`control-${id}`} disabled={disabled} />
         <Text title={title} description={description} />
@@ -82,6 +82,17 @@ function Page() {
           <Toggle id="s4" title="Public page" disabled />
         </FieldGroup>
       </FieldSet>
+      <section data-testid="flat-card" className="rounded-xl border bg-card p-4 text-card-foreground">
+        <FieldSet>
+          <FieldLegend variant="label">Garden settings</FieldLegend>
+          <FieldGroup className="gap-0">
+            <Toggle variant="flat" id="f1" title="Share the journal" />
+            <Toggle variant="flat" id="f2" title="Let neighbours see the plot map" description="They can look, not edit." />
+            <Toggle variant="flat" id="f3" title="Public page" disabled />
+            <Check variant="flat" id="f4" title="Keep a backup" />
+          </FieldGroup>
+        </FieldSet>
+      </section>
     </main>
   )
 }
