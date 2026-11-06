@@ -12,7 +12,7 @@ import { ActionMenuItemContent } from '../button/actions';
 import { editorControls } from '../button/editor-controls';
 import { MarkdownFormattingControl, MarkdownMenuItems } from '../markdown-editor/markdown-editor';
 import { downloadFile, fileNameFor } from '../viewer-frame/download';
-import { copyText } from '../utils/utils';
+import { cn, copyText } from '../utils/utils';
 import { ViewerFrame } from '../viewer-frame/viewer-frame';
 import type { ViewerShare, ViewerStatus } from '../viewer-frame/viewer-frame';
 import { defaultViewerLabels, useViewerText, useViewerWindow } from '../viewer-frame/viewer-window';
@@ -107,7 +107,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
   const manualSave = autosave === false && !state.readOnly && state.dirty;
   const saveItem = { id: 'save', label: labels.save, icon: <SaveIcon className="size-4" />, disabled: unavailable || pending || unconfirmed, onSelect: save };
   const filename = useMemo(() => fileNameFor(title, 'md'), [title]);
-  return <ViewerFrame showSavedStatus title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.save === state.save && state.save.kind !== 'pending' ? { label: refused.label, tone: 'danger' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={className}
+  return <ViewerFrame showSavedStatus title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.save === state.save && state.save.kind !== 'pending' ? { label: refused.label, tone: 'danger' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={cn('boring-markdown-pane bg-card', className)}
     onRefresh={onRefresh ?? (() => controller.actions.refresh())} onShare={onShare} onCopy={() => copyText(controller.getSnapshot().text)}
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={close}
     menuContent={<>

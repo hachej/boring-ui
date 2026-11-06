@@ -8,7 +8,6 @@ import type { ComponentType, ReactNode } from 'react';
 import { ArrowLeftIcon } from '../_shared/icons';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { ScreenActiveContext } from './agent-context';
 import { HeaderActions } from './header-actions';
 import type { ScreenHeaderAction } from './header-actions';
@@ -24,7 +23,7 @@ export interface ScreenHeaderSpec {
   readonly back?: () => void;
   /** At most two are shown; the others go in « … ». */
   readonly actions?: readonly ScreenHeaderAction[];
-  /** Controls rendered right after the sidebar trigger (or « ← »), before the title: a screen that owns its row, left-aligned. */
+  /** Controls rendered right after « ← » (on a phone with `compactNav="sheet"`, after the menu button), before the title: a screen that owns its row, left-aligned. */
   readonly leading?: ReactNode;
   /** The title's face: `display` (default, the theme's display font) or `sans`. */
   readonly titleFace?: 'display' | 'sans';
@@ -99,8 +98,8 @@ function mergedSpec(entries: readonly Entry[]): ScreenHeaderSpec {
 
 
 /**
- * The header of the screen on show: the avatar button (compact) or the sidebar trigger (expanded) or « ← », then the title and subtitle,
- * then the slot of the screen's own controls (`slotRef`), up to two actions, « … » and the agent trigger. `avatar` is the compact account button. `menu` (compact only) makes the leading button open the sidebar sheet and leaves the account to the sidebar's footer.
+ * The header of the screen on show: the avatar button (compact) or « ← », then the title and subtitle,
+ * then the slot of the screen's own controls (`slotRef`), up to two actions, « … » and the agent trigger. `avatar` is the compact account button. `menu` (compact only) makes the leading button open the sidebar sheet and leaves the account to the sidebar's footer. The sidebar toggle of a wide screen lives in the sidebar's own header (`AppSidebar`), not here: on a phone the sheet does not exist while closed, so its opener stays in this header.
  */
 export function ScreenHeader({ fallbackTitle, compact, avatar, text, slotRef, menu }: { readonly menu?: boolean; readonly fallbackTitle: string; readonly compact: boolean; readonly avatar: ReactNode; readonly text: AppShellText; readonly slotRef?: (element: HTMLElement | null) => void }) {
   const top = useTopHeader();
@@ -108,9 +107,8 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text, slotRef, me
   const actions = spec?.actions ?? [];
   const run = (id: string) => top?.spec.actions?.find(action => action.id === id)?.onSelect();
   const back = spec?.back ? <Button variant="ghost" size="icon" data-testid="header-back" aria-label={text.goBack} title={text.goBack} onClick={() => top?.spec.back?.()}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button> : null;
-  return <header data-testid="screen-header" className={`sticky top-0 z-10 flex ${spec?.dense ? 'min-h-12' : 'min-h-14'} shrink-0 items-center gap-1 bg-background px-2 pt-[env(safe-area-inset-top)]`}>
-    <Separator className="absolute inset-x-0 bottom-0" />
-    {compact ? (back ?? (menu ? <SidebarTrigger /> : avatar)) : <><SidebarTrigger />{back}</>}
+  return <header data-testid="screen-header" className={`sticky top-0 z-10 flex ${spec?.dense ? 'min-h-12' : 'min-h-14'} shrink-0 items-center gap-1 bg-card px-2 pt-(--app-shell-safe-top)`}>
+    {compact ? (back ?? (menu ? <SidebarTrigger /> : avatar)) : back}
     {spec?.leading != null && <div data-testid="header-leading" className="flex shrink-0 items-center gap-1">{spec.leading}</div>}
     <div className="min-w-0 flex-1 px-1">
       <h1 data-testid="header-title" className={`m-0 truncate text-sm leading-tight font-semibold ${spec?.titleFace === 'sans' ? 'font-sans' : '[font-family:var(--font-display,var(--font-sans))]'}`}>{spec?.title ?? fallbackTitle}</h1>

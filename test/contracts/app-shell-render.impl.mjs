@@ -19,7 +19,7 @@ async function bundle(name, source) {
   const outfile = `${out}/${name.replace(/\.tsx?$/, '')}.mjs`;
   const entry = source ? `${out}/${name}` : `${root}${folder}/${name}`;
   if (source) writeFileSync(entry, source);
-  await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell`, '@hachej/boring-ui-kit/file-tree.css': `${root}packages/ui/styles/file-tree.css` }, logLevel: 'silent', plugins: process.env.BEFORE_ACCOUNT_SOURCE ? [{ name: 'pre-fix-account', setup(builder) { builder.onLoad({ filter: /registry\/app-shell\/account\.tsx$/ }, () => ({ contents: readFileSync(process.env.BEFORE_ACCOUNT_SOURCE, 'utf8'), loader: 'tsx', resolveDir: `${root}registry/app-shell` })); } }] : [] });
+  await build({ entryPoints: [entry], outfile, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', alias: { '@': `${root}examples/app-shell`, '@hachej/boring-ui-kit/file-tree.css': `${root}packages/ui/styles/file-tree.css` }, logLevel: 'silent', plugins: process.env.BEFORE_APP_SHELL ? [{ name: 'pre-fix-app-shell', setup(builder) { builder.onLoad({ filter: /registry\/app-shell\/[\w-]+\.tsx?$/ }, args => ({ contents: readFileSync(`${process.env.BEFORE_APP_SHELL}/${args.path.split('/').pop()}`, 'utf8'), loader: 'tsx', resolveDir: `${root}registry/app-shell` })); } }] : process.env.BEFORE_ACCOUNT_SOURCE ? [{ name: 'pre-fix-account', setup(builder) { builder.onLoad({ filter: /registry\/app-shell\/account\.tsx$/ }, () => ({ contents: readFileSync(process.env.BEFORE_ACCOUNT_SOURCE, 'utf8'), loader: 'tsx', resolveDir: `${root}registry/app-shell` })); } }] : [] });
   return import(`${pathToFileURL(outfile).href}?fresh=${++bundles}`);
 }
 
@@ -150,6 +150,15 @@ for (const rail of [undefined, 'icon']) for (const layout of ['screen', 'workspa
   await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse', relatedTarget: ui.window.document.body })));
   assert.equal(sidebar.getAttribute('data-state'), expected);
   await ui.unmount();
+});
+
+test('a wide screen: the icon rail has one sidebar toggle, the hover rail none (it opens on hover and focus; D-1734)', async t => {
+  for (const [rail, count] of [['hover', 0], ['icon', 1]]) {
+    const ui = await render(t, { rail }, { width: 1440 });
+    const panel = ui.container.querySelector('[data-testid=app-sidebar]');
+    assert.equal(panel.querySelectorAll('[data-slot=sidebar-trigger]').length, count, `rail ${rail}: toggles in the sidebar`);
+    await ui.unmount();
+  }
 });
 
 test('hover rail on a phone keeps the same tab bar and no sidebar', async t => {
@@ -502,7 +511,7 @@ test('the screen header follows an action whose href, target or rel changes alon
   await act(async () => reactRoot.unmount());
 });
 
-test('the screen header: `leading` renders right after the sidebar trigger and before the title; `titleFace: sans` and `dense` change the title face and the row height; defaults are unchanged', async t => {
+test('the screen header: `leading` starts the header, before the title; `titleFace: sans` and `dense` change the title face and the row height; defaults are unchanged', async t => {
   const { createElement: h, act } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const shell = await bundle('screen-header-entry.tsx', `export { AppShell } from '${root}${folder}/app-shell.tsx';\nexport { useScreenHeader } from '${root}${folder}/header.tsx';\n`);
@@ -520,7 +529,7 @@ test('the screen header: `leading` renders right after the sidebar trigger and b
   await show({ title: 'Dossier', leading: h('button', { type: 'button', 'data-testid': 'lead' }, 'Cabinet'), titleFace: 'sans', dense: true });
   const header = q('screen-header');
   const order = [...header.querySelectorAll('[data-sidebar=trigger],[data-testid=header-leading],[data-testid=header-title]')].map(el => el.getAttribute('data-sidebar') ?? el.getAttribute('data-testid'));
-  assert.deepEqual(order, ['trigger', 'header-leading', 'header-title'], 'the leading slot sits between the trigger and the title');
+  assert.deepEqual(order, ['header-leading', 'header-title'], 'the leading slot starts the header, before the title (the wide sidebar toggle lives in the sidebar header, D-1734)');
   assert.ok(q('header-leading').querySelector('[data-testid=lead]'));
   assert.match(header.className, /min-h-12/);
   assert.doesNotMatch(header.className, /min-h-14/);
@@ -945,6 +954,18 @@ test('compactNav defaults to the tab bar on a phone', async t => {
   await ui.unmount();
 });
 
+test('phone tab bar: grey like the desktop rail, no line on top, the active pill inset from the screen edge (D-1734)', async t => {
+  const ui = await render(t, {});
+  const bar = ui.container.querySelector('[data-testid=tabbar]');
+  const tokens = bar.className.split(/\s+/);
+  assert.equal(tokens.includes('bg-sidebar'), true, `the bar is on the rail's grey (${bar.className})`);
+  assert.equal(tokens.includes('bg-card'), false, 'not the white content card');
+  assert.equal(bar.querySelector('[data-slot=separator]') === null, true, 'no dead line on top of the bar');
+  assert.equal(tokens.includes('px-2'), true, 'the pills sit 8px from the screen edge');
+  assert.equal(/(^|\s)(h-\d|h-\[|max-h)/.test(bar.querySelector('[role=tab]').className), false, 'tabs keep the bar\'s 44px height, no fixed shorter one');
+  await ui.unmount();
+});
+
 // The pointing tool on an app's own agent: `AgentSpec.feedback` gives the composer its toggle and steps the layer aside while the person points.
 test('AgentSpec.feedback: the composer shows annotate, and on a phone the layer steps aside while pointing', async t => {
   const { createFeedbackSession } = await import('@hachej/boring-feedback/ui');
@@ -983,4 +1004,90 @@ test('a sent report is shown as its card through the `feedback` item; other text
   assert.equal(found.after, 'After');
   assert.ok(found.node);
   assert.equal(sentFeedbackContent('An ordinary message', 'end'), undefined);
+});
+
+// D-1734: the collapse control lives in the sidebar's own header; the header keeps only the phone's opener; the shell's frame is flat.
+// BEFORE_APP_SHELL=<dir> runs these against a pre-fix copy of registry/app-shell (fail-first). Booleans and strings only: a failing
+// assert.equal on a happy-dom element reads as a runner shutdown.
+const place = el => el.closest('[data-testid=screen-header]') ? 'header' : el.closest('[data-testid=app-sidebar]') ? 'sidebar' : 'elsewhere';
+for (const layout of ['screen', 'workspace']) test(`${layout} on a wide screen: the one sidebar toggle sits in the sidebar header, none in the screen header`, async t => {
+  const ui = await render(t, { layout }, { width: 1280 });
+  const places = [...ui.container.querySelectorAll('[data-sidebar=trigger]')].map(place);
+  assert.deepEqual(places, ['sidebar'], 'one toggle, in the sidebar');
+  const toggle = ui.container.querySelector('[data-testid=app-sidebar] [data-sidebar=trigger]');
+  assert.equal(toggle.textContent.trim(), 'Toggle Sidebar', 'the accessible name is kept');
+  assert.equal(toggle.getAttribute('data-slot'), 'sidebar-trigger', 'the hook hosts select by is kept');
+  assert.equal(toggle.closest('.app-shell') !== null, true, 'inside .app-shell, so the 44px phone/coarse-pointer reset reaches it');
+  await ui.unmount();
+});
+
+test('the wide toggle still folds the sidebar, and so does Ctrl+B', async t => {
+  const ui = await render(t, { layout: 'screen' }, { width: 1280 });
+  const { act } = await import('react');
+  const state = () => ui.container.querySelector('[data-testid=app-sidebar]').closest('[data-slot=sidebar]').getAttribute('data-state');
+  assert.equal(state(), 'expanded');
+  await act(async () => ui.container.querySelector('[data-testid=app-sidebar] [data-sidebar=trigger]').click());
+  assert.equal(state(), 'collapsed', 'the toggle folds it');
+  await act(async () => ui.window.dispatchEvent(new ui.window.KeyboardEvent('keydown', { key: 'b', ctrlKey: true, bubbles: true, cancelable: true })));
+  assert.equal(state(), 'expanded', 'Ctrl+B unfolds it');
+  await ui.unmount();
+});
+
+test('on a phone: the sheet mode keeps its opener in the header; the tab bar mode has no sidebar toggle at all', async t => {
+  const sheet = await render(t, { compactNav: 'sheet' });
+  assert.deepEqual([...sheet.container.querySelectorAll('[data-sidebar=trigger]')].map(place), ['header'], 'the sidebar is closed off-canvas, so only the header can open it');
+  assert.equal(sheet.container.querySelector('[data-sidebar=trigger]').closest('.app-shell') !== null, true, 'in .app-shell: 44px on a phone');
+  await sheet.unmount();
+  const tabs = await render(t, {});
+  assert.equal(tabs.container.querySelectorAll('[data-sidebar=trigger]').length, 0, 'no stray toggle without a sidebar');
+  await tabs.unmount();
+});
+
+test('the shell is flat: no ring, border or shadow on the frame, and at most one separator', async t => {
+  const edge = /(?:^|\s)(?:border|border-[trblxy]|ring|ring-\d|shadow|shadow-\w+|outline)(?:\s|$)/;
+  for (const [width, props] of [[1280, { layout: 'screen' }], [1280, { layout: 'workspace' }], [390, {}], [390, { compactNav: 'sheet' }]]) {
+    const ui = await render(t, props, { width });
+    const header = ui.container.querySelector('[data-testid=screen-header]');
+    const frame = ui.container.querySelector('[data-slot=sidebar-inset]') ?? header.parentElement;
+    assert.equal(edge.test(frame.className), false, `${width} ${JSON.stringify(props)}: the frame has an edge class (${frame.className})`);
+    assert.equal(edge.test(header.className), false, `${width}: the header has an edge class`);
+    assert.equal(header.querySelector('[data-slot=separator]') === null, true, `${width}: a line under the header`);
+    const separators = ui.container.querySelectorAll('[data-slot=separator]').length;
+    assert.equal(separators <= 1, true, `${width} ${JSON.stringify(props)}: ${separators} separators`);
+    await ui.unmount();
+  }
+});
+
+test('ListDetail compact, nothing chosen: the hidden detail pane carries no display utility and `empty` is not laid out beside the list', async t => {
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const { ListDetail } = await bundle('list-detail.tsx');
+  const window = dom(t, 390);
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => root.render(h(ListDetail, { list: h('p', null, 'liste'), detail: null, empty: h('p', { 'data-testid': 'empty' }, 'Choisissez'), onBack() {} })));
+  const pane = container.querySelector('[data-testid=detail-pane]');
+  assert.equal(pane.hasAttribute('hidden'), true, 'the detail pane is hidden');
+  assert.equal(/(^|\s)(grid|flex|block|inline-flex|inline-block|contents)(\s|$)/.test(pane.className), false, `a display utility on the hidden pane (${pane.className})`);
+  assert.equal(container.querySelector('[data-testid=list-detail]').getAttribute('data-view'), 'list');
+  await act(async () => root.unmount());
+});
+
+test('ListDetail: `empty` fills the detail pane while nothing is chosen; the pane carries no grey tint', async t => {
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const { ListDetail } = await bundle('list-detail.tsx');
+  const window = dom(t, 1280);
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  const show = props => act(async () => root.render(h(ListDetail, { list: h('p', null, 'liste'), onBack() {}, ...props })));
+  await show({ detail: null, empty: h('p', { 'data-testid': 'empty' }, 'Choisissez') });
+  assert.equal(container.querySelector('[data-testid=empty]')?.textContent, 'Choisissez');
+  assert.equal(/bg-muted/.test(container.innerHTML), false, 'no grey tint on the detail pane');
+  await show({ detail: h('p', { 'data-testid': 'chosen' }, 'Dossier'), empty: h('p', { 'data-testid': 'empty' }, 'Choisissez') });
+  assert.equal(container.querySelector('[data-testid=empty]') === null, true, 'a chosen detail replaces the empty state');
+  assert.equal(container.querySelector('[data-testid=chosen]')?.textContent, 'Dossier');
+  await act(async () => root.unmount());
 });
