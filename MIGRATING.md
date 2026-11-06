@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Registry README only (D-1747).** It no longer names three browser tests that never ran in CI and are deleted. Nothing changes for an app.
+
 # Migrating to 0.4.64
 
 - **A single question's free text is one box (`inline-question`; D-1732).** The field and its send are one `InputGroup`: the send is a trailing arrow icon button inside the field (`aria-label` from `labels.send`, whose default is now `Answer`, was `Send`; set `labels.send` to keep the old word), disabled until there is text, primary when enabled, 44px at touch, field text 16px on a phone. Enter still sends; no new prop; `question-input` and `question-submit` test ids are kept, but `question-submit` is now an icon button with no visible text. Needs `input-group` in the app's bundled primitives, and the item now carries `css` (the group's `--card` fill, which beats the group's own `dark:bg-input/30`, and the 44px fit under `md` or on a coarse pointer, scoped by `data-slot="question-field"` on the form): take it through the item's CSS when you re-sync, as for `pi-chat`. The multi-question form is unchanged.
