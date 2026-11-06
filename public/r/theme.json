@@ -259,7 +259,7 @@
       "warning-soft-foreground": "color-mix(in oklab, var(--warning) 55%, var(--foreground))",
       "info-soft": "color-mix(in oklab, var(--info) 22%, var(--card))",
       "info-soft-foreground": "color-mix(in oklab, var(--info) 55%, var(--foreground))",
-      "destructive-soft": "color-mix(in oklab, var(--destructive) 22%, var(--card))",
+      "destructive-soft": "color-mix(in oklab, var(--destructive) 27%, var(--card))",
       "destructive-soft-foreground": "color-mix(in oklab, var(--destructive) 85%, var(--foreground))",
       "link": "color-mix(in oklab, var(--primary) 70%, var(--foreground))"
     }
