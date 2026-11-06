@@ -13,9 +13,9 @@ export function AppSheet({ open, onOpenChange, title, children }: { readonly ope
   useExclusiveSheet(open, close);
   useBackLayer(open, close, 'sheet');
   return <Drawer open={open} onOpenChange={next => { if (!next) close(); }} showSwipeHandle swipeDirection="down">
-    <DrawerContent data-testid="app-sheet" className="app-shell max-h-[85dvh]">
+    <DrawerContent data-testid="app-sheet" className="app-shell max-h-(--app-shell-sheet-max)">
       <DrawerHeader><DrawerTitle>{title}</DrawerTitle></DrawerHeader>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-2 pt-2 pb-[env(safe-area-inset-bottom)]">{children}</div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-2 pt-2 pb-(--app-shell-safe-bottom)">{children}</div>
     </DrawerContent>
   </Drawer>;
 }

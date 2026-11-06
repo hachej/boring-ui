@@ -671,6 +671,8 @@ The screen layout (`AppShell`) takes an optional `locale` (`'en' | 'fr'`) for it
 
 `AppShell compactNav="sheet"` (default `"tabs"`, the bottom tab bar) drops the tab bar on a phone: the header's leading button (the sidebar trigger) opens the sidebar as the shadcn sheet with the nav items, the active screen's `NavItem.sidebar` content and the account in its footer; choosing a screen or the assistant closes it. A stacked detail's `←` still takes the leading place. The phone is the same `AppSidebar` the wide screen has, so nothing remounts on resize.
 
+**Where the sidebar toggle lives (D-1734, approved by the designer).** The toggle sits inside the sidebar, in its header, only where the rail exists: from md up, at the top of the left bar (next to the title, alone as an icon when folded), never in the screen header; Ctrl+B folds it too. On a phone there is no rail while the sidebar is closed (it is an off-canvas sheet), so a toggle inside it could never open it: the opener stays in the screen header, at the leading place, and the open sheet carries the same control as its close. Hosts select it by `[data-slot="sidebar-trigger"]`, not by its place.
+
 `AppShell overlayBlur={false}` (default `true`) keeps only the dim behind dialogs, alert dialogs, sheets and drawers, without the backdrop blur that costs frames on slow phones. The overlays are the app's shadcn components, portalled outside `.app-shell`, and an item's CSS never reaches outside its root, so the shell only marks `<html data-overlay-blur="off">` while mounted and the app's own stylesheet carries the rule (the Factory template has it):
 
 ```css

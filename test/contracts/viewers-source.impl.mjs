@@ -402,6 +402,42 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     }
   });
 
+  await t.test('the Markdown pane is a flat white card: its surface differs from the page under it, and the raw editor draws no box of its own (D-1734)', async t => {
+    const surface = await import('../fixtures/surface.mjs');
+    for (const initialMode of ['rich', 'source']) {
+      const d = await documents(t, 'text/markdown', '# Plan\n\nBody.\n');
+      const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, title: 'Plan', initialMode, autosave: false }));
+      const frame = view.container.querySelector('[data-boring="viewer-frame"]');
+      assert.equal(surface.isDistinctSurface(frame), true, `${initialMode}: the pane paints ${surface.ownSurface(frame)} over ${surface.surfaceUnder(frame)}`);
+      assert.equal(surface.ownSurface(frame), 'bg-card', `${initialMode}: the white card, not the page's own surface`);
+      assert.deepEqual(surface.restingEdges(frame), [], `${initialMode}: no border, ring or shadow on the pane`);
+      const editor = view.container.querySelector('[data-boring="markdown-editor"]');
+      assert.deepEqual(surface.restingEdges(editor), [], `${initialMode}: no edge on the editor`);
+      const box = view.container.querySelector('textarea');
+      if (initialMode === 'source' && box) {
+        assert.equal(surface.ownSurface(box), 'transparent', 'it paints no surface of its own, so it equals the pane\'s white');
+      }
+    }
+  });
+
+  await t.test('the Markdown pane clears the raw editor box in the block stylesheet, focus state included, and leaves the control no restyling classes (D-1734)', async t => {
+    const { viewersCss } = await import('../../registry/viewer-frame/build-css.mjs');
+    const d = await documents(t, 'text/markdown', '# Plan\n\nBody.\n');
+    const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, title: 'Plan', initialMode: 'source', autosave: false }));
+    const root = view.container.querySelector('[data-boring="viewer-frame"]');
+    assert.equal(root.classList.contains('boring-markdown-pane'), true, 'the pane root carries the hook the stylesheet is scoped to');
+    const box = view.container.querySelector('textarea');
+    // Only the control's own classes remain: no radius, border, background, shadow or ring is added by the pane (BORING-UI-1: layout classes only on a host control).
+    const added = String(box.getAttribute('class')).split(/\s+/).filter(token => /^(?:dark:)?(?:focus-visible:)?(?:rounded-none|border-(?:0|transparent)|dark:bg-transparent|shadow-none|ring-(?:2|inset))/.test(token) || token === 'focus-visible:ring-inset');
+    assert.deepEqual(added, [], 'the pane restyles the host Textarea through its classes');
+    const utilities = viewersCss()['@layer utilities'] ?? {};
+    const rule = suffix => utilities[`.boring-viewer.boring-markdown-pane .boring-markdown-source${suffix}`];
+    assert.equal(rule('')?.['border-color'] === 'transparent' && rule('')?.['box-shadow'] === 'none' && rule('')?.['background-color'] === 'transparent', true, 'resting: no border colour, shadow or fill (utilities layer, so it beats the Textarea utilities)');
+    const focus = rule(':focus-visible');
+    assert.equal(focus?.['border-color'], 'transparent', 'focus: the 1px border does not come back (the Textarea paints focus-visible:border-ring)');
+    assert.equal(/^inset 0 0 0 2px var\(--ring\)$/.test(focus?.['box-shadow'] ?? ''), true, 'focus: the 2px inset ring is the only focus mark');
+  });
+
   await t.test('the Markdown pane keeps tools in its real menu; Refresh never drops unsaved edits; unsafe documents stay in source', async t => {
     const d = await documents(t, 'text/markdown', '# Plan\n\n- [x] done\n');
     let tools;
