@@ -2,6 +2,7 @@
 
 - **Theme `--border` is stronger (`theme` item).** The published theme item now sets `--border` to `oklch(0.87 0 0)` in light and `oklch(1 0 0 / 16%)` in dark (was `oklch(0.91 0 0)` and `oklch(1 0 0 / 10%)`), matching the Factory app template. An app that installs or updates the theme sees stronger edges everywhere `--border` is used, including `--input` and `--sidebar-border`, which follow it. No other token changes.
 - **Alert has a contour (bundled primitives).** In the UI bundle (`shadcn/ui/alert.tsx`, built from main; not in the npm package), every Alert variant gets a 1px contour in its status colour (`border-border`, `border-success`, `border-warning`, `border-info`, `border-destructive`), keeping its soft fill. Apps can drop hand-added border classes on Alert.
+- **`InlineQuestion` is neutral by default (`inline-question`).** New `tone` prop, `'neutral'` (default) or `'attention'`. The default is now flat: no fill and no padding, foreground text, so ten routine questions do not read as ten alarms. Pass `tone="attention"` to keep the warning tint (padding, chip on the kind label), for gates or critical items; a gate in a list should pass `tone="attention"`. Decisions no longer have an info tint: a decision with `tone="attention"` is warning-tinted. The chat's waiting question passes `tone="attention"` and looks as before. Re-run `shadcn add` for `inline-question` and `pi-chat-question`.
 
 # Migrating to 0.4.61
 
