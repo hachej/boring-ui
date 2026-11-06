@@ -43,11 +43,11 @@ const buttonVariants = cva(
 type LinkProps = { href?: unknown; to?: unknown; role?: string }
 type SpaceKey = React.KeyboardEvent<HTMLElement> & { preventBaseUIHandler?: () => void }
 
-/** A link is a Button whose `render` element has an `href` or `to` (an `<a>` or a router link) and whose `nativeButton` is not explicitly true. */
-function renderedLink(nativeButton: boolean | undefined, render: ButtonPrimitive.Props["render"]) {
+/** A link is a Button whose `render` element has an `href` or `to` (an `<a>` or a router link), or an explicit `role="link"` (a router link with another prop name), unless `nativeButton` is explicitly true. */
+function renderedLink({ nativeButton, render, role: given }: ButtonPrimitive.Props) {
   if (nativeButton === true || !React.isValidElement<LinkProps>(render)) return undefined
   const { href, to, role } = render.props
-  return href != null || to != null ? { role } : undefined
+  return href != null || to != null || given === "link" || role === "link" ? { role } : undefined
 }
 
 function Button({
@@ -56,7 +56,7 @@ function Button({
   size = "default",
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
-  const link = renderedLink(props.nativeButton, props.render)
+  const link = renderedLink(props)
   const role = props.role ?? link?.role ?? "link"
   // Base UI gives a non-native control role=button and Space activation. A link announces as a link and, like a native one, ignores Space.
   const space = (handler: unknown) => (event: SpaceKey) => {

@@ -34,6 +34,11 @@ test('a link-styled Button is a link: role link, no Space activation, everything
 
   const bare = await show(h(Button, { render: h('a', { href: '/x' }) }, 'Go'));
   assert.ok(bare.getAttribute('role') === 'link' && bare.getAttribute('type') === null, 'render <a href> alone is a link, with no button type');
+  let routed = 0;
+  const Custom = ({ destination, ...rest }) => h('a', { ...rest, 'data-to': destination });
+  const custom = await show(h(Button, { role: 'link', render: h(Custom, { destination: '/reports' }), onClick: () => { routed++; } }, 'Go'));
+  await key(custom, 'keydown', ' '); await key(custom, 'keyup', ' ');
+  assert.ok(custom.getAttribute('role') === 'link' && custom.getAttribute('type') === null && routed === 0, 'role link on a render element with another prop name is a link: no type, Space does not click');
   const explicit = await show(h(Button, { nativeButton: true, render: h('a', { href: '/x' }) }, 'Go'));
   assert.ok(!explicit.hasAttribute('role') && explicit.getAttribute('type') === 'button', 'an explicit nativeButton true stays as it was');
   assert.ok((await show(h(Button, { nativeButton: false, role: 'menuitem', render: h('a', { href: '/x' }) }, 'Go'))).getAttribute('role') === 'menuitem', 'an explicit role wins');
