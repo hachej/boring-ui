@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { SidebarProvider, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from '@/components/ui/sidebar';
+import { Sidebar, SidebarContent, SidebarProvider, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from '@/components/ui/sidebar';
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
 import { Composer } from '../../../registry/pi-chat/composer.tsx';
 import { VoiceMessageButton } from '../../../registry/pi-chat-voice/voice-message.tsx';
 import { HeaderActions } from '../../../registry/app-shell/header-actions.tsx';
@@ -39,6 +40,8 @@ function App() {
       <Select defaultValue="a"><SelectTrigger data-testid="field-select"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="a">A</SelectItem></SelectContent></Select>
     </div>
     <SidebarProvider><SidebarMenu><SidebarMenuItem><SidebarMenuButton data-testid="sidebar-row">Projects</SidebarMenuButton></SidebarMenuItem></SidebarMenu></SidebarProvider>
+    <InputGroup data-testid="generic-group"><InputGroupAddon align="inline-start"><InputGroupButton data-testid="group-button-start">Go</InputGroupButton></InputGroupAddon><InputGroupInput data-testid="group-input" aria-label="Find" defaultValue="Maple" /><InputGroupAddon align="inline-end"><InputGroupButton data-testid="group-button-end" size="icon-xs" aria-label="Clear"><Dot /></InputGroupButton></InputGroupAddon></InputGroup>
+    <SidebarProvider defaultOpen={false}><Sidebar collapsible="icon"><SidebarContent><SidebarMenu><SidebarMenuItem><SidebarMenuButton data-testid="collapsed-row"><Dot /><span>Projects</span></SidebarMenuButton></SidebarMenuItem></SidebarMenu></SidebarContent></Sidebar></SidebarProvider>
     <div className="flex items-center gap-2" data-testid="header"><HeaderActions actions={actions} compact={false} text={appShellText('en')} prefix="hdr" run={noop} /></div>
     <Composers />
     <InlineQuestion id="q1" kind="question" text="Which fictional plan?" onAnswer={noop} />

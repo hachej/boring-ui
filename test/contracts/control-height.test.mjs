@@ -20,7 +20,7 @@ const item = name => registry.items.find(entry => entry.name === name);
 const block = vars => Object.entries(vars).map(([key, value]) => `--${key}: ${value};`).join('\n');
 
 // The kit's shadcn/ui primitives, and the example app's pinned copy (examples/app-shell/components/ui) that Studio and the app-shell example really render.
-for (const primitives of ['shadcn/ui', 'examples/app-shell/components/ui']) test(`--control-h sizes the controls (${primitives}) at 1440 fine, 390 coarse, in a nested data-density="compact" frame and on a compact <html>; text fields are 16px on a phone`, { skip: !process.env.CHROMIUM && !process.env.CI, timeout: 240000 }, async () => {
+for (const primitives of ['shadcn/ui', 'examples/app-shell/components/ui']) for (const withTheme of [true, false]) test(`--control-h sizes the controls (${primitives}, ${withTheme ? 'with' : 'without'} the theme item) at 1440 fine, 1024 coarse, 390 coarse, in a nested data-density="compact" frame and on a compact <html>; text fields are 16px on a phone; an InputGroup and a collapsed Sidebar contain their controls`, { skip: !process.env.CHROMIUM && !process.env.CI, timeout: 240000 }, async () => {
   assert.ok(process.env.CHROMIUM, 'CHROMIUM must be set when CI is set');
   mkdirSync(join(root, '.cache'), { recursive: true });
   const evidence = mkdtempSync(join(root, '.cache/control-height-'));
@@ -38,7 +38,7 @@ for (const primitives of ['shadcn/ui', 'examples/app-shell/components/ui']) test
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
   const vars = item('theme').cssVars;
-  const items = ['theme', 'pi-chat', 'app-shell', 'inline-question'].map(name => registryCss(item(name))).join('\n');
+  const items = [...(withTheme ? ['theme'] : []), 'pi-chat', 'app-shell', 'inline-question'].map(name => registryCss(item(name))).join('\n');
   const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${items}`;
   const compiler = await compile(cssSource, { base: root, loadStylesheet: async id => {
     const path = require.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id);
@@ -68,45 +68,56 @@ for (const primitives of ['shadcn/ui', 'examples/app-shell/components/ui']) test
     return { coarse: matchMedia('(pointer: coarse)').matches, buttons, input: box('[data-testid="field-input"]'), textarea: box('[data-testid="field-textarea"]'), native: box('select[data-slot="native-select"]:not([data-size="sm"])'),
       nativeSm: box('select[data-size="sm"]'), trigger: box('[data-testid="field-select"]'), sidebarRow: box('[data-testid="sidebar-row"]'), headerAction: box('[data-testid="hdr-action-share"]'),
       send: box('[data-testid="composer-send-case"] [data-testid="composer-submit"]'), mic: box('[data-testid="voice-message-record"]'), composerInput: box('[data-testid="composer-send-case"] textarea'),
-      question: box('[data-testid="question-input"]'), questionSubmit: box('[data-testid="question-submit"]'), questionGroup: box('[data-slot="question-field"] [data-slot="input-group"]'), token: getComputedStyle(scope).getPropertyValue('--control-h').trim() };
+      question: box('[data-testid="question-input"]'), questionSubmit: box('[data-testid="question-submit"]'), questionGroup: box('[data-slot="question-field"] [data-slot="input-group"]'), token: getComputedStyle(scope).getPropertyValue('--control-h').trim(),
+      group: box('[data-testid="generic-group"]'), groupInside: ['[data-testid="group-button-start"]', '[data-testid="group-input"]', '[data-testid="group-button-end"]'].map(selector => { const g = scope.querySelector('[data-testid="generic-group"]').getBoundingClientRect(), c = scope.querySelector(selector).getBoundingClientRect(); return [selector, c.top >= g.top - 0.5 && c.bottom <= g.bottom + 0.5, c.height]; }),
+      railRow: box('[data-testid="collapsed-row"]'), rail: box('[data-slot="sidebar-container"]'), railInside: (() => { const row = scope.querySelector('[data-testid="collapsed-row"]'), rail = scope.querySelector('[data-slot="sidebar-container"]'); if (!row || !rail) return null; const a = row.getBoundingClientRect(), b = rail.getBoundingClientRect(); return a.left >= b.left - 0.5 && a.right <= b.right + 0.5; })() };
   })()`);
   const sizes = (m, wanted, label) => {
     const defaults = { 'button default': m.buttons.default, 'button lg': m.buttons.lg, 'button icon': m.buttons.icon, input: m.input, native: m.native, select: m.trigger, 'sidebar row': m.sidebarRow, 'header action': m.headerAction, 'composer send': m.send, 'composer mic': m.mic };
     for (const [name, box] of Object.entries(defaults)) expect(`${label} ${name} height`, box?.h, name === 'button lg' && wanted === 36 ? 36 : wanted);
     expect(`${label} icon width`, m.buttons.icon?.w, wanted);
+    expect(`${label} generic InputGroup height`, m.group?.h, wanted);
+    for (const [selector, inside, height] of m.groupInside) if (!inside) violations.push(`${label} ${selector} (${height}px) sticks out of its ${m.group?.h}px InputGroup`);
+    // The collapsed rail: the row follows the token and sits inside the rail (the rail is a Sheet under md, so only from md).
+    if (m.railRow) { expect(`${label} collapsed sidebar row`, [m.railRow.h, m.railRow.w], [wanted, wanted]); if (!m.railInside) violations.push(`${label} collapsed sidebar row ${m.railRow.w}px sticks out of the ${m.rail?.w}px rail`); }
     expect(`${label} native-select wrapper stays level`, m.native?.h, m.input?.h);
     if (!(m.textarea?.h >= wanted)) violations.push(`${label} textarea height ${m.textarea?.h} under ${wanted}`);
   };
   try {
-    for (const [width, mobile] of [[1440, false], [390, true]]) {
+    for (const [width, mobile] of [[1440, false], [1024, true], [390, true]]) {
+      const phone = width < 768;
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 1000, deviceScaleFactor: 1, mobile });
       await browser.send('Emulation.setTouchEmulationEnabled', { enabled: mobile, maxTouchPoints: 5 });
       await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?${width}` });
       await browser.until('fixture mounted', `document.querySelectorAll('[data-testid="question-input"]').length === 2 && document.readyState === 'complete'`);
       const normal = await measure('normal'), compact = await measure('compact');
       expect(`${width} pointer: coarse matches by matchMedia`, normal.coarse, mobile);
-      expect(`${width} token resolved`, [normal.token, compact.token], mobile ? ['2.75rem', '2.25rem'] : ['2.25rem', '2.25rem']);
-      sizes(normal, mobile ? 44 : 36, `${width} ${mobile ? 'coarse' : 'fine'}`);
-      sizes(compact, 36, `${width} compact frame`);
+      // Without the theme item there is no token: the primitives fall back to 36px and the 44px touch floor (phone or coarse pointer) still holds; compact does nothing.
+      const real = mobile ? 44 : 36, kept = withTheme ? 36 : real;
+      expect(`${width} token resolved`, [normal.token, compact.token], withTheme ? (mobile ? ['2.75rem', '2.25rem'] : ['2.25rem', '2.25rem']) : ['', '']);
+      sizes(normal, real, `${width} ${mobile ? 'coarse' : 'fine'}`);
+      sizes(compact, kept, `${width} compact frame`);
       // Smaller sizes: unchanged on a fine pointer at md+ and in a compact frame, 44px on touch.
       expect(`${width} sm/xs/icon-sm/icon-xs`, ['sm', 'xs', 'icon-sm', 'icon-xs'].map(size => normal.buttons[size].h), mobile ? [44, 44, 44, 44] : small);
-      expect(`${width} compact frame sm/xs/icon-sm/icon-xs`, ['sm', 'xs', 'icon-sm', 'icon-xs'].map(size => compact.buttons[size].h), small);
-      expect(`${width} native sm`, [normal.nativeSm.h, compact.nativeSm.h], mobile ? [44, nativeSm] : [nativeSm, nativeSm]);
-      expect(`${width} question group and submit`, [normal.questionGroup.h, normal.questionSubmit.h, compact.questionGroup.h, compact.questionSubmit.h], mobile ? [44, 44, 36, 36] : [36, 32, 36, 32]);
+      expect(`${width} compact frame sm/xs/icon-sm/icon-xs`, ['sm', 'xs', 'icon-sm', 'icon-xs'].map(size => compact.buttons[size].h), withTheme || !mobile ? small : [44, 44, 44, 44]);
+      expect(`${width} native sm`, [normal.nativeSm.h, compact.nativeSm.h], mobile ? [44, withTheme ? nativeSm : 44] : [nativeSm, nativeSm]);
+      expect(`${width} question group and submit`, [normal.questionGroup.h, normal.questionSubmit.h, compact.questionGroup.h, compact.questionSubmit.h], withTheme ? (mobile ? [44, 44, 36, 36] : [36, 32, 36, 32]) : (mobile ? [44, 44, 44, 44] : [36, 32, 36, 32]));
       // Text fields: 16px on a phone (no iOS zoom), 14px at md+. A compact frame changes the height, never the font.
       for (const [name, m] of [['normal', normal], ['compact', compact]]) for (const field of ['input', 'textarea', 'native', 'composerInput', 'question']) {
         const font = m[field]?.font, px = parseFloat(font);
-        if (mobile && !(px >= 16)) violations.push(`${width} ${name} ${field} font-size ${font} under 16px`);
-        if (!mobile && font !== '14px') violations.push(`${width} ${name} ${field} font-size ${font}, expected 14px (md:text-sm)`);
+        if (phone && !(px >= 16)) violations.push(`${width} ${name} ${field} font-size ${font} under 16px`);
+        if (!phone && font !== '14px') violations.push(`${width} ${name} ${field} font-size ${font}, expected 14px (md:text-sm)`);
       }
       // A compact <html> (a whole page in compact): the media rule must lose to [data-density="compact"] wherever the rules land.
-      await browser.evaluate(`document.documentElement.setAttribute('data-density', 'compact')`);
-      await new Promise(done => setTimeout(done, 500)); // buttons transition their size (transition-all)
-      const page = await measure('normal');
-      expect(`${width} html compact token`, page.token, '2.25rem');
-      sizes(page, 36, `${width} compact <html>`);
-      expect(`${width} compact <html> sm/xs/icon-sm/icon-xs`, ['sm', 'xs', 'icon-sm', 'icon-xs'].map(size => page.buttons[size].h), small);
-      await browser.evaluate(`document.documentElement.removeAttribute('data-density')`);
+      if (withTheme) {
+        await browser.evaluate(`document.documentElement.setAttribute('data-density', 'compact')`);
+        await new Promise(done => setTimeout(done, 500)); // buttons transition their size (transition-all)
+        const page = await measure('normal');
+        expect(`${width} html compact token`, page.token, '2.25rem');
+        sizes(page, 36, `${width} compact <html>`);
+        expect(`${width} compact <html> sm/xs/icon-sm/icon-xs`, ['sm', 'xs', 'icon-sm', 'icon-xs'].map(size => page.buttons[size].h), small);
+        await browser.evaluate(`document.documentElement.removeAttribute('data-density')`);
+      }
       // The Select trigger is a button (no keyboard opens, so iOS does not zoom): it keeps the 12px of a button at every width.
       expect(`${width} select trigger font`, [normal.trigger.font, compact.trigger.font], ['12px', '12px']);
       await browser.screenshot(`control-height-${width}.png`);
