@@ -25,8 +25,9 @@ export type SpaceCardProps = {
   className?: string;
 };
 
-const box = 'flex h-auto min-h-11 w-full min-w-0 flex-col items-stretch justify-start gap-2 rounded-(--radius) px-3 py-3 text-left whitespace-normal bg-card text-card-foreground';
-const hoverFill = 'hover:bg-accent';
+const layout = 'flex h-auto min-h-11 w-full min-w-0 flex-col items-stretch justify-start gap-2 text-left whitespace-normal';
+// The card's look is item css for [data-boring="space-card"] on the Button (registry.json); a plain div has no Button to restyle.
+const skin = 'rounded-(--radius) bg-card px-3 py-3 text-card-foreground';
 
 /** One app or space at a glance: working and waiting counts, Quiet when both are 0, "unreadable" when the status could not be read. */
 export function SpaceCard({ name, leading, activity, lastShip, onOpen, labels, className }: SpaceCardProps) {
@@ -52,8 +53,8 @@ export function SpaceCard({ name, leading, activity, lastShip, onOpen, labels, c
       {lastShip && !unknown ? <span className="truncate text-xs text-muted-foreground">{t.lastShip} {lastShip}</span> : null}
     </>
   );
-  if (onOpen) return <Button variant="secondary" className={cn(box, hoverFill, className)} onClick={onOpen}>{content}</Button>;
-  return <div className={cn(box, className)}>{content}</div>;
+  if (onOpen) return <Button variant="secondary" data-boring="space-card" className={cn(layout, className)} onClick={onOpen}>{content}</Button>;
+  return <div className={cn(layout, skin, className)}>{content}</div>;
 }
 
 function Count({ value, label, attention }: { value: number; label: string; attention?: boolean }) {

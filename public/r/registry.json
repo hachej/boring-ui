@@ -3385,7 +3385,20 @@
           "type": "registry:component",
           "target": "components/space-card/space-card.tsx"
         }
-      ]
+      ],
+      "css": {
+        "@layer utilities": {
+          "[data-slot=\"button\"][data-boring=\"space-card\"]": {
+            "background-color": "var(--card)",
+            "color": "var(--card-foreground)",
+            "border-radius": "var(--radius)",
+            "padding": "0.75rem"
+          },
+          "[data-slot=\"button\"][data-boring=\"space-card\"]:hover": {
+            "background-color": "var(--accent)"
+          }
+        }
+      }
     },
     {
       "name": "wiring-chips",

@@ -180,3 +180,18 @@ test('a class held in a const is checked when passed to a host control', t => {
   assert.equal(restyled(f, `${button}const cls = "w-full gap-2"; const a = <Button className={cls} />;`).length, 0);
   assert.equal(restyled(f, 'const cls = "bg-card"; const a = <div className={cls} />;').length, 0);
 });
+
+test('space-card skins its clickable Button through item css, never through classes on the Button (D-1745)', () => {
+  const source = readFileSync(join(designRoot, 'registry/space-card/space-card.tsx'), 'utf8');
+  const button = /<Button\b[^>]*>/.exec(source)[0];
+  assert.match(button, /data-boring="space-card"/);
+  assert.doesNotMatch(button, /className=\{cn\([^)]*(?:skin|hoverFill)/);
+  assert.match(source, /const layout = '[^']*'/);
+  assert.doesNotMatch(/const layout = '([^']*)'/.exec(source)[1], /(?<![\w-])(?:bg|rounded|border|shadow|ring|text-(?!left)|p[xytrbl]?)-|hover:/, 'the Button layout holds no appearance');
+  const css = JSON.parse(readFileSync(join(designRoot, 'registry.json'), 'utf8')).items.find(item => item.name === 'space-card').css['@layer utilities'];
+  const scope = '[data-slot="button"][data-boring="space-card"]';
+  assert.deepEqual(Object.keys(css), [scope, `${scope}:hover`]);
+  assert.deepEqual(css[scope], { 'background-color': 'var(--card)', color: 'var(--card-foreground)', 'border-radius': 'var(--radius)', padding: '0.75rem' });
+  assert.equal(css[`${scope}:hover`]['background-color'], 'var(--accent)');
+  assert.deepEqual(checkDesign().findings.filter(finding => finding.file.startsWith('registry/space-card/')), []);
+});
