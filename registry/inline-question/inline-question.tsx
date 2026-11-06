@@ -83,7 +83,7 @@ export function InlineQuestion({ id, kind, text, source, options, answered, onAn
       {choices.length > 0 || onReplyInChat ? (
         <div className="flex flex-wrap gap-1">
           {choices.map((choice, index) => (
-            <Button key={choice.value} variant={index === 0 ? 'default' : 'secondary'} size="sm" className={tap} data-testid="question-option" data-option={choice.value} disabled={disabled} onClick={() => onAnswer(id, choice.value)}>{choice.label}</Button>
+            <Button key={choice.value} variant={index === 0 ? 'default' : 'secondary'} size="sm" className={cn(tap, 'h-auto justify-start whitespace-normal text-start')} data-testid="question-option" data-option={choice.value} disabled={disabled} onClick={() => onAnswer(id, choice.value)}>{choice.label}</Button>
           ))}
           {onReplyInChat ? <Button variant="ghost" size="sm" className={tap} onClick={onReplyInChat}>{t.replyInChat}</Button> : null}
         </div>
