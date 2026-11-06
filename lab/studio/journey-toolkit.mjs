@@ -109,7 +109,7 @@ export function createToolkit({ browser, pageUrl, step, app, restartHost, base, 
   // (A question and an artifact are shown as cards, not as tool rows.)
   const domToolNames = async () => {
     await expandTrace(browser);
-    return browser.evaluate(`[...${qa('[data-testid=tool-name]')}.map(e => e.textContent), ...${qa('[data-testid=question-card]')}.map(() => 'ask_user'), ...${qa('[data-testid=artifact-card][data-state=ready]')}.map(() => 'present')]`);
+    return browser.evaluate(`[...${qa('[data-testid=tool-name]')}.map(e => e.dataset.toolId), ...${qa('[data-testid=question-card]')}.map(() => 'ask_user'), ...${qa('[data-testid=artifact-card][data-state=ready]')}.map(() => 'present')]`);
   };
   const assistantText = () => browser.evaluate(`${qa('[data-testid=transcript] article[data-role=assistant]')}.map(a => a.innerText).join('\\n')`);
   const userMessages = `${qa('[data-testid=transcript] article[data-role=user]')}.map(a => a.innerText.trim())`;

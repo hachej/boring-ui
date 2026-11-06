@@ -194,7 +194,7 @@ async function composer(t) {
     // Expand: every step as one compact row with its status; a row expands to arguments and result.
     await browser.click(`${q('[data-testid=activity]')}.querySelector('button')`);
     await browser.until('rows visible', `${qa('[data-testid=activity-step]')}.filter(e => e.offsetParent !== null).length >= 4`);
-    const names = await browser.evaluate(`${qa('[data-testid=tool-name]')}.map(e => e.textContent)`);
+    const names = await browser.evaluate(`${qa('[data-testid=tool-name]')}.map(e => e.dataset.toolId)`);
     assert.ok(names.filter(name => name === 'read').length >= 3 && names.length >= 4, `tool calls in the DOM: ${names.join(', ')}`);
     assert.ok(Number(done.count.split(' ')[0]) >= names.length, `the counter covers every step: ${done.count}`);
     // Every step is one row with its status (a reasoning step may sit among the tool calls).

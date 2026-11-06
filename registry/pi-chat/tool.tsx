@@ -43,7 +43,7 @@ export function ToolCard({ entry, onOpenImage, details = true }: { readonly entr
   const hint = preview(call.arguments);
   const line = <TraceLine {...(status === 'running' ? { status: 'running' } : status === 'failed' ? { status: 'error' } : {})}>
     <TraceIcon><WrenchIcon /></TraceIcon>
-    <TraceTitle><span data-testid="tool-name">{labels.toolName(call.name)}</span>{hint && ` · ${hint}`}</TraceTitle>
+    <TraceTitle><span data-testid="tool-name" data-tool-id={call.name}>{labels.toolName(call.name)}</span>{hint && ` · ${hint}`}</TraceTitle>
     <TraceDescription data-testid="tool-status">{labels[STATUS_LABEL[status]]}</TraceDescription>
   </TraceLine>;
   const resultBody = result && <>
