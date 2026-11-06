@@ -6,6 +6,10 @@ import { Input } from '@/components/ui/input';
 import { cn } from '../utils/utils';
 import { CheckIcon, MessageCircleQuestionIcon } from '../_shared/icons';
 
+/** The stable values of a decision. The host stores these; the words on the buttons are labels and may be translated. */
+export const DECISION_VALUES = ['approve', 'refuse'] as const;
+export type DecisionValue = (typeof DECISION_VALUES)[number];
+
 /** A `decision` is a gate or a review: approve or refuse. A `question` takes a choice or free text. */
 export type InlineQuestionKind = 'decision' | 'question';
 
@@ -29,7 +33,7 @@ export type InlineQuestionProps = {
   /** Set once answered: the controls give way to the answer, so the question stays readable in the history. */
   answered?: string;
   /** The block sends nothing. The host posts the answer under the signed-in person's own login, never a shared token. */
-  onAnswer: (id: string, value: string) => void;
+  onAnswer: (id: string, value: string) => void; // decision: 'approve' | 'refuse' (stable, never a label); question: the option text or the typed text
   /** Opens the full chat for a longer reply. Shown only when given. */
   onReplyInChat?: () => void;
   labels?: Partial<InlineQuestionLabels>;
@@ -43,10 +47,12 @@ export function InlineQuestion({ id, kind, text, source, options, answered, onAn
   const t = { ...inlineQuestionLabels, ...labels };
   const [draft, setDraft] = useState('');
   const decision = kind === 'decision';
-  const choices = decision ? [t.approve, t.refuse] : (options ?? []).slice(0, 4);
+  const choices: readonly { value: string; label: string }[] = decision
+    ? [{ value: DECISION_VALUES[0], label: t.approve }, { value: DECISION_VALUES[1], label: t.refuse }]
+    : (options ?? []).slice(0, 4).map(option => ({ value: option, label: option }));
   const send = () => { const value = draft.trim(); if (value) onAnswer(id, value); };
   if (answered !== undefined) {
-    const said = decision ? (answered === t.approve ? t.approved : t.refused) : `${t.answered}: ${answered}`;
+    const said = decision && answered === 'approve' ? t.approved : decision && answered === 'refuse' ? t.refused : `${t.answered}: ${answered}`;
     return (
       <div role="group" aria-label={text} className={cn('flex min-w-0 flex-col gap-1 rounded-(--radius) bg-muted p-3 text-muted-foreground', className)}>
         <div className="flex items-start gap-2 text-sm font-medium"><CheckIcon aria-hidden className="mt-0.5 size-4 shrink-0" /><span>{text}</span></div>
@@ -67,7 +73,7 @@ export function InlineQuestion({ id, kind, text, source, options, answered, onAn
       {choices.length > 0 || onReplyInChat ? (
         <div className="flex flex-wrap gap-1">
           {choices.map((choice, index) => (
-            <Button key={choice} variant={index === 0 ? 'default' : 'secondary'} size="sm" className={tap} onClick={() => onAnswer(id, choice)}>{choice}</Button>
+            <Button key={choice.value} variant={index === 0 ? 'default' : 'secondary'} size="sm" className={tap} onClick={() => onAnswer(id, choice.value)}>{choice.label}</Button>
           ))}
           {onReplyInChat ? <Button variant="ghost" size="sm" className={tap} onClick={onReplyInChat}>{t.replyInChat}</Button> : null}
         </div>

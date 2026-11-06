@@ -4,7 +4,7 @@ Generic blocks for the "what needs me" surfaces of an app: a waiting question an
 
 ## Sub-features
 
-- `inline-question` `InlineQuestion` shows a waiting question where it is mentioned. `kind: 'decision'` is Approve/Refuse for a gate or review; `kind: 'question'` offers up to four choices plus free text (free text only without options) and an optional "Reply in chat". Once `answered` is set it shows the answer instead. `registry/inline-question/inline-question.tsx`.
+- `inline-question` `InlineQuestion` shows a waiting question where it is mentioned. `kind: 'decision'` is Approve/Refuse for a gate or review; `kind: 'question'` offers up to four choices plus free text (free text only without options) and an optional "Reply in chat". Once `answered` is set it shows the answer instead. A decision calls `onAnswer(id, 'approve' | 'refuse')` (exported as `DECISION_VALUES`): stable values, never the translated button words, so a host never compares labels; an answered decision reads by those values and any other value shows neutrally as "Answered: <value>". `registry/inline-question/inline-question.tsx`.
 
 ## How to get to it (user POV)
 
@@ -14,10 +14,11 @@ Generic blocks for the "what needs me" surfaces of an app: a waiting question an
 
 Preconditions: `node_modules` installed, so in CI on this VM.
 
-- **Question.** `inline-question`: `node --test test/ui/attention-blocks.test.mjs` renders both kinds, free text, the answered states and the four-choice cap, and checks that the block never fetches.
+- **Question.** `inline-question`: `node --test test/ui/attention-blocks.test.mjs` renders both kinds, free text, the answered states, stable decision values under overridden labels and the four-choice cap, and checks that the block never fetches.
 
 ## Gotchas
 
 - The block sends nothing. `onAnswer` is the host's job; keep the question id in the host's closure.
+- Store the decision value (`'approve'` or `'refuse'`), not the label; pass it back as `answered`. Labels (`labels`) only change the words.
 - Choices beyond four are dropped; a longer list is a form, not an inline question.
 - Long replies belong in the chat (`onReplyInChat`); the field here is one line.

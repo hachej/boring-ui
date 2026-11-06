@@ -16,13 +16,16 @@ const utils = join(root, 'examples/app-shell/lib/utils.ts');
 const entry = `
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement as h } from 'react';
-import { InlineQuestion } from '${join(root, 'registry/inline-question/inline-question.tsx')}';
+import { InlineQuestion, DECISION_VALUES } from '${join(root, 'registry/inline-question/inline-question.tsx')}';
+export { DECISION_VALUES };
 const on = () => {};
 export const html = {
   decision: () => renderToStaticMarkup(h(InlineQuestion, { id: 'm', kind: 'decision', text: 'Merge #1691?', source: 'factory master', onAnswer: on })),
   question: () => renderToStaticMarkup(h(InlineQuestion, { id: 'p', kind: 'question', text: 'Day 30 or day 45?', options: ['Day 30', 'Day 45'], onAnswer: on, onReplyInChat: on })),
   free: () => renderToStaticMarkup(h(InlineQuestion, { id: 'f', kind: 'question', text: 'Which month?', onAnswer: on })),
-  doneDecision: () => renderToStaticMarkup(h(InlineQuestion, { id: 'm', kind: 'decision', text: 'Merge #1691?', answered: 'Approve', onAnswer: on })),
+  doneDecision: () => renderToStaticMarkup(h(InlineQuestion, { id: 'm', kind: 'decision', text: 'Merge #1691?', answered: 'approve', onAnswer: on })),
+  doneFr: (answered) => renderToStaticMarkup(h(InlineQuestion, { id: 'm', kind: 'decision', text: 'Fusionner #1691 ?', answered, labels: { approve: 'Approuver', refuse: 'Refuser', approved: 'Approuvé', refused: 'Refusé', answered: 'Répondu' }, onAnswer: on })),
+  openFr: () => renderToStaticMarkup(h(InlineQuestion, { id: 'm', kind: 'decision', text: 'Fusionner #1691 ?', labels: { approve: 'Approuver', refuse: 'Refuser' }, onAnswer: on })),
   doneQuestion: () => renderToStaticMarkup(h(InlineQuestion, { id: 'p', kind: 'question', text: 'Day 30 or day 45?', answered: 'Day 45', onAnswer: on })),
   many: () => renderToStaticMarkup(h(InlineQuestion, { id: 'x', kind: 'question', text: 'Which file?', options: ['a', 'b', 'c', 'd', 'e'], onAnswer: on })),
 };
@@ -83,4 +86,18 @@ test('needs-you blocks never fetch: props in, callbacks out', async () => {
   const { readFileSync } = await import('node:fs');
   const source = readFileSync(join(root, 'registry/inline-question/inline-question.tsx'), 'utf8');
   assert.doesNotMatch(source, /\bfetch\s*\(|XMLHttpRequest|useEffect|localStorage/);
+});
+
+test('a decision answers with stable values, never translated labels', () => {
+  assert.deepEqual(mod.DECISION_VALUES, ['approve', 'refuse']);
+  const open = html.openFr();
+  assert.match(open, />Approuver</); assert.match(open, />Refuser</, 'the buttons say the translated words');
+});
+
+test('an answered decision reads by value under overridden labels; an unknown value is neutral, not Refused', () => {
+  assert.match(html.doneFr('approve'), /Approuvé/);
+  assert.match(html.doneFr('refuse'), /Refusé/);
+  const other = html.doneFr('approved');
+  assert.doesNotMatch(other, /Refusé|Approuvé/);
+  assert.match(other, /Répondu: approved/);
 });
