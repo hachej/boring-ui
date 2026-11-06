@@ -179,7 +179,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
   const lookup = async (requestId: string) => (await call<{ record: SubmissionRecord | null }>('submission', {}, { requestId })).record ?? undefined;
 
   /** One open watch connection: its first view, then frames until it ends (`undefined`: it closed without an end frame). */
-  type Source = { readonly first: ConversationView; readonly next: () => Promise<Frame | undefined>; readonly cancel: () => void };
+  type Source = { readonly first: ConversationView; readonly next: () => Promise<Frame | undefined>; readonly cancel: () => void; /** The server ended the stream: let it close on its own, no abort. Resolves once closed. */ readonly release?: () => Promise<void> };
 
   const ping = options.webSocket?.pingMs ?? 15_000;
   const openSocket = options.webSocket?.open ?? ((target: URL) => new WebSocket(target, 'boring.chat'));
@@ -271,7 +271,13 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     }
     const first = await next().catch(() => undefined);
     if (first?.kind !== 'view') { stopped.abort(); throw new Error('Remote chat watch ended before its first view'); }
-    return { first: first.view, next, cancel: () => stopped.abort() };
+    // The server ended the stream itself: drain it to its close instead of cancelling, which the browser logs as ERR_ABORTED.
+    // A host that never closes it is aborted after a short wait.
+    const release = async () => {
+      const wait = setTimeout(() => stopped.abort(), 2000);
+      try { while (!(await reader.read()).done); } catch { /* closed */ } finally { clearTimeout(wait); }
+    };
+    return { first: first.view, next, cancel: () => stopped.abort(), release };
   }
 
   let socketWorked = false;
@@ -285,12 +291,18 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     let lost = false;
     let value = source.first, started = false, settle!: (end: WatchEnd) => void, ended: WatchEnd | undefined;
     const closed = new Promise<WatchEnd>(resolve => { settle = resolve; });
-    const finish = (end: WatchEnd) => { if (!ended) { ended = end; source.cancel(); settle(end); } };
+    let draining = false;
+    const finish = (end: WatchEnd, served = false) => {
+      if (ended) return;
+      ended = end;
+      if (served && source.release) { draining = true; void source.release().finally(() => settle(end)); } else { source.cancel(); settle(end); }
+    };
     const handle: Watch = {
       get value() { return linkImages(value); },
       closed,
       lost: () => lost,
-      stop: async () => { finish({ reason: 'stopped' }); return closed; },
+      // An explicit stop (the page hidden, the chat disposed) interrupts a draining served end; a served end nobody stops still drains without abort.
+      stop: async () => { if (draining) source.cancel(); else finish({ reason: 'stopped' }); return closed; },
       start: listener => {
         if (started) throw new Error('Watch already started');
         started = true;
@@ -303,7 +315,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
               // `session_closed` (a host restart, for example) is reopened too; `retired`, `stopped` and `revoked` are final.
               if (!frame || frame.kind === 'end') {
                 lost = !frame || frame.reason === 'session_closed';
-                return finish({ reason: frame?.reason === 'retired' ? 'retired' : frame?.reason === 'stopped' ? 'stopped' : 'session_closed' });
+                return finish({ reason: frame?.reason === 'retired' ? 'retired' : frame?.reason === 'stopped' ? 'stopped' : 'session_closed' }, frame?.kind === 'end');
               }
               // Native operation batches are replayed with the upstream delta implementation; a view frame resets the replica.
               value = frame.kind === 'view' ? frame.view : applyImmutable(value, frame.ops) as ConversationView;

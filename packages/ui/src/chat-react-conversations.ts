@@ -38,7 +38,12 @@ export interface ConversationsClientOptions {
   readonly activeId: string | undefined;
   readonly onSelect: (id: string) => void;
   readonly onChange?: (() => void | Promise<void>) | undefined;
+  /** Refresh interval while a turn runs (`busy`), 4 s by default. A host that sets it and not `idlePollMs` keeps this cadence while idle too (never while the tab is hidden). */
   readonly pollMs?: number;
+  /** Refresh interval while the page is visible and idle, so a conversation made elsewhere appears within it. Default 30 s. No call is made while the tab is hidden. */
+  readonly idlePollMs?: number;
+  /** A turn is running: the list can change, so it refreshes every `pollMs`. */
+  readonly busy?: boolean;
   /** How long New or fork may hold the composer (`creating`) before the person gets it back and a late answer no longer moves them. Default 15 s. */
   readonly openTimeoutMs?: number;
 }
@@ -56,7 +61,7 @@ const item = (served: ServedConversation): ConversationItem => ({ id: String(ser
 
 /**
  * The sessions list over the host's conversations handler (`createConversationsHandler` of `@hachej/boring-agent/conversations`, mounted at
- * `endpoint`): the active list (polled every `pollMs` while mounted), server-side search with the Archived filter, New, rename, archive,
+ * `endpoint`): the active list (refreshed every `pollMs` while `busy`, every `idlePollMs` while idle and visible, never while the tab is hidden, and once at once on return, focus and turn end), server-side search with the Archived filter, New, rename, archive,
  * delete and fork. New and fork select the conversation they made through `onSelect`. `onChange` runs after every change the person made
  * (the host may reload what depends on the list). `fetch` is the host's authenticated fetch. Returns `undefined` until the first list arrives.
  */
@@ -88,7 +93,8 @@ function holdTyping(onComposing: (composing: boolean) => void) {
   return held;
 }
 
-export function useConversationsClient({ endpoint, fetch, activeId, onSelect, onChange, pollMs = 4000, openTimeoutMs = 15000 }: ConversationsClientOptions): ConversationsClient | undefined {
+export function useConversationsClient({ endpoint, fetch, activeId, onSelect, onChange, pollMs: givenPollMs, idlePollMs: givenIdleMs, busy = false, openTimeoutMs = 15000 }: ConversationsClientOptions): ConversationsClient | undefined {
+  const pollMs = givenPollMs ?? 4000, idlePollMs = givenIdleMs ?? givenPollMs ?? 30000;
   const [items, setItems] = useState<readonly ConversationItem[] | undefined>();
   const [creating, setCreating] = useState(false);
   const [opened, setOpened] = useState<string | undefined>();
@@ -158,10 +164,26 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
     if (base === undefined) return;
     let off = false;
     const load = () => list(() => !off).catch(() => {});
-    void load();
-    const timer = setInterval(load, pollMs);
-    return () => { off = true; clearInterval(timer); };
-  }, [base, list, pollMs, activeId]);
+    if (!globalThis.document || globalThis.document.visibilityState !== 'hidden') void load();
+    const page = globalThis.document, hidden = () => page?.visibilityState === 'hidden';
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const stop = () => { clearInterval(timer); timer = undefined; };
+    const start = () => { stop(); if (!hidden()) timer = setInterval(load, busy ? pollMs : idlePollMs); };
+    // A return fires visibilitychange and then focus: one refresh for both. `fresh` is set by the refresh a return makes and cleared by the second event, by hiding, and by a window blur (so a focus after a plain blur still refreshes).
+    let fresh = false;
+    const resume = () => {
+      if (hidden()) { fresh = false; stop(); return; }
+      if (fresh) { fresh = false; start(); return; }
+      fresh = true; void load(); start();
+    };
+    start();
+    page?.addEventListener('visibilitychange', resume);
+    const refocus = (event: Event) => { if (event.target === globalThis || event.target === page) resume(); };
+    const blurred = (event: Event) => { if (event.target === globalThis || event.target === page) fresh = false; };
+    globalThis.addEventListener?.('focus', refocus);
+    globalThis.addEventListener?.('blur', blurred);
+    return () => { off = true; stop(); page?.removeEventListener('visibilitychange', resume); globalThis.removeEventListener?.('focus', refocus); globalThis.removeEventListener?.('blur', blurred); };
+  }, [base, list, pollMs, idlePollMs, busy, activeId]);
   return useMemo(() => {
     if (!items) return undefined;
     const changed = async () => { await reload().catch(() => {}); await latest.current.onChange?.(); };
@@ -192,7 +214,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
       }
     };
     return {
-      items, activeId, creating, reload,
+      items, activeId, creating, reload, polling: busy,
       opened: composing ? undefined : opened,
       newFailed: failedNew && failedNew.at === activeId ? { typed: failedNew.typed } : undefined,
       newFailedSeen: () => setFailedNew(undefined),
@@ -220,7 +242,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
         await open('fork', { conversationId: from, at });
       },
     };
-  }, [items, activeId, creating, opened, composing, failedNew, base, call, reload, forget, markOpened, dropTyping, failNew]);
+  }, [items, activeId, creating, busy, opened, composing, failedNew, base, call, reload, forget, markOpened, dropTyping, failNew]);
 }
 
 /** Compatibility spelling retained for one release. */
