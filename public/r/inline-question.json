@@ -25,16 +25,21 @@
       },
       "@media (width < 768px), (pointer: coarse)": {
         "[data-slot=\"question-field\"] [data-slot=\"input-group\"]": {
-          "height": "2.75rem"
+          "height": "var(--control-h, 2.75rem)"
         },
         "[data-slot=\"question-field\"] [data-slot=\"input-group-addon\"]": {
           "padding-block": "0"
         },
         "[data-slot=\"question-field\"] [data-testid=\"question-submit\"]": {
-          "width": "2.75rem",
-          "height": "2.75rem",
+          "width": "var(--control-h, 2.75rem)",
+          "height": "var(--control-h, 2.75rem)",
           "margin-block": "-1px"
         }
+      },
+      "[data-slot=\"question-field\"] [data-testid=\"question-submit\"]:disabled": {
+        "background-color": "transparent",
+        "color": "var(--muted-foreground)",
+        "opacity": "1"
       }
     }
   },

@@ -61,7 +61,7 @@ export function HeaderActions({ actions, compact, text, prefix, run }: { readonl
       : <DropdownMenu>
         <DropdownMenuTrigger render={<Button variant="ghost" size="icon" />} data-testid={`${prefix}-more`} aria-label={text.actions} title={text.actions}><EllipsisIcon data-icon="inline-start" aria-hidden="true" /></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="app-shell w-48">
-          {extra.map(action => <DropdownMenuItem key={action.id} data-testid={`${prefix}-action-${action.id}`} className="pointer-coarse:min-h-11" onClick={() => run(action.id)}
+          {extra.map(action => <DropdownMenuItem key={action.id} data-testid={`${prefix}-action-${action.id}`} className="pointer-coarse:min-h-[var(--control-min,2.75rem)]" onClick={() => run(action.id)}
             render={action.href === undefined ? undefined : <a href={action.href} target={action.target} rel={action.rel} />}><action.icon className="size-4" />{action.label}</DropdownMenuItem>)}
         </DropdownMenuContent>
       </DropdownMenu>)}

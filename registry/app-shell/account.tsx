@@ -72,7 +72,7 @@ export function NavUser({ account, improve, text }: { readonly account: AccountS
   if (!account && !improve) return null;
   return <SidebarMenu><SidebarMenuItem>
     <DropdownMenu>
-      <DropdownMenuTrigger render={<SidebarMenuButton size="lg" data-testid="nav-user" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" />}>
+      <DropdownMenuTrigger render={<SidebarMenuButton size="lg" data-testid="nav-user" className="pointer-coarse:min-h-[var(--control-min,2.75rem)] pointer-coarse:min-w-[var(--control-min,2.75rem)]" />}>
         <AccountAvatar account={account} />
         <div className="grid min-w-0 flex-1 text-left text-xs leading-tight">
           <span className="truncate font-medium">{account?.name ?? text.account}</span>
@@ -81,10 +81,10 @@ export function NavUser({ account, improve, text }: { readonly account: AccountS
         <ChevronsUpDownIcon className="ml-auto size-4" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" align="end" sideOffset={4} className="app-shell w-56 min-w-56">
-        {improve && <DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-improve" onClick={() => layer.open('improve')}><MessageSquarePlusIcon className="size-4" aria-hidden="true" />{improve}</DropdownMenuItem>}
-        {account?.menu.map(entry => <DropdownMenuItem key={entry.label} className="pointer-coarse:min-h-11" onClick={entry.onSelect}>{entry.label}</DropdownMenuItem>)}
-        {account?.theme && <DropdownMenuCheckboxItem checked={darkOn(account.theme)} closeOnClick data-testid="account-theme" className="pointer-coarse:min-h-11" onCheckedChange={on => account.theme?.onChange(on ? 'dark' : 'light')}><MoonIcon aria-hidden="true" />{text.darkMode}</DropdownMenuCheckboxItem>}
-        {account?.signOut && <><DropdownMenuSeparator /><DropdownMenuItem className="pointer-coarse:min-h-11" data-testid="account-sign-out" onClick={account.signOut}><LogOutIcon className="size-4" aria-hidden="true" />{text.signOut}</DropdownMenuItem></>}
+        {improve && <DropdownMenuItem className="pointer-coarse:min-h-[var(--control-min,2.75rem)]" data-testid="account-improve" onClick={() => layer.open('improve')}><MessageSquarePlusIcon className="size-4" aria-hidden="true" />{improve}</DropdownMenuItem>}
+        {account?.menu.map(entry => <DropdownMenuItem key={entry.label} className="pointer-coarse:min-h-[var(--control-min,2.75rem)]" onClick={entry.onSelect}>{entry.label}</DropdownMenuItem>)}
+        {account?.theme && <DropdownMenuCheckboxItem checked={darkOn(account.theme)} closeOnClick data-testid="account-theme" className="pointer-coarse:min-h-[var(--control-min,2.75rem)]" onCheckedChange={on => account.theme?.onChange(on ? 'dark' : 'light')}><MoonIcon aria-hidden="true" />{text.darkMode}</DropdownMenuCheckboxItem>}
+        {account?.signOut && <><DropdownMenuSeparator /><DropdownMenuItem className="pointer-coarse:min-h-[var(--control-min,2.75rem)]" data-testid="account-sign-out" onClick={account.signOut}><LogOutIcon className="size-4" aria-hidden="true" />{text.signOut}</DropdownMenuItem></>}
       </DropdownMenuContent>
     </DropdownMenu>
   </SidebarMenuItem></SidebarMenu>;

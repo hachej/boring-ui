@@ -12,7 +12,7 @@ The `app-shell` block gives an app its navigation, one header per screen, an acc
 - `shell-sidebar-toggle` the collapse control sits in the sidebar header (top of the rail: next to the title expanded, alone as an icon when folded), never in the screen header on a wide screen; Ctrl+B still folds it and its name stays « Toggle Sidebar » (`data-slot="sidebar-trigger"`). `rail="hover"` has no toggle on a wide screen: the rail opens on hover and focus by itself (the phone sheet keeps its close control). The rule (approved by the designer): the toggle moves inside the sidebar only where the rail exists (md+); on a phone there is no rail while the sidebar is closed, so with `compactNav="sheet"` its opener stays in the screen header (and the open sheet carries the same control as its close). `registry/app-shell/nav.tsx`, `header.tsx`.
 - `shell-flat` the shell is flat: grey canvas and sidebar, one white `bg-card` content surface, no ring, border or shadow on the frame, no line under the header and no tint on the `ListDetail` detail pane. The kit declares no line at all: the phone tab bar's top Separator is deleted (it measured 0px in the pinned fixture, and the bar is told apart by its grey), the bar paints the rail's `bg-sidebar` (light and dark) and its items are inset 8px (`px-2`) from the screen edge, at 44px tap height; the sidebar edge is tonal; list row dividers belong to the app's own list; the vertical list/detail Separator measured 0px wide too and was removed. `ListDetail` takes an optional `empty` node for the detail pane while nothing is chosen. Its viewport values (`--app-shell-safe-top`, `--app-shell-safe-bottom`, `--app-shell-tabbar-min`, `--app-shell-sheet-max`) are tokens in the item's css, not arbitrary values. `registry/app-shell/`.
 - `shell-back` one Back manager for point mode, sheets, the agent layer and list-detail stacks. `registry/utils/back.ts`.
-- `shell-dense-targets` 44px touch targets under 640px or on a coarse pointer, opt out with `data-dense`. `registry/README.md` section Agent layer.
+- `shell-dense-targets` touch targets follow the `--control-h` / `--control-min` tokens (44px under 768px or on a coarse pointer, 36px on a fine pointer from md), `data-density="compact"` on a container forces 36px. `registry/README.md` section Agent layer.
 
 ## How to get to it (user POV)
 
@@ -29,7 +29,7 @@ Preconditions: `npm ci`, Chromium available, a built kit (`npm run build`).
 - **List and detail.** `shell-list-detail`: select a row; both panes wide, detail only on a phone.
 - **Account.** `shell-account`: open the avatar button (`account-button`), toggle the theme switch (`account-theme`).
 - **Toggle and flat shell.** `shell-sidebar-toggle`, `shell-flat`: at 1280px press the icon at the top of the left bar (or Ctrl+B); the bar folds to its icon rail and the toggle stays at its top. At 390px with `compactNav="sheet"` the header's leading button opens the sheet. `test/contracts/app-shell-render.impl.mjs` asserts the places, the absence of edge classes and at most one separator.
-- **Targets.** `shell-dense-targets`: measure buttons at 390px; none under 44px outside `data-dense`.
+- **Targets.** `shell-dense-targets`: measure buttons at 390px coarse: none under 44px outside `data-density="compact"`; at 1440 fine and in a 400px compact frame the controls are 36px (`test/contracts/control-height.test.mjs`).
 - **Proof.** An ARIA snapshot and a screenshot per width under `.cache/evidence/<journey>/`, tagged with the ID.
 
 ## Gotchas
