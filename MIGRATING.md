@@ -1,5 +1,6 @@
 # Unreleased
 
+- **`--input` is a visible control edge (`theme` item).** `--input` is now `color-mix(in oklab, var(--border) 65%, var(--foreground))` in light and 75% in dark (was `var(--border)`), so a field edge reaches 3:1 on card and on canvas (was 1.4 to 1.7:1). `--border` is unchanged. Fields in apps using the kit's theme get darker; apps that override `--input` are unaffected. Re-run `shadcn add` for `theme`.
 - **Status text on its soft fill reaches 4.5:1 (`theme` item).** `success-soft-foreground`, `warning-soft-foreground` and `info-soft-foreground` are now `color-mix(in oklab, var(--status) 75%, var(--foreground))` in light and 55% in dark (were plain `var(--status)`), and `destructive-soft-foreground` is `color-mix(in oklab, var(--destructive) 85%, var(--foreground))` in both modes. Warning in light was 3.38:1 on its soft fill; every status now measures 4.5:1 or more in light and dark. Re-run `shadcn add` for `theme`; the text is slightly darker in light and lighter in dark.
 
 # Migrating to 0.4.62
