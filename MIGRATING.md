@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.61
+
 - **Waiting question and approval look flat.** A single `QuestionCard` now renders through `InlineQuestion` (a soft warning tint instead of a bordered card); `pi-chat-question` depends on `inline-question`, so re-run `shadcn add` for it. A form of several questions is a flat tint too, and `ApprovalCard` a muted row instead of an outline row. Test ids, props and answers are unchanged. `InlineQuestion` gains `maxOptions`, `freeText`, `disabled` and `notice`.
 
 # Migrating to 0.4.60
