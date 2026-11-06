@@ -22,6 +22,8 @@ export interface ListDetailProps {
   readonly detail: ReactNode | null;
   /** Clears the selection and replaces the URL: called by compact Back and by the header's « ← » (which goes through the browser's Back). */
   readonly onBack: () => void;
+  /** Wide screens: what the detail pane shows while nothing is selected (centred, e.g. a muted line « Choisissez une consultation »). Default: nothing. */
+  readonly empty?: ReactNode;
   /** The detail's header title when compact (default: the screen's own). */
   readonly title?: string;
   /** Wide screens only: the list pane can fold to a narrow rail (`railWidth`), with a toggle on its edge. Give `list` as a function to render the rail's content. Default: fixed 20rem, no toggle. */
@@ -40,7 +42,7 @@ export function listDetailView(compact: boolean, detail: ReactNode | null): 'lis
   return !compact ? 'both' : detail === null ? 'list' : 'detail';
 }
 
-export function ListDetail({ list, detail, onBack, title, collapsible, collapsed: controlled, onCollapsedChange, railWidth = '3rem', labels = { collapse: 'Collapse the list', expand: 'Expand the list' } }: ListDetailProps) {
+export function ListDetail({ list, detail, empty, onBack, title, collapsible, collapsed: controlled, onCollapsedChange, railWidth = '3rem', labels = { collapse: 'Collapse the list', expand: 'Expand the list' } }: ListDetailProps) {
   const compact = useIsCompact();
   const [own, setOwn] = useState(false);
   const folds = Boolean(collapsible) && !compact;
@@ -61,6 +63,6 @@ export function ListDetail({ list, detail, onBack, title, collapsible, collapsed
       </div>}
       {typeof list === 'function' ? list({ collapsed }) : list}</div>
     {!compact && view !== 'detail' && <Separator orientation="vertical" />}
-    <div hidden={view === 'list'} data-testid="detail-pane" className={cn('min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain', detail === null && 'bg-muted/30')}>{detail}</div>
+    <div hidden={view === 'list'} data-testid="detail-pane" className={cn('min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain', detail === null && empty != null && 'grid place-items-center p-6 text-sm text-muted-foreground')}>{detail ?? empty}</div>
   </div>;
 }

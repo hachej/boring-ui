@@ -402,6 +402,26 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     }
   });
 
+  await t.test('the Markdown pane is a flat white card: its surface differs from the page under it, and the raw editor draws no box of its own (D-1734)', async t => {
+    const surface = await import('../fixtures/surface.mjs');
+    for (const initialMode of ['rich', 'source']) {
+      const d = await documents(t, 'text/markdown', '# Plan\n\nBody.\n');
+      const view = await mount(t, h(markdownPane.MarkdownPane, { controller: d.controller, title: 'Plan', initialMode, autosave: false }));
+      const frame = view.container.querySelector('[data-boring="viewer-frame"]');
+      assert.equal(surface.isDistinctSurface(frame), true, `${initialMode}: the pane paints ${surface.ownSurface(frame)} over ${surface.surfaceUnder(frame)}`);
+      assert.equal(surface.ownSurface(frame), 'bg-card', `${initialMode}: the white card, not the page's own surface`);
+      assert.deepEqual(surface.restingEdges(frame), [], `${initialMode}: no border, ring or shadow on the pane`);
+      const editor = view.container.querySelector('[data-boring="markdown-editor"]');
+      assert.deepEqual(surface.restingEdges(editor), [], `${initialMode}: no edge on the editor`);
+      const box = view.container.querySelector('textarea');
+      if (initialMode === 'source' && box) {
+        assert.deepEqual(surface.restingEdges(box), [], 'the raw editor is no second bordered box');
+        assert.equal(surface.ownSurface(box), 'transparent', 'it paints no surface of its own, so it equals the pane\'s white');
+        assert.equal(/(?:^|\s)focus-visible:ring-\d/.test(box.getAttribute('class')), true, 'the keyboard focus ring stays');
+      }
+    }
+  });
+
   await t.test('the Markdown pane keeps tools in its real menu; Refresh never drops unsaved edits; unsafe documents stay in source', async t => {
     const d = await documents(t, 'text/markdown', '# Plan\n\n- [x] done\n');
     let tools;

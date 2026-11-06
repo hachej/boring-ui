@@ -2192,6 +2192,12 @@
           ".app-shell :where(h2)": {
             "margin": "0",
             "font": "inherit"
+          },
+          ".app-shell": {
+            "--app-shell-safe-top": "env(safe-area-inset-top)",
+            "--app-shell-safe-bottom": "env(safe-area-inset-bottom)",
+            "--app-shell-tabbar-min": "calc(3.5rem + env(safe-area-inset-bottom))",
+            "--app-shell-sheet-max": "85dvh"
           }
         },
         "@layer utilities": {

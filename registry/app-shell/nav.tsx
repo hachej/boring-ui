@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent, ReactNode } from 'react';
 import { EllipsisIcon, SparklesIcon } from '../_shared/icons';
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarSeparator, useSidebar } from '@/components/ui/sidebar';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarSeparator, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -88,7 +88,7 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
   </Button>;
   const Plus = overflow.length ? (inOverflow?.icon ?? EllipsisIcon) : undefined;
   return <nav ref={bar} role="tablist" aria-label={text.tabs} data-testid="tabbar" data-feedback-ignore="" onKeyDown={arrows}
-    className="relative z-(--app-shell-z-tabs) box-border flex min-h-[calc(3.5rem+env(safe-area-inset-bottom))] shrink-0 bg-background pb-[env(safe-area-inset-bottom)]">
+    className="relative z-(--app-shell-z-tabs) box-border flex min-h-(--app-shell-tabbar-min) shrink-0 bg-card pb-(--app-shell-safe-bottom)">
     <Separator className="absolute inset-x-0 top-0" />
     {tabs.map(tab)}
     {Plus && <>
@@ -132,7 +132,8 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
   const sidebar = <Sidebar collapsible="icon" variant="inset" data-testid="app-sidebar">
     {/* The phone sheet is portaled out of the shell root, so the `.app-shell` reset would not reach its buttons: this wrapper carries it (`contents`: no box of its own). */}
     <div className="app-shell contents">
-    <SidebarHeader><p data-testid="sidebar-title" className="m-0 truncate px-2 py-1 text-sm font-semibold group-data-[collapsible=icon]:hidden">{title}</p></SidebarHeader>
+    {/* The one toggle: title and button expanded, the button alone on the icon rail, and « close » inside the phone sheet. No hover expand: the header never carries a second one. */}
+    <SidebarHeader className="flex-row items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center"><p data-testid="sidebar-title" className="m-0 min-w-0 truncate px-2 py-1 text-sm font-semibold group-data-[collapsible=icon]:hidden">{title}</p><SidebarTrigger /></SidebarHeader>
     <SidebarContent>
       {/* Without the screen's own content, one group in placed order; with it, the before items above it and the rest below. */}
       {items.length > 1 && own != null && navGroup(before, 'shrink-0', 'nav-before')}

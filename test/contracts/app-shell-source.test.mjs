@@ -306,7 +306,7 @@ test('ListDetail: expanded shows a 20rem list and the detail with no history ent
   assert.match(pane('list').className, /\bw-80\b/, 'the list pane is 20rem');
   assert.equal(pane('list').nextElementSibling?.dataset.slot, 'separator', 'the host Separator divides the panes');
   assert.equal(pane('list').nextElementSibling?.getAttribute('aria-orientation') ?? pane('list').nextElementSibling?.dataset.orientation, 'vertical');
-  assert.match(pane('detail').className, /bg-muted\/30/, 'an empty detail pane is muted');
+  assert.doesNotMatch(pane('detail').className, /bg-muted/, 'an empty detail pane carries no grey tint: the flat card is the one surface (D-1734)');
   await render(1280, h('p', null, 'detail'));
   assert.equal(entries(), start, 'selecting a row when expanded adds no history entry');
   assert.equal(pane('list').hasAttribute('hidden') || pane('detail').hasAttribute('hidden'), false, 'both panes show');
@@ -557,4 +557,13 @@ test('agent-target registry source is listed and equals the shipped item', () =>
 test('the shell gives an agent with feedback the card of a sent report, and a host may replace it', () => {
   const layer = readFileSync(`${root}registry/app-shell/agent-layer.tsx`, 'utf8');
   assert.match(layer, /spec\.feedback && !spec\.chatProps\?\.sentContent \? \{ sentContent: sentFeedbackContent \}/);
+});
+
+// D-1734: no arbitrary values in the shell. ARBITRARY is a copy of the rule in boring-factory's design-check.mjs (design-tokens-only; a
+// cross-repo import is not possible here), widened with the layout utilities the registry README's app profile also flags
+// (env()/calc()/dvh brackets on padding, margin, size and min/max). Update the copy when the factory's rule changes.
+test('no file of registry/app-shell carries an arbitrary bracket value (the factory\'s design-tokens-only rule, copied)', () => {
+  const ARBITRARY = /(?<![\w-])(?:[\w-]+:)*(?:(?:text|rounded(?:-[a-z]{1,2})?|shadow)-\[[^\]\s]+\]|(?:p[trblxy]?|(?:min-|max-)?h)-\[(?:env|calc|\d+dvh)[^\]\s]*\])/g;
+  const hits = files.filter(name => name.endsWith('.tsx')).flatMap(name => source(name).split('\n').flatMap((line, index) => (line.match(ARBITRARY) ?? []).map(found => `${name}:${index + 1} ${found}`)));
+  assert.deepEqual(hits, []);
 });

@@ -59,7 +59,7 @@ export function AccountChoices({ account, improve, text, done }: { readonly acco
       <div className="min-w-0"><p className="m-0 truncate font-medium">{account.name}</p>{account.email && <p className="m-0 truncate text-xs text-muted-foreground">{account.email}</p>}</div>
     </div>}
     {/* C1: the first item, 52px on the muted fill, the speech bubble with a plus (icon 20), 15/650. */}
-    {improve && <Button variant="secondary" size="lg" data-testid="account-improve" className={`${SHEET_ROW} h-13`} style={IMPROVE_ROW} onClick={choose(() => layer.open('improve'))}><MessageSquarePlusIcon data-icon="inline-start" className="size-5" aria-hidden="true" /><span className="text-[0.9375rem] font-pm-title">{improve}</span></Button>}
+    {improve && <Button variant="secondary" size="lg" data-testid="account-improve" className={`${SHEET_ROW} h-13`} style={IMPROVE_ROW} onClick={choose(() => layer.open('improve'))}><MessageSquarePlusIcon data-icon="inline-start" className="size-5" aria-hidden="true" /><span className="text-base font-pm-title">{improve}</span></Button>}
     {account?.menu.map(entry => <Button key={entry.label} variant="ghost" size="lg" className={SHEET_ROW} onClick={choose(entry.onSelect)}>{entry.label}</Button>)}
     {account?.theme && <ThemeSwitch theme={account.theme} text={text} />}
     {account?.signOut && <Button variant="ghost" size="lg" data-testid="account-sign-out" className={SHEET_ROW} onClick={choose(account.signOut)}><LogOutIcon data-icon="inline-start" aria-hidden="true" />{text.signOut}</Button>}
