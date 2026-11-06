@@ -3309,7 +3309,27 @@
           "type": "registry:component",
           "target": "components/inline-question/inline-question.tsx"
         }
-      ]
+      ],
+      "css": {
+        "@layer utilities": {
+          "[data-slot=\"question-field\"] [data-slot=\"input-group\"]": {
+            "background-color": "var(--card)"
+          },
+          "@media (width < 768px), (pointer: coarse)": {
+            "[data-slot=\"question-field\"] [data-slot=\"input-group\"]": {
+              "height": "2.75rem"
+            },
+            "[data-slot=\"question-field\"] [data-slot=\"input-group-addon\"]": {
+              "padding-block": "0"
+            },
+            "[data-slot=\"question-field\"] [data-testid=\"question-submit\"]": {
+              "width": "2.75rem",
+              "height": "2.75rem",
+              "margin-block": "-1px"
+            }
+          }
+        }
+      }
     },
     {
       "name": "status-narrative",

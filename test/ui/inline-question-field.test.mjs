@@ -3,7 +3,7 @@
 // same --card fill). Layout and the 44px target are shown by the screenshots in the PR (evidence/d-1744), not here. Fictional text only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 
@@ -65,11 +65,18 @@ test('InlineQuestion free text is one input group with a trailing Answer icon bu
   // The same edge as the form's fields: the form's Input draws `border-input` on `bg-card` itself; the group must draw the same edge and fill.
   const fieldGroup = element.querySelector('[data-slot=input-group]');
   const wrap = fieldGroup.closest('form');
-  assert.equal(has(fieldGroup, 'border-input') && has(wrap, '[&_[data-slot=input-group]]:bg-card'), true, 'the single field has the --input edge (the primitive\'s own) on --card (set by the form, not by restyling the primitive)');
-  assert.equal(has(wrap, 'dark:[&_[data-slot=input-group]]:bg-card'), true, 'dark fill is --card too (the group\'s own dark:bg-input/30 would be translucent)');
-  assert.equal(has(wrap, 'pointer-coarse:[&_[data-slot=input-group]]:h-11') && has(wrap, 'pointer-coarse:[&_button]:size-11') && has(wrap, 'pointer-coarse:[&_button]:-my-px') && has(wrap, 'pointer-coarse:[&_[data-slot=input-group-addon]]:py-0'), true, 'a coarse pointer at md+ fits the group to the 44px button');
-  assert.equal(has(wrap, 'max-md:[&_[data-slot=input-group]]:h-11') && has(wrap, 'max-md:[&_button]:size-11'), true, '44px group and button at touch');
-  assert.equal(tokens(fieldGroup).some(name => /^(dark:)?border-(?!input$)[a-z]/.test(name) && !name.startsWith('border-b') && !name.startsWith('border-t') && !name.startsWith('border-l') && !name.startsWith('border-r')), false, 'and no other edge colour');
+  assert.equal(has(fieldGroup, 'border-input'), true, 'the single field has the --input edge (the primitive\'s own)');
+  assert.equal(wrap.getAttribute('data-slot'), 'question-field', 'the form carries the marker the item CSS is scoped by');
+  assert.equal(tokens(wrap).some(name => name.includes('[&')), false, 'and no arbitrary descendant variants: the kit styles it through the item css');
+  // The fill and the 44px fit are the item's CSS in registry.json (what an app receives), not classes on the primitives.
+  const css = JSON.parse(readFileSync(new URL('../../registry.json', import.meta.url), 'utf8')).items.find(item => item.name === 'inline-question').css;
+  const fill = css['@layer utilities']['[data-slot="question-field"] [data-slot="input-group"]'];
+  assert.equal(fill['background-color'], 'var(--card)', 'fill is --card in light and dark; the selector (0,2,0) beats the group\'s dark:bg-input/30 in the same layer');
+  const touch = css['@layer utilities']['@media (width < 768px), (pointer: coarse)'];
+  assert.equal(JSON.stringify(touch['[data-slot="question-field"] [data-slot="input-group"]']), JSON.stringify({ height: '2.75rem' }), 'group 44px under md or on a coarse pointer');
+  assert.equal(touch['[data-slot="question-field"] [data-slot="input-group-addon"]']['padding-block'], '0', 'addon without vertical padding');
+  const submit = touch['[data-slot="question-field"] [data-testid="question-submit"]'];
+  assert.equal(submit.width === '2.75rem' && submit.height === '2.75rem', true, 'submit 44px');
   await draw(createElement(QuestionCard, { call: { type: 'toolCall', id: 'c', name: 'ask_user', arguments: { question: 'Two questions', questions: [{ question: 'Which?', options: ['a', 'b'] }] } }, answer: async () => ({ kind: 'answered' }), questionId: 'q' }));
   const formInput = element.querySelector('[data-testid=question-input]');
   assert.equal(has(formInput, 'border-input'), true, 'the form field draws the same --input edge (its fill is the primitive\'s own)');
