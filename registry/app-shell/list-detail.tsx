@@ -8,7 +8,6 @@ import { useContext, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ChevronsLeftIcon, ChevronsRightIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { cn } from '../utils/utils';
 import { ScreenActiveContext } from './agent-context';
 import { useBackLayer } from '../utils/back';
@@ -62,7 +61,6 @@ export function ListDetail({ list, detail, empty, onBack, title, collapsible, co
         </Button>
       </div>}
       {typeof list === 'function' ? list({ collapsed }) : list}</div>
-    {!compact && view !== 'detail' && <Separator orientation="vertical" />}
-    <div hidden={view === 'list'} data-testid="detail-pane" className={cn('min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain', detail === null && empty != null && 'grid place-items-center p-6 text-sm text-muted-foreground')}>{detail ?? empty}</div>
+    <div hidden={view === 'list'} data-testid="detail-pane" className={cn('min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain', view !== 'list' && detail === null && empty != null && 'grid place-items-center p-6 text-sm text-muted-foreground')}>{detail ?? empty}</div>
   </div>;
 }

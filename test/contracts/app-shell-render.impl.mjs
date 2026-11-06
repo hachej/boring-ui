@@ -1037,6 +1037,22 @@ test('the shell is flat: no ring, border or shadow on the frame, and at most one
   }
 });
 
+test('ListDetail compact, nothing chosen: the hidden detail pane carries no display utility and `empty` is not laid out beside the list', async t => {
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const { ListDetail } = await bundle('list-detail.tsx');
+  const window = dom(t, 390);
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => root.render(h(ListDetail, { list: h('p', null, 'liste'), detail: null, empty: h('p', { 'data-testid': 'empty' }, 'Choisissez'), onBack() {} })));
+  const pane = container.querySelector('[data-testid=detail-pane]');
+  assert.equal(pane.hasAttribute('hidden'), true, 'the detail pane is hidden');
+  assert.equal(/(^|\s)(grid|flex|block|inline-flex|inline-block|contents)(\s|$)/.test(pane.className), false, `a display utility on the hidden pane (${pane.className})`);
+  assert.equal(container.querySelector('[data-testid=list-detail]').getAttribute('data-view'), 'list');
+  await act(async () => root.unmount());
+});
+
 test('ListDetail: `empty` fills the detail pane while nothing is chosen; the pane carries no grey tint', async t => {
   const { createElement: h, act } = await import('react');
   const { createRoot } = await import('react-dom/client');

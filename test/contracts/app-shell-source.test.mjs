@@ -304,8 +304,7 @@ test('ListDetail: expanded shows a 20rem list and the detail with no history ent
   await render(1280, null);
   assert.equal(container.firstChild.getAttribute('data-view'), 'both');
   assert.match(pane('list').className, /\bw-80\b/, 'the list pane is 20rem');
-  assert.equal(pane('list').nextElementSibling?.dataset.slot, 'separator', 'the host Separator divides the panes');
-  assert.equal(pane('list').nextElementSibling?.getAttribute('aria-orientation') ?? pane('list').nextElementSibling?.dataset.orientation, 'vertical');
+  assert.equal(pane('list').nextElementSibling === pane('detail'), true, 'no line between the panes: the vertical Separator rendered 0px wide in the fixture and is gone (D-1734)');
   assert.doesNotMatch(pane('detail').className, /bg-muted/, 'an empty detail pane carries no grey tint: the flat card is the one surface (D-1734)');
   await render(1280, h('p', null, 'detail'));
   assert.equal(entries(), start, 'selecting a row when expanded adds no history entry');

@@ -20,7 +20,7 @@ import type { ViewerLabels } from '../viewer-frame/viewer-window';
 
 /** Flat pane (D-1734): the raw editor is the page itself on the pane's white card, not a second bordered box. The shadcn Textarea's border and shadow go; its focus ring stays, drawn inside so the pane's edge never clips it. */
 function PaneTextarea({ className, ...props }: ComponentProps<typeof editorControls.textarea>) {
-  return <editorControls.textarea className={cn('rounded-none border-0 bg-transparent dark:bg-transparent px-6 py-6 shadow-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring', className)} {...props} />;
+  return <editorControls.textarea className={cn('rounded-none border-transparent bg-transparent dark:bg-transparent px-6 py-6 shadow-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring', className)} {...props} />;
 }
 const paneControls = { ...editorControls, textarea: PaneTextarea };
 
