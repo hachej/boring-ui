@@ -23,6 +23,19 @@ test('other classes are not mistaken for it', () => {
   assert.deepEqual(lines('const a = <span className="font-monospace text-mono --font-mono font-semibold" />;'), []);
 });
 
+test('the important modifier is still font-mono', () => {
+  assert.deepEqual(lines('const a = <span className="font-mono! text-xs" />;'), [1]);
+  assert.deepEqual(lines('const a = <span className="!font-mono" />;'), [1]);
+  assert.deepEqual(lines('const a = <span className="md:hover:!font-mono" />;'), [1]);
+});
+
+test('a descendant target that reaches only code is allowed; any other target is refused', () => {
+  for (const tag of ['code', 'pre', 'kbd', 'samp']) assert.deepEqual(lines(`const a = <div className="[&_${tag}]:font-mono [&>${tag}]:font-mono!" />;`), []);
+  assert.deepEqual(lines('const a = <div className="[&_span]:font-mono" />;'), [1]);
+  assert.deepEqual(lines('const a = <div className="[&_code]:font-mono *:font-mono" />;'), [1]);
+  assert.deepEqual(lines('const a = <div className="[&_code_span]:font-mono" />;'), [1]);
+});
+
 test('the kit passes', () => {
   assert.deepEqual(checkMono(), []);
 });

@@ -40,7 +40,7 @@ export function PendingVoiceBubble({ pending }: PendingVoiceBubbleProps) {
   if (!pending) return null;
   const failed = pending.phase === 'transcribe-failed' || pending.phase === 'upload-failed';
   const blocked = pending.phase === 'blocked' || pending.phase === 'unconfirmed';
-  return <Message align="end" data-testid="voice-pending" data-voice-id={pending.id} data-state={pending.phase}><MessageContent><Bubble variant="muted" align="end" className={failed || blocked ? 'w-full max-w-full' : undefined}><BubbleContent>
+  return <Message align="end" data-testid="voice-pending" data-voice-id={pending.id} data-state={pending.phase}><MessageContent><Bubble variant="secondary" align="end" className={failed || blocked ? 'w-full max-w-full' : undefined}><BubbleContent>
     <div role={failed ? 'alert' : 'status'} className="flex items-center gap-2">
       {!failed && !blocked && <Spinner aria-hidden="true" />}
       {Number.isFinite(pending.seconds) && pending.seconds > 0 && <span data-testid="voice-pending-duration">{voiceClock(pending.seconds)}</span>}

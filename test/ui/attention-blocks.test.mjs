@@ -32,6 +32,7 @@ export const html = {
   questionAttention: () => renderToStaticMarkup(h(InlineQuestion, { id: 'p', kind: 'question', text: 'Day 30 or day 45?', options: ['Day 30', 'Day 45'], tone: 'attention', onAnswer: on, onReplyInChat: on })),
   doneQuestionAttention: () => renderToStaticMarkup(h(InlineQuestion, { id: 'p', kind: 'question', text: 'Day 30 or day 45?', answered: 'Day 45', tone: 'attention', onAnswer: on })),
   doneQuestion: () => renderToStaticMarkup(h(InlineQuestion, { id: 'p', kind: 'question', text: 'Day 30 or day 45?', answered: 'Day 45', onAnswer: on })),
+  narrAt: at => renderToStaticMarkup(h(StatusNarrative, { segments: ['x'], at })),
   narr: () => renderToStaticMarkup(h(StatusNarrative, { segments: ['1 agent works on ', { label: 'the supplier import', task: 'D-1511' }, '. Nothing else is open.'], at: '2 min ago', by: 'router', needsYou: 3, onOpen: on, onRefresh: on })),
   narrBare: () => renderToStaticMarkup(h(StatusNarrative, { segments: ['All quiet. ', { label: 'Compta', app: 'compta' }] })),
   narrOne: () => renderToStaticMarkup(h(StatusNarrative, { segments: ['x'], needsYou: 1 })),
@@ -178,10 +179,19 @@ test('in the chat the waiting question tints with the --chat-* tokens, so a host
   assert.doesNotMatch(readFileSync(join(root, 'registry/pi-chat-question/question-card.tsx'), 'utf8'), /\bbg-warning-soft|\btext-warning-soft-foreground/, 'the form uses the --chat-* tokens too');
 });
 
-test('status narrative never fetches or reads a clock', async () => {
+test('status narrative never fetches; a string `at` reads no clock, a Date reads it only to decide on the year', async () => {
   const { readFileSync } = await import('node:fs');
   const source = readFileSync(join(root, 'registry/status-narrative/status-narrative.tsx'), 'utf8');
-  assert.doesNotMatch(source, /\bfetch\s*\(|XMLHttpRequest|useEffect|localStorage|Date\.now|new Date/);
+  assert.doesNotMatch(source, /\bfetch\s*\(|XMLHttpRequest|useEffect|localStorage|Date\.now/);
+  const RealDate = globalThis.Date; let reads = 0;
+  class Counted extends RealDate { constructor(...args) { if (args.length === 0) reads += 1; super(...args); } static now() { reads += 1; return RealDate.now(); } }
+  globalThis.Date = Counted;
+  try {
+    html.narr();
+    assert.equal(reads, 0, 'a string `at` (or none) reads no clock');
+    html.narrAt(new Date('2026-11-06T09:00:00'));
+    assert.equal(reads, 1, 'a Date reads the clock once, for the current year');
+  } finally { globalThis.Date = RealDate; }
 });
 
 test('a status narrative link is an inline text link: no padding, height or leading, underlined, in the link colour', () => {

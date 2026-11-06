@@ -51,7 +51,7 @@ test('messageStyle: default is unchanged; messaging gives bubbles, tails on the 
     await draw(rows);
     assert.equal(all('[data-testid=bubble-tail]').length, 0);
     assert.equal(all('[data-testid=message-time]').length, 0);
-    assert.equal(q('[data-row-id=u1] [data-slot=bubble]').dataset.variant, 'muted');
+    assert.equal(q('[data-row-id=u1] [data-slot=bubble]').dataset.variant, 'secondary');
     assert.equal(q('[data-row-id=a1] [data-slot=bubble]').dataset.variant, 'ghost');
   });
 
@@ -59,7 +59,7 @@ test('messageStyle: default is unchanged; messaging gives bubbles, tails on the 
     await draw(markLeads(rows), 'messaging');
     const bubble = id => q(`[data-row-id=${id}] [data-slot=bubble]`), tail = id => q(`[data-row-id=${id}] [data-testid=bubble-tail]`);
     assert.equal(bubble('u1').dataset.variant, 'default'); assert.equal(bubble('u1').dataset.align, 'end');
-    assert.equal(bubble('a1').dataset.variant, 'muted'); assert.equal(bubble('a1').dataset.align, 'start');
+    assert.equal(bubble('a1').dataset.variant, 'secondary'); assert.equal(bubble('a1').dataset.align, 'start');
     assert.equal(tail('u1')?.dataset.side, 'end'); assert.equal(tail('a1')?.dataset.side, 'start');
     assert.equal(tail('a2'), null, 'a second reply in the run has no tail'); assert.equal(tail('u3'), null);
     assert.equal(tail('u2')?.dataset.side, 'end'); assert.equal(tail('a3')?.dataset.side, 'start', 'a long pause starts a new run');

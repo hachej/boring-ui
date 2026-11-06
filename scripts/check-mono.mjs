@@ -15,8 +15,15 @@ export const MONO_TAGS = new Set(['code', 'kbd', 'pre', 'samp']);
 /** Files where the string `font-mono` is not a class. */
 export const MONO_EXEMPT = { 'registry/looks-viewer/looks.ts': 'CSS variable names of the shadcn shape, not classes' };
 const SOURCE = /\.(tsx|ts|jsx|js|mjs)$/;
-const isMonoToken = token => token.split(':').pop() === 'font-mono';
-const hasMono = text => text.split(/\s+/).some(isMonoToken);
+/** A token's variants and utility, split at the colons outside brackets (`[&_code]:font-mono`, `md:font-mono!`). */
+const parts = token => token.split(/:(?![^[]*\])/);
+const bare = utility => utility.replace(/^!/, '').replace(/!$/, '');
+/** A descendant variant that reaches only code elements (`[&_code]:`, `[&>pre]:`, `[&_kbd]:`, `[&_samp]:`) styles code, so it is allowed. */
+const CODE_TARGET = /^\[&[\s_>]*(code|pre|kbd|samp)\]$/;
+const isMonoToken = token => { const all = parts(token); return bare(all[all.length - 1]) === 'font-mono'; };
+const isCodeTarget = token => parts(token).slice(0, -1).some(variant => CODE_TARGET.test(variant));
+const monoTokens = text => text.split(/\s+/).filter(isMonoToken);
+const hasMono = text => monoTokens(text).some(token => !isCodeTarget(token));
 
 /** Violations in one source text: [{ line, tag, reason }]. */
 export function monoViolations(text, file = 'file.tsx') {

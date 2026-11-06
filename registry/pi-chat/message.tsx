@@ -188,7 +188,7 @@ interface VoiceBubbleProps {
 /** Voice messages show their transcript by default; the retained audio player is an explicit presentation choice. */
 export function VoiceBubble({ replay = false, ...props }: VoiceBubbleProps) {
   const { labels } = useChatText();
-  return replay ? <VoiceReplayBubble {...props} /> : <Bubble variant="muted" align={props.align ?? 'end'} data-testid="voice-bubble"><BubbleContent data-testid="user-text" className="whitespace-pre-wrap">{props.transcript ?? <span data-testid="voice-transcript-unavailable">{labels.voiceTranscriptUnavailable}</span>}</BubbleContent></Bubble>;
+  return replay ? <VoiceReplayBubble {...props} /> : <Bubble variant="secondary" align={props.align ?? 'end'} data-testid="voice-bubble"><BubbleContent data-testid="user-text" className="whitespace-pre-wrap">{props.transcript ?? <span data-testid="voice-transcript-unavailable">{labels.voiceTranscriptUnavailable}</span>}</BubbleContent></Bubble>;
 }
 
 /** Retained audio is read only on Play, through the same authorized workspace preview as file cards. */
@@ -242,7 +242,7 @@ function VoiceReplayBubble({ path, transcript, preview, audioUrl, align = 'end' 
     } catch { if (!abort.signal.aborted) setFailed(true); }
     finally { if (work.current === abort && !abort.signal.aborted) { loadingRequest.current = false; setLoading(false); } }
   };
-  return <Bubble variant="muted" align={align} data-testid="voice-bubble"><BubbleContent>
+  return <Bubble variant="secondary" align={align} data-testid="voice-bubble"><BubbleContent>
     <div className="flex items-center gap-2">
       <Button variant="ghost" size="icon" data-testid="voice-play" aria-label={playing ? labels.voicePause : labels.voicePlay} disabled={loading || (!preview && !audioUrl)} onClick={() => { void toggle(); }}>
         {loading ? <Spinner data-icon="inline-start" aria-hidden="true" /> : playing ? <PauseIcon data-icon="inline-start" aria-hidden="true" /> : <PlayIcon data-icon="inline-start" aria-hidden="true" />}
@@ -266,9 +266,9 @@ function VoiceReplayBubble({ path, transcript, preview, audioUrl, align = 'end' 
  * A text part of a sent message. Its `uploads/` mentions become file cards above the bubble and leave the text; the message content keeps
  * them (only what is drawn changes).
  */
-/** `variant` picks the bubble: `muted` (the chat's user bubble) or `default` (the theme's primary, used for my own messages in a shared chat). */
+/** `variant` picks the bubble: `secondary` (the chat's user bubble: --secondary on the --card panel), `muted` (the older grey, still accepted) or `default` (the theme's primary, used for my own messages in a shared chat). */
 /** `decoration` sits inside the Bubble before its content (a tail); `header` and `footer` inside the content, around the text (a quote, the time). */
-export function MessageText({ text, context, align = 'end', variant = 'muted', decoration, header, footer }: { readonly text: string; readonly context: Pick<RowContext, 'sentContent' | 'pieces' | 'openFile' | 'voiceReplay' | 'targetLabel'>; readonly align?: 'start' | 'end'; readonly variant?: 'muted' | 'default'; readonly decoration?: ReactNode; readonly header?: ReactNode; readonly footer?: ReactNode }) {
+export function MessageText({ text, context, align = 'end', variant = 'secondary', decoration, header, footer }: { readonly text: string; readonly context: Pick<RowContext, 'sentContent' | 'pieces' | 'openFile' | 'voiceReplay' | 'targetLabel'>; readonly align?: 'start' | 'end'; readonly variant?: 'secondary' | 'muted' | 'default'; readonly decoration?: ReactNode; readonly header?: ReactNode; readonly footer?: ReactNode }) {
   const framed = decoration !== undefined || header !== undefined || footer !== undefined;
   const wrap = (body: ReactNode) => <Bubble variant={variant} align={align}>{decoration}<BubbleContent data-testid="user-text" className={framed ? 'relative' : undefined}>{header}{body}{footer}</BubbleContent></Bubble>;
   const target = targetContent(text);
@@ -307,7 +307,7 @@ export function MessageText({ text, context, align = 'end', variant = 'muted', d
 /** A messenger's tail on the first bubble of a run. Its square part fills the bubble's top corner under the (positioned) content. */
 export function BubbleTail({ side }: { readonly side: 'start' | 'end' }) {
   return <svg data-testid="bubble-tail" data-side={side} aria-hidden="true" viewBox="0 0 22 14" width="22" height="14"
-    className={`pointer-events-none absolute top-0 ${side === 'end' ? '-end-2 -scale-x-100 fill-primary' : '-start-2 fill-muted'}`}><path d="M0 0H22V14H8V9C8 5 5 2 0 0Z" /></svg>;
+    className={`pointer-events-none absolute top-0 ${side === 'end' ? '-end-2 -scale-x-100 fill-primary' : '-start-2 fill-secondary'}`}><path d="M0 0H22V14H8V9C8 5 5 2 0 0Z" /></svg>;
 }
 /** Text whose last line leaves room for the time at the bottom right of the bubble (the spacer rides at the end of the last paragraph). */
 export const clockRoom = "[&_:is(p,li):last-child]:after:inline-block [&_:is(p,li):last-child]:after:w-14 [&_:is(p,li):last-child]:after:content-['']";
@@ -465,7 +465,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
                 ...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {}), ...(context.onCopy ? { onCopy: context.onCopy } : {}) });
               if (context.messageStyle !== 'messaging') return <Bubble key={part.key} variant="ghost"><BubbleContent>{text}</BubbleContent></Bubble>;
               const time = part === lastText ? isoAt(row.timestamp) : undefined;
-              return <Bubble key={part.key} variant="muted" align="start">{row.lead && part === firstText && <BubbleTail side="start" />}
+              return <Bubble key={part.key} variant="secondary" align="start">{row.lead && part === firstText && <BubbleTail side="start" />}
                 <BubbleContent data-testid="reply-text" className="relative"><div className={time ? clockRoom : undefined}>{text}</div>{time && <MessageClock at={time} tone="muted" />}</BubbleContent></Bubble>;
             }
             if (part.kind === 'thinking') return null; // reasoning is a step of an activity block

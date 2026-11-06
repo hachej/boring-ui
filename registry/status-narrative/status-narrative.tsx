@@ -19,7 +19,7 @@ export const statusNarrativeLabels: StatusNarrativeLabels = {
 export type StatusNarrativeProps = {
   /** The paragraph as parts, in order. Strings are shown as is; link parts become inline text links (anchors with `href="#"` and `preventDefault`, so they break across lines like text; exempt from the 44px rule) that call `onOpen`. */
   segments: readonly StatusSegment[];
-  /** When the status was made. A string is shown as is, already formatted by the host ("2 min ago", "on open"). A `Date` is shown short in the browser's locale ("6 Nov", "6 nov."), with the year added when it is not the current year, as a `<time>` whose title holds the full date and time. */
+  /** When the status was made. A string is shown as is, already formatted by the host ("2 min ago", "on open"). A `Date` is shown short in the browser's locale ("6 Nov", "6 nov."), with the year added when it is not the current year, as a `<time>` whose title holds the full date and time. The text follows the browser's locale and timezone, so a server-rendered host should pass a string instead (a `Date` rendered on the server and again in the browser can differ; the `<time>` suppresses the hydration warning, not the difference). */
   at?: string | Date;
   /** What wrote it, small, after the text ("router", "meta agent"). */
   by?: string;
@@ -41,7 +41,7 @@ function ShortDate({ date }: { date: Date }) {
   const sameYear = date.getFullYear() === new Date().getFullYear();
   const short = new Intl.DateTimeFormat(undefined, sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
   const full = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' }).format(date);
-  return <time dateTime={date.toISOString()} title={full} className="truncate">{short}</time>;
+  return <time suppressHydrationWarning dateTime={date.toISOString()} title={full} className="truncate">{short}</time>;
 }
 
 /** The status paragraph of a home or a chat: two or three sentences, links inside, the time and the author underneath. Flat, no border. */
@@ -49,7 +49,7 @@ export function StatusNarrative({ segments, at, by, needsYou, onOpen, onRefresh,
   const t = { ...statusNarrativeLabels, ...labels };
   const waiting = needsYou !== undefined && needsYou > 0;
   return (
-    <div className={cn('flex min-w-0 flex-col gap-2 rounded-(--radius) bg-muted p-3 text-sm', className)}>
+    <div className={cn('flex min-w-0 flex-col gap-2 rounded-(--radius) bg-card p-3 text-sm text-card-foreground', className)}>
       <p className="min-w-0 break-words">
         {segments.map((part, index) =>
           typeof part === 'string' ? (
