@@ -1,6 +1,9 @@
 # Unreleased
 
 - **Status text on its soft fill reaches 4.5:1 (`theme` item).** `success-soft-foreground`, `warning-soft-foreground` and `info-soft-foreground` are now `color-mix(in oklab, var(--status) 75%, var(--foreground))` in light and 55% in dark (were plain `var(--status)`), and `destructive-soft-foreground` is `color-mix(in oklab, var(--destructive) 85%, var(--foreground))` in both modes. Warning in light was 3.38:1 on its soft fill; every status now measures 4.5:1 or more in light and dark. Re-run `shadcn add` for `theme`; the text is slightly darker in light and lighter in dark.
+
+# Migrating to 0.4.62
+
 - **StatusNarrative links are inline text links (`status-narrative`, `theme`).** A link part with `onOpen` is now a plain underlined `<a href="#">` (default prevented) in the `text-link` colour with no padding or height, so it breaks across lines with the sentence on a phone instead of a boxed pill. The `theme` item gains `--link` (`color-mix(in oklab, var(--primary) 70%, var(--foreground))`, light and dark) and the `text-link` utility; re-run `shadcn add` for `theme` and `status-narrative`.
 - **Theme `--border` is stronger (`theme` item).** The published theme item now sets `--border` to `oklch(0.87 0 0)` in light and `oklch(1 0 0 / 16%)` in dark (was `oklch(0.91 0 0)` and `oklch(1 0 0 / 10%)`), matching the Factory app template. An app that installs or updates the theme sees stronger edges everywhere `--border` is used, including `--input` and `--sidebar-border`, which follow it. No other token changes.
 - **Alert has a contour (bundled primitives).** In the UI bundle (`shadcn/ui/alert.tsx`, built from main; not in the npm package), every Alert variant gets a 1px contour in its status colour (`border-border`, `border-success`, `border-warning`, `border-info`, `border-destructive`), keeping its soft fill. Apps can drop hand-added border classes on Alert.
