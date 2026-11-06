@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Status text on its soft fill reaches 4.5:1 (`theme` item).** `success-soft-foreground`, `warning-soft-foreground` and `info-soft-foreground` are now `color-mix(in oklab, var(--status) 75%, var(--foreground))` in light and 55% in dark (were plain `var(--status)`), and `destructive-soft-foreground` is `color-mix(in oklab, var(--destructive) 85%, var(--foreground))` in both modes. Warning in light was 3.38:1 on its soft fill; every status now measures 4.5:1 or more in light and dark. Re-run `shadcn add` for `theme`; the text is slightly darker in light and lighter in dark.
+
 # Migrating to 0.4.62
 
 - **StatusNarrative links are inline text links (`status-narrative`, `theme`).** A link part with `onOpen` is now a plain underlined `<a href="#">` (default prevented) in the `text-link` colour with no padding or height, so it breaks across lines with the sentence on a phone instead of a boxed pill. The `theme` item gains `--link` (`color-mix(in oklab, var(--primary) 70%, var(--foreground))`, light and dark) and the `text-link` utility; re-run `shadcn add` for `theme` and `status-narrative`.
