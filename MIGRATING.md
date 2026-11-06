@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Alert has a contour (bundled primitives).** In the UI bundle (`shadcn/ui/alert.tsx`, built from main; not in the npm package), default Alert gets a 1px `border-border` and destructive a 1px `border-destructive`, keeping its soft fill. `success`, `warning` and `info` are unchanged. Apps can drop hand-added border classes on Alert.
+
 # Migrating to 0.4.61
 
 - **Waiting question and approval look flat.** A single `QuestionCard` now renders through `InlineQuestion` (a soft warning tint instead of a bordered card); `pi-chat-question` depends on `inline-question`, so re-run `shadcn add` for it. A form of several questions is a flat tint too, and `ApprovalCard` a muted row instead of an outline row. Test ids, props and answers are unchanged. `InlineQuestion` gains `maxOptions`, `freeText`, `disabled` and `notice`.

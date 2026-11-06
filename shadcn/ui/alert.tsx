@@ -7,12 +7,12 @@ const alertVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-muted text-foreground",
+        default: "border border-border bg-muted text-foreground",
         success: "bg-success-soft text-foreground *:[svg]:text-success-soft-foreground",
         warning: "bg-warning-soft text-foreground *:[svg]:text-warning-soft-foreground",
         info: "bg-info-soft text-foreground *:[svg]:text-info-soft-foreground",
         destructive:
-          "bg-destructive-soft text-foreground *:[svg]:text-destructive-soft-foreground",
+          "border border-destructive bg-destructive-soft text-foreground *:[svg]:text-destructive-soft-foreground",
       },
     },
     defaultVariants: {
