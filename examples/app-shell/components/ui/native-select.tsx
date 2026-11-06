@@ -2,7 +2,7 @@
 // from https://ui.shadcn.com/r/styles/base-nova/. Used only to type-check and run registry blocks; consumers install their own.
 import * as React from "react"
 import { cn } from "@/lib/utils"
-import { ChevronDownIcon } from "lucide-react"
+import { ChevronDownIcon } from "../../../../registry/_shared/icons"
 
 type NativeSelectProps = Omit<React.ComponentProps<"select">, "size"> & {
   size?: "sm" | "default"
