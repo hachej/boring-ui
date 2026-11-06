@@ -225,14 +225,19 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   // New or fork is on its way: nothing may go to this conversation (D-1499).
   const leaving = conversations?.creating === true;
   // The list is refreshed slowly while idle (D-1638); a running turn can title or move its conversation, so refresh every 4 s meanwhile and once more when it ends.
+  // Only while the page is visible, and once on return; a host that already polls (`polling`) keeps its one clock.
   const reload = useRef(conversations?.reload);
   useLayoutEffect(() => { reload.current = conversations?.reload; });
-  const listed = conversations !== undefined;
+  const listed = conversations !== undefined, hostPolls = conversations?.polling === true;
   useEffect(() => {
     if (!listed || !working) return;
-    const timer = setInterval(() => { void reload.current?.().catch(() => {}); }, 4000);
-    return () => { clearInterval(timer); void reload.current?.().catch(() => {}); };
-  }, [listed, working]);
+    const page = globalThis.document, visible = () => page?.visibilityState !== 'hidden';
+    const refresh = () => { if (visible()) void reload.current?.().catch(() => {}); };
+    const timer = hostPolls ? undefined : setInterval(refresh, 4000);
+    const back = () => { if (!hostPolls) refresh(); };
+    page?.addEventListener('visibilitychange', back);
+    return () => { clearInterval(timer); page?.removeEventListener('visibilitychange', back); refresh(); };
+  }, [listed, working, hostPolls]);
   useCursorInOpened(textarea, conversations, composer, leaving, state.conversationId);
   const voiceRows = pendingVoice ?? voice.pending;
   const VoiceButton = voiceMessage?.Button, VoiceBubbleView = voiceMessage?.Bubble ?? NoVoiceBubble;

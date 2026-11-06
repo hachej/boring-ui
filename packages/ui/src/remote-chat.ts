@@ -291,16 +291,18 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     let lost = false;
     let value = source.first, started = false, settle!: (end: WatchEnd) => void, ended: WatchEnd | undefined;
     const closed = new Promise<WatchEnd>(resolve => { settle = resolve; });
+    let draining = false;
     const finish = (end: WatchEnd, served = false) => {
       if (ended) return;
       ended = end;
-      if (served && source.release) void source.release().finally(() => settle(end)); else { source.cancel(); settle(end); }
+      if (served && source.release) { draining = true; void source.release().finally(() => settle(end)); } else { source.cancel(); settle(end); }
     };
     const handle: Watch = {
       get value() { return linkImages(value); },
       closed,
       lost: () => lost,
-      stop: async () => { finish({ reason: 'stopped' }); return closed; },
+      // An explicit stop (the page hidden, the chat disposed) interrupts a draining served end; a served end nobody stops still drains without abort.
+      stop: async () => { if (draining) source.cancel(); else finish({ reason: 'stopped' }); return closed; },
       start: listener => {
         if (started) throw new Error('Watch already started');
         started = true;

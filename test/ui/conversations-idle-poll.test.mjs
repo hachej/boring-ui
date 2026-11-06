@@ -34,4 +34,14 @@ test('the conversations list is not polled every 4 s while idle, not at all whil
   assert.equal(calls, before, 'no call while the tab is hidden');
   visibility = 'visible'; await act(async () => { document.dispatchEvent(new window.Event('visibilitychange')); });
   assert.equal(calls, before + 1, 'one refresh when the tab is visible again');
+
+  // A return fires visibilitychange and then focus: one request, not two. A focus after a blur that never hid the page still refreshes.
+  visibility = 'hidden'; await act(async () => { document.dispatchEvent(new window.Event('visibilitychange')); });
+  const hiddenAt = calls;
+  visibility = 'visible';
+  await act(async () => { document.dispatchEvent(new window.Event('visibilitychange')); document.dispatchEvent(new window.Event('focus', { bubbles: true })); });
+  assert.equal(calls - hiddenAt, 1, `visibilitychange then focus on return: ${calls - hiddenAt} requests`);
+  await act(async () => { document.dispatchEvent(new window.Event('blur', { bubbles: true })); });
+  await act(async () => { document.dispatchEvent(new window.Event('focus', { bubbles: true })); });
+  assert.equal(calls - hiddenAt, 2, 'a focus after a blur without hiding refreshes once');
 });

@@ -169,12 +169,20 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
     let timer: ReturnType<typeof setInterval> | undefined;
     const stop = () => { clearInterval(timer); timer = undefined; };
     const start = () => { stop(); if (!hidden()) timer = setInterval(load, busy ? pollMs : idlePollMs); };
-    const resume = () => { if (hidden()) { stop(); return; } void load(); start(); };
+    // A return fires visibilitychange and then focus: one refresh for both. `fresh` is set by the refresh a return makes and cleared by the second event, by hiding, and by a window blur (so a focus after a plain blur still refreshes).
+    let fresh = false;
+    const resume = () => {
+      if (hidden()) { fresh = false; stop(); return; }
+      if (fresh) { fresh = false; start(); return; }
+      fresh = true; void load(); start();
+    };
     start();
     page?.addEventListener('visibilitychange', resume);
     const refocus = (event: Event) => { if (event.target === globalThis || event.target === page) resume(); };
+    const blurred = (event: Event) => { if (event.target === globalThis || event.target === page) fresh = false; };
     globalThis.addEventListener?.('focus', refocus);
-    return () => { off = true; stop(); page?.removeEventListener('visibilitychange', resume); globalThis.removeEventListener?.('focus', refocus); };
+    globalThis.addEventListener?.('blur', blurred);
+    return () => { off = true; stop(); page?.removeEventListener('visibilitychange', resume); globalThis.removeEventListener?.('focus', refocus); globalThis.removeEventListener?.('blur', blurred); };
   }, [base, list, pollMs, idlePollMs, busy, activeId]);
   return useMemo(() => {
     if (!items) return undefined;
@@ -206,7 +214,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
       }
     };
     return {
-      items, activeId, creating, reload,
+      items, activeId, creating, reload, polling: busy,
       opened: composing ? undefined : opened,
       newFailed: failedNew && failedNew.at === activeId ? { typed: failedNew.typed } : undefined,
       newFailedSeen: () => setFailedNew(undefined),
@@ -234,7 +242,7 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
         await open('fork', { conversationId: from, at });
       },
     };
-  }, [items, activeId, creating, opened, composing, failedNew, base, call, reload, forget, markOpened, dropTyping, failNew]);
+  }, [items, activeId, creating, busy, opened, composing, failedNew, base, call, reload, forget, markOpened, dropTyping, failNew]);
 }
 
 /** Compatibility spelling retained for one release. */

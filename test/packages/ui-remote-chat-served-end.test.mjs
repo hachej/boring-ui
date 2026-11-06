@@ -39,3 +39,51 @@ test('a served session_closed end frame is not aborted or cancelled, and one new
   await watch.stop();
   await remote.close();
 });
+
+// An explicit stop (the page hidden, or the chat disposed) while a served end is draining aborts that drain at once; a new watch opens only after.
+for (const how of ['hidden', 'disposed']) test(`a ${how} page interrupts a draining served end, then opens one new watch`, async t => {
+  const page = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  Object.defineProperty(globalThis, 'document', { configurable: true, writable: true, value: page });
+  t.after(() => { if (saved) Object.defineProperty(globalThis, 'document', saved); else delete globalThis.document; });
+  const watches = [];
+  let open = 0, mostOpen = 0;
+  const fetch = async request => {
+    if (!request.url.includes('op=watch')) return Response.json({});
+    const record = { aborted: false, number: watches.length };
+    watches.push(record);
+    open += 1; mostOpen = Math.max(mostOpen, open);
+    let controller;
+    request.signal.addEventListener('abort', () => { record.aborted = true; open -= 1; try { controller.error(new Error('aborted')); } catch { /* closed */ } });
+    const body = new ReadableStream({
+      start(c) {
+        controller = c;
+        c.enqueue(line({ kind: 'view', view }));
+        // The host sends its end frame and then keeps the body open: the page drains it for up to 2 s.
+        if (record.number === 0) setTimeout(() => c.enqueue(line({ kind: 'end', reason: 'session_closed' })), 30);
+      },
+    });
+    return new Response(body, { headers: { 'content-type': 'application/x-ndjson' } });
+  };
+  const remote = await createRemoteChat({ endpoint, fetch, reconnect: { baseDelayMs: 10, maxDelayMs: 20 } });
+  const watch = await remote.conversation.watch();
+  watch.start(async () => {});
+  const until = async (ok, ms = 3000) => { const stop = Date.now() + ms; while (!ok() && Date.now() < stop) await new Promise(resolve => setTimeout(resolve, 10)); };
+  await new Promise(resolve => setTimeout(resolve, 150)); // the end frame arrived, the drain is waiting
+  const started = Date.now();
+  if (how === 'hidden') {
+    page.visibilityState = 'hidden'; page.dispatchEvent(new Event('visibilitychange'));
+    await until(() => watches[0].aborted, 1000);
+    assert.equal(watches[0].aborted, true, 'hiding the page aborts the draining response at once');
+    page.visibilityState = 'visible'; page.dispatchEvent(new Event('visibilitychange'));
+    await until(() => watches.length >= 2);
+    assert.equal(watches.length >= 2, true, 'the return opens a new watch');
+    assert.equal(mostOpen, 1, 'the old body is closed before the new one opens');
+  } else {
+    await watch.stop();
+    await until(() => watches[0].aborted, 1000);
+    assert.equal(watches[0].aborted, true, 'disposing aborts the draining response at once');
+  }
+  assert.ok(Date.now() - started < 1500, 'not after the 2 s drain wait');
+  await remote.close();
+});

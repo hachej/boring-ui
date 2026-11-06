@@ -127,8 +127,10 @@ export interface ConversationsConfig {
   /** The conversation New or fork just opened: once it is `activeId`, the cursor goes to its message box, on a computer. */
   readonly opened?: string | undefined;
   readonly openedSeen?: (() => string) | undefined;
-  /** Refreshes the list. `PiChat` calls it every 4 s while its turn runs and once at its end (the list itself refreshes slowly while idle). */
+  /** Refreshes the list. `PiChat` calls it every 4 s while its turn runs and once at its end, only while the page is visible (and once on return), unless `polling`. */
   readonly reload?: (() => Promise<void>) | undefined;
+  /** The list is already refreshed at the busy cadence (`useConversationsClient({ busy: true })`): `PiChat` adds no clock of its own. */
+  readonly polling?: boolean | undefined;
   /** New chat was refused or got no answer in time: the chat says so. `typed`: what the person typed meanwhile was dropped. */
   readonly newFailed?: { readonly typed: boolean } | undefined;
   /** The person closed that message. */
