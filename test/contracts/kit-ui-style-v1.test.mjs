@@ -44,9 +44,12 @@ function alertVariantClasses(variant) {
   return entry[1].split(/\s+/).filter(Boolean);
 }
 
-test('Alert default and destructive variants have a contour', () => {
+test('every Alert variant has a contour', () => {
   const expected = {
     default: ['border', 'border-border'],
+    success: ['border', 'border-success', 'bg-success-soft'],
+    warning: ['border', 'border-warning', 'bg-warning-soft'],
+    info: ['border', 'border-info', 'bg-info-soft'],
     destructive: ['border', 'border-destructive', 'bg-destructive-soft'],
   };
   for (const [variant, utilities] of Object.entries(expected)) {
