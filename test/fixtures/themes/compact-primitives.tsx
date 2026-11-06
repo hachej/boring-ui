@@ -24,6 +24,9 @@ function App() {
   return <main className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
     <h1 className="text-sm font-semibold">Bundled primitive defaults</h1>
     <p>Fictional workspace · direct shared sources · <span className="font-mono">D-1503</span></p>
+    <section className="flex flex-col gap-2" aria-label="Muted text contrast">
+      {(['background', 'card', 'muted'] as const).map(surface => <div key={surface} className={({ background: 'bg-background', card: 'bg-card', muted: 'bg-muted' })[surface]} data-testid={`neutral-surface-${surface}`}><FieldDescription data-testid={`neutral-copy-${surface}`}>Fictional secondary guidance</FieldDescription></div>)}
+    </section>
     <Card><CardHeader><CardTitle>Weekly marketing report</CardTitle><CardDescription>One surface, with no nested cards</CardDescription></CardHeader>
       <CardContent>Spend is flat; leads are down this week. This copy inherits the Card body default.</CardContent></Card>
     <section className="flex flex-col gap-2" aria-label="Buttons">

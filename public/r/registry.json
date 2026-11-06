@@ -110,7 +110,7 @@
           "secondary": "var(--muted)",
           "secondary-foreground": "var(--foreground)",
           "muted": "oklch(0.95 0 0)",
-          "muted-foreground": "color-mix(in oklab, var(--foreground) 55%, var(--background))",
+          "muted-foreground": "color-mix(in oklab, var(--foreground) 57%, var(--background))",
           "accent": "oklch(0.94 0 0)",
           "accent-foreground": "var(--foreground)",
           "destructive": "oklch(0.577 0.2 27)",

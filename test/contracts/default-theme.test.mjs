@@ -49,6 +49,8 @@ test('default theme source and published output expose the original surface, typ
       assert.notEqual(vars.border, 'transparent', 'hairlines remain');
       assert.match(vars['shadow-lg'], /0 10px/, 'floating elevation remains');
     }
+    assert.equal(light['muted-foreground'], 'color-mix(in oklab, var(--foreground) 57%, var(--background))', 'light secondary ink also contrasts on muted surfaces');
+    assert.equal(dark['muted-foreground'], 'color-mix(in oklab, var(--foreground) 62%, var(--background))', 'dark secondary ink is unchanged');
     assert.equal(dark.radius, undefined, 'shape is mode-independent');
     assert.equal(dark['font-sans'], undefined, 'fonts are mode-independent');
   }
