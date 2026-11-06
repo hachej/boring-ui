@@ -1,7 +1,11 @@
 // Grey on grey cannot return to PiChat (D-1733): the real PiChat rendered in happy-dom (empty, with messages and a tool block, with
 // attachments), every `bg-*` token class it carries resolved to the `theme` item's light and dark values (registry.json). The panel sits on
-// --card (never the canvas), and every other surface differs from the one it sits on, by at least 1.1:1. The composer field is the one
-// card-on-card surface: it is told apart by its --input edge, not by a fill. Needs no browser, so it runs in the required `tests` job.
+// --card and differs from the canvas it sits on (white over the designer's 0.97 grey is 1.09:1: the panel check is "differs", the 1.1:1
+// floor is for surfaces inside the panel). Every surface inside the panel differs from the one it sits on by at least 1.1:1, translucent
+// fills composited. The composer field is the one card-on-card surface: it is told apart by its --input edge, and its --card fill is
+// asserted in every state. A paint rule must not out-rank a state fill (hover, aria-expanded...) the primitive has: its selector's
+// specificity is compared with the state classes the element renders (an estimate of Tailwind's; the cascade itself needs a browser).
+// Needs no browser, so it runs in the required `tests` job.
 // Fictional text only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -39,7 +43,7 @@ const contrast = (a, b, mode) => ratio(encoded(value(a, mode)), encoded(value(b,
 
 /** The fill an element paints: `{ token, alpha }` from `bg-x` or `bg-x/NN` (`dark:` in dark), the bubble variant its parent hands down, or the block's own paint rules. */
 function paint(element, mode) {
-  const painted = paints.find(({ selector }) => element.matches(selector));
+  const painted = paints.filter(({ selector }) => element.matches(selector)).pop();
   if (painted) return { token: painted.token, alpha: 1 };
   const own = String(element.getAttribute('class') ?? '').split(/\s+/);
   const via = String(element.parentElement?.getAttribute('class') ?? '').split(/\s+/).filter(name => name.startsWith('*:data-[slot=bubble-content]:bg-')).map(name => name.replace('*:data-[slot=bubble-content]:', ''));
@@ -49,6 +53,24 @@ function paint(element, mode) {
   return (mode === 'dark' && pick('dark:')) || pick('');
 }
 const surface = (element, mode) => paint(element, mode)?.token;
+/** CSS specificity [ids, classes+attributes+pseudo-classes, types] of a selector, `:where()` counting nothing. */
+function specificity(selector) {
+  let rest = selector.replace(/:where\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)/g, ''); const attributes = rest.match(/\[[^\]]*\]/g)?.length ?? 0; rest = rest.replace(/\[[^\]]*\]/g, '');
+  const types = rest.split(/[\s>+~,]+/).filter(part => /^[a-z]/i.test(part)).length;
+  return [rest.match(/#[\w-]+/g)?.length ?? 0, attributes + (rest.match(/\.[\w-]+/g)?.length ?? 0) + (rest.match(/(?<!:):(?!:|where)[a-z-]+/g)?.length ?? 0), types];
+}
+const outranks = (a, b) => { for (let i = 0; i < 3; i += 1) if (a[i] !== b[i]) return a[i] > b[i]; return true; };
+/** The state fills an element's classes carry (`hover:bg-x`, `aria-expanded:bg-x`, `has-[...]:hover:bg-x`...), with an estimate of their specificity: one class, plus one per variant (two for `group-*` and `has-*`). */
+function stateFills(element, mode) {
+  const found = [];
+  for (const name of String(element.getAttribute('class') ?? '').split(/\s+/)) {
+    const parts = name.split(/:(?![^\[]*\])/); const variants = parts.slice(0, -1);
+    // `has-disabled` is left out: the field is card whenever its Send is disabled (an empty draft), by the designer's spec.
+    if (variants.length === 0 || !parts[parts.length - 1].startsWith('bg-') || variants.includes('dark') || variants.includes('has-disabled') || (variants.includes('[a]') && element.tagName !== 'A')) continue;
+    found.push({ name, specificity: [0, 1 + variants.reduce((sum, variant) => sum + (/^(group-|has-)/.test(variant) ? 2 : 1), 0), 0] });
+  }
+  return found;
+}
 /** The colour seen on an element's box: its fills composited over the ones under it, down to the canvas (--background), in sRGB as the browser paints it. */
 function seen(element, mode) {
   const chain = []; for (let up = element; up; up = up.parentElement) { const fill = paint(up, mode); if (fill) chain.unshift(fill); }
@@ -70,6 +92,10 @@ const FEEDBACK_ID = 'fb_' + 'abcdefghjkmnpqrs';
 const feedback = { entries: [message(1, { role: 'user', content: 'What did the reviewers say?', timestamp: 0 }),
   { id: 2, kind: 'message', byTaskId: 1, model: [assistant([{ type: 'toolCall', id: 'f1', name: 'feedback', arguments: { action: 'list' } }])] },
   { id: 3, kind: 'message', byTaskId: 1, model: [{ role: 'toolResult', toolCallId: 'f1', toolName: 'feedback', content: [{ type: 'text', text: JSON.stringify({ action: 'list', kind: 'available', items: [{ id: FEEDBACK_ID, title: 'The fictional heading is cut off', status: 'open', author: 'Mira', age: '2d', subject: 'Picnic page', anchors: [] }] }) }], isError: false, timestamp: 2 }, assistant([{ type: 'text', text: 'One note is open.' }])] }], docs: {} };
+const artifact = { schema: 'boring.artifact', version: 1, id: 'plan', title: 'Fictional plan', type: 'markdown', mediaType: 'text/markdown', target: { resource: { providerId: 'fictional', path: 'plan.md' }, view: { kind: 'published' } }, revision: 'r1' };
+const presented = { entries: [message(1, { role: 'user', content: 'Show the plan', timestamp: 0 }),
+  { id: 2, kind: 'message', byTaskId: 1, model: [assistant([{ type: 'toolCall', id: 'p', name: 'present', arguments: { path: 'plan.md' } }])] },
+  { id: 3, kind: 'message', byTaskId: 1, model: [{ role: 'toolResult', toolCallId: 'p', toolName: 'present', content: [{ type: 'text', text: JSON.stringify({ 'boring.artifact': true, artifact }) }], isError: false, timestamp: 2 }, assistant([{ type: 'text', text: 'Plan ready.' }])] }], docs: {} };
 const withAttachments = { entries: [message(1, { role: 'user', content: 'Voici @uploads/plan.pdf', timestamp: 0 })], docs: {} };
 
 test('PiChat surfaces: the panel is --card and no chat surface equals the one under it, light and dark', { timeout: 60000 }, async t => {
@@ -83,8 +109,8 @@ test('PiChat surfaces: the panel is --card and no chat surface equals the one un
   const { createElement, act } = await import('react'); const { createRoot } = await import('react-dom/client');
   const out = new URL('../../.cache/pi-chat-surfaces/', import.meta.url); mkdirSync(out, { recursive: true });
   const output = new URL('chat.mjs', out);
-  await build({ stdin: { contents: `export { PiChat } from './pi-chat/pi-chat.tsx'; export { ApprovalCard } from './pi-chat-approval/approval-card.tsx'; export { feedbackRenderTool } from './feedback/feedback-card.tsx';`, resolveDir: new URL('../../registry/', import.meta.url).pathname, loader: 'tsx' }, outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', loader: { '.css': 'empty' }, plugins: [{ name: 'file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
-  const { PiChat, ApprovalCard, feedbackRenderTool } = await import(output.href);
+  await build({ stdin: { contents: `export { PiChat } from './pi-chat/pi-chat.tsx'; export { ApprovalCard } from './pi-chat-approval/approval-card.tsx'; export { feedbackRenderTool } from './feedback/feedback-card.tsx'; export { artifactCards } from './pi-artifacts/artifact-card.tsx';`, resolveDir: new URL('../../registry/', import.meta.url).pathname, loader: 'tsx' }, outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', loader: { '.css': 'empty' }, plugins: [{ name: 'file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
+  const { PiChat, ApprovalCard, feedbackRenderTool, artifactCards } = await import(output.href);
   const element = document.createElement('div'); document.body.append(element); const root = createRoot(element);
   t.after(async () => {
     await act(async () => root.unmount()); await window.happyDOM.close();
@@ -105,9 +131,14 @@ test('PiChat surfaces: the panel is --card and no chat surface equals the one un
     const panel = q('[data-boring=pi-chat]');
     assert.equal(surface(panel, mode), 'card', `${mode}: the panel is --card`);
     assert.equal(surface(panel, mode) === parentSurface(panel, mode), false, `${mode}: the panel differs from the canvas it sits on`);
-    assert.ok(contrast('card', 'background', mode) >= 1.0);
+    // The composer field is card on card by design and must say so in every state, so a reverted rule cannot hide behind a skipped node.
+    const field = q('[data-slot=input-group]');
+    assert.equal(surface(field, mode), 'card', `${mode}: the composer field is --card`);
+    assert.equal(String(field.getAttribute('class')).split(/\s+/).includes('border-input'), true, `${mode}: the composer field has the --input edge`);
     const checked = [];
     for (const node of all('[data-boring=pi-chat] *')) {
+      const rule = paints.filter(({ selector }) => node.matches(selector)).pop();
+      if (rule) for (const state of stateFills(node, mode)) assert.equal(outranks(specificity(rule.selector), state.specificity), false, `${mode}: the rule ${rule.selector} (${specificity(rule.selector)}) out-ranks the primitive's ${state.name} (${state.specificity}) and would kill it`);
       const token = surface(node, mode); if (!token) continue;
       const under = parentSurface(node, mode), alpha = paint(node, mode).alpha, label = `${mode}: <${node.tagName.toLowerCase()} ${node.dataset.slot ?? node.dataset.testid ?? ''}> ${token}${alpha < 1 ? `/${Math.round(alpha * 100)}` : ''} on ${under}`;
       if (node.dataset.slot === 'input-group') {
@@ -115,6 +146,8 @@ test('PiChat surfaces: the panel is --card and no chat surface equals the one un
         assert.equal(String(node.getAttribute('class')).split(/\s+/).includes('border-input'), true, `${label}: told apart by the --input edge`);
         continue;
       }
+      // An outline control (the Deny and artifact-card buttons) is told apart by its edge, like the composer field, not by a fill.
+      if (node.tagName === 'BUTTON' && /(^|\s)border-(input|border)(\s|$)/.test(String(node.getAttribute('class')))) { checked.push('outline-button'); continue; }
       assert.equal(token === under && alpha === 1, false, `${label}: a surface never equals the one under it`);
       const measured = ratio(seen(node, mode), seen(node.parentElement, mode));
       assert.equal(measured >= MIN, true, `${label}: contrast ${measured.toFixed(3)} is under ${MIN}:1`);
@@ -144,6 +177,18 @@ test('PiChat surfaces: the panel is --card and no chat surface equals the one un
         assert.equal(paint(card, mode).alpha, 1, `${mode}: the ${id} is opaque`);
       }
     });
+    for (const open of [false, true]) await t.test(`${mode}: artifact card, ${open ? 'open' : 'closed'}: the thumbnail differs from the card it sits on`, async () => {
+      await draw(presented, [], { artifacts: { ...artifactCards, open: () => {}, isOpen: () => open } });
+      const card = q('[data-testid=artifact-card]');
+      assert.ok(card, `${mode}: the artifact card is drawn`);
+      const thumbnail = card.querySelector('[data-slot=item]');
+      assert.ok(thumbnail, `${mode}: the thumbnail is drawn`);
+      const checked = checkTree(mode);
+      assert.equal(checked.includes('item'), true, `${mode}: the thumbnail was judged`);
+      assert.equal(card.dataset.open === 'true', open);
+      // Open: the card is --secondary, so the thumbnail is --card; closed: the card is --card, so the thumbnail is --secondary.
+      assert.equal(surface(thumbnail, mode), open ? 'card' : 'secondary', `${mode}: the thumbnail of the ${open ? 'open' : 'closed'} card`);
+    });
     await t.test(`${mode}: attachments in the composer and in a sent message`, async () => {
       await draw(withAttachments, [{ id: 'a1', name: 'plan.pdf', content: { mimeType: 'application/pdf', data: 'ZmljdGlvbg==' } }]);
       const checked = checkTree(mode);
@@ -164,6 +209,12 @@ test('PiChat surfaces: the panel is --card and no chat surface equals the one un
     assert.equal(send.dataset.state, 'send');
   });
 
+  await t.test('the specificity estimate: a :where() rule sits between a utility class and its state variant, an attribute chain does not', () => {
+    assert.deepEqual(specificity(':where(.pi-chat [data-slot="item"]) button[data-testid="approval-deny"]'), [0, 1, 1]);
+    assert.deepEqual(specificity(':where(.pi-chat) button[data-testid="artifact-card"]:where(:not([data-open="true"]))'), [0, 1, 1]);
+    assert.deepEqual(specificity('.pi-chat [data-slot="item"][data-variant="muted"] [data-testid="approval-deny"]'), [0, 4, 0]);
+    assert.equal(outranks([0, 4, 0], [0, 2, 0]), true); assert.equal(outranks([0, 1, 1], [0, 2, 0]), false); assert.equal(outranks([0, 1, 1], [0, 1, 0]), true);
+  });
   await t.test('the contrast function itself: card over canvas and secondary over card pass, a token over itself does not', () => {
     for (const mode of ['light', 'dark']) { assert.equal(contrast('secondary', 'card', mode) >= MIN, true, `${mode} secondary on card`); assert.equal(contrast('card', 'card', mode) >= MIN, false); }
     assert.equal(contrast('muted', 'background', 'light') >= MIN, false, 'the old bubble on the old panel is the failure this test catches');

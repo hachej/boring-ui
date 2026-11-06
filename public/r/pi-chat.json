@@ -210,7 +210,13 @@
       ".pi-chat [data-slot=\"item\"][data-variant=\"muted\"]": {
         "background-color": "var(--secondary)"
       },
-      ".pi-chat [data-slot=\"item\"][data-variant=\"muted\"] [data-testid=\"approval-deny\"]": {
+      ".pi-chat [data-slot=\"button\"][data-open=\"true\"] [data-slot=\"item\"][data-variant=\"muted\"]": {
+        "background-color": "var(--card)"
+      },
+      ":where(.pi-chat [data-slot=\"item\"][data-variant=\"muted\"]) button[data-testid=\"approval-deny\"]": {
+        "background-color": "var(--card)"
+      },
+      ":where(.pi-chat) button[data-testid=\"artifact-card\"]:where(:not([data-open=\"true\"]))": {
         "background-color": "var(--card)"
       },
       ".pi-chat [data-testid=\"composer\"] [data-slot=\"input-group\"]": {
