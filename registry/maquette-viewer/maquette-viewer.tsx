@@ -9,7 +9,7 @@
 // maquette path, the screen id and the block id; the pins of the current screen show as small numbers on their blocks.
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode, TouchEvent } from 'react';
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CompassIcon, EllipsisIcon, InfoIcon, MessageSquarePlusIcon, TriangleAlertIcon, WorkflowIcon, XIcon } from 'lucide-react';
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, CompassIcon, EllipsisIcon, InfoIcon, MessageSquarePlusIcon, TriangleAlertIcon, WorkflowIcon, XIcon } from '../_shared/icons';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';

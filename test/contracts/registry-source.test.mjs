@@ -28,7 +28,7 @@ const closureOf = name => {
 const TOKEN_FREE_ROOTS = ['app-shell', 'agent-target', 'windows'];
 const TOKEN_FREE_CLOSURE = () => new Set(TOKEN_FREE_ROOTS.flatMap(name => [name, ...closureOf(name)]));
 // The feedback item imports the package's browser entries directly (no copied validators), React and React DOM (a portal); nothing from store, agent or source.
-const FEEDBACK_IMPORTS = new Set(['react', 'react-dom', 'lucide-react', '@hachej/boring-feedback/format', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-feedback/preview', '@hachej/boring-ui-kit/chat-text', '@hachej/boring-ui-kit/chat-react/voice']);
+const FEEDBACK_IMPORTS = new Set(['react', 'react-dom', '@hachej/boring-feedback/format', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-feedback/preview', '@hachej/boring-ui-kit/chat-text', '@hachej/boring-ui-kit/chat-react/voice']);
 // The feedback item is a plug-in of its host pi-chat (owner ruling 6): its card and voice button import pi-chat's rows and labels and utils
 // (`../pi-chat/`, `../utils/`), and the host's model and chat types, which are type-only imports and never installed as a direct dependency.
 const HOST_IMPORTS = ['../pi-chat/', '../utils/'];
@@ -98,11 +98,10 @@ test('registry dependency pins and scoped styles preserve the declared source di
   assert.equal(architecture.sourceDistribution.format, 'shadcn@' + architecture.rootDevDependencies.shadcn);
   for (const item of manifest.items) {
     if (item.name === 'theme') {
-      // The one theme: shadcn tokens for light and dark and their Tailwind bindings, no files and no packages. The CLI only adds the tokens a host lacks.
       assert.equal(item.type, 'registry:theme');
       assert.equal(item.files, undefined); assert.equal(item.dependencies, undefined); assert.equal(item.css, undefined);
       const { theme, light, dark } = item.cssVars;
-      assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).filter(name => name !== 'radius' && !/^text-(body|title)$/.test(name)).sort(), 'dark redefines every color token (radius and the mode-independent text-body/text-title type roles live in light only)');
+      assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).filter(name => name !== 'radius' && !/^(?:text-(?:body|title)|font-(?:sans|mono))$/.test(name)).sort(), 'dark redefines every mode-dependent role; shape, type and fonts live in light only');
       for (const [name, value] of Object.entries(theme)) {
         if (name === 'default-border-width') {
           assert.equal(value, 'var(--border-width, 1px)', 'optional host border width keeps the stock Tailwind fallback');
@@ -130,7 +129,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
       declared.add(name);
       // Items that bring their own Tailwind source pin extra packages exactly as the repository's root tooling does.
       // Peers are the source of truth for item ranges; a Tailwind item without a peer uses the root tooling pin, and the SDK always does.
-      const expected = internal ? boringVersion(name) : name === '@modelcontextprotocol/sdk' ? architecture.rootDevDependencies[name] : (ui.peerDependencies[name] ?? (item.name in TAILWIND ? architecture.rootDevDependencies[name] : undefined))?.replace(/^[\^~]/, '');
+      const expected = internal ? boringVersion(name) : name === '@modelcontextprotocol/sdk' ? architecture.rootDevDependencies[name] : (ui.peerDependencies[name] ?? (item.name in TAILWIND || item.name === '_shared' ? architecture.rootDevDependencies[name] : undefined))?.replace(/^[\^~]/, '');
       assert.equal(version, expected, dependency);
     }
     // Blocks may depend only on other items of this registry (pi-ambient and pi-workspace build on pi-chat); nothing from a remote registry.
@@ -204,6 +203,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
           const hostUi = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
           if (hostUi) { assert.ok(SHADCN_BUILTINS.includes(hostUi[1]), `${file.path} imports ${imported}, which is not in the app setup`); continue; }
           if (HOST_IMPORTS.some(prefix => imported.startsWith(prefix))) { assert.ok(item.registryDependencies.includes('@boring-ui/pi-chat') && item.registryDependencies.includes('@boring-ui/utils'), `${file.path} imports its host ${imported} without depending on it`); continue; }
+          if (imported === '../_shared/icons') { assert.ok(item.registryDependencies.includes('@boring-ui/_shared')); continue; }
           // The hold-to-record hook is the optional voice item's, declared like the host.
           if (imported.startsWith('../pi-chat-voice/')) { assert.ok(item.registryDependencies.includes('@boring-ui/pi-chat-voice'), `${file.path} imports ${imported} without depending on @boring-ui/pi-chat-voice`); continue; }
           if (TYPE_ONLY_IMPORTS.has(imported) && typeOnly.has(imported) && !valued.has(imported)) continue;

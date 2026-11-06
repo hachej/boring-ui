@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { DownloadIcon, FileTextIcon } from 'lucide-react';
+import { DownloadIcon, FileTextIcon } from '../_shared/icons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { downloadFile } from '../viewer-frame/download';

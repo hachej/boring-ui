@@ -9,7 +9,7 @@
 // minimised, and the panel returns as it was when pointing ends. Mount CommentBanner (and the one NoteBubble) outside the panel, because the
 // panel may unmount while it is hidden.
 import { createPortal } from 'react-dom';
-import { CircleIcon } from 'lucide-react';
+import { CircleIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';

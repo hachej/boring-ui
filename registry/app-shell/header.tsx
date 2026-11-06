@@ -5,7 +5,7 @@
 // screen the shell has hidden does not count (ScreenActiveContext). Host concern: Pi has no layout.
 import { createContext, createElement, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentType, ReactNode } from 'react';
-import { ArrowLeftIcon } from 'lucide-react';
+import { ArrowLeftIcon } from '../_shared/icons';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';

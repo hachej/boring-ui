@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDownIcon } from 'lucide-react';
+import { ChevronDownIcon } from '../_shared/icons';
 import { readableElement } from '@hachej/boring-feedback/format';
 import type { FeedbackReport } from '@hachej/boring-feedback/format';
 import { Button } from '@/components/ui/button';

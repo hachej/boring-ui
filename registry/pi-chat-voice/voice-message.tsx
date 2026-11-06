@@ -1,6 +1,6 @@
 'use client';
 
-import { CircleIcon, MicIcon, PauseIcon, PlayIcon, Trash2Icon } from 'lucide-react';
+import { CircleIcon, MicIcon, PauseIcon, PlayIcon, Trash2Icon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';

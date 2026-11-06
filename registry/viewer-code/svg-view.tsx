@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { CodeXmlIcon, EyeIcon } from 'lucide-react';
+import { CodeXmlIcon, EyeIcon } from '../_shared/icons';
 import { CodeBlock } from '../pi-chat/code-block';
 import { ViewerToggle } from '../viewer-frame/viewer-frame';
 import { useViewerText } from '../viewer-frame/viewer-window';

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { FileTextIcon, FolderIcon } from 'lucide-react';
+import { FileTextIcon, FolderIcon } from '../_shared/icons';
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { usePickerKeyboard } from '../pi-chat/picker-keyboard';
 import { ComposerSuggestions } from '../pi-chat/suggestions';

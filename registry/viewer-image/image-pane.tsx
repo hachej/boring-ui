@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent, ReactNode } from 'react';
-import { MaximizeIcon, ScanIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
+import { MaximizeIcon, ScanIcon, ZoomInIcon, ZoomOutIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { downloadFile } from '../viewer-frame/download';
 import { formatBytes, useMediaUrl } from '../viewer-frame/media';

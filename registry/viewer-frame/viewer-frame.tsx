@@ -4,7 +4,7 @@ import { useMedia, usePhone } from '../utils/use-media';
 
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ArrowLeftIcon, CheckIcon, CircleIcon, CopyIcon, DownloadIcon, ExternalLinkIcon, RefreshCwIcon } from 'lucide-react';
+import { ArrowLeftIcon, CheckIcon, CircleIcon, CopyIcon, DownloadIcon, ExternalLinkIcon, RefreshCwIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/toggle';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';

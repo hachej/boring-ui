@@ -5,7 +5,7 @@ import type { ToolResultMessage } from '@earendil-works/pi-ai';
 import { Button } from '@/components/ui/button';
 import { Item, ItemActions, ItemContent, ItemFooter, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Spinner } from '@/components/ui/spinner';
-import { ArrowDownIcon, ArrowUpIcon, ArrowUpRightIcon, CheckIcon, CircleAlertIcon, CircleSlashIcon, ClockIcon, WrenchIcon } from 'lucide-react';
+import { ArrowDownIcon, ArrowUpIcon, ArrowUpRightIcon, CheckIcon, CircleAlertIcon, CircleSlashIcon, ClockIcon, WrenchIcon } from '../_shared/icons';
 import { useChatText } from '../pi-chat/labels';
 import type { SubagentRenderer } from '../pi-chat/config';
 

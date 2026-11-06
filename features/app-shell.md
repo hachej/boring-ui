@@ -5,7 +5,7 @@ The `app-shell` block gives an app its navigation, one header per screen, an acc
 ## Sub-features
 
 - `shell-layouts` three layouts: `screen`, `workspace` (list and detail, left pane starts as the icon rail) and `chat` (the page is `AgentWorkspace`). `registry/app-shell/app-shell.tsx`.
-- `shell-nav` bottom tab bar on a phone (four items, more give three plus « Plus »), `compactNav="sheet"` for a sheet instead, shadcn sidebar with `rail="icon" | "hover"` on a wide screen; `NavItem.placement: "before-sidebar"` puts an item above the screen's own sidebar content and first in the tab bar (D-1210). `registry/app-shell/nav.tsx`.
+- `shell-nav` bottom tab bar on a phone (four items, more give three plus « Plus »), `compactNav="sheet"` for a sheet instead, shadcn sidebar with `rail="icon" | "hover"` on a wide screen, whose inset Separator sizes within its margins (no masked internal x overflow); `NavItem.placement: "before-sidebar"` puts an item above the screen's own sidebar content and first in the tab bar (D-1210). `registry/app-shell/nav.tsx`.
 - `shell-header` one header per screen through `useScreenHeader`, back arrow, at most two actions. `registry/app-shell/header.tsx`.
 - `shell-list-detail` `ListDetail`: both panes wide, one at a time on a phone with Back, collapsible list. `registry/app-shell/list-detail.tsx`.
 - `shell-account` account sheet and menu: name, email, app menu, theme switch, sign out. `registry/app-shell/account.tsx`.
@@ -22,7 +22,7 @@ The `app-shell` block gives an app its navigation, one header per screen, an acc
 Preconditions: `npm ci`, Chromium available, a built kit (`npm run build`).
 
 - **Layouts.** `shell-layouts`: `npm run app-shell:journey` (screen) and `npm run app-shell:journey:workspace` (workspace). The sidebar is open in `screen` and the icon rail in `workspace`.
-- **Navigation.** `shell-nav`: at 390px the tab bar shows four items; at desktop width the sidebar shows labels.
+- **Navigation.** `shell-nav`: at 390px the tab bar shows four items; at desktop width the sidebar shows labels. The focused `test/contracts/default-integration-browser.test.mjs` check with `DEFAULT_FIX_STAGE=sidebar` over a fresh source-preview round measures sidebar-content client/scroll width and descendant widths, then drives navigation, account menu/focus return and the agent action by keyboard. Separator width plus its margins must fit; changing overflow policy is not a repair.
 - **Header and Back.** `shell-header`, `shell-back`: open a detail on a phone, press Back, the list returns with its scroll kept.
 - **List and detail.** `shell-list-detail`: select a row; both panes wide, detail only on a phone.
 - **Account.** `shell-account`: open the avatar button (`account-button`), toggle the theme switch (`account-theme`).

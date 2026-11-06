@@ -2,7 +2,7 @@
 
 import { lazy } from 'react';
 import type { ComponentType, ReactNode } from 'react';
-import { LayoutTemplateIcon } from 'lucide-react';
+import { LayoutTemplateIcon } from '../_shared/icons';
 import { isMaquettePath } from './maquette';
 import { maquetteLabelsFor } from './maquette-labels';
 import type { MaquetteLabels, MaquetteLocale } from './maquette-labels';

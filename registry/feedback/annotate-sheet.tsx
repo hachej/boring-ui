@@ -5,7 +5,7 @@ import { protectionNotice, type Annotation, type CopyState, type FeedbackProtect
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { XIcon } from 'lucide-react';
+import { XIcon } from '../_shared/icons';
 import { useExternal } from './use-external';
 import { withLabels, type FeedbackLabels } from './feedback-labels';
 

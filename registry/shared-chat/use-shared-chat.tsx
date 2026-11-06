@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { UserIcon } from 'lucide-react';
+import { UserIcon } from '../_shared/icons';
 import { useControllerPerConversation } from '@hachej/boring-ui-kit/chat-react';
 import { createSharedChat } from '@hachej/boring-ui-kit/shared-chat';
 import type { ChannelSource, Conversation, SharedChatController } from '@hachej/boring-ui-kit/shared-chat';

@@ -61,7 +61,8 @@
     "@base-ui/react": "1.9.0",
     "class-variance-authority": "0.7.1",
     "pdfjs-dist": "6.5.438",
-    "@excalidraw/excalidraw": "0.18.1"
+    "@excalidraw/excalidraw": "0.18.1",
+    "@phosphor-icons/react": "2.1.10"
   },
   "packages": {
     "files": {
@@ -628,6 +629,7 @@
       "@hachej/boring-ui-kit/file-tree",
       "@hachej/boring-ui-kit/file-tree-view",
       "@hachej/boring-ui-kit/file-tree.css"
-    ]
+    ],
+    "defaultIcons": "registry/_shared/icons.ts is the fixed semantic symbol map for registry blocks and bundled shadcn/ui primitives; @phosphor-icons/react@2.1.10 by default. Existing icon props and installed shared-module swaps remain host customization; tokens do not choose icons. Package-owned file-tree and embedded licensed Markdown assets remain separate."
   }
 }

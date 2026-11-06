@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ChevronsUpDownIcon, MenuIcon } from 'lucide-react';
+import { ChevronsUpDownIcon, MenuIcon } from '../_shared/icons';
 import { useAppText } from './app-labels';
 import { ConversationList } from '../pi-chat/pi-chat';
 import type { ConversationsConfig } from '../pi-chat/pi-chat';

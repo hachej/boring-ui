@@ -6,7 +6,7 @@ import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from
 import type { ReactNode } from 'react';
 import { viewHasEarlier } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
-import { Loader2Icon } from 'lucide-react';
+import { Loader2Icon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -267,7 +267,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
       {controls}
     </header>}
 
-    {titleError && <p role="alert" className="m-0 shrink-0 px-4 py-2 text-sm text-destructive">{labels.actionFailed}</p>}
+    {titleError && <p role="alert" className="m-0 shrink-0 px-4 py-2 text-xs text-destructive">{labels.actionFailed}</p>}
     {decisions && <><div data-boring="required-decisions" className="shrink-0 px-4 py-2">{decisions}</div><Separator /></>}
     {pinned.length > 0 && <><aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 py-2">{pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside><Separator /></>}
     {(connectionKind === 'error' || connectionKind === 'closed') && <div className="shrink-0 px-4 pt-2">
@@ -289,7 +289,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
       </MessageScroller>}
       {(empty || loading) && <div className="pointer-events-none absolute inset-0">
         <div className="pointer-events-auto h-full">
-          {loading ? <p role="status" data-testid="loading" className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>
+          {loading ? <p role="status" data-testid="loading" className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground"><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.loading}</p>
             : emptyState ?? <EmptyState title={title} description={labels.emptyDescription} {...(avatar ? { avatar } : {})} {...(suggestions ? { suggestions } : {})} onSelect={text => { if (leaving) return; controller.setText(text); textarea.current?.focus(); }} />}
         </div></div>}
     </div>

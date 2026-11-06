@@ -2,7 +2,7 @@
 
 import { lazy } from 'react';
 import type { ComponentType, ReactNode } from 'react';
-import { WorkflowIcon } from 'lucide-react';
+import { WorkflowIcon } from '../_shared/icons';
 import { isDiagramPath } from './diagram';
 import { diagramLabelsFor } from './diagram-labels';
 import type { DiagramLabels, DiagramLocale } from './diagram-labels';

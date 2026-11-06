@@ -4,8 +4,10 @@
   "title": "Record viewer",
   "description": "Typed RecordTable and RecordList, with grouping, app-defined status badges and host row actions. createRecordsKind renders *.records.json (records@1), with a phone list and exact raw-text fallback for invalid files. English and French labels and locale formatting.",
   "dependencies": [
-    "react@^19.0.0",
-    "lucide-react@^1.51.0"
+    "react@^19.0.0"
+  ],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/_shared.json"
   ],
   "files": [
     {
@@ -28,7 +30,7 @@
     },
     {
       "path": "registry/record-viewer/records-kind.tsx",
-      "content": "'use client';\n\nimport { lazy } from 'react';\nimport type { ComponentType, ReactNode } from 'react';\nimport { Rows3Icon } from 'lucide-react';\nimport { isRecordsPath } from './records';\nimport { recordsLabelsFor } from './records-labels';\nimport type { RecordTableProps, Words } from './record-viewer';\n\nconst RecordsViewer = lazy(() => import('./record-viewer').then(module => ({ default: module.RecordsViewer })));\n\nexport interface RecordsKind {\n  readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;\n  readonly label: string;\n  readonly icon: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }>;\n  readonly renderer: (props: { readonly text: string }) => ReactNode;\n}\n/** The `*.records.json` kind; the viewer loads on first open. */\nexport function createRecordsKind(options: Words & { readonly onAction?: RecordTableProps['onAction'] } = {}): RecordsKind {\n  return { match: target => isRecordsPath(target.resource.path), label: recordsLabelsFor(options.locale, options.labels).kind, icon: Rows3Icon,\n    renderer: ({ text }) => <RecordsViewer text={text} {...options} /> };\n}\nexport const recordsKind: RecordsKind = createRecordsKind();\n",
+      "content": "'use client';\n\nimport { lazy } from 'react';\nimport type { ComponentType, ReactNode } from 'react';\nimport { Rows3Icon } from '../_shared/icons';\nimport { isRecordsPath } from './records';\nimport { recordsLabelsFor } from './records-labels';\nimport type { RecordTableProps, Words } from './record-viewer';\n\nconst RecordsViewer = lazy(() => import('./record-viewer').then(module => ({ default: module.RecordsViewer })));\n\nexport interface RecordsKind {\n  readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;\n  readonly label: string;\n  readonly icon: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }>;\n  readonly renderer: (props: { readonly text: string }) => ReactNode;\n}\n/** The `*.records.json` kind; the viewer loads on first open. */\nexport function createRecordsKind(options: Words & { readonly onAction?: RecordTableProps['onAction'] } = {}): RecordsKind {\n  return { match: target => isRecordsPath(target.resource.path), label: recordsLabelsFor(options.locale, options.labels).kind, icon: Rows3Icon,\n    renderer: ({ text }) => <RecordsViewer text={text} {...options} /> };\n}\nexport const recordsKind: RecordsKind = createRecordsKind();\n",
       "type": "registry:component",
       "target": "components/record-viewer/records-kind.tsx"
     }

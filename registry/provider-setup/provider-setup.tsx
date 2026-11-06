@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { CheckIcon, ChevronDownIcon, SettingsIcon } from 'lucide-react';
+import { CheckIcon, ChevronDownIcon, SettingsIcon } from '../_shared/icons';
 import { cn } from '../utils/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

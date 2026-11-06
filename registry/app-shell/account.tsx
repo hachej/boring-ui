@@ -4,7 +4,7 @@
 // Both list « Améliorer l'app » (when the app has an `improve` agent, opened in the AgentLayer), the app's own `menu`, then sign out.
 import { useId } from 'react';
 import type { CSSProperties } from 'react';
-import { ChevronsUpDownIcon, LogOutIcon, MessageSquarePlusIcon, MoonIcon } from 'lucide-react';
+import { ChevronsUpDownIcon, LogOutIcon, MessageSquarePlusIcon, MoonIcon } from '../_shared/icons';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -74,7 +74,7 @@ export function NavUser({ account, improve, text }: { readonly account: AccountS
     <DropdownMenu>
       <DropdownMenuTrigger render={<SidebarMenuButton size="lg" data-testid="nav-user" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" />}>
         <AccountAvatar account={account} />
-        <div className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+        <div className="grid min-w-0 flex-1 text-left text-xs leading-tight">
           <span className="truncate font-medium">{account?.name ?? text.account}</span>
           {account?.email && <span className="truncate text-xs text-muted-foreground">{account.email}</span>}
         </div>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { ToolResultMessage } from '@earendil-works/pi-ai';
-import { AlertCircleIcon, BrainIcon, CheckIcon, CircleSlashIcon } from 'lucide-react';
+import { AlertCircleIcon, BrainIcon, CheckIcon, CircleSlashIcon } from '../_shared/icons';
 import { Spinner } from '@/components/ui/spinner';
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceDescription, TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
 import { ToolCard, liveLabel } from './tool';

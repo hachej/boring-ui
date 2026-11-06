@@ -6,7 +6,7 @@
 // one the page was opened on, and the app's `onBack` (called by Back, and by « ← » which is Back) clears the selection and replaces the URL.
 import { useContext, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ChevronsLeftIcon, ChevronsRightIcon } from 'lucide-react';
+import { ChevronsLeftIcon, ChevronsRightIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '../utils/utils';

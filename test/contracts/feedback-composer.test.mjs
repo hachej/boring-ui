@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -102,9 +103,14 @@ test('pending feedback preserves the originating live controller after its prese
 test('without the feedback prop the composer renders byte-identical markup to the approved presentation baseline', () => {
   const golden = JSON.parse(readFileSync(join(root, 'test/fixtures/pi-chat-composer-baseline.json'), 'utf8'));
   const cases = composerCases();
+  // Digests retain every non-SVG byte and each SVG's position from the pre-Phosphor baseline.
+  const structure = JSON.parse(readFileSync(join(root, 'test/fixtures/pi-chat-composer-structure.json'), 'utf8'));
   assert.deepEqual(Object.keys(cases), Object.keys(golden));
+  assert.deepEqual(Object.keys(cases), Object.keys(structure));
   for (const [name, props] of Object.entries(cases)) {
-    assert.equal(renderToStaticMarkup(createElement(Composer, props)), golden[name], name);
+    const actual = renderToStaticMarkup(createElement(Composer, props));
+    assert.equal(createHash('sha256').update(actual.replace(/<svg\b[\s\S]*?<\/svg>/g, '<svg/>')).digest('hex'), structure[name], `${name}, unchanged non-icon structure`);
+    assert.equal(actual, golden[name], name);
     assert.equal(renderToStaticMarkup(createElement(Composer, { ...props, feedback: undefined })), golden[name], `${name}, feedback: undefined`);
   }
 });

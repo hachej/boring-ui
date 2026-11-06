@@ -6,6 +6,9 @@
 // floating chat's bar) renders, is clickable and reaches the host, "Float chat" is one of the panel's actions, and it all holds at phone width.
 // Screenshots go to .cache/evidence/workspace-app/.
 import assert from 'node:assert/strict';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { ListIcon, NotePencilIcon } from '@phosphor-icons/react';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
@@ -643,7 +646,11 @@ try {
         assert.equal(style.menu.w, 44); assert.equal(style.menu.h, 44);
         assert.equal(style.glyph.w, 16); assert.equal(style.glyph.h, 16);
         assert.equal(style.pencilGlyph.w, 16); assert.equal(style.pencilStroke, style.stroke);
-        assert.equal(style.stroke, '2px', 'stock Lucide icons, no custom navigation glyph');
+        const glyphs = await browser.evaluate(`['sessions-toggle', 'workspace-new-chat'].map(id => { const svg = document.querySelector('[data-testid="' + id + '"] svg'); return { viewBox: svg.getAttribute('viewBox'), fill: svg.getAttribute('fill'), paths: svg.innerHTML }; })`);
+        for (const [index, Icon] of [ListIcon, NotePencilIcon].entries()) {
+          const native = renderToStaticMarkup(createElement(Icon, { weight: 'regular' }));
+          assert.deepEqual(glyphs[index], { viewBox: '0 0 256 256', fill: 'currentColor', paths: native.slice(native.indexOf('>') + 1, native.lastIndexOf('</svg>')) }, 'exact native regular Phosphor navigation glyph');
+        }
         assert.ok(Math.abs(style.menu.y - style.pencil.y) <= 1 && Math.abs(style.menu.y - style.title.y) <= 1, 'phone icons and title share a vertical centre');
         assert.ok(style.menu.x >= 12 && style.menu.x <= 16 && width - style.pencil.right >= 12 && width - style.pencil.right <= 16, 'equal quiet side padding');
         await browser.screenshot(`phone-menu-${width}-${dark ? 'dark' : 'light'}.png`);

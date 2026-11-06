@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useRef } from 'react';
 import type { ComponentProps, ComponentType, ReactNode, RefObject } from 'react';
-import { EllipsisIcon } from 'lucide-react';
+import { EllipsisIcon } from '../_shared/icons';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuPortal, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuShortcut } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/toggle';

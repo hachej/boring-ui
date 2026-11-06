@@ -6,9 +6,8 @@ import { HTMLContainer, Rectangle2d, ShapeUtil, T, createShapeId, renderPlaintex
 import type { Editor, TLBaseShape } from 'tldraw';
 import { CanvasProjection } from '@hachej/boring-ui-kit/canvas-editor';
 import type { TextBuffer } from '@hachej/boring-ui-kit/text-buffer';
-import { HandIcon, MousePointer2Icon, StickyNoteIcon, MaximizeIcon, Undo2Icon, Redo2Icon, MessageSquarePlusIcon } from 'lucide-react';
+import { HandIcon, MousePointer2Icon, StickyNoteIcon, MaximizeIcon, Undo2Icon, Redo2Icon, MessageSquarePlusIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { MockupViewer } from '../mockup-viewer/mockup-viewer';
 import { usePhone } from '../utils/use-media';
@@ -41,15 +40,16 @@ function FrameContent({ shape, editor }: { readonly shape: BoardFrame; readonly 
   const shown = parsed?.kind === 'ok' ? parsed.maquette.screens.find(item => item.id === screen) : undefined;
   return <HTMLContainer className="flex flex-col" style={{ width: shape.props.w, height: shape.props.h }}>
     <div className="pointer-events-none absolute -top-8 left-0 whitespace-nowrap text-muted-foreground" data-testid="board-frame-title">{title}</div>
-    <Card className="min-h-0 flex-1 overflow-hidden" data-testid="board-frame" data-frame={id}>
-      <CardContent className="min-h-0 flex-1 overflow-hidden" style={{ pointerEvents: editing || board.comments?.active ? 'auto' : 'none' }}>
+    {/* Generated app screens need their own canvas/ink pair over the native canvas. Authored HTML keeps its styling. */}
+    <div className={`flex min-h-0 flex-1 flex-col overflow-hidden${kind === 'maquette' ? ' bg-background text-foreground' : ''}`} data-testid="board-frame" data-frame={id}>
+      <div className="min-h-0 flex-1 overflow-hidden" style={{ pointerEvents: editing || board.comments?.active ? 'auto' : 'none' }}>
         {kind === 'html' ? <MockupViewer text={text} path={src} comments={board.comments} />
           : shown && parsed?.kind === 'ok' ? <MaquetteScreenView maquette={parsed.maquette} screen={shown} labels={defaultMaquetteLabels}
             links={{ go: target => board.go(id, target), hint: target => `Opens ${target}`,
               target: block => `board:${board.path}#frame=${id}&block=${block.id}`,
               pins: block => board.comments?.pins.filter(pin => pin.target === `board:${board.path}#frame=${id}&block=${block.id}`).map(pin => pin.number) ?? [] }}  /> : <p role="alert">Unreadable maquette {src}</p>}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   </HTMLContainer>;
 }
 

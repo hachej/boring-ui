@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { cardActions, channelAvatarStates } from '@hachej/boring-ui-kit/shared-chat';
 import type { Card as Request, ChannelMessage, SharedChatController, Member, SharedChatState } from '@hachej/boring-ui-kit/shared-chat';
-import { CheckIcon, CircleIcon, CopyIcon, HammerIcon, PinIcon, ReplyIcon, SparkleIcon, Trash2Icon, XIcon } from 'lucide-react';
+import { CheckIcon, CircleIcon, CopyIcon, HammerIcon, PinIcon, ReplyIcon, SparkleIcon, Trash2Icon, XIcon } from '../_shared/icons';
 import { Avatar, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

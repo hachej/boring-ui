@@ -1,7 +1,7 @@
 'use client';
 
 import { lazy } from 'react';
-import { LayoutDashboardIcon } from 'lucide-react';
+import { LayoutDashboardIcon } from '../_shared/icons';
 import type { ArtifactKind } from '../pi-artifacts/artifact';
 import type { BoardHostProps } from './board-props';
 

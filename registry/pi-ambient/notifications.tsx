@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { KeyboardEvent } from 'react';
-import { CircleCheckIcon, CircleAlertIcon, MessageCircleQuestionIcon, XIcon } from 'lucide-react';
+import { CircleCheckIcon, CircleAlertIcon, MessageCircleQuestionIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { notifyWhenHidden } from './browser-notify';

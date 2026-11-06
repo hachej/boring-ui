@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { CheckIcon, CopyIcon } from 'lucide-react';
+import { CheckIcon, CopyIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Item, ItemHeader, ItemTitle } from '@/components/ui/item';
 import { copyText } from '../utils/utils';

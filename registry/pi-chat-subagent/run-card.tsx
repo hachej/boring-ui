@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Item, ItemContent, ItemDescription, ItemFooter, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Spinner } from '@/components/ui/spinner';
-import { CheckIcon, CircleAlertIcon, RefreshCwIcon } from 'lucide-react';
+import { CheckIcon, CircleAlertIcon, RefreshCwIcon } from '../_shared/icons';
 import { CodeBlock } from '../pi-chat/code-block';
 import { useChatText } from '../pi-chat/labels';
 import type { ChatTextPart } from '../pi-chat/message';

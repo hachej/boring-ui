@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, PointerEvent, ReactNode } from 'react';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
-import { BellIcon, ChevronDownIcon, CircleAlertIcon, CircleCheckIcon, ExternalLinkIcon, GripVerticalIcon, Loader2Icon, MessageCircleQuestionIcon, MinusIcon, PanelLeftIcon, ThumbsDownIcon, ThumbsUpIcon } from 'lucide-react';
+import { BellIcon, ChevronDownIcon, CircleAlertIcon, CircleCheckIcon, ExternalLinkIcon, GripVerticalIcon, Loader2Icon, MessageCircleQuestionIcon, MinusIcon, PanelLeftIcon, ThumbsDownIcon, ThumbsUpIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { MessageScroller, MessageScrollerProvider, MessageScrollerViewport, MessageScrollerContent, MessageScrollerButton } from '@/components/ui/message-scroller';
 import { Toggle } from '@/components/ui/toggle';

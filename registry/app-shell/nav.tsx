@@ -4,7 +4,7 @@
 // expanded. Choosing an item only calls `route.onChange`: the app's router owns the URL, and the shell adds no history entry.
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent, ReactNode } from 'react';
-import { EllipsisIcon, SparklesIcon } from 'lucide-react';
+import { EllipsisIcon, SparklesIcon } from '../_shared/icons';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarSeparator, useSidebar } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

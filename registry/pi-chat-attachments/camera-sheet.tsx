@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CameraIcon, XIcon } from 'lucide-react';
+import { CameraIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useChatText } from '../pi-chat/labels';

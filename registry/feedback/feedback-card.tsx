@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 // Type-only: pi-chat has no alias for these chat types, so the card names them from the model SDK the host already installs.
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import { FEEDBACK_ID, readableElement } from '@hachej/boring-feedback/format';
-import { CheckIcon, LocateFixedIcon, MessageSquareTextIcon, ShieldAlertIcon } from 'lucide-react';
+import { CheckIcon, LocateFixedIcon, MessageSquareTextIcon, ShieldAlertIcon } from '../_shared/icons';
 import type { ChatCard } from '../pi-chat/rows';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
