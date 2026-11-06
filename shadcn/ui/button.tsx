@@ -1,3 +1,4 @@
+import * as React from "react"
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
@@ -39,17 +40,42 @@ const buttonVariants = cva(
   }
 )
 
+type LinkProps = { href?: unknown; to?: unknown; role?: string }
+type SpaceKey = React.KeyboardEvent<HTMLElement> & { preventBaseUIHandler?: () => void }
+
+/** A link is a Button whose `render` element has an `href` or `to` (an `<a>` or a router link), or an explicit `role="link"` (a router link with another prop name), unless `nativeButton` is explicitly true. */
+function renderedLink({ nativeButton, render, role: given }: ButtonPrimitive.Props) {
+  if (nativeButton === true || !React.isValidElement<LinkProps>(render)) return undefined
+  const { href, to, role } = render.props
+  return href != null || to != null || given === "link" || role === "link" ? { role } : undefined
+}
+
 function Button({
   className,
   variant = "default",
   size = "default",
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+  const link = renderedLink(props)
+  const role = props.role ?? link?.role ?? "link"
+  // Base UI gives a non-native control role=button and Space activation. A link announces as a link and, like a native one, ignores Space.
+  const space = (handler: unknown) => (event: SpaceKey) => {
+    ;(handler as ((event: SpaceKey) => void) | undefined)?.(event)
+    if (event.key === " ") event.preventBaseUIHandler?.()
+  }
+  const linkProps = !link
+    ? {}
+    : {
+        ...(props.nativeButton === undefined ? { nativeButton: false } : {}),
+        ...(props.role === undefined && link.role === undefined ? { role } : {}),
+        ...(role === "link" ? { onKeyDown: space(props.onKeyDown), onKeyUp: space(props.onKeyUp) } : {}),
+      }
   return (
     <ButtonPrimitive
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
+      {...linkProps}
     />
   )
 }
