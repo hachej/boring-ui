@@ -266,9 +266,9 @@ function VoiceReplayBubble({ path, transcript, preview, audioUrl, align = 'end' 
  * A text part of a sent message. Its `uploads/` mentions become file cards above the bubble and leave the text; the message content keeps
  * them (only what is drawn changes).
  */
-/** `variant` picks the bubble: `secondary` (the chat's user bubble: --secondary on the --card panel) or `default` (the theme's primary, used for my own messages in a shared chat). */
+/** `variant` picks the bubble: `secondary` (the chat's user bubble: --secondary on the --card panel), `muted` (the older grey, still accepted) or `default` (the theme's primary, used for my own messages in a shared chat). */
 /** `decoration` sits inside the Bubble before its content (a tail); `header` and `footer` inside the content, around the text (a quote, the time). */
-export function MessageText({ text, context, align = 'end', variant = 'secondary', decoration, header, footer }: { readonly text: string; readonly context: Pick<RowContext, 'sentContent' | 'pieces' | 'openFile' | 'voiceReplay' | 'targetLabel'>; readonly align?: 'start' | 'end'; readonly variant?: 'secondary' | 'default'; readonly decoration?: ReactNode; readonly header?: ReactNode; readonly footer?: ReactNode }) {
+export function MessageText({ text, context, align = 'end', variant = 'secondary', decoration, header, footer }: { readonly text: string; readonly context: Pick<RowContext, 'sentContent' | 'pieces' | 'openFile' | 'voiceReplay' | 'targetLabel'>; readonly align?: 'start' | 'end'; readonly variant?: 'secondary' | 'muted' | 'default'; readonly decoration?: ReactNode; readonly header?: ReactNode; readonly footer?: ReactNode }) {
   const framed = decoration !== undefined || header !== undefined || footer !== undefined;
   const wrap = (body: ReactNode) => <Bubble variant={variant} align={align}>{decoration}<BubbleContent data-testid="user-text" className={framed ? 'relative' : undefined}>{header}{body}{footer}</BubbleContent></Bubble>;
   const target = targetContent(text);

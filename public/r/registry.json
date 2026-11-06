@@ -749,6 +749,12 @@
           ".pi-chat [data-slot=\"attachment-media\"]": {
             "background-color": "var(--card)"
           },
+          ".pi-chat [data-slot=\"item\"][data-variant=\"muted\"]": {
+            "background-color": "var(--secondary)"
+          },
+          ".pi-chat [data-slot=\"item\"][data-variant=\"muted\"] [data-testid=\"approval-deny\"]": {
+            "background-color": "var(--card)"
+          },
           ".pi-chat [data-testid=\"composer\"] [data-slot=\"input-group\"]": {
             "background-color": "var(--card)"
           },
