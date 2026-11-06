@@ -28,6 +28,9 @@ export const html = {
   doneDecision: () => renderToStaticMarkup(h(InlineQuestion, { id: 'm', kind: 'decision', text: 'Merge #1691?', answered: 'approve', onAnswer: on })),
   doneFr: (answered) => renderToStaticMarkup(h(InlineQuestion, { id: 'm', kind: 'decision', text: 'Fusionner #1691 ?', answered, labels: { approve: 'Approuver', refuse: 'Refuser', approved: 'Approuvé', refused: 'Refusé', answered: 'Répondu' }, onAnswer: on })),
   openFr: () => renderToStaticMarkup(h(InlineQuestion, { id: 'm', kind: 'decision', text: 'Fusionner #1691 ?', labels: { approve: 'Approuver', refuse: 'Refuser' }, onAnswer: on })),
+  decisionAttention: () => renderToStaticMarkup(h(InlineQuestion, { id: 'm', kind: 'decision', text: 'Merge #1691?', tone: 'attention', onAnswer: on })),
+  questionAttention: () => renderToStaticMarkup(h(InlineQuestion, { id: 'p', kind: 'question', text: 'Day 30 or day 45?', options: ['Day 30', 'Day 45'], tone: 'attention', onAnswer: on, onReplyInChat: on })),
+  doneQuestionAttention: () => renderToStaticMarkup(h(InlineQuestion, { id: 'p', kind: 'question', text: 'Day 30 or day 45?', answered: 'Day 45', tone: 'attention', onAnswer: on })),
   doneQuestion: () => renderToStaticMarkup(h(InlineQuestion, { id: 'p', kind: 'question', text: 'Day 30 or day 45?', answered: 'Day 45', onAnswer: on })),
   narr: () => renderToStaticMarkup(h(StatusNarrative, { segments: ['1 agent works on ', { label: 'the supplier import', task: 'D-1511' }, '. Nothing else is open.'], at: '2 min ago', by: 'router', needsYou: 3, onOpen: on, onRefresh: on })),
   narrBare: () => renderToStaticMarkup(h(StatusNarrative, { segments: ['All quiet. ', { label: 'Compta', app: 'compta' }] })),
@@ -58,19 +61,39 @@ const mod = createRequire(import.meta.url)(outfile);
 test.after(() => rmSync(dir, { recursive: true, force: true }));
 const { html } = mod;
 
-test('a decision is approve or refuse on an info tint, with no text field and no border', () => {
-  const markup = html.decision();
+test('a decision is approve or refuse, with no text field and no border', () => {
+  const markup = html.decisionAttention();
   assert.match(markup, /Decision/); assert.match(markup, />Approve</); assert.match(markup, />Refuse</);
-  assert.match(markup, /bg-info-soft/); assert.doesNotMatch(markup, /<input/);
+  assert.match(markup, /bg-warning-soft/); assert.doesNotMatch(markup, /<input/);
   const box = /^<div[^>]*class="([^"]*)"/.exec(markup)[1];
   assert.doesNotMatch(box, /\bborder\b|shadow|ring/, 'the block draws no border of its own');
   assert.match(markup, /min-h-11 md:min-h-8/, '44px on phones');
 });
 
-test('a question with options offers the choices, a free-text field and reply in chat, on a warning tint', () => {
-  const markup = html.question();
+test('a question with options offers the choices, a free-text field and reply in chat; tone attention gives the warning tint', () => {
+  const markup = html.questionAttention();
   assert.match(markup, /Day 30/); assert.match(markup, /Day 45/); assert.match(markup, /Reply in chat/);
   assert.match(markup, /<input[^>]*placeholder="Or type an answer"/); assert.match(markup, /bg-warning-soft/);
+});
+
+test('tone neutral (the default) is flat for a question and a decision: no fill, no padding, foreground text, icon and buttons kept', () => {
+  for (const [name, markup] of [['question', html.question()], ['decision', html.decision()]]) {
+    const box = /^<div[^>]*class="([^"]*)"/.exec(markup)[1];
+    assert.equal(/bg-warning-soft/.test(markup), false, name + ' has no warning tint');
+    assert.equal(/bg-info-soft/.test(markup), false, name + ' has no info tint');
+    assert.equal(/\bp-3\b/.test(box), false, name + ' has no padding');
+    assert.equal(/\btext-foreground\b/.test(box), true, name + ' reads in the foreground colour');
+    assert.equal(/data-testid="question-option"|>Approve</.test(markup), true, name + ' has its buttons');
+    assert.equal(/<svg/.test(markup), true, name + ' keeps the icon');
+    assert.equal(/bg-card px-2/.test(markup), false, name + ' kind label is not a chip');
+  }
+});
+
+test('tone attention tints a question and a decision with the warning tint, never the info tint', () => {
+  for (const markup of [html.questionAttention(), html.decisionAttention()]) {
+    assert.equal(/bg-warning-soft/.test(markup), true); assert.equal(/bg-info-soft/.test(markup), false);
+    assert.equal(/\bp-3\b/.test(markup), true); assert.equal(/bg-card px-2/.test(markup), true, 'the chip is kept');
+  }
 });
 
 test('a question without options is free text only', () => {
@@ -82,6 +105,8 @@ test('a question without options is free text only', () => {
 test('answered: the controls give way to the answer, muted; a decision says approved or refused', () => {
   assert.doesNotMatch(html.doneDecision(), /<button|<input/); assert.match(html.doneDecision(), /Approved/);
   assert.match(html.doneQuestion(), /Answered: Day 45/); assert.doesNotMatch(html.doneQuestion(), /bg-warning-soft/);
+  assert.equal(html.doneQuestion().includes('bg-muted'), false, 'the default answered state is flat');
+  assert.equal(html.doneQuestionAttention().includes('bg-muted'), true, 'attention keeps the muted block');
 });
 
 test('a question shows at most four choices', () => {
@@ -111,7 +136,7 @@ test('an answered decision reads by value under overridden labels; an unknown va
 
 test('a status narrative shows text and links in order, the time and author, one needs-you count and a refresh', () => {
   const markup = html.narr();
-  assert.match(markup, /1 agent works on <\/span><button[^>]*>the supplier import<\/button><span>\. Nothing else is open\./);
+  assert.match(markup, /1 agent works on <\/span><a[^>]*>the supplier import<\/a><span>\. Nothing else is open\./);
   assert.match(markup, /2 min ago/); assert.match(markup, />router</); assert.match(markup, /3 need you/);
   assert.match(markup, /aria-label="Refresh status"/); assert.match(markup, /bg-warning-soft/);
   assert.equal(html.narrOne().includes('1 needs you'), true);
@@ -157,4 +182,33 @@ test('status narrative never fetches or reads a clock', async () => {
   const { readFileSync } = await import('node:fs');
   const source = readFileSync(join(root, 'registry/status-narrative/status-narrative.tsx'), 'utf8');
   assert.doesNotMatch(source, /\bfetch\s*\(|XMLHttpRequest|useEffect|localStorage|Date\.now|new Date/);
+});
+
+test('a status narrative link is an inline text link: no padding, height or leading, underlined, in the link colour', () => {
+  const markup = html.narr();
+  const found = markup.match(/<a([^>]*)>the supplier import<\/a>/);
+  assert.equal(found !== null, true, 'the link anchor is rendered');
+  const cls = (found[1].match(/class="([^"]*)"/) || [, ''])[1].split(/\s+/).filter(Boolean);
+  for (const want of ['text-link', 'underline', 'underline-offset-4', 'font-medium']) {
+    assert.equal(cls.includes(want), true, `link has ${want}: ${cls.join(' ')}`);
+  }
+  const bad = cls.filter(c => /(^|:)(p|px|py|pt|pb|pl|pr|ps|pe|h|min-h|leading)-/.test(c) || /^has-\[/.test(c));
+  assert.equal(bad.join(' '), '', 'no padding, h-*, min-h-* or leading-* class on the link');
+});
+
+test('a status narrative link is an anchor, not a button: a button is atomic and cannot break across lines (D-1715)', () => {
+  const markup = html.narr();
+  assert.doesNotMatch(markup, /<button[^>]*>the supplier import</, 'the link label is not inside a <button>');
+  assert.match(markup, /<a [^>]*href="#"[^>]*>the supplier import<\/a>/, 'the link is an <a href="#"> (preventDefault, no route)');
+});
+
+test('the theme item defines the link role in light and dark', () => {
+  const reg = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.find(i => i.name === 'theme');
+  const built = JSON.parse(readFileSync(join(root, 'public/r/theme.json'), 'utf8'));
+  for (const [where, item] of [['registry.json', reg], ['public/r/theme.json', built]]) {
+    for (const mode of ['light', 'dark']) {
+      // Literal copied from hachej/boring-factory templates/app/web/src/theme.derived.css (not readable from here).
+      assert.equal(item.cssVars[mode].link, 'color-mix(in oklab, var(--primary) 70%, var(--foreground))', `${where} ${mode} has the template's link`);
+    }
+  }
 });

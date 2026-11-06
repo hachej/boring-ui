@@ -93,7 +93,8 @@
       "color-info-soft": "var(--info-soft)",
       "color-info-soft-foreground": "var(--info-soft-foreground)",
       "color-destructive-soft": "var(--destructive-soft)",
-      "color-destructive-soft-foreground": "var(--destructive-soft-foreground)"
+      "color-destructive-soft-foreground": "var(--destructive-soft-foreground)",
+      "color-link": "var(--link)"
     },
     "light": {
       "radius": "0.5rem",
@@ -178,7 +179,8 @@
       "info-soft": "color-mix(in oklab, var(--info) 12%, var(--card))",
       "info-soft-foreground": "var(--info)",
       "destructive-soft": "color-mix(in oklab, var(--destructive) 12%, var(--card))",
-      "destructive-soft-foreground": "var(--destructive)"
+      "destructive-soft-foreground": "var(--destructive)",
+      "link": "color-mix(in oklab, var(--primary) 70%, var(--foreground))"
     },
     "dark": {
       "background": "oklch(0.18 0 0)",
@@ -258,7 +260,8 @@
       "info-soft": "color-mix(in oklab, var(--info) 22%, var(--card))",
       "info-soft-foreground": "var(--info)",
       "destructive-soft": "color-mix(in oklab, var(--destructive) 22%, var(--card))",
-      "destructive-soft-foreground": "var(--destructive)"
+      "destructive-soft-foreground": "var(--destructive)",
+      "link": "color-mix(in oklab, var(--primary) 70%, var(--foreground))"
     }
   },
   "type": "registry:theme"
