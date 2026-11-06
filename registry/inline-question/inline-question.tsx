@@ -78,12 +78,12 @@ export function InlineQuestion({ id, kind, text, source, options, answered, onAn
       </div>
       <div className="flex min-w-0 items-start gap-2 text-sm font-medium">
         <MessageCircleQuestionIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
-        <span data-testid="question-text">{text}</span>
+        <span data-testid="question-text" className="min-w-0 [overflow-wrap:anywhere]">{text}</span>
       </div>
       {choices.length > 0 || onReplyInChat ? (
         <div className="flex flex-wrap gap-1">
           {choices.map((choice, index) => (
-            <Button key={choice.value} variant={index === 0 ? 'default' : 'secondary'} size="sm" className={cn(tap, 'h-auto justify-start whitespace-normal text-start')} data-testid="question-option" data-option={choice.value} disabled={disabled} onClick={() => onAnswer(id, choice.value)}>{choice.label}</Button>
+            <Button key={choice.value} variant={index === 0 ? 'default' : 'secondary'} size="sm" className={cn(tap, 'h-auto max-w-full justify-start whitespace-normal text-start [overflow-wrap:anywhere]')} data-testid="question-option" data-option={choice.value} disabled={disabled} onClick={() => onAnswer(id, choice.value)}>{choice.label}</Button>
           ))}
           {onReplyInChat ? <Button variant="ghost" size="sm" className={tap} onClick={onReplyInChat}>{t.replyInChat}</Button> : null}
         </div>

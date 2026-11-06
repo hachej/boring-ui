@@ -134,6 +134,18 @@ test('a waiting chat question renders through InlineQuestion: a flat warning tin
   assert.match(markup, /data-option="Day 45"/);
 });
 
+test('untrusted question text and choices wrap inside a narrow chat; no empty notice row when there is nothing to say', () => {
+  const markup = html.waitingQuestion();
+  const text = /<span[^>]*data-testid="question-text"[^>]*class="([^"]*)"|<span[^>]*class="([^"]*)"[^>]*data-testid="question-text"/.exec(markup);
+  const textClass = text ? text[1] ?? text[2] : '';
+  assert.match(textClass, /\[overflow-wrap:anywhere\]/); assert.match(textClass, /min-w-0/);
+  const options = [...markup.matchAll(/<button[^>]*data-testid="question-option"[^>]*>/g)].map(m => m[0]);
+  assert.ok(options.length >= 2);
+  for (const option of options) { assert.match(option, /max-w-full/); assert.match(option, /\[overflow-wrap:anywhere\]/); }
+  assert.doesNotMatch(markup, /<div class="text-sm"><\/div>/, 'no empty notice row');
+  assert.doesNotMatch(markup, /<div class="text-sm">\s*<\/div>/);
+});
+
 test('status narrative never fetches or reads a clock', async () => {
   const { readFileSync } = await import('node:fs');
   const source = readFileSync(join(root, 'registry/status-narrative/status-narrative.tsx'), 'utf8');
