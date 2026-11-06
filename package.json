@@ -187,7 +187,8 @@
     "typescript": "5.9.3",
     "wrangler": "4.156.0",
     "zod": "4.6.7",
-    "@phosphor-icons/react": "2.1.10"
+    "@phosphor-icons/react": "2.1.10",
+    "@fontsource-variable/geist-mono": "5.3.0"
   },
   "overrides": {
     "@earendil-works/pi-durable": "1.4.0",

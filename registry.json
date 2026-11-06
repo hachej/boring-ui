@@ -8,6 +8,9 @@
       "type": "registry:theme",
       "title": "Theme",
       "description": "Optional default theme tokens and Tailwind v4 bindings: original grey canvas, flat white surface roles, compact type and semantic statuses. Explicit shadcn add overwrites matching host tokens; blocks never install this theme automatically. Font families are declarations only; hosts load the fonts and own primitive geometry and icons.",
+      "dependencies": [
+        "@fontsource-variable/geist-mono@5.3.0"
+      ],
       "cssVars": {
         "theme": {
           "color-background": "var(--background)",
