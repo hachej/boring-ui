@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useState } from 'react';
 import type { FormEvent } from 'react';
-import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
+import { formAnswer, parseAnswer, parseQuestion, splitFormAnswer } from '@hachej/boring-ui-kit/chat-view';
+import type { FormQuestion } from '@hachej/boring-ui-kit/chat-view';
+import { useSubmitOutcome } from '@hachej/boring-ui-kit/chat-react';
 import { CheckIcon, CircleSlashIcon, SendIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,66 +19,9 @@ import type { AnswerOutcome, QuestionCardProps } from '../pi-chat/config';
 // The core owns the tool name and the props: it places the question row and shows its waiting notice without this item.
 export { ASK_USER_TOOL };
 export type { AnswerOutcome, QuestionCardProps };
-
-/** One question of a form: its text and its options (chips); every question of a form also takes free text. */
-export interface FormQuestion { readonly question: string; readonly options: readonly string[] }
-interface Question {
-  readonly question: string; readonly options: readonly string[]; readonly allowFreeText: boolean;
-  /** Several questions in one form (`questions`), answered together as one text. Empty for a single question. */
-  readonly items: readonly FormQuestion[];
-}
-
-const strings = (value: unknown, max: number) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0).slice(0, max) : [];
-
-/**
- * Read `{ question, options?, allowFreeText?, questions? }` defensively: model arguments are untrusted input. Free text is allowed
- * unless `allowFreeText` is `false` (and always when there are no options). `questions` (up to 8) makes a form.
- */
-export function parseQuestion(call: ToolCall): Question {
-  const args = call.arguments as Record<string, unknown>;
-  const options = strings(args['options'], 6);
-  const items = Array.isArray(args['questions']) ? args['questions'].flatMap((item: unknown) => {
-    const value = item !== null && typeof item === 'object' ? item as Record<string, unknown> : {};
-    return typeof value['question'] === 'string' && value['question'] ? [{ question: value['question'], options: strings(value['options'], 6) }] : [];
-  }).slice(0, 8) : [];
-  return { question: typeof args['question'] === 'string' ? args['question'] : '', options, allowFreeText: args['allowFreeText'] !== false || options.length === 0, items };
-}
-
-/** The answers of a form as the one text the agent reads: each question, then its answer, or `skipped` when left blank. */
-export function formAnswer(items: readonly FormQuestion[], values: readonly string[], skipped: string): string {
-  return items.map((item, i) => `${i + 1}. ${item.question}\n→ ${values[i]?.trim() || skipped}`).join('\n\n');
-}
-
-/** The answers of a `formAnswer` text, one per question; undefined when the text does not have that shape (then it is shown whole). */
-function splitFormAnswer(items: readonly FormQuestion[], text: string): readonly string[] | undefined {
-  const values: string[] = [];
-  let at = 0;
-  for (let i = 0; i < items.length; i++) {
-    const head = `${i + 1}. ${items[i]!.question}\n→ `;
-    if (!text.startsWith(head, at)) return undefined;
-    at += head.length;
-    const end = i + 1 < items.length ? text.indexOf(`\n\n${i + 2}. ${items[i + 1]!.question}\n→ `, at) : text.length;
-    if (end < 0) return undefined;
-    values.push(text.slice(at, end));
-    at = end + 2;
-  }
-  return values;
-}
-
-/** The answered text from a result such as `{"kind":"answered","answer":"..."}`; undefined when the call did not produce an answer. */
-export function parseAnswer(result: ToolResultMessage | undefined): { readonly answer: string } | { readonly failure: string } | undefined {
-  if (!result) return undefined;
-  // Pi appends its diagnostics to a result as a `<harness>` block of their own, for the model: never for the person.
-  const text = result.content.map(part => part.type === 'text' && !/^<harness>[\s\S]*<\/harness>$/.test(part.text) ? part.text : '').join('');
-  if (!result.isError) {
-    try {
-      const value: unknown = JSON.parse(text);
-      if (value !== null && typeof value === 'object' && (value as { kind?: unknown }).kind === 'answered' && typeof (value as { answer?: unknown }).answer === 'string') return { answer: (value as { answer: string }).answer };
-    } catch { /* fall through to the failure text */ }
-  }
-  return { failure: text };
-}
-
+// The grammar of `ask_user` arguments and answers is the kit's (chat-view); these stay exported from here for hosts that import them from the item.
+export { formAnswer, parseAnswer, parseQuestion };
+export type { FormQuestion };
 
 /**
  * Human-in-the-loop question: writing (still generated, not answerable), pending (options and free text), then answered with the chosen
@@ -88,14 +33,11 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
   const { labels } = useChatText();
   const question = parseQuestion(call);
   const settled = parseAnswer(result);
-  const [sent, setSent] = useState<string | undefined>();
-  const [sending, setSending] = useState<string | undefined>();
-  const [refusal, setRefusal] = useState<string | undefined>();
+  const outcome = useSubmitOutcome({ send: value => answer!(questionId!, value), refused: labels.answerRefused, notSent: labels.answerNotSent });
+  const { sent, sending, refusal } = outcome;
   const [values, setValues] = useState<readonly string[]>([]);
   const formId = useId();
   const setValue = (i: number, value: string) => setValues(previous => question.items.map((_, j) => j === i ? value : previous[j] ?? ''));
-  const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const current = settled && 'answer' in settled ? settled.answer : sent;
   // `pending` means the question waits on the person; `writing` means the model is still generating it (options may be partial).
   const state = settled ? ('failure' in settled ? 'failed' : 'answered') : sent !== undefined ? 'sent' : live ? 'writing' : 'pending';
@@ -103,14 +45,8 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
 
   async function submit(value: string) {
     const trimmed = value.trim();
-    if (!answer || !questionId || live || !trimmed || sending !== undefined) return;
-    setRefusal(undefined); setSending(trimmed);
-    try {
-      const outcome = await answer(questionId, trimmed);
-      if (outcome.kind === 'answered') setSent(trimmed);
-      else setRefusal(outcome.reason || labels.answerRefused(outcome.kind));
-    } catch (cause) { setRefusal(cause instanceof Error ? cause.message : labels.answerNotSent); }
-    finally { if (mounted.current) setSending(undefined); }
+    if (!answer || !questionId || live || !trimmed) return;
+    await outcome.submit(trimmed);
   }
   const onSubmitForm = (event: FormEvent) => { event.preventDefault(); if (values.some(value => value.trim())) void submit(formAnswer(question.items, values, labels.skipped)); };
   const busy = sending !== undefined || live;

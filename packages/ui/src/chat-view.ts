@@ -410,6 +410,66 @@ export function summaryOf(text: string, limit = 140): string {
   return plain.length > limit ? `${plain.slice(0, limit - 1).trimEnd()}…` : plain;
 }
 
+/** One question of a form: its text and its options (chips); every question of a form also takes free text. */
+export interface FormQuestion { readonly question: string; readonly options: readonly string[] }
+/** An `ask_user` call as the person sees it. */
+export interface AskedQuestion {
+  readonly question: string; readonly options: readonly string[]; readonly allowFreeText: boolean;
+  /** Several questions in one form (`questions`), answered together as one text. Empty for a single question. */
+  readonly items: readonly FormQuestion[];
+}
+
+const strings = (value: unknown, max: number) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0).slice(0, max) : [];
+
+/**
+ * The `ask_user` argument grammar, read once here: `{ question, options?, allowFreeText?, questions? }`. Model arguments are untrusted input.
+ * Free text is allowed unless `allowFreeText` is `false` (and always when there are no options). `questions` (up to 8) makes a form.
+ */
+export function parseQuestion(call: ToolCall): AskedQuestion {
+  const args = call.arguments as Record<string, unknown>;
+  const options = strings(args['options'], 6);
+  const items = Array.isArray(args['questions']) ? args['questions'].flatMap((item: unknown) => {
+    const value = item !== null && typeof item === 'object' ? item as Record<string, unknown> : {};
+    return typeof value['question'] === 'string' && value['question'] ? [{ question: value['question'], options: strings(value['options'], 6) }] : [];
+  }).slice(0, 8) : [];
+  return { question: typeof args['question'] === 'string' ? args['question'] : '', options, allowFreeText: args['allowFreeText'] !== false || options.length === 0, items };
+}
+
+/** The answers of a form as the one text the agent reads: each question, then its answer, or `skipped` when left blank. */
+export function formAnswer(items: readonly FormQuestion[], values: readonly string[], skipped: string): string {
+  return items.map((item, i) => `${i + 1}. ${item.question}\n→ ${values[i]?.trim() || skipped}`).join('\n\n');
+}
+
+/** The answers of a `formAnswer` text, one per question; undefined when the text does not have that shape (then it is shown whole). */
+export function splitFormAnswer(items: readonly FormQuestion[], text: string): readonly string[] | undefined {
+  const values: string[] = [];
+  let at = 0;
+  for (let i = 0; i < items.length; i++) {
+    const head = `${i + 1}. ${items[i]!.question}\n→ `;
+    if (!text.startsWith(head, at)) return undefined;
+    at += head.length;
+    const end = i + 1 < items.length ? text.indexOf(`\n\n${i + 2}. ${items[i + 1]!.question}\n→ `, at) : text.length;
+    if (end < 0) return undefined;
+    values.push(text.slice(at, end));
+    at = end + 2;
+  }
+  return values;
+}
+
+/** The answered text from a result such as `{"kind":"answered","answer":"..."}`; undefined when the call did not produce an answer. */
+export function parseAnswer(result: ToolResultMessage | undefined): { readonly answer: string } | { readonly failure: string } | undefined {
+  if (!result) return undefined;
+  // Pi appends its diagnostics to a result as a `<harness>` block of their own, for the model: never for the person.
+  const text = result.content.map(part => part.type === 'text' && !/^<harness>[\s\S]*<\/harness>$/.test(part.text) ? part.text : '').join('');
+  if (!result.isError) {
+    try {
+      const value: unknown = JSON.parse(text);
+      if (value !== null && typeof value === 'object' && (value as { kind?: unknown }).kind === 'answered' && typeof (value as { answer?: unknown }).answer === 'string') return { answer: (value as { answer: string }).answer };
+    } catch { /* fall through to the failure text */ }
+  }
+  return { failure: text };
+}
+
 /**
  * What a notice says about the question or approval waiting for the person (`waitingPart`), if one waits. `question` reads the
  * question text from an `ask_user` call (the question item owns that grammar).

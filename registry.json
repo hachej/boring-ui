@@ -944,6 +944,7 @@
       "title": "Pi chat question card",
       "description": "The human-in-the-loop question card for `ask_user` (choices, free text, answered state). Plug it in with `cards={{ question: QuestionCard }}`; without it pi-chat shows a \"waiting for your answer\" notice with no answer UI.",
       "dependencies": [
+        "@hachej/boring-ui-kit@^0.4.64",
         "react@^19.0.0",
         "@earendil-works/pi-ai@~1.4.0"
       ],

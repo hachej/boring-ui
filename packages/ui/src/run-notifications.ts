@@ -1,6 +1,6 @@
 import type { ToolCall } from '@earendil-works/pi-ai';
 import type { ChatController } from './native-chat.js';
-import { derive, finishNotice, pendingNotice } from './chat-view.js';
+import { derive, finishNotice, parseQuestion, pendingNotice } from './chat-view.js';
 import type { NoticeText, Row } from './chat-view.js';
 
 /** Transient host presentation, never native execution state. */
@@ -63,8 +63,8 @@ function transition(before: NoticeState | undefined, now: NoticeState, rows: rea
 export interface RunNotificationOptions {
   readonly conversationId: string;
   readonly title: string | (() => string);
-  /** The source recipe owns the ask_user form grammar. */
-  readonly question: (call: ToolCall) => string;
+  /** Reads the question text from an `ask_user` call. Defaults to the kit's `parseQuestion` grammar; pass one only to override it. */
+  readonly question?: ((call: ToolCall) => string) | undefined;
   readonly text?: NoticeText | undefined;
   readonly enabled?: boolean | undefined;
   /** Suppresses pushes, not observation or dismissals (for an already visible conversation). */
@@ -81,7 +81,7 @@ export function watchConversation(controller: RunNotificationSource, store: Noti
     if (snapshot.connection.kind !== 'connected') return;
     const config = typeof options === 'function' ? options() : options;
     const derived = derive(snapshot.view, { mode: 'expert', renderEntry: undefined, renderTool: undefined, groupTool: undefined });
-    const next = transition(before, { working: Boolean(derived.run), question: pendingNotice(derived.rows, config.question, config.text) }, derived.rows, config.text);
+    const next = transition(before, { working: Boolean(derived.run), question: pendingNotice(derived.rows, config.question ?? (call => parseQuestion(call).question), config.text) }, derived.rows, config.text);
     before = next.state; // Fence reentrant host callbacks before delivering effects.
     const { conversationId } = config;
     const push = (kind: NotificationKind, summary: string) => {
