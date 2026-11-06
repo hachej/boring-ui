@@ -8,7 +8,6 @@ import { EllipsisIcon, SparklesIcon } from '../_shared/icons';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarSeparator, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { afterBack } from '../utils/back';
 import { NavUser } from './account';
 import { useAgentLayer } from './agent-layer';
@@ -88,8 +87,7 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
   </Button>;
   const Plus = overflow.length ? (inOverflow?.icon ?? EllipsisIcon) : undefined;
   return <nav ref={bar} role="tablist" aria-label={text.tabs} data-testid="tabbar" data-feedback-ignore="" onKeyDown={arrows}
-    className="relative z-(--app-shell-z-tabs) box-border flex min-h-(--app-shell-tabbar-min) shrink-0 bg-card pb-(--app-shell-safe-bottom)">
-    <Separator className="absolute inset-x-0 top-0" />
+    className="relative z-(--app-shell-z-tabs) box-border flex min-h-(--app-shell-tabbar-min) shrink-0 bg-sidebar px-2 pb-(--app-shell-safe-bottom)">
     {tabs.map(tab)}
     {Plus && <>
       <Button variant={inOverflow ? 'secondary' : 'ghost'} role="tab" data-testid="tab-plus" aria-selected={Boolean(inOverflow)} aria-haspopup="dialog" tabIndex={inOverflow ? 0 : -1} onClick={() => setPlusOpen(true)}

@@ -30,8 +30,5 @@ export function isDistinctSurface(element) {
 
 /** Edge classes an element draws on its own: border widths, rings and shadows at rest (focus-visible/hover variants are states, not edges). */
 export function restingEdges(element) {
-  const tokens = String(element.getAttribute('class') ?? '').split(/\s+/);
-  // A transparent border paints nothing: its width token is not an edge (the design check bans `border-0`, so the flat editor keeps the width and clears the colour).
-  const clear = tokens.includes('border-transparent');
-  return tokens.filter(token => !(clear && token === 'border')).filter(token => /^(?:border(?:-[trblxyse])?(?:-\d+)?|ring(?:-\d+)?|shadow(?:-[a-z0-9]+)?|outline(?:-\d+)?)$/.test(token) && !/^(?:border|outline)-0$|^(?:border-[trblxyse])-0$|^shadow-none$|^ring-0$/.test(token));
+  return String(element.getAttribute('class') ?? '').split(/\s+/).filter(token => /^(?:border(?:-[trblxyse])?(?:-\d+)?|ring(?:-\d+)?|shadow(?:-[a-z0-9]+)?|outline(?:-\d+)?)$/.test(token) && !/^(?:border|outline)-0$|^(?:border-[trblxyse])-0$|^shadow-none$|^ring-0$/.test(token));
 }

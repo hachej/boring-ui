@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { ComponentProps, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { SaveIcon } from '../_shared/icons';
 import { MarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';
 import type { MarkdownEditorProps, MarkdownImageResolver, MarkdownMountedTools, MarkdownRichSafety } from '@hachej/boring-ui-kit/markdown-editor';
@@ -17,12 +17,6 @@ import { ViewerFrame } from '../viewer-frame/viewer-frame';
 import type { ViewerShare, ViewerStatus } from '../viewer-frame/viewer-frame';
 import { defaultViewerLabels, useViewerText, useViewerWindow } from '../viewer-frame/viewer-window';
 import type { ViewerLabels } from '../viewer-frame/viewer-window';
-
-/** Flat pane (D-1734): the raw editor is the page itself on the pane's white card, not a second bordered box. The shadcn Textarea's border and shadow go; its focus ring stays, drawn inside so the pane's edge never clips it. */
-function PaneTextarea({ className, ...props }: ComponentProps<typeof editorControls.textarea>) {
-  return <editorControls.textarea className={cn('rounded-none border-transparent bg-transparent dark:bg-transparent px-6 py-6 shadow-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring', className)} {...props} />;
-}
-const paneControls = { ...editorControls, textarea: PaneTextarea };
 
 export interface MarkdownPaneProps {
   /** Borrowed: the host owns the controller and disposes it. */
@@ -113,7 +107,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
   const manualSave = autosave === false && !state.readOnly && state.dirty;
   const saveItem = { id: 'save', label: labels.save, icon: <SaveIcon className="size-4" />, disabled: unavailable || pending || unconfirmed, onSelect: save };
   const filename = useMemo(() => fileNameFor(title, 'md'), [title]);
-  return <ViewerFrame showSavedStatus title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.save === state.save && state.save.kind !== 'pending' ? { label: refused.label, tone: 'danger' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={cn('bg-card', className)}
+  return <ViewerFrame showSavedStatus title={title} subtitle={subtitle} headerStart={headerStart} status={refused && refused.save === state.save && state.save.kind !== 'pending' ? { label: refused.label, tone: 'danger' } : markdownStatus(state, labels)} target={target} labels={labels} revision={revision} testId={testId} {...(titleTestId ? { titleTestId } : {})} className={cn('boring-markdown-pane bg-card', className)}
     onRefresh={onRefresh ?? (() => controller.actions.refresh())} onShare={onShare} onCopy={() => copyText(controller.getSnapshot().text)}
     onDownload={() => downloadFile(filename, controller.getSnapshot().text, 'text/markdown;charset=utf-8')} onOpenInNewTab={onOpenInNewTab} onClose={close}
     menuContent={<>
@@ -127,7 +121,7 @@ export function MarkdownPane({ controller, title: givenTitle, labels: ownLabels,
       {manualSave && <span className="max-[641px]:hidden"><Button variant="ghost" size="icon-sm" aria-label={labels.save} title={labels.save} data-testid={`${testId}-save`} disabled={saveItem.disabled} onClick={save}><SaveIcon data-icon="inline-start" aria-hidden="true" /></Button></span>}
     </>}
     controls={controls}>
-    <MarkdownEditor components={paneControls} controller={controller} title={title} header={false} autosave={autosave} onAutosaveChange={registerAutosave} onSaveResult={report} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
+    <MarkdownEditor components={editorControls} controller={controller} title={title} header={false} autosave={autosave} onAutosaveChange={registerAutosave} onSaveResult={report} formattingToolbar={toolbar} mode={mode} onModeChange={setRequested} onRichSafety={setSafety}
       {...(placeholder === undefined ? {} : { placeholder })} {...(resolveImage ? { resolveImage } : {})} {...(onMountedTools ? { onMountedTools } : {})} className="boring-markdown-editor" />
   </ViewerFrame>;
 }

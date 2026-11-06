@@ -945,6 +945,18 @@ test('compactNav defaults to the tab bar on a phone', async t => {
   await ui.unmount();
 });
 
+test('phone tab bar: grey like the desktop rail, no line on top, the active pill inset from the screen edge (D-1734)', async t => {
+  const ui = await render(t, {});
+  const bar = ui.container.querySelector('[data-testid=tabbar]');
+  const tokens = bar.className.split(/\s+/);
+  assert.equal(tokens.includes('bg-sidebar'), true, `the bar is on the rail's grey (${bar.className})`);
+  assert.equal(tokens.includes('bg-card'), false, 'not the white content card');
+  assert.equal(bar.querySelector('[data-slot=separator]') === null, true, 'no dead line on top of the bar');
+  assert.equal(tokens.includes('px-2'), true, 'the pills sit 8px from the screen edge');
+  assert.equal(/(^|\s)(h-\d|h-\[|max-h)/.test(bar.querySelector('[role=tab]').className), false, 'tabs keep the bar\'s 44px height, no fixed shorter one');
+  await ui.unmount();
+});
+
 // The pointing tool on an app's own agent: `AgentSpec.feedback` gives the composer its toggle and steps the layer aside while the person points.
 test('AgentSpec.feedback: the composer shows annotate, and on a phone the layer steps aside while pointing', async t => {
   const { createFeedbackSession } = await import('@hachej/boring-feedback/ui');
