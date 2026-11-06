@@ -111,7 +111,7 @@ test('an answered decision reads by value under overridden labels; an unknown va
 
 test('a status narrative shows text and links in order, the time and author, one needs-you count and a refresh', () => {
   const markup = html.narr();
-  assert.match(markup, /1 agent works on <\/span><button[^>]*>the supplier import<\/button><span>\. Nothing else is open\./);
+  assert.match(markup, /1 agent works on <\/span><a[^>]*>the supplier import<\/a><span>\. Nothing else is open\./);
   assert.match(markup, /2 min ago/); assert.match(markup, />router</); assert.match(markup, /3 need you/);
   assert.match(markup, /aria-label="Refresh status"/); assert.match(markup, /bg-warning-soft/);
   assert.equal(html.narrOne().includes('1 needs you'), true);
@@ -161,14 +161,20 @@ test('status narrative never fetches or reads a clock', async () => {
 
 test('a status narrative link is an inline text link: no padding, height or leading, underlined, in the link colour', () => {
   const markup = html.narr();
-  const found = markup.match(/<button([^>]*)>the supplier import<\/button>/);
-  assert.equal(found !== null, true, 'the link button is rendered');
+  const found = markup.match(/<a([^>]*)>the supplier import<\/a>/);
+  assert.equal(found !== null, true, 'the link anchor is rendered');
   const cls = (found[1].match(/class="([^"]*)"/) || [, ''])[1].split(/\s+/).filter(Boolean);
   for (const want of ['text-link', 'underline', 'underline-offset-4', 'font-medium']) {
     assert.equal(cls.includes(want), true, `link has ${want}: ${cls.join(' ')}`);
   }
   const bad = cls.filter(c => /(^|:)(p|px|py|pt|pb|pl|pr|ps|pe|h|min-h|leading)-/.test(c) || /^has-\[/.test(c));
   assert.equal(bad.join(' '), '', 'no padding, h-*, min-h-* or leading-* class on the link');
+});
+
+test('a status narrative link is an anchor, not a button: a button is atomic and cannot break across lines (D-1715)', () => {
+  const markup = html.narr();
+  assert.doesNotMatch(markup, /<button[^>]*>the supplier import</, 'the link label is not inside a <button>');
+  assert.match(markup, /<a [^>]*href="#"[^>]*>the supplier import<\/a>/, 'the link is an <a href="#"> (preventDefault, no route)');
 });
 
 test('the theme item defines the link role in light and dark', () => {
