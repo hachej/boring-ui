@@ -12,7 +12,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(process.env.COMPACT_TOOLCHAIN_DIR ? join(resolve(process.env.COMPACT_TOOLCHAIN_DIR), '../package.json') : import.meta.url);
 const { build } = require('esbuild');
 const { compile } = require('tailwindcss');
-const names = ['button', 'card', 'input', 'select', 'badge', 'alert', 'tabs', 'empty', 'table', 'textarea', 'input-group', 'message', 'bubble', 'attachment', 'field', 'label', 'separator', 'dropdown-menu'];
+const names = ['button', 'card', 'input', 'select', 'badge', 'alert', 'tabs', 'empty', 'table', 'textarea', 'input-group', 'message', 'bubble', 'attachment', 'field', 'label', 'separator', 'dropdown-menu', 'native-select'];
 const hash = value => createHash('sha256').update(value).digest('hex');
 
 // Runs the real shared source through a browser bundle. Set COMPACT_EVIDENCE to a fresh directory to retain a review snapshot.
@@ -92,6 +92,18 @@ test('bundled compact primitives: rendered defaults, states, keyboard behavior a
       })()`);
       const label = `${width}-${mode}`;
       measurements.push(result);
+      // D-1727: on a phone NativeSelect (both sizes) is 44px, level with Input, Button and the Select trigger.
+      const touch = await browser.evaluate(`(() => {
+        const box = s => document.querySelector(s).getBoundingClientRect().height;
+        const row = '[data-testid="touch-targets"] ';
+        return { native: [...document.querySelectorAll(row + 'select')].map(n => n.getBoundingClientRect().height), wrappers: [...document.querySelectorAll(row + '[data-slot="native-select-wrapper"]')].map(n => n.getBoundingClientRect().height),
+          input: box('[data-testid="touch-input"]'), button: box('[data-testid="touch-button"]'), select: box('[data-testid="touch-select"]') };
+      })()`);
+      if (width === 390) {
+        check(touch.native.length === 2 && touch.native.every(h => h >= 44), `${width}-${mode} NativeSelect <select> (default and sm) must be 44px: ${JSON.stringify(touch.native)}`);
+        check(touch.wrappers.every((h, i) => h === touch.native[i]), `${width}-${mode} NativeSelect wrapper follows the select: ${JSON.stringify(touch)}`);
+        check([touch.input, touch.button, touch.select].every(h => h === 44) && touch.native[0] === 44, `${width}-${mode} Select, Input, Button and NativeSelect in a row are equal at 44px: ${JSON.stringify(touch)}`);
+      }
       check(result.ordinaryFields.length === 4 && result.ordinaryFields.every(n => n.fontSize === '12px'), `${label} ordinary FieldLabel/FieldTitle/description/error must be 12px: ${JSON.stringify(result.ordinaryFields)}`);
       for (const key of ['cardCopy', 'emptyCopy', 'button', 'select', 'tab', 'row']) check(result[key].fontSize === '12px', `${label} ${key}: expected 12px, got ${result[key].fontSize}`);
       for (const key of ['cardTitle', 'emptyTitle']) check(result[key].fontSize === '14px', `${label} ${key}: expected 14px, got ${result[key].fontSize}`);
@@ -150,3 +162,4 @@ test('bundled compact primitives: rendered defaults, states, keyboard behavior a
     assert.deepEqual(violations, []);
   } finally { writeFileSync(join(evidence, 'final-dom.html'), await browser.evaluate('document.documentElement.outerHTML')); await browser.close(); await new Promise(done => server.close(done)); }
 });
+
