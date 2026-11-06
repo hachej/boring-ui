@@ -18,6 +18,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement as h } from 'react';
 import { InlineQuestion, DECISION_VALUES } from '${join(root, 'registry/inline-question/inline-question.tsx')}';
 import { StatusNarrative } from '${join(root, 'registry/status-narrative/status-narrative.tsx')}';
+import { QuestionCard } from '${join(root, 'registry/pi-chat-question/question-card.tsx')}';
 export { DECISION_VALUES };
 const on = () => {};
 export const html = {
@@ -32,6 +33,7 @@ export const html = {
   narrBare: () => renderToStaticMarkup(h(StatusNarrative, { segments: ['All quiet. ', { label: 'Compta', app: 'compta' }] })),
   narrOne: () => renderToStaticMarkup(h(StatusNarrative, { segments: ['x'], needsYou: 1 })),
   narrFr: () => renderToStaticMarkup(h(StatusNarrative, { segments: ['x'], needsYou: 2, onRefresh: on, labels: { needsYou: n => n + ' à traiter', refresh: 'Actualiser' } })),
+  waitingQuestion: () => renderToStaticMarkup(h(QuestionCard, { call: { type: 'toolCall', id: 'c1', name: 'ask_user', arguments: { question: 'Day 30 or day 45?', options: ['Day 30', 'Day 45'] } }, result: undefined, questionId: 'q1', answer: async () => ({ kind: 'answered' }) })),
   many: () => renderToStaticMarkup(h(InlineQuestion, { id: 'x', kind: 'question', text: 'Which file?', options: ['a', 'b', 'c', 'd', 'e'], onAnswer: on })),
 };
 `;
@@ -120,6 +122,14 @@ test('a status narrative without handlers shows links as plain emphasis; with no
   assert.doesNotMatch(markup, /<button/); assert.match(markup, /Compta/); assert.doesNotMatch(markup, /need you|needs you/);
   const fr = html.narrFr();
   assert.match(fr, /2 à traiter/); assert.match(fr, /aria-label="Actualiser"/);
+});
+
+test('a waiting chat question is a flat warning tint, not a bordered card', () => {
+  const markup = html.waitingQuestion();
+  const box = /^<div[^>]*class="([^"]*)"/.exec(markup)[1];
+  assert.match(box, /bg-warning-soft/); assert.doesNotMatch(box, /\bborder\b|shadow|ring/);
+  assert.doesNotMatch(markup, /data-slot="card"/);
+  assert.match(markup, /data-testid="question-option"/, 'test ids are unchanged');
 });
 
 test('status narrative never fetches or reads a clock', async () => {

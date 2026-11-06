@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Waiting question and approval look flat.** `QuestionCard` is a soft warning tint instead of a bordered card, `ApprovalCard` a muted row instead of an outline row (the Bench `InlineQuestion` look). Test ids, props and answers are unchanged; re-run `npm run registry:build`.
+
 # Migrating to 0.4.60
 
 - **Chat tool steps show human names (`pi-chat`).** A tool id such as `piece_save` is never shown raw, in English or French: built-in tools keep their names, any other id is humanised. Re-sync `pi-chat`; no prop changes. Pattern blocks (`kpi-stat`, `list-row`, `empty-state`, `page-header`, `data-table`) now have their entry in `features/patterns.md`.
