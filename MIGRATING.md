@@ -1,7 +1,7 @@
 # Unreleased
 
 - **Theme `--border` is stronger (`theme` item).** The published theme item now sets `--border` to `oklch(0.87 0 0)` in light and `oklch(1 0 0 / 16%)` in dark (was `oklch(0.91 0 0)` and `oklch(1 0 0 / 10%)`), matching the Factory app template. An app that installs or updates the theme sees stronger edges everywhere `--border` is used, including `--input` and `--sidebar-border`, which follow it. No other token changes.
-- **Alert has a contour (bundled primitives).** In the UI bundle (`shadcn/ui/alert.tsx`, built from main; not in the npm package), default Alert gets a 1px `border-border` and destructive a 1px `border-destructive`, keeping its soft fill. `success`, `warning` and `info` are unchanged. Apps can drop hand-added border classes on Alert.
+- **Alert has a contour (bundled primitives).** In the UI bundle (`shadcn/ui/alert.tsx`, built from main; not in the npm package), every Alert variant gets a 1px contour in its status colour (`border-border`, `border-success`, `border-warning`, `border-info`, `border-destructive`), keeping its soft fill. Apps can drop hand-added border classes on Alert.
 
 # Migrating to 0.4.61
 
