@@ -54,10 +54,14 @@ test('rounded-full only on pills (text with horizontal padding), status dots and
   assert.deepEqual(ownSizes("'size-2! rounded-full'"), ['2'], 'the important modifier keeps a status dot a dot');
 });
 
-test('template extras are optional: the kit derives them from shadcn roles and the theme item requires none (success is the one shipped extra, used by the pattern blocks)', () => {
+test('template extras remain optional to blocks; the opt-in theme supplies semantic status defaults', () => {
   const registry = JSON.parse(read('registry.json'));
   const theme = registry.items.find(item => item.name === 'theme').cssVars;
-  const EXTRA = /^(warning|info)|^(font-display|border-width|duration-|ease-standard|default-)/;
+  const EXTRA = /^(font-display|border-width|duration-|ease-standard|default-)/;
+  for (const status of ['success', 'warning', 'info', 'destructive']) {
+    for (const scope of ['light', 'dark']) for (const name of [status, `${status}-soft`, `${status}-soft-foreground`]) assert.ok(theme[scope][name], `${scope} supplies ${name}`);
+    for (const name of [status, `${status}-soft`, `${status}-soft-foreground`]) assert.equal(theme.theme[`color-${name}`], `var(--${name})`);
+  }
   for (const scope of ['light', 'dark', 'theme']) for (const name of Object.keys(theme[scope])) {
     if (scope === 'theme' && name === 'default-border-width') assert.equal(theme[scope][name], 'var(--border-width, 1px)', 'the Tailwind binding keeps border-width optional with the stock fallback');
     else assert.doesNotMatch(name.replace(/^color-/, ''), EXTRA, `theme item ${scope} adds ${name}`);
