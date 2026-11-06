@@ -44,16 +44,46 @@ export function checkDesign(root = designRoot, { config = readDesignConfig(root)
     for (const match of text.matchAll(/\b(?:import|export)\s+([^;]*?)\s+from\s+['"]([^'"]+)['"]/g)) {
       const [, bindings, specifier] = match;
       const ui = /^@\/components\/ui\/([\w-]+)$/.exec(specifier);
-      if (ui) for (const [name] of bindings.matchAll(/\b[A-Z]\w*/g)) hostComponents.set(name, ui[1]);
+      if (ui) for (const [name] of bindings.matchAll(/(?<=\*\s+as\s+)[\w$]+|\b[A-Z]\w*/g)) hostComponents.set(name, ui[1]);
       let reason;
       if (ui && !SHADCN_BUILTINS.includes(ui[1])) reason = `shadcn import outside the app setup (SHADCN_BUILTINS): ${specifier}`;
       else if (!ui && !/^type\b/.test(bindings.trim()) && [...bindings.matchAll(/\b[A-Z]\w*/g)].some(([name]) => primitive.test(name))) reason = `UI primitive must come from the host's @/components/ui/*: ${specifier}`;
       if (reason) add({ file, line: text.slice(0, match.index).split('\n').length, column: 1, rule: 'primitive-import', value: reason, ...(/\b(?:Button|IconButton|Toggle|Switch)\b/.test(bindings) ? { group: '1' } : {}) });
     }
-    for (const match of text.matchAll(/<([A-Z]\w*)\b[^>]*?\bclassName\s*=\s*(?:["']([^"']*)["']|\{([^}]*?)\})/g)) {
-      if (!hostComponents.has(match[1])) continue;
-      const classes = match[2] ?? match[3];
-      if (/(?<![\w-])(?:(?:bg|font|shadow|rounded|border|ring|duration|animate|size|p[xytrblse]?)-|text-(?!(?:left|right|center|justify|start|end)\b)|h-(?!auto\b))/.test(classes)) add({ file, line: text.slice(0, match.index).split('\n').length, column: 1, rule: 'shadcn-restyle', value: `${match[1]} className changes appearance: ${classes}`, ...(['button', 'toggle', 'switch'].includes(hostComponents.get(match[1])) ? { group: '1' } : {}) });
+    const lineOf = index => text.slice(0, index).split('\n').length;
+    // Objects holding host controls (`const controls = { textarea: Textarea }`) make `<controls.textarea>` a host control too.
+    const holders = new Map();
+    for (const match of text.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\{([^}]*)\}/g)) {
+      const held = [...match[2].matchAll(/\b[A-Z]\w*/g)].map(([name]) => name).filter(name => hostComponents.has(name));
+      if (held.length) holders.set(match[1], held);
+    }
+    const classConsts = new Map(), touch = /(?<![\w-])(?:size|h|w)-11(?![\w-])/g;
+    // Only a string literal or a cn/clsx/cva call counts as a held class.
+    for (const match of text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*((?:(["'`])(?:(?!\3)[^\\])*\3)|(?:cn|clsx|cva|twMerge)\([^;]*?\))\s*(?=;|\n)/g)) {
+      const strings = [...match[2].matchAll(/(["'`])((?:(?!\1)[^\\])*)\1/g)].map(([, , value]) => value);
+      if (strings.length) classConsts.set(match[1], strings.join(' ').replace(touch, ''));
+    }
+    const appearance = /(?<![\w-])(?:(?:bg|font|shadow|rounded|border|ring|duration|animate|size|p[xytrblse]?)-|text-(?!(?:left|right|center|justify|start|end)\b)|h-(?!auto\b))/;
+    const hostFile = tag => {
+      const [root, member] = tag.split('.');
+      if (hostComponents.has(root)) return hostComponents.get(root);
+      const held = holders.get(root)?.find(name => name.toLowerCase() === member?.toLowerCase()) ?? holders.get(root)?.[0];
+      return held && hostComponents.get(held);
+    };
+    for (const match of text.matchAll(/<([A-Za-z_$][\w$]*(?:\.[\w$]+)*)\b[^>]*?\bclassName\s*=\s*(?:["']([^"']*)["']|\{([^}]*?)\})/g)) {
+      const ui = hostFile(match[1]);
+      if (!ui) continue;
+      let classes = match[2] ?? match[3];
+      // A class held in a const and passed as className={cls} is the same class.
+      if (match[3] !== undefined) classes += ' ' + [...match[3].matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)/g)].map(([, name]) => classConsts.get(name)).filter(Boolean).join(' ');
+      if (appearance.test(classes)) add({ file, line: lineOf(match.index), column: 1, rule: 'shadcn-restyle', value: `${match[1]} className changes appearance: ${classes.trim()}`, ...(['button', 'toggle', 'switch'].includes(ui) ? { group: '1' } : {}) });
+    }
+    // An arbitrary descendant variant on a parent restyles the host control inside it.
+    for (const match of text.matchAll(/[^\s"'`{}]*\[&[^\s"'`{}]*/g)) {
+      const token = match[0].slice(match[0].indexOf('[&'));
+      const split = /^\[&(.*)\]:((?:[\w-]+:)*)([^\s:\]]+)$/.exec(token);
+      if (!split || !/data-slot|role=|(?<![A-Za-z0-9-])(?:button|input|textarea|select|checkbox|switch|toggle)(?![A-Za-z0-9-])/.test(split[1]) || !appearance.test(split[3].replace(touch, ''))) continue;
+      add({ file, line: lineOf(match.index), column: 1, rule: 'shadcn-restyle', value: `descendant variant restyles a host control: ${token}`, ...(/button|toggle|switch/.test(split[1]) ? { group: '1' } : {}) });
     }
   }, ignored);
   for (const entry of config.primitives ?? []) if (existsSync(resolve(root, entry.file))) add({ file: entry.file, line: 1, column: 1, rule: 'primitive-file', value: `delete owned primitive; compose ${entry.replacement}` });
