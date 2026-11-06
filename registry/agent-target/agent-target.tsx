@@ -17,7 +17,7 @@ import { useAgentLayer } from '../app-shell/agent-layer';
 import { ScreenActiveContext } from '../app-shell/agent-context';
 import { useDictation } from '../app-shell/use-dictation';
 import { useVisualViewport } from '../app-shell/use-visual-viewport';
-import { object } from '../pi-chat/rows';
+import { object, targetBlock } from '../pi-chat/rows';
 import { agentTargetLabels } from './agent-target-labels';
 import type { AgentTargetLabels } from './agent-target-labels';
 
@@ -51,10 +51,10 @@ function contextOf(element: Element, attribute: string, labels: AgentTargetLabel
   let target: unknown;
   try { target = JSON.parse(raw); } catch { throw new Error(labels.invalidContext); }
   if (!target || typeof target !== 'object' || Array.isArray(target)) throw new Error(labels.invalidContext);
-  const json = JSON.stringify(target).replace(/</g, '\\u003c');
-  if (new TextEncoder().encode(json).length > 1024) throw new Error(labels.contextTooLarge);
+  const block = targetBlock(target as JsonObject);
+  if (block === undefined) throw new Error(labels.contextTooLarge);
   freeze(target);
-  return { target: target as JsonObject, block: `<target>${json}</target>` };
+  return { target: target as JsonObject, block };
 }
 const textOf = (entries: readonly EntryRecord[]): string => entries.flatMap(entry => (entry.model ?? []).flatMap(message => message.role === 'assistant'
   ? message.content.flatMap(part => part.type === 'text' ? [part.text] : []) : [])).filter(Boolean).join('\n\n');

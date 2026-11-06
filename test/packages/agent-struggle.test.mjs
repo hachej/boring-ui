@@ -137,6 +137,20 @@ test('correction and rephrase, content-free; a bare « non » answering a questi
   assert.doesNotMatch(JSON.stringify(events), /yaourt|déjeuner|faux/);
 });
 
+test('rephrase ignores a valid <target> block but counts a malformed one as the person\'s words', async t => {
+  const events = capture(t);
+  const ask = 'Ajoute un yaourt grec au dîner';
+  const valid = await open(t);
+  await valid.say(`<target>{"meal":"m-fictional-42"}</target>\n\n${ask}`);
+  await valid.say(ask);
+  assert.deepEqual(kinds(events), ['rephrase'], 'a valid block is context, not words');
+  events.length = 0;
+  const malformed = await open(t);
+  await malformed.say(`<target>alpha beta gamma delta</target>\n${ask}`);
+  await malformed.say(ask);
+  assert.deepEqual(kinds(events), [], 'no blank line after the block: it is plain text, so the two asks differ');
+});
+
 test('struggle: false selects nothing; a sink that throws never fails the run', async t => {
   const events = capture(t);
   const off = await open(t, [call('save_meal')], { struggle: false });
