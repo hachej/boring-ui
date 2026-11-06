@@ -426,7 +426,8 @@ const strings = (value: unknown, max: number) => Array.isArray(value) ? value.fi
  * Free text is allowed unless `allowFreeText` is `false` (and always when there are no options). `questions` (up to 8) makes a form.
  */
 export function parseQuestion(call: ToolCall): AskedQuestion {
-  const args = call.arguments as Record<string, unknown>;
+  // Missing or non-object arguments (a call still being written) are no question, never a throw.
+  const args = (call.arguments !== null && typeof call.arguments === 'object' ? call.arguments : {}) as Record<string, unknown>;
   const options = strings(args['options'], 6);
   const items = Array.isArray(args['questions']) ? args['questions'].flatMap((item: unknown) => {
     const value = item !== null && typeof item === 'object' ? item as Record<string, unknown> : {};

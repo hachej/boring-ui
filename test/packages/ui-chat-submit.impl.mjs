@@ -52,6 +52,19 @@ test('a second submit while one is in flight is dropped', async t => {
   assert.equal(page.api.sent, 'Approve');
 });
 
+test('two submits in the same tick, before any render, send once', async t => {
+  const gate = deferred(); const seen = [];
+  const page = await mount(t, { ...words, send: value => { seen.push(value); return gate.promise; } });
+  let first, second;
+  await act(async () => { first = page.api.submit('Approve'); second = page.api.submit('Deny'); });
+  assert.deepEqual(seen, ['Approve']);
+  await act(async () => { gate.resolve({ kind: 'answered' }); await first; await second; });
+  assert.equal(page.api.sent, 'Approve');
+  // The slot is free again after the send settles.
+  await act(async () => { await page.api.submit('Deny'); });
+  assert.deepEqual(seen, ['Approve', 'Deny']);
+});
+
 test('a refusal shows its reason, else the caller words for its kind, and the next send clears it', async t => {
   const outcomes = [{ kind: 'denied', reason: 'Not yours to answer.' }, { kind: 'conflict' }, { kind: 'answered' }];
   const gate = deferred(); let next = 0;
@@ -151,10 +164,45 @@ test('parseAnswer reads answered results and falls back to the failure text', ()
   assert.deepEqual(parseAnswer({ ...withHarness, isError: true, content: [{ type: 'text', text: 'Stopped.' }, { type: 'text', text: '<harness>x</harness>' }] }), { failure: 'Stopped.' });
 });
 
-test('watchConversation needs no injected question parser', { skip: baseline !== undefined }, () => {
-  const source = { getSnapshot: () => ({ connection: { kind: 'connected' }, view: { entries: [], docs: {} }, draft: { text: '', version: 0 } }), subscribe: () => () => {} };
-  const store = chatReact.createNotificationStore();
-  const stop = chatReact.watchConversation(source, store, { conversationId: 'c1', title: 'Fictional chat' });
-  stop();
-  assert.deepEqual(store.getSnapshot(), []);
+test('parseQuestion treats missing, null or non-object arguments as no question', { skip: baseline !== undefined }, () => {
+  for (const args of [undefined, null, 'text', 7]) {
+    assert.deepEqual(parseQuestion({ type: 'toolCall', id: 'c', name: 'ask_user', arguments: args }), { question: '', options: [], allowFreeText: true, items: [] });
+  }
 });
+
+// A committed, unresolved ask_user call in a native view, as run notifications read it.
+const pending = args => ({ id: 1, kind: 'message', byTaskId: 1, model: [{ role: 'assistant', content: [{ type: 'toolCall', id: 'ask-1', name: 'ask_user', arguments: args }], stopReason: 'toolUse', timestamp: 1 }] });
+function source() {
+  let snapshot = { connection: { kind: 'connected' }, view: { entries: [], docs: {} } };
+  const listeners = new Set();
+  return { getSnapshot: () => snapshot, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
+    set(entries) { snapshot = { connection: { kind: 'connected' }, view: { entries, docs: {} } }; for (const listener of [...listeners]) listener(); } };
+}
+
+test('watchConversation reads a waiting question with the kit grammar when no parser is passed', { skip: baseline !== undefined }, () => {
+  const controller = source(), store = chatReact.createNotificationStore();
+  const stop = chatReact.watchConversation(controller, store, { conversationId: 'c1', title: 'Fictional chat' });
+  controller.set([pending({ question: 'Which colour?' })]);
+  assert.equal(store.getSnapshot()[0]?.kind, 'input');
+  assert.equal(store.getSnapshot()[0]?.summary, 'Which colour?');
+  stop();
+});
+
+test('a question option overrides the default grammar', { skip: baseline !== undefined }, () => {
+  const controller = source(), store = chatReact.createNotificationStore();
+  const stop = chatReact.watchConversation(controller, store, { conversationId: 'c1', title: 'Fictional chat', question: call => `override:${call.id}` });
+  controller.set([pending({ question: 'Which colour?' })]);
+  assert.equal(store.getSnapshot()[0]?.summary, 'override:ask-1');
+  stop();
+});
+
+test('a waiting call with no arguments does not kill the watcher', { skip: baseline !== undefined }, () => {
+  const controller = source(), store = chatReact.createNotificationStore();
+  const stop = chatReact.watchConversation(controller, store, { conversationId: 'c1', title: 'Fictional chat' });
+  assert.doesNotThrow(() => controller.set([pending(undefined)]));
+  assert.doesNotThrow(() => controller.set([pending(null)]));
+  controller.set([pending({ question: 'Which colour?' })]);
+  assert.equal(store.getSnapshot()[0]?.summary, 'Which colour?', 'the watcher still delivers after the bad call');
+  stop();
+});
+

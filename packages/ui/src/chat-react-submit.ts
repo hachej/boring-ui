@@ -35,15 +35,19 @@ export function useSubmitOutcome({ send, refused, notSent }: SubmitOutcomeOption
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
+  // `sending` is state and updates on the next render; two calls in one tick must still admit one send.
+  const inFlight = useRef(false);
+
   async function submit(value: string): Promise<void> {
-    if (sending !== undefined) return;
+    if (inFlight.current || sending !== undefined) return;
+    inFlight.current = true;
     setRefusal(undefined); setSending(value);
     try {
       const outcome = await send(value);
       if (outcome.kind === 'answered') setSent(value);
       else setRefusal(outcome.reason || refused(outcome.kind));
     } catch (cause) { setRefusal(cause instanceof Error ? cause.message : notSent); }
-    finally { if (mounted.current) setSending(undefined); }
+    finally { inFlight.current = false; if (mounted.current) setSending(undefined); }
   }
   return { sent, sending, refusal, submit };
 }
