@@ -3264,6 +3264,46 @@
       ]
     },
     {
+      "name": "space-card",
+      "type": "registry:component",
+      "title": "Space card",
+      "description": "One app or space at a glance: working and waiting counts, a Quiet state when both are 0, an unreadable state that is never shown as quiet, an optional last ship. Props only; a button when it can open.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.59/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.59/r/_shared.json"
+      ],
+      "files": [
+        {
+          "path": "registry/space-card/space-card.tsx",
+          "type": "registry:component",
+          "target": "components/space-card/space-card.tsx"
+        }
+      ]
+    },
+    {
+      "name": "wiring-chips",
+      "type": "registry:component",
+      "title": "Wiring chips",
+      "description": "What an app is wired to, one small chip each with a state dot (ok, needs attention, not readable); the state is also spoken, not colour alone. Props only.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.59/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.59/r/_shared.json"
+      ],
+      "files": [
+        {
+          "path": "registry/wiring-chips/wiring-chips.tsx",
+          "type": "registry:component",
+          "target": "components/wiring-chips/wiring-chips.tsx"
+        }
+      ]
+    },
+    {
       "name": "empty-state",
       "type": "registry:component",
       "title": "Empty state",

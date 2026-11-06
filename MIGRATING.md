@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`space-card` and `wiring-chips` blocks (new).** `SpaceCard` `{ name, activity, lastShip?, onOpen? }`: working and waiting counts, `Quiet` when both are 0, an `'unknown'` activity that is never shown as quiet. `WiringChips` `{ chips: { label, state? }[] }`: state dots for ok, warn and unknown, with the state spoken. Props only. Install with `shadcn add <registry>/space-card.json` and `<registry>/wiring-chips.json`; nothing existing changes.
+
 # Migrating to 0.4.59
 
 - **Phosphor default icons (registry blocks and bundled primitives).** Re-sync blocks and their `_shared` item together: the existing semantic names now render `@phosphor-icons/react@2.1.10`, installed through that item's exact dependency. Existing icon/action/nav props still accept Lucide or branded components. Preserve intentional branded shared-module overrides when updating; tokens and DESIGN.md do not choose a library. Ordinary block installs do not replace the host's shadcn primitives or install the theme. Factory must provision/rebuild/adopt its bundle separately. Package-owned Library and embedded Markdown toolbar defaults remain Lucide; the Library dependency is retained. See [coverage and provisioning](registry/README.md#default-icons).

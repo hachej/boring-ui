@@ -1,0 +1,22 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "wiring-chips",
+  "title": "Wiring chips",
+  "description": "What an app is wired to, one small chip each with a state dot (ok, needs attention, not readable); the state is also spoken, not colour alone. Props only.",
+  "dependencies": [
+    "react@^19.0.0"
+  ],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.59/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.59/r/_shared.json"
+  ],
+  "files": [
+    {
+      "path": "registry/wiring-chips/wiring-chips.tsx",
+      "content": "import { cn } from '../utils/utils';\n\n/** ok = working, warn = needs attention (sign-in, error), unknown = could not be read. */\nexport type WiringState = 'ok' | 'warn' | 'unknown';\nexport type WiringChip = { label: string; state?: WiringState };\n\nexport type WiringChipsProps = {\n  chips: readonly WiringChip[];\n  /** Read by assistive tech; the state is also shown as a word, not by colour alone. */\n  labels?: Partial<Record<WiringState, string>>;\n  className?: string;\n};\n\nconst defaults: Record<WiringState, string> = { ok: 'ok', warn: 'needs attention', unknown: 'not readable' };\nconst dot: Record<WiringState, string> = { ok: 'bg-success', warn: 'bg-warning', unknown: 'bg-muted-foreground' };\n\n/** What an app is wired to (domain, repo, channels, connections), one small chip each with a state dot. */\nexport function WiringChips({ chips, labels, className }: WiringChipsProps) {\n  const t = { ...defaults, ...labels };\n  return (\n    <ul className={cn('flex min-w-0 flex-wrap gap-1', className)}>\n      {chips.map((chip, index) => {\n        const state = chip.state ?? 'ok';\n        return (\n          <li key={index} className=\"flex min-w-0 items-center gap-1 rounded-(--radius) bg-muted px-2 py-1 text-xs\">\n            <span aria-hidden className={cn('size-2 shrink-0 rounded-(--radius)', dot[state])} />\n            <span className=\"truncate\">{chip.label}</span>\n            {state === 'ok' ? null : <span className=\"sr-only\">{t[state]}</span>}\n          </li>\n        );\n      })}\n    </ul>\n  );\n}\n",
+      "type": "registry:component",
+      "target": "components/wiring-chips/wiring-chips.tsx"
+    }
+  ],
+  "type": "registry:component"
+}
