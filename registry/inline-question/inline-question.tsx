@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
 import { cn } from '../utils/utils';
-import { CheckIcon, MessageCircleQuestionIcon } from '../_shared/icons';
+import { ArrowUpIcon, CheckIcon, MessageCircleQuestionIcon } from '../_shared/icons';
 
 /** The stable values of a decision. The host stores these; the words on the buttons are labels and may be translated. */
 export const DECISION_VALUES = ['approve', 'refuse'] as const;
@@ -20,7 +20,7 @@ export type InlineQuestionTone = 'neutral' | 'attention';
 export type InlineQuestionLabels = { decision: string; question: string; approve: string; refuse: string; send: string; placeholder: string; placeholderMore: string; replyInChat: string; approved: string; refused: string; answered: string };
 
 export const inlineQuestionLabels: InlineQuestionLabels = {
-  decision: 'Decision', question: 'Question', approve: 'Approve', refuse: 'Refuse', send: 'Send', placeholder: 'Type your answer', placeholderMore: 'Or type an answer',
+  decision: 'Decision', question: 'Question', approve: 'Approve', refuse: 'Refuse', send: 'Answer', placeholder: 'Type your answer', placeholderMore: 'Or type an answer',
   replyInChat: 'Reply in chat', approved: 'Approved', refused: 'Refused', answered: 'Answered',
 };
 
@@ -95,9 +95,14 @@ export function InlineQuestion({ id, kind, text, source, options, answered, onAn
         </div>
       ) : null}
       {showField ? (
-        <form className="flex gap-1" onSubmit={event => { event.preventDefault(); send(); }}>
-          <Input data-testid="question-input" disabled={disabled} maxLength={2000} value={draft} onChange={event => setDraft(event.target.value)} placeholder={choices.length ? t.placeholderMore : t.placeholder} aria-label={t.placeholder} className="min-w-0 flex-1" />
-          <Button type="submit" size="sm" variant="secondary" className={tap} data-testid="question-submit" disabled={disabled || !draft.trim()}>{t.send}</Button>
+        // One box: the field and the send as a trailing icon button inside it, on the --card fill and the --input edge; the fill and the 44px fit (under md or on a coarse pointer) are this item's `css` in registry.json, scoped by data-slot=question-field (D-1741 will tokenise the 44px). 16px text on a phone so iOS does not zoom.
+        <form data-slot="question-field" onSubmit={event => { event.preventDefault(); send(); }}>
+          <InputGroup>
+            <InputGroupInput data-testid="question-input" disabled={disabled} maxLength={2000} value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); send(); } }} placeholder={choices.length ? t.placeholderMore : t.placeholder} aria-label={t.placeholder} className="h-full text-base md:text-sm" />
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton type="submit" size="icon-sm" variant="default" aria-label={t.send} data-testid="question-submit" disabled={disabled || !draft.trim()}><ArrowUpIcon aria-hidden="true" /></InputGroupButton>
+            </InputGroupAddon>
+          </InputGroup>
         </form>
       ) : null}
       {notice ? <div className="text-sm">{notice}</div> : null}
