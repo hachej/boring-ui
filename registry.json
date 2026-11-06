@@ -925,6 +925,7 @@
       ],
       "registryDependencies": [
         "@boring-ui/pi-chat",
+        "@boring-ui/inline-question",
         "@boring-ui/_shared"
       ],
       "files": [

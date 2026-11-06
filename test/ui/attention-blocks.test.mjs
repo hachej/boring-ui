@@ -124,12 +124,14 @@ test('a status narrative without handlers shows links as plain emphasis; with no
   assert.match(fr, /2 à traiter/); assert.match(fr, /aria-label="Actualiser"/);
 });
 
-test('a waiting chat question is a flat warning tint, not a bordered card', () => {
+test('a waiting chat question renders through InlineQuestion: a flat warning tint, choices and free text, test ids kept', () => {
   const markup = html.waitingQuestion();
-  const box = /^<div[^>]*class="([^"]*)"/.exec(markup)[1];
-  assert.match(box, /bg-warning-soft/); assert.doesNotMatch(box, /\bborder\b|shadow|ring/);
+  const inner = /<div role="group" aria-label="Day 30 or day 45\?" class="([^"]*)"/.exec(markup);
+  assert.ok(inner, 'the InlineQuestion group is there');
+  assert.match(inner[1], /bg-warning-soft/); assert.doesNotMatch(inner[1], /\bborder\b|shadow|ring/);
   assert.doesNotMatch(markup, /data-slot="card"/);
-  assert.match(markup, /data-testid="question-option"/, 'test ids are unchanged');
+  for (const id of ['question-card', 'question-text', 'question-option', 'question-input', 'question-submit']) assert.match(markup, new RegExp('data-testid="' + id + '"'), id);
+  assert.match(markup, /data-option="Day 45"/);
 });
 
 test('status narrative never fetches or reads a clock', async () => {
