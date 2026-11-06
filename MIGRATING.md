@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`inline-question` block (new).** `InlineQuestion` `{ id, kind, text, options?, onAnswer }`: a `decision` (gate or review) is Approve/Refuse, a `question` takes up to four choices or free text. Props in, `onAnswer(id, value)` out; the host posts the answer under the signed-in person's own login. Install it with `shadcn add <registry>/inline-question.json`; nothing existing changes.
+
 # Migrating to 0.4.59
 
 - **Phosphor default icons (registry blocks and bundled primitives).** Re-sync blocks and their `_shared` item together: the existing semantic names now render `@phosphor-icons/react@2.1.10`, installed through that item's exact dependency. Existing icon/action/nav props still accept Lucide or branded components. Preserve intentional branded shared-module overrides when updating; tokens and DESIGN.md do not choose a library. Ordinary block installs do not replace the host's shadcn primitives or install the theme. Factory must provision/rebuild/adopt its bundle separately. Package-owned Library and embedded Markdown toolbar defaults remain Lucide; the Library dependency is retained. See [coverage and provisioning](registry/README.md#default-icons).
