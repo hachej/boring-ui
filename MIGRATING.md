@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`theme` item declares `@fontsource-variable/geist-mono`.** The default style's mono face (`Geist Mono`) now ships as a dependency, as Phosphor does, so an app made from the template gets it from the kit. Nothing existing changes.
+
 # Migrating to 0.4.59
 
 - **Phosphor default icons (registry blocks and bundled primitives).** Re-sync blocks and their `_shared` item together: the existing semantic names now render `@phosphor-icons/react@2.1.10`, installed through that item's exact dependency. Existing icon/action/nav props still accept Lucide or branded components. Preserve intentional branded shared-module overrides when updating; tokens and DESIGN.md do not choose a library. Ordinary block installs do not replace the host's shadcn primitives or install the theme. Factory must provision/rebuild/adopt its bundle separately. Package-owned Library and embedded Markdown toolbar defaults remain Lucide; the Library dependency is retained. See [coverage and provisioning](registry/README.md#default-icons).
