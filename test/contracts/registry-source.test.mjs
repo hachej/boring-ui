@@ -99,7 +99,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
   for (const item of manifest.items) {
     if (item.name === 'theme') {
       assert.equal(item.type, 'registry:theme');
-      assert.equal(item.files, undefined); assert.equal(item.dependencies, undefined); assert.equal(item.css, undefined);
+      assert.equal(item.files, undefined); assert.deepEqual(item.dependencies, ['@fontsource-variable/geist-mono@5.3.0']); assert.equal(item.css, undefined);
       const { theme, light, dark } = item.cssVars;
       assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).filter(name => name !== 'radius' && !/^(?:text-(?:body|title)|font-(?:sans|mono))$/.test(name)).sort(), 'dark redefines every mode-dependent role; shape, type and fonts live in light only');
       for (const [name, value] of Object.entries(theme)) {
