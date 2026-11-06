@@ -19,12 +19,13 @@ const registry = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8'));
 const item = name => registry.items.find(entry => entry.name === name);
 const block = vars => Object.entries(vars).map(([key, value]) => `--${key}: ${value};`).join('\n');
 
-test('--control-h sizes the controls at 1440 fine, 390 coarse and in a data-density="compact" frame; text fields are 16px on a phone', { skip: !process.env.CHROMIUM && !process.env.CI, timeout: 240000 }, async () => {
+// The kit's shadcn/ui primitives, and the example app's pinned copy (examples/app-shell/components/ui) that Studio and the app-shell example really render.
+for (const primitives of ['shadcn/ui', 'examples/app-shell/components/ui']) test(`--control-h sizes the controls (${primitives}) at 1440 fine, 390 coarse, in a nested data-density="compact" frame and on a compact <html>; text fields are 16px on a phone`, { skip: !process.env.CHROMIUM && !process.env.CI, timeout: 240000 }, async () => {
   assert.ok(process.env.CHROMIUM, 'CHROMIUM must be set when CI is set');
+  mkdirSync(join(root, '.cache'), { recursive: true });
   const evidence = mkdtempSync(join(root, '.cache/control-height-'));
-  mkdirSync(evidence, { recursive: true });
   const kit = { name: 'kit-sources', setup(builder) {
-    builder.onResolve({ filter: /^@\/components\/ui\// }, args => ({ path: join(root, 'shadcn/ui', `${args.path.split('/').at(-1)}.tsx`) }));
+    builder.onResolve({ filter: /^@\/components\/ui\// }, args => { const file = `${args.path.split('/').at(-1)}.tsx`; return { path: existsSync(join(root, primitives, file)) ? join(root, primitives, file) : join(root, 'shadcn/ui', file) }; });
     // The kit's published subpaths point at dist/; the test reads the same files from src/ so it needs no build.
     const exported = JSON.parse(readFileSync(join(root, 'packages/ui/package.json'), 'utf8')).exports;
     builder.onResolve({ filter: /^@hachej\/boring-ui-kit\// }, args => {
@@ -55,6 +56,8 @@ test('--control-h sizes the controls at 1440 fine, 390 coarse and in a data-dens
   await build({ entryPoints: [join(root, 'packages/testing/src/browser.ts')], bundle: true, platform: 'node', format: 'esm', outfile: join(evidence, 'browser.mjs') });
   const { launch } = await import(pathToFileURL(join(evidence, 'browser.mjs')));
   const browser = await launch('about:blank', { evidence });
+  // sm, xs, icon-sm, icon-xs and the small NativeSelect keep each primitive set's own sizes (the example's pinned copy is a size larger).
+  const small = primitives === 'shadcn/ui' ? [24, 20, 24, 20] : [28, 24, 28, 24], nativeSm = primitives === 'shadcn/ui' ? 32 : 28;
   const violations = [];
   const expect = (label, actual, wanted) => { if (JSON.stringify(actual) !== JSON.stringify(wanted)) violations.push(`${label}: expected ${JSON.stringify(wanted)}, got ${JSON.stringify(actual)}`); };
   // Each control as [scope selector, control selector, what to read].
@@ -86,9 +89,9 @@ test('--control-h sizes the controls at 1440 fine, 390 coarse and in a data-dens
       sizes(normal, mobile ? 44 : 36, `${width} ${mobile ? 'coarse' : 'fine'}`);
       sizes(compact, 36, `${width} compact frame`);
       // Smaller sizes: unchanged on a fine pointer at md+ and in a compact frame, 44px on touch.
-      expect(`${width} sm/xs/icon-sm/icon-xs`, ['sm', 'xs', 'icon-sm', 'icon-xs'].map(size => normal.buttons[size].h), mobile ? [44, 44, 44, 44] : [24, 20, 24, 20]);
-      expect(`${width} compact frame sm/xs/icon-sm/icon-xs`, ['sm', 'xs', 'icon-sm', 'icon-xs'].map(size => compact.buttons[size].h), [24, 20, 24, 20]);
-      expect(`${width} native sm`, [normal.nativeSm.h, compact.nativeSm.h], mobile ? [44, 32] : [32, 32]);
+      expect(`${width} sm/xs/icon-sm/icon-xs`, ['sm', 'xs', 'icon-sm', 'icon-xs'].map(size => normal.buttons[size].h), mobile ? [44, 44, 44, 44] : small);
+      expect(`${width} compact frame sm/xs/icon-sm/icon-xs`, ['sm', 'xs', 'icon-sm', 'icon-xs'].map(size => compact.buttons[size].h), small);
+      expect(`${width} native sm`, [normal.nativeSm.h, compact.nativeSm.h], mobile ? [44, nativeSm] : [nativeSm, nativeSm]);
       expect(`${width} question group and submit`, [normal.questionGroup.h, normal.questionSubmit.h, compact.questionGroup.h, compact.questionSubmit.h], mobile ? [44, 44, 36, 36] : [36, 32, 36, 32]);
       // Text fields: 16px on a phone (no iOS zoom), 14px at md+. A compact frame changes the height, never the font.
       for (const [name, m] of [['normal', normal], ['compact', compact]]) for (const field of ['input', 'textarea', 'native', 'composerInput', 'question']) {
@@ -96,6 +99,16 @@ test('--control-h sizes the controls at 1440 fine, 390 coarse and in a data-dens
         if (mobile && !(px >= 16)) violations.push(`${width} ${name} ${field} font-size ${font} under 16px`);
         if (!mobile && font !== '14px') violations.push(`${width} ${name} ${field} font-size ${font}, expected 14px (md:text-sm)`);
       }
+      // A compact <html> (a whole page in compact): the media rule must lose to [data-density="compact"] wherever the rules land.
+      await browser.evaluate(`document.documentElement.setAttribute('data-density', 'compact')`);
+      await new Promise(done => setTimeout(done, 500)); // buttons transition their size (transition-all)
+      const page = await measure('normal');
+      expect(`${width} html compact token`, page.token, '2.25rem');
+      sizes(page, 36, `${width} compact <html>`);
+      expect(`${width} compact <html> sm/xs/icon-sm/icon-xs`, ['sm', 'xs', 'icon-sm', 'icon-xs'].map(size => page.buttons[size].h), small);
+      await browser.evaluate(`document.documentElement.removeAttribute('data-density')`);
+      // The Select trigger is a button (no keyboard opens, so iOS does not zoom): it keeps the 12px of a button at every width.
+      expect(`${width} select trigger font`, [normal.trigger.font, compact.trigger.font], ['12px', '12px']);
       await browser.screenshot(`control-height-${width}.png`);
     }
     assert.deepEqual(violations, []);

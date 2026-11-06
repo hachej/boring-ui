@@ -1,11 +1,11 @@
 import { useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Button } from '../../../shadcn/ui/button';
-import { Input } from '../../../shadcn/ui/input';
-import { Textarea } from '../../../shadcn/ui/textarea';
-import { NativeSelect, NativeSelectOption } from '../../../shadcn/ui/native-select';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../../../shadcn/ui/select';
-import { SidebarProvider, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from '../../../shadcn/ui/sidebar';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { SidebarProvider, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from '@/components/ui/sidebar';
 import { Composer } from '../../../registry/pi-chat/composer.tsx';
 import { VoiceMessageButton } from '../../../registry/pi-chat-voice/voice-message.tsx';
 import { HeaderActions } from '../../../registry/app-shell/header-actions.tsx';
