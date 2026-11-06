@@ -34,8 +34,11 @@ export function useWorkspaceChangeFeed(provider: RevisionProvider | undefined, s
           timer ??= setTimeout(() => { timer = undefined; if (!stop.signal.aborted) move(); }, settleMs);
         }
       } catch { /* refused: the views fall back to their own refresh */ }
+      // A feed that ends by itself (not aborted by this effect) acts on the change still settling: the effect does not restart, so nothing else would.
+      const pending = timer !== undefined;
       clearTimeout(timer);
       timer = undefined;
+      if (pending && !stop.signal.aborted) move();
       if (!stop.signal.aborted) setState(current => ({ provider, seq: current.provider === provider ? current.seq : undefined, live: false }));
     })();
     return () => { stop.abort(); clearTimeout(timer); };
