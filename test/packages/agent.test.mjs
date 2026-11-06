@@ -1715,6 +1715,31 @@ test('OptChat compactor replay is deterministic across failed-node SQLite reopen
   assert.ok(contexts[0].split('\n').length < 40, 'the restart fixture exercised coarsening');
 });
 
+test('conversations: a message that begins with <target> but is not a valid block never becomes a title', { timeout: 30000 }, async t => {
+  const { createConversations } = await import('@hachej/boring-agent/conversations');
+  const directory = mkdtempSync(join(tmpdir(), 'conversations-target-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const { models, model } = await echoModels();
+  const harness = await Harness.open(await openNodeSqliteStorage(join(directory, 'session.sqlite')), { registry: createRegistry(), models }, context);
+  t.after(() => harness.close(context));
+  const conversations = createConversations({ harness, context });
+  const owner = 'fictional-malformed-team';
+  const start = init => harness.createConversation({ ownership: { kind: 'ownerless' }, agent: { model }, init }, context);
+  const say = async (conversation, text) => (await conversation.submit({ type: 'input', content: text }, context)).wait(context);
+  const unclosed = await conversations.create(owner, { start });
+  await say(unclosed, '<target>{"mealId":"m-fictional-42"}');
+  const crlf = await conversations.create(owner, { start });
+  await say(crlf, '<target>{"mealId":"m-fictional-43"}</target>\r\n\r\nChange lunch');
+  const adopted = await harness.createConversation({ ownership: { kind: 'ownerless' }, agent: { model } }, context);
+  await say(adopted, '<target>{"mealId":"m-fictional-44"}');
+  await conversations.flush();
+  assert.equal((await conversations.get(owner, unclosed.id)).title, null, 'no closing tag: no title');
+  assert.equal((await conversations.get(owner, crlf.id)).title, 'Change lunch', 'a closing tag: what follows it');
+  assert.equal((await conversations.adopt(adopted.id, owner, { updatedAt: 4 })).title, null, 'adopting an old transcript derives no title from it');
+  // Previews are not asserted: the echo model repeats the user's words in its reply.
+  assert.equal((await conversations.list({ owner })).items.some(item => (item.title ?? '').includes('m-fictional')), false, 'no machine id in any title');
+});
+
 test('addExtension adds a host extension to an existing conversation: the next turn runs with it, and it survives a reopen', { timeout: 20000 }, async t => {
   const { defineTool } = await import('@earendil-works/pi-durable');
   const { Type } = await import('@earendil-works/pi-ai');
