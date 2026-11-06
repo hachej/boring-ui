@@ -743,6 +743,15 @@
           }
         },
         "@layer utilities": {
+          ".pi-chat [data-slot=\"attachment\"]": {
+            "background-color": "var(--secondary)"
+          },
+          ".pi-chat [data-slot=\"attachment-media\"]": {
+            "background-color": "var(--card)"
+          },
+          ".pi-chat [data-testid=\"composer\"] [data-slot=\"input-group\"]": {
+            "background-color": "var(--card)"
+          },
           "@media (width < 768px), (pointer: coarse)": {
             ".pi-chat :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
               "min-height": "2.75rem",
