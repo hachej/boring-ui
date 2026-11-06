@@ -3264,6 +3264,26 @@
       ]
     },
     {
+      "name": "inline-question",
+      "type": "registry:component",
+      "title": "Inline question",
+      "description": "A waiting question shown where it is mentioned. A decision (gate or review) is approve or refuse; a question takes up to four choices or free text. Props only: the host posts the answer under the signed-in person's own login. Soft info or warning tint while waiting, a muted answered state, 44px targets on phones.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/utils",
+        "@boring-ui/_shared"
+      ],
+      "files": [
+        {
+          "path": "registry/inline-question/inline-question.tsx",
+          "type": "registry:component",
+          "target": "components/inline-question/inline-question.tsx"
+        }
+      ]
+    },
+    {
       "name": "empty-state",
       "type": "registry:component",
       "title": "Empty state",
