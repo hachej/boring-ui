@@ -9,6 +9,7 @@ import { Alert, AlertTitle, AlertDescription } from '../../../shadcn/ui/alert';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../../shadcn/ui/tabs';
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyContent } from '../../../shadcn/ui/empty';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../../../shadcn/ui/table';
+import { NativeSelect, NativeSelectOption } from '../../../shadcn/ui/native-select';
 import { Textarea } from '../../../shadcn/ui/textarea';
 import { InputGroup, InputGroupTextarea, InputGroupAddon, InputGroupText, InputGroupButton } from '../../../shadcn/ui/input-group';
 import { Message, MessageContent } from '../../../shadcn/ui/message';
@@ -40,6 +41,16 @@ function App() {
       <label className="flex flex-col gap-1">Email<Input aria-label="Email" aria-invalid="true" defaultValue="fictional@example.test" /></label>
       <label className="flex flex-col gap-1">Disabled<Input aria-label="Disabled field" disabled value="Unavailable" readOnly /></label>
       <div className="flex flex-col gap-1"><span id="period-label">Period</span><Select items={items} defaultValue="week"><SelectTrigger aria-labelledby="period-label"><SelectValue /></SelectTrigger><SelectContent alignItemWithTrigger={false}><SelectGroup>{items.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent></Select></div>
+    </section>
+    <section className="flex flex-col gap-2" aria-label="Touch targets" data-testid="touch-targets">
+      <h2 className="text-sm font-semibold">Form controls in a row</h2>
+      <div className="flex flex-wrap items-start gap-2">
+        <NativeSelect aria-label="Native period"><NativeSelectOption>Week</NativeSelectOption></NativeSelect>
+        <NativeSelect size="sm" aria-label="Native small"><NativeSelectOption>Week</NativeSelectOption></NativeSelect>
+        <Input data-testid="touch-input" aria-label="Touch input" defaultValue="Input" className="w-32" />
+        <Button data-testid="touch-button">Button</Button>
+        <Select items={items} defaultValue="week"><SelectTrigger data-testid="touch-select" aria-label="Touch select"><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{items.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent></Select>
+      </div>
     </section>
     <section className="flex flex-col gap-2" data-testid="ordinary-role-fields" aria-label="Ordinary field and menu roles">
       <Field><FieldLabel htmlFor="role-field">Fictional recipient</FieldLabel><Input id="role-field" /><FieldDescription>Ordinary field guidance</FieldDescription><FieldError>Fictional field error</FieldError></Field>
