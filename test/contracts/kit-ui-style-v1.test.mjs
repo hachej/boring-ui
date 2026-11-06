@@ -61,6 +61,16 @@ test('every Alert variant has a contour', () => {
 
 const files = directory => readdirSync(join(root, directory), { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? files(`${directory}/${entry.name}`) : /\.tsx?$/.test(entry.name) ? [`${directory}/${entry.name}`] : []);
 
+test('the registry theme --border matches the app template, in the source and the generated item', () => {
+  const source = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.find(item => item.name === 'theme');
+  const generated = JSON.parse(readFileSync(join(root, 'public/r/theme.json'), 'utf8'));
+  for (const [label, item] of [['registry.json', source], ['public/r/theme.json', generated]]) {
+    assert.ok(item, `${label}: no theme item`);
+    assert.equal(item.cssVars.light.border, 'oklch(0.87 0 0)', `${label} light --border`);
+    assert.equal(item.cssVars.dark.border, 'oklch(1 0 0 / 16%)', `${label} dark --border`);
+  }
+});
+
 test('kit ui files take icons from the Phosphor symbol map, not lucide-react', () => {
   const offending = uiDirs.flatMap(files).filter(path => /from\s+['"]lucide-react['"]/.test(readFileSync(join(root, path), 'utf8')));
   assert.deepEqual(offending, [], `lucide-react imported in: ${offending.join(', ')}`);
