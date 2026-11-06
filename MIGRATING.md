@@ -1,6 +1,7 @@
 # Unreleased
 
 - **Chat tool steps show human names (`pi-chat`).** A tool id such as `piece_save` is never shown raw, in English or French: built-in tools keep their names, any other id is humanised. Re-sync `pi-chat`; no prop changes. Pattern blocks (`kpi-stat`, `list-row`, `empty-state`, `page-header`, `data-table`) now have their entry in `features/patterns.md`.
+- **`inline-question` block (new).** `InlineQuestion` `{ id, kind, text, options?, onAnswer }`: a `decision` (gate or review) is Approve/Refuse, a `question` takes up to four choices or free text. Props in, `onAnswer(id, value)` out; a decision answers with the stable values `'approve'` or `'refuse'`, never the translated button words; the host posts the answer under the signed-in person's own login. Install it with `shadcn add <registry>/inline-question.json`; nothing existing changes.
 
 # Migrating to 0.4.59
 
