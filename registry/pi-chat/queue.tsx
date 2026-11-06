@@ -9,10 +9,10 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
 import { Button } from '@/components/ui/button';
-import { isFileBlock, targetContent, type QueuedMessage } from './rows';
+import { isFileBlock, withoutTarget, type QueuedMessage } from './rows';
 
 /** A pending message shows what the person said, never its leading `<target>` block's raw fields. */
-const spoken = (text: string): string => targetContent(text)?.speech ?? text;
+const spoken = withoutTarget;
 import { defaultChatLabels, useChatText } from './labels';
 
 export type { QueuedMessage } from './rows';

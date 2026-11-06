@@ -6,6 +6,7 @@ import { GenerationTask, ToolTask, defineExtension, hook } from '@earendil-works
 import type { Extension } from '@earendil-works/pi-durable';
 import type { Message } from '@earendil-works/pi-ai';
 import { jsonSchemaTool } from './json-schema-tool.js';
+import { withoutTarget } from './target-block.js';
 
 export const REPORT_BUG_TOOL = 'report_bug';
 
@@ -56,7 +57,7 @@ const userText = (message: Message): string => message.role !== 'user' ? '' : ty
 const asked = (message: Message | undefined): boolean => message?.role === 'assistant'
   && message.content.map(part => part.type === 'text' ? part.text : '').join('').trim().endsWith('?');
 /** The person's words only: the block a point-and-speak message or a mention adds is not what they said. */
-const words = (text: string): Set<string> => new Set(text.replace(/^<target>.*?<\/target>/s, '').replace(/<file[\s\S]*?<\/file>/g, '').toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
+const words = (text: string): Set<string> => new Set(withoutTarget(text).replace(/<file[\s\S]*?<\/file>/g, '').toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
 function rephrased(text: string, earlier: readonly string[]): boolean {
   const said = words(text);
   if (said.size < 3) return false;
