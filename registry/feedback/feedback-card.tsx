@@ -177,7 +177,7 @@ function ElementLine({ request, label, source, onShowFeedback, onHideFeedback, i
       : children;
   const text = <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
     <span data-testid="feedback-fallback" className="font-semibold [overflow-wrap:anywhere]">{readable.name}</span>
-    {readable.file && <span data-testid="feedback-source" title={readable.path ?? readable.file} className="font-mono text-xs font-normal text-muted-foreground">{readable.file}</span>}
+    {readable.file && <span data-mono-id data-testid="feedback-source" title={readable.path ?? readable.file} className="font-mono text-xs font-normal text-muted-foreground">{readable.file}</span>}
     {badge}</span>;
   return <span className="block" data-outcome={outcome?.kind}>
     {onShowFeedback

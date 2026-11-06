@@ -19,7 +19,9 @@ test('the 44px rule is unchanged and names the data-dense opt-out', () => {
   assert.ok(selector.endsWith(':not([data-dense]):not([data-dense] *)'));
 });
 
-test('in a phone-width browser, buttons are 44px by default and data-dense keeps its own size', { skip: !existsSync(chromium) && 'no Chromium' }, () => {
+test('in a phone-width browser, buttons are 44px by default and data-dense keeps its own size', { skip: !existsSync(chromium) && !process.env.CI && 'no Chromium' }, () => {
+  // In CI a missing browser fails the test; it never skips (D-1731).
+  assert.ok(existsSync(chromium), `Chromium not found at ${chromium}`);
   const page = `<style>@media (width < 768px), (pointer: coarse) { ${selector} { min-height: 2.75rem; min-width: 2.75rem; } }
     button { all: unset; display: block; height: 10px; width: 10px; box-sizing: border-box; }</style>
     <div class="app-shell"><button id="plain" data-slot="button"></button>

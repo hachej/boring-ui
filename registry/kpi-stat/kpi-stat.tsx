@@ -26,7 +26,7 @@ export function KpiStat({ label, value, compare, className }: KpiStatProps) {
   return (
     <div className={cn('flex min-w-0 flex-col gap-0.5', className)}>
       <span className="truncate text-xs text-muted-foreground">{label}</span>
-      <span className="truncate font-mono text-sm font-semibold tabular-nums">{value}</span>
+      <span className="truncate text-sm font-semibold tabular-nums">{value}</span>
       {change ? <KpiDelta change={change} /> : null}
     </div>
   );
@@ -36,7 +36,7 @@ function KpiDelta({ change }: { change: KpiChange }) {
   const up = change.direction === 'up';
   const Arrow = up ? ArrowUp : ArrowDown;
   return (
-    <span className={cn('inline-flex items-center gap-0.5 font-mono text-xs tabular-nums', up ? 'text-success' : 'text-destructive')}>
+    <span className={cn('inline-flex items-center gap-0.5 text-xs tabular-nums', up ? 'text-success' : 'text-destructive')}>
       <Arrow aria-hidden className="size-3" />
       <span className="sr-only">{up ? 'Up' : 'Down'} </span>
       {up ? '+' : '−'}

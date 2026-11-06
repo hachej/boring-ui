@@ -112,8 +112,8 @@ function assertDescendantStopped(path) {
   assert.equal(spawnSync('flock', ['-n', join(path, 'lock'), 'true']).status, 0, 'descendant released its lock');
 }
 
-test('all four workflow installs skip apt and extra fonts when the cached browser libraries are present', t => {
-  assert.equal(steps.length, 4);
+test('all five workflow installs skip apt and extra fonts when the cached browser libraries are present', t => {
+  assert.equal(steps.length, 5);
   for (const step of steps) {
     assert.match(step.step, /timeout-minutes: 8/);
     const f = fixture(t);
@@ -187,4 +187,15 @@ test('ldd inspection errors and unresolved libraries fail instead of silently ac
   const missing = fixture(t, 'still-missing');
   assert.notEqual(missing.run(steps[0]).status, 0);
   assert.equal((missing.log().match(/^npx .* install-deps /gm) ?? []).length, 1);
+});
+
+test('the tests job (browser contract tests) sets CHROMIUM and installs the same pinned browser', () => {
+  const workflow = readFileSync(new URL('.github/workflows/verify.yml', root), 'utf8');
+  const job = /^  tests:\n([\s\S]*?)(?=^  [a-z-]+:\n)/m.exec(workflow)?.[1] ?? '';
+  const chromium = /CHROMIUM: (.+)/.exec(job)?.[1];
+  assert.ok(chromium, 'tests job sets CHROMIUM');
+  assert.equal(chromium, /CHROMIUM: (.+)/.exec(workflow)?.[1], 'same CHROMIUM path as the verify job');
+  assert.match(job, /PLAYWRIGHT_BROWSERS_PATH: /);
+  assert.ok(job.indexOf('bash scripts/install-ci-chromium.sh 1.63.0') > 0, 'tests job installs Chromium');
+  assert.ok(job.indexOf('install-ci-chromium.sh') < job.indexOf('npm test'), 'install precedes the tests');
 });

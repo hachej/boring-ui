@@ -78,7 +78,8 @@ test('KpiStat shows a success delta up and a destructive one down, with a screen
   assert.match(up, /text-success/);
   assert.match(up, /<span class="sr-only">Up <\/span>/);
   assert.match(up, /\+20%/);
-  assert.match(up, /font-mono text-sm font-semibold tabular-nums/);
+  assert.match(up, /text-sm font-semibold tabular-nums/, 'the figure is sans with tabular numbers');
+  assert.doesNotMatch(up, /font-mono/, 'a figure is not code (D-1742)');
   assert.doesNotMatch(html.statFlat(), /sr-only|text-success|text-destructive/, 'equal readings draw no delta');
 });
 

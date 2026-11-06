@@ -424,7 +424,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
       <CollapsibleContent><pre className="whitespace-pre-wrap">{row.text}</pre></CollapsibleContent>
     </Collapsible></article>;
     case 'orphan-result': return <article data-row-id={row.key} data-role="toolResult"><Notice tone="error" testid="tool-error" icon={<AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>
-      <strong className="font-semibold">{labels.toolFailed(row.message.toolName)}</strong><span className="mt-1 block font-mono text-xs whitespace-pre-wrap">{resultText(row.message)}</span></Notice><ImageThumbnails images={images} onOpenImage={context.onOpenImage} /></article>;
+      <strong className="font-semibold">{labels.toolFailed(row.message.toolName)}</strong><span data-mono-id className="mt-1 block font-mono text-xs whitespace-pre-wrap">{resultText(row.message)}</span></Notice><ImageThumbnails images={images} onOpenImage={context.onOpenImage} /></article>;
     case 'assistant': {
       const settled = !row.streaming;
       const nativeActions = settled;

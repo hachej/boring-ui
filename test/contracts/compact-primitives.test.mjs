@@ -16,7 +16,9 @@ const names = ['button', 'card', 'input', 'select', 'badge', 'alert', 'tabs', 'e
 const hash = value => createHash('sha256').update(value).digest('hex');
 
 // Runs the real shared source through a browser bundle. Set COMPACT_EVIDENCE to a fresh directory to retain a review snapshot.
-test('bundled compact primitives: rendered defaults, states, keyboard behavior and bounded tables', { skip: !process.env.CHROMIUM }, async () => {
+test('bundled compact primitives: rendered defaults, states, keyboard behavior and bounded tables', { skip: !process.env.CHROMIUM && !process.env.CI }, async () => {
+  // In CI a missing browser fails the test; it never skips (D-1731).
+  assert.ok(process.env.CHROMIUM, 'CHROMIUM must be set when CI is set');
   mkdirSync(join(root, '.cache'), { recursive: true });
   const evidence = process.env.COMPACT_EVIDENCE ? resolve(process.env.COMPACT_EVIDENCE) : mkdtempSync(join(root, '.cache/compact-primitives-'));
   mkdirSync(evidence, { recursive: true });
