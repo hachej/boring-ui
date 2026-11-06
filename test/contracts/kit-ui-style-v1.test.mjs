@@ -35,6 +35,27 @@ test('the Card surface is flat: no shadow, ring or border utility', () => {
   }
 });
 
+function alertVariantClasses(variant) {
+  const source = readFileSync(join(root, 'shadcn/ui/alert.tsx'), 'utf8');
+  const variants = source.match(/variants:\s*\{\s*variant:\s*\{([\s\S]*?)\n      \},/);
+  assert.ok(variants, 'shadcn/ui/alert.tsx: no cva variant block');
+  const entry = variants[1].match(new RegExp(`\\b${variant}:\\s*"([^"]*)"`));
+  assert.ok(entry, `shadcn/ui/alert.tsx: no "${variant}" variant string`);
+  return entry[1].split(/\s+/).filter(Boolean);
+}
+
+test('Alert default and destructive variants have a contour', () => {
+  const expected = {
+    default: ['border', 'border-border'],
+    destructive: ['border', 'border-destructive', 'bg-destructive-soft'],
+  };
+  for (const [variant, utilities] of Object.entries(expected)) {
+    const classes = alertVariantClasses(variant);
+    const missing = utilities.filter(name => !classes.includes(name));
+    assert.deepEqual(missing, [], `Alert ${variant} is missing ${missing.join(' ')}`);
+  }
+});
+
 const files = directory => readdirSync(join(root, directory), { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? files(`${directory}/${entry.name}`) : /\.tsx?$/.test(entry.name) ? [`${directory}/${entry.name}`] : []);
 
 test('kit ui files take icons from the Phosphor symbol map, not lucide-react', () => {
