@@ -3284,6 +3284,26 @@
       ]
     },
     {
+      "name": "status-narrative",
+      "type": "registry:component",
+      "title": "Status narrative",
+      "description": "The status paragraph of a home or a chat: text and link parts in order, the time and author underneath, one needs-you count, an optional refresh. Props only: the host fetches, writes the sentences and formats the time.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/utils",
+        "@boring-ui/_shared"
+      ],
+      "files": [
+        {
+          "path": "registry/status-narrative/status-narrative.tsx",
+          "type": "registry:component",
+          "target": "components/status-narrative/status-narrative.tsx"
+        }
+      ]
+    },
+    {
       "name": "empty-state",
       "type": "registry:component",
       "title": "Empty state",

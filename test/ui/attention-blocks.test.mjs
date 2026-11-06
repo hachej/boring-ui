@@ -17,6 +17,7 @@ const entry = `
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement as h } from 'react';
 import { InlineQuestion, DECISION_VALUES } from '${join(root, 'registry/inline-question/inline-question.tsx')}';
+import { StatusNarrative } from '${join(root, 'registry/status-narrative/status-narrative.tsx')}';
 export { DECISION_VALUES };
 const on = () => {};
 export const html = {
@@ -27,6 +28,10 @@ export const html = {
   doneFr: (answered) => renderToStaticMarkup(h(InlineQuestion, { id: 'm', kind: 'decision', text: 'Fusionner #1691 ?', answered, labels: { approve: 'Approuver', refuse: 'Refuser', approved: 'Approuvé', refused: 'Refusé', answered: 'Répondu' }, onAnswer: on })),
   openFr: () => renderToStaticMarkup(h(InlineQuestion, { id: 'm', kind: 'decision', text: 'Fusionner #1691 ?', labels: { approve: 'Approuver', refuse: 'Refuser' }, onAnswer: on })),
   doneQuestion: () => renderToStaticMarkup(h(InlineQuestion, { id: 'p', kind: 'question', text: 'Day 30 or day 45?', answered: 'Day 45', onAnswer: on })),
+  narr: () => renderToStaticMarkup(h(StatusNarrative, { segments: ['1 agent works on ', { label: 'the supplier import', task: 'D-1511' }, '. Nothing else is open.'], at: '2 min ago', by: 'router', needsYou: 3, onOpen: on, onRefresh: on })),
+  narrBare: () => renderToStaticMarkup(h(StatusNarrative, { segments: ['All quiet. ', { label: 'Compta', app: 'compta' }] })),
+  narrOne: () => renderToStaticMarkup(h(StatusNarrative, { segments: ['x'], needsYou: 1 })),
+  narrFr: () => renderToStaticMarkup(h(StatusNarrative, { segments: ['x'], needsYou: 2, onRefresh: on, labels: { needsYou: n => n + ' à traiter', refresh: 'Actualiser' } })),
   many: () => renderToStaticMarkup(h(InlineQuestion, { id: 'x', kind: 'question', text: 'Which file?', options: ['a', 'b', 'c', 'd', 'e'], onAnswer: on })),
 };
 `;
@@ -100,4 +105,25 @@ test('an answered decision reads by value under overridden labels; an unknown va
   const other = html.doneFr('approved');
   assert.doesNotMatch(other, /Refusé|Approuvé/);
   assert.match(other, /Répondu: approved/);
+});
+
+test('a status narrative shows text and links in order, the time and author, one needs-you count and a refresh', () => {
+  const markup = html.narr();
+  assert.match(markup, /1 agent works on <\/span><button[^>]*>the supplier import<\/button><span>\. Nothing else is open\./);
+  assert.match(markup, /2 min ago/); assert.match(markup, />router</); assert.match(markup, /3 need you/);
+  assert.match(markup, /aria-label="Refresh status"/); assert.match(markup, /bg-warning-soft/);
+  assert.equal(html.narrOne().includes('1 needs you'), true);
+});
+
+test('a status narrative without handlers shows links as plain emphasis; with no count there is no pill and no clock is read', () => {
+  const markup = html.narrBare();
+  assert.doesNotMatch(markup, /<button/); assert.match(markup, /Compta/); assert.doesNotMatch(markup, /need you|needs you/);
+  const fr = html.narrFr();
+  assert.match(fr, /2 à traiter/); assert.match(fr, /aria-label="Actualiser"/);
+});
+
+test('status narrative never fetches or reads a clock', async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(join(root, 'registry/status-narrative/status-narrative.tsx'), 'utf8');
+  assert.doesNotMatch(source, /\bfetch\s*\(|XMLHttpRequest|useEffect|localStorage|Date\.now|new Date/);
 });
