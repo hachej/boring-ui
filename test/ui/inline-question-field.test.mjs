@@ -48,6 +48,8 @@ test('InlineQuestion free text is one input group with a trailing Answer icon bu
   assert.equal(has(input, 'text-base') && has(input, 'md:text-sm'), true, '16px on a phone (iOS zooms under 16px), 14px on a computer');
 
   await type(input, '  archive-2018  ');
+  await act(async () => { const ime = new window.KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, bubbles: true, cancelable: true }); input.dispatchEvent(ime); });
+  assert.equal(answers.length, 0, 'an Enter with keyCode 229 (IME candidate) does not send');
   assert.equal(button.disabled, false, 'enabled once there is text');
   await act(async () => { input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); });
   assert.equal(JSON.stringify(answers), JSON.stringify([['q1', 'archive-2018']]), 'Enter sends the trimmed text');
@@ -62,7 +64,11 @@ test('InlineQuestion free text is one input group with a trailing Answer icon bu
 
   // The same edge as the form's fields: the form's Input draws `border-input` on `bg-card` itself; the group must draw the same edge and fill.
   const fieldGroup = element.querySelector('[data-slot=input-group]');
-  assert.equal(has(fieldGroup, 'border-input') && has(fieldGroup, 'bg-card'), true, 'the single field has the --input edge on --card');
+  const wrap = fieldGroup.closest('form');
+  assert.equal(has(fieldGroup, 'border-input') && has(wrap, '[&_[data-slot=input-group]]:bg-card'), true, 'the single field has the --input edge (the primitive\'s own) on --card (set by the form, not by restyling the primitive)');
+  assert.equal(has(wrap, 'dark:[&_[data-slot=input-group]]:bg-card'), true, 'dark fill is --card too (the group\'s own dark:bg-input/30 would be translucent)');
+  assert.equal(has(wrap, 'pointer-coarse:[&_[data-slot=input-group]]:h-11') && has(wrap, 'pointer-coarse:[&_button]:size-11') && has(wrap, 'pointer-coarse:[&_button]:-my-px') && has(wrap, 'pointer-coarse:[&_[data-slot=input-group-addon]]:py-0'), true, 'a coarse pointer at md+ fits the group to the 44px button');
+  assert.equal(has(wrap, 'max-md:[&_[data-slot=input-group]]:h-11') && has(wrap, 'max-md:[&_button]:size-11'), true, '44px group and button at touch');
   assert.equal(tokens(fieldGroup).some(name => /^(dark:)?border-(?!input$)[a-z]/.test(name) && !name.startsWith('border-b') && !name.startsWith('border-t') && !name.startsWith('border-l') && !name.startsWith('border-r')), false, 'and no other edge colour');
   await draw(createElement(QuestionCard, { call: { type: 'toolCall', id: 'c', name: 'ask_user', arguments: { question: 'Two questions', questions: [{ question: 'Which?', options: ['a', 'b'] }] } }, answer: async () => ({ kind: 'answered' }), questionId: 'q' }));
   const formInput = element.querySelector('[data-testid=question-input]');

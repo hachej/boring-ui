@@ -96,11 +96,11 @@ export function InlineQuestion({ id, kind, text, source, options, answered, onAn
       ) : null}
       {showField ? (
         // One box: the field and the send as a trailing icon button inside it, on the form's field fill and --input edge. 44px at touch (`max-md`, as `tap`; D-1741 will tokenise it); 16px text on a phone so iOS does not zoom.
-        <form onSubmit={event => { event.preventDefault(); send(); }}>
-          <InputGroup className="h-9 bg-card max-md:h-11">
-            <InputGroupInput data-testid="question-input" disabled={disabled} maxLength={2000} value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} placeholder={choices.length ? t.placeholderMore : t.placeholder} aria-label={t.placeholder} className="h-full text-base md:text-sm" />
-            <InputGroupAddon align="inline-end" className="max-md:py-0">
-              <InputGroupButton type="submit" size="icon-sm" variant="default" aria-label={t.send} data-testid="question-submit" disabled={disabled || !draft.trim()} className="max-md:-my-px max-md:size-11"><ArrowUpIcon aria-hidden="true" /></InputGroupButton>
+        <form className="[&_[data-slot=input-group]]:bg-card dark:[&_[data-slot=input-group]]:bg-card max-md:[&_[data-slot=input-group]]:h-11 pointer-coarse:[&_[data-slot=input-group]]:h-11 max-md:[&_[data-slot=input-group-addon]]:py-0 pointer-coarse:[&_[data-slot=input-group-addon]]:py-0 max-md:[&_button]:-my-px pointer-coarse:[&_button]:-my-px max-md:[&_button]:size-11 pointer-coarse:[&_button]:size-11" onSubmit={event => { event.preventDefault(); send(); }}>
+          <InputGroup>
+            <InputGroupInput data-testid="question-input" disabled={disabled} maxLength={2000} value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); send(); } }} placeholder={choices.length ? t.placeholderMore : t.placeholder} aria-label={t.placeholder} className="h-full text-base md:text-sm" />
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton type="submit" size="icon-sm" variant="default" aria-label={t.send} data-testid="question-submit" disabled={disabled || !draft.trim()}><ArrowUpIcon aria-hidden="true" /></InputGroupButton>
             </InputGroupAddon>
           </InputGroup>
         </form>
