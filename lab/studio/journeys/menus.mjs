@@ -96,7 +96,7 @@ async function menus(t) {
 
     await browser.type(MESSAGE, 'Write a short referral letter for the patient in notes/consultation.md.');
     await browser.press('Enter');
-    await browser.until('the agent loaded the skill and finished', `${idle} && /Write a short referral letter/.test(${logText}) && ${qa('[data-testid=tool-card][data-tool=load_skill]')}.length > 0`, 240000);
+    await browser.until('the agent loaded the skill and finished', `${idle} && /Write a short referral letter/.test(${logText}) && /Used load skill/.test(${logText})`, 240000); // the tool row sits in the collapsed 'Used … step' group, so the log text is what shows; the next lines assert the real call
     const loaded = (await messages()).flatMap(message => message.role === 'assistant' ? message.content.filter(part => part.type === 'toolCall' && part.name === 'load_skill') : []);
     assert.ok(loaded.some(call => call.arguments.name === 'letter-style'), `load_skill(letter-style) was called: ${JSON.stringify(loaded.map(call => call.arguments))}`);
     assert.equal(await browser.evaluate(`${q('[data-testid=message-skill]')}?.dataset.skill`), 'letter-style', 'the sent token is styled');
