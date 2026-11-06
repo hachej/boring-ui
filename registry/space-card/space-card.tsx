@@ -9,7 +9,7 @@ export type SpaceActivity = { working: number; waiting: number } | 'unknown';
 export type SpaceCardLabels = { working: string; waiting: string; quiet: string; unknown: string; lastShip: string };
 
 export const spaceCardLabels: SpaceCardLabels = {
-  working: 'working', waiting: 'wait on you', quiet: 'Quiet', unknown: 'Status unreadable. Not the same as quiet.', lastShip: 'last ship',
+  working: 'working', waiting: 'wait on you', quiet: 'Quiet', unknown: 'Status unreadable. Not the same as quiet.', lastShip: 'Last ship',
 };
 
 export type SpaceCardProps = {
@@ -25,7 +25,8 @@ export type SpaceCardProps = {
   className?: string;
 };
 
-const box = 'flex h-auto min-h-11 w-full min-w-0 flex-col items-stretch justify-start gap-2 rounded-(--radius) px-3 py-3 text-left whitespace-normal';
+const box = 'flex h-auto min-h-11 w-full min-w-0 flex-col items-stretch justify-start gap-2 rounded-(--radius) px-3 py-3 text-left whitespace-normal bg-card text-card-foreground';
+const hoverFill = 'hover:bg-accent';
 
 /** One app or space at a glance: working and waiting counts, Quiet when both are 0, "unreadable" when the status could not be read. */
 export function SpaceCard({ name, leading, activity, lastShip, onOpen, labels, className }: SpaceCardProps) {
@@ -35,7 +36,7 @@ export function SpaceCard({ name, leading, activity, lastShip, onOpen, labels, c
   const content = (
     <>
       <span className="flex min-w-0 items-center gap-2">
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-(--radius) bg-card text-xs font-semibold text-card-foreground">{leading ?? name.slice(0, 1)}</span>
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-(--radius) bg-secondary text-xs font-semibold text-secondary-foreground group-hover/button:bg-card group-hover/button:text-card-foreground">{leading ?? name.slice(0, 1)}</span>
         <span className="truncate text-sm font-medium">{name}</span>
       </span>
       {unknown ? (
@@ -48,17 +49,17 @@ export function SpaceCard({ name, leading, activity, lastShip, onOpen, labels, c
           <Count value={activity.waiting} label={t.waiting} attention={activity.waiting > 0} />
         </span>
       )}
-      {lastShip && !unknown ? <span className="truncate font-mono text-xs text-muted-foreground">{t.lastShip} {lastShip}</span> : null}
+      {lastShip && !unknown ? <span className="truncate text-xs text-muted-foreground">{t.lastShip} {lastShip}</span> : null}
     </>
   );
-  if (onOpen) return <Button variant="secondary" className={cn(box, className)} onClick={onOpen}>{content}</Button>;
-  return <div className={cn(box, 'bg-muted', className)}>{content}</div>;
+  if (onOpen) return <Button variant="secondary" className={cn(box, hoverFill, className)} onClick={onOpen}>{content}</Button>;
+  return <div className={cn(box, className)}>{content}</div>;
 }
 
 function Count({ value, label, attention }: { value: number; label: string; attention?: boolean }) {
   return (
     <span className="flex flex-col">
-      <b className={cn('font-mono text-sm tabular-nums', attention ? 'text-warning-soft-foreground' : 'text-foreground')}>{value}</b>
+      <b className={cn('text-sm font-semibold tabular-nums', attention ? 'text-warning-soft-foreground' : 'text-foreground')}>{value}</b>
       <span>{label}</span>
     </span>
   );

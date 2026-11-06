@@ -60,7 +60,7 @@ export function DataTable<Row>({ columns, rows, rowKey, caption, className }: Da
               {columns.map(column => (
                 <td
                   key={column.id}
-                  className={cn('truncate px-2 py-2', visibility(column.priority), column.numeric && 'text-right font-mono tabular-nums')}
+                  className={cn('truncate px-2 py-2', visibility(column.priority), column.numeric && 'text-right tabular-nums')}
                 >
                   {column.cell(row)}
                 </td>
@@ -77,7 +77,7 @@ export function DataTable<Row>({ columns, rows, rowKey, caption, className }: Da
               {details.map(column => (
                 <div key={column.id} className="flex min-w-0 items-baseline justify-between gap-3 text-xs">
                   <dt className="shrink-0 text-muted-foreground">{column.header}</dt>
-                  <dd className={cn('min-w-0 truncate text-right', column.numeric && 'font-mono tabular-nums')}>{column.cell(row)}</dd>
+                  <dd className={cn('min-w-0 truncate text-right', column.numeric && 'tabular-nums')}>{column.cell(row)}</dd>
                 </div>
               ))}
             </dl>
