@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import type { ChatHistoryState } from '@hachej/boring-ui-kit/native-chat';
 import { ArchiveIcon, ArchiveRestoreIcon, ArrowLeftIcon, CheckIcon, EllipsisIcon, Loader2Icon, MessageSquareIcon, PencilIcon, SearchIcon, Trash2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
-import { targetContent } from './rows';
+import { withoutTarget } from './rows';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuPortal, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -33,7 +33,12 @@ const toMs = (value: ConversationItem['updatedAt']): number | undefined => {
 
 /** Short relative time for a list row: "now", "5m", "3h", "Yesterday", "4d", then a date. */
 /** The tooltip's last message without a leading `<target>` block (point-and-speak); a preview clipped inside the block gets no tooltip. */
-const lastSaid = (text: string | null | undefined): string | undefined => !text ? undefined : text.startsWith('<target>') ? targetContent(text)?.speech || undefined : text;
+const lastSaid = (text: string | null | undefined): string | undefined => {
+  if (!text) return undefined;
+  const said = withoutTarget(text);
+  // Not a valid block but it starts like one: a stored preview clipped inside the block. No raw field shows, so no tooltip.
+  return said === text && text.startsWith('<target>') ? undefined : said || undefined;
+};
 
 export function relativeTime(value: ConversationItem['updatedAt'], now = Date.now(), labels: Pick<ChatLabels, 'justNow' | 'yesterday'> = defaultChatLabels): string {
   const ms = toMs(value);

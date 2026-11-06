@@ -7,7 +7,7 @@ import type * as View from '@hachej/boring-ui-kit/chat-view';
  * The row model lives in the kit (`@hachej/boring-ui-kit/chat-view`): native Pi view → display rows, the waiting rule and the run
  * notices. This file only fixes its card content to React nodes and keeps the names the chat's files import.
  */
-export { APPROVAL_DETAILS, isFileBlock, markLeads, object, queuedMessages, replyMeta, segments, streamParts, targetContent, waitingForAnswer, waitingPart, waits } from '@hachej/boring-ui-kit/chat-view';
+export { APPROVAL_DETAILS, isFileBlock, markLeads, object, queuedMessages, replyMeta, segments, streamParts, targetBlock, targetContent, waitingForAnswer, waitingPart, waits, withoutTarget } from '@hachej/boring-ui-kit/chat-view';
 export type { ApprovalDecision, Mode, QueuedMessage, StreamPart } from '@hachej/boring-ui-kit/chat-view';
 export type ChatCard = View.ChatCard<ReactNode>;
 export type Part = View.Part<ReactNode>;

@@ -19,13 +19,27 @@ export type ApprovalDecision = 'approved' | 'denied' | 'cancelled';
 /** The host adds file content for `@path` mentions as parts that start like this; the message already shows the mention itself. */
 export const isFileBlock = (text: string): boolean => text.startsWith('<file path="');
 
+/** The most bytes of JSON a `<target>` block carries. */
+export const TARGET_MAX_BYTES = 1024;
+const bytes = (text: string): number => new TextEncoder().encode(text).length;
+
+/**
+ * The `<target>` grammar (point-and-speak), written here and nowhere else: `<target>{JSON object}</target>`, then a blank line, then what
+ * the person said. The JSON is at most `TARGET_MAX_BYTES` bytes and every `<` in it is written `\u003c`, so the first `</target>` closes it.
+ * Anything else (no blank line, over the cap, not a JSON object) is plain text, in the chat and in titles alike.
+ */
+export function targetBlock(target: JsonObject): string | undefined {
+  const json = JSON.stringify(target).replace(/</g, '\\u003c');
+  return bytes(json) > TARGET_MAX_BYTES ? undefined : `<target>${json}</target>`;
+}
+
 /** A marked app context stays in the native message; presentation collapses only a valid leading target block to a chip. */
 export function targetContent(text: string): { readonly target: JsonObject; readonly speech: string; readonly label: string } | undefined {
   if (!text.startsWith('<target>')) return;
   const end = text.indexOf('</target>');
   if (end < 0 || text.slice(end + 9, end + 11) !== '\n\n') return;
   const json = text.slice(8, end);
-  if (new TextEncoder().encode(json).length > 1024) return;
+  if (bytes(json) > TARGET_MAX_BYTES) return;
   try {
     const target = object(JSON.parse(json));
     if (!target) return;
@@ -34,6 +48,9 @@ export function targetContent(text: string): { readonly target: JsonObject; read
     return { target, speech: text.slice(end + 11), label };
   } catch { return; }
 }
+
+/** What the person said: the text after a valid leading `<target>` block; any other text, unchanged. */
+export const withoutTarget = (text: string): string => targetContent(text)?.speech ?? text;
 
 /** A submission waiting in the native inbox (steer or follow-up); `queuedMessages` reads them from the view, the queue renders them. */
 export type QueuedMessage = Extract<InboxItem, { readonly mode: 'steer' | 'followUp' }>;

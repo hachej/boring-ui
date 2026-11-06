@@ -4,6 +4,7 @@ import type { Message } from '@earendil-works/pi-ai';
 import type { Context } from '@earendil-works/chord';
 import { RequestGuardError, hasJsonContentType, readJsonBody } from '@hachej/boring-files/request-guard';
 import { MENTION_FILE_PREFIX } from './mentions.js';
+import { withoutTarget } from './target-block.js';
 
 /**
  * What a host's conversation list needs that Pi does not keep: a title, when it was created and last active, a preview of the
@@ -101,9 +102,9 @@ const managed = (meta: Readonly<ConversationMetadata> | undefined, owner?: strin
   meta !== undefined && meta.owner !== '' && meta.deletedAt === null && (owner === undefined || meta.owner === owner);
 /** What the person said: a leading `<target>{…}</target>` block (point-and-speak context) never becomes a title or a preview. */
 const spoken = (text: string | undefined): string | undefined => {
-  if (!text?.startsWith('<target>')) return text;
-  const end = text.indexOf('</target>');
-  return end < 0 ? undefined : text.slice(end + 9).trim() || undefined;
+  if (text === undefined) return undefined;
+  const said = withoutTarget(text);
+  return said === text ? text : said.trim() || undefined;
 };
 const clip = (text: string, max: number): string => { const flat = text.replace(/\s+/g, ' ').trim(); return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat; };
 
