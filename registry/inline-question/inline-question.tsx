@@ -72,13 +72,13 @@ export function InlineQuestion({ id, kind, text, source, options, answered, onAn
     return (
       <div role="group" aria-label={text} className={cn('flex min-w-0 flex-col gap-1 text-muted-foreground', attention && 'rounded-(--radius) bg-muted p-3', className)}>
         <div className="flex items-start gap-2 text-sm font-medium"><CheckIcon aria-hidden className="mt-0.5 size-4 shrink-0" /><span>{text}</span></div>
-        <span className="font-mono text-xs">{said}</span>
+        <span className="text-xs">{said}</span>
       </div>
     );
   }
   return (
     <div role="group" aria-label={text} className={cn('flex min-w-0 flex-col gap-2', attention ? 'rounded-(--radius) bg-warning-soft p-3 text-warning-soft-foreground' : 'text-foreground', className)}>
-      <div className="flex min-w-0 items-center gap-2 font-mono text-xs">
+      <div className="flex min-w-0 items-center gap-2 text-xs">
         <span className={attention ? 'rounded-(--radius) bg-card px-2 text-card-foreground' : 'text-muted-foreground'}>{decision ? t.decision : t.question}</span>
         {source ? <span className="truncate opacity-80">{source}</span> : null}
       </div>

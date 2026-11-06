@@ -9,7 +9,7 @@ export type SpaceActivity = { working: number; waiting: number } | 'unknown';
 export type SpaceCardLabels = { working: string; waiting: string; quiet: string; unknown: string; lastShip: string };
 
 export const spaceCardLabels: SpaceCardLabels = {
-  working: 'working', waiting: 'wait on you', quiet: 'Quiet', unknown: 'Status unreadable. Not the same as quiet.', lastShip: 'last ship',
+  working: 'working', waiting: 'wait on you', quiet: 'Quiet', unknown: 'Status unreadable. Not the same as quiet.', lastShip: 'Last ship',
 };
 
 export type SpaceCardProps = {
@@ -48,7 +48,7 @@ export function SpaceCard({ name, leading, activity, lastShip, onOpen, labels, c
           <Count value={activity.waiting} label={t.waiting} attention={activity.waiting > 0} />
         </span>
       )}
-      {lastShip && !unknown ? <span className="truncate font-mono text-xs text-muted-foreground">{t.lastShip} {lastShip}</span> : null}
+      {lastShip && !unknown ? <span className="truncate text-xs text-muted-foreground">{t.lastShip} {lastShip}</span> : null}
     </>
   );
   if (onOpen) return <Button variant="secondary" className={cn(box, className)} onClick={onOpen}>{content}</Button>;
@@ -58,7 +58,7 @@ export function SpaceCard({ name, leading, activity, lastShip, onOpen, labels, c
 function Count({ value, label, attention }: { value: number; label: string; attention?: boolean }) {
   return (
     <span className="flex flex-col">
-      <b className={cn('font-mono text-sm tabular-nums', attention ? 'text-warning-soft-foreground' : 'text-foreground')}>{value}</b>
+      <b className={cn('text-sm font-semibold tabular-nums', attention ? 'text-warning-soft-foreground' : 'text-foreground')}>{value}</b>
       <span>{label}</span>
     </span>
   );
