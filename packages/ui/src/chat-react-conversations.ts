@@ -171,8 +171,9 @@ export function useConversationsClient({ endpoint, fetch, activeId, onSelect, on
     const resume = () => { if (hidden()) { stop(); return; } void load(); start(); };
     start();
     page?.addEventListener('visibilitychange', resume);
-    globalThis.addEventListener?.('focus', resume);
-    return () => { off = true; stop(); page?.removeEventListener('visibilitychange', resume); globalThis.removeEventListener?.('focus', resume); };
+    const refocus = (event: Event) => { if (event.target === globalThis || event.target === page) resume(); };
+    globalThis.addEventListener?.('focus', refocus);
+    return () => { off = true; stop(); page?.removeEventListener('visibilitychange', resume); globalThis.removeEventListener?.('focus', refocus); };
   }, [base, list, pollMs, idlePollMs, busy, activeId]);
   return useMemo(() => {
     if (!items) return undefined;
