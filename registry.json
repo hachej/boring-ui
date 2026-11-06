@@ -178,13 +178,13 @@
           "font-sans": "'Geist', ui-sans-serif, system-ui, sans-serif",
           "font-mono": "'Geist Mono', ui-monospace, Menlo, monospace",
           "success-soft": "color-mix(in oklab, var(--success) 14%, var(--card))",
-          "success-soft-foreground": "var(--success)",
+          "success-soft-foreground": "color-mix(in oklab, var(--success) 75%, var(--foreground))",
           "warning-soft": "color-mix(in oklab, var(--warning) 16%, var(--card))",
-          "warning-soft-foreground": "var(--warning)",
+          "warning-soft-foreground": "color-mix(in oklab, var(--warning) 75%, var(--foreground))",
           "info-soft": "color-mix(in oklab, var(--info) 12%, var(--card))",
-          "info-soft-foreground": "var(--info)",
+          "info-soft-foreground": "color-mix(in oklab, var(--info) 75%, var(--foreground))",
           "destructive-soft": "color-mix(in oklab, var(--destructive) 12%, var(--card))",
-          "destructive-soft-foreground": "var(--destructive)",
+          "destructive-soft-foreground": "color-mix(in oklab, var(--destructive) 85%, var(--foreground))",
           "link": "color-mix(in oklab, var(--primary) 70%, var(--foreground))"
         },
         "dark": {
@@ -259,13 +259,13 @@
           "warning": "oklch(0.78 0.15 75)",
           "info": "oklch(0.72 0.14 254)",
           "success-soft": "color-mix(in oklab, var(--success) 22%, var(--card))",
-          "success-soft-foreground": "var(--success)",
+          "success-soft-foreground": "color-mix(in oklab, var(--success) 55%, var(--foreground))",
           "warning-soft": "color-mix(in oklab, var(--warning) 22%, var(--card))",
-          "warning-soft-foreground": "var(--warning)",
+          "warning-soft-foreground": "color-mix(in oklab, var(--warning) 55%, var(--foreground))",
           "info-soft": "color-mix(in oklab, var(--info) 22%, var(--card))",
-          "info-soft-foreground": "var(--info)",
+          "info-soft-foreground": "color-mix(in oklab, var(--info) 55%, var(--foreground))",
           "destructive-soft": "color-mix(in oklab, var(--destructive) 22%, var(--card))",
-          "destructive-soft-foreground": "var(--destructive)",
+          "destructive-soft-foreground": "color-mix(in oklab, var(--destructive) 85%, var(--foreground))",
           "link": "color-mix(in oklab, var(--primary) 70%, var(--foreground))"
         }
       }
