@@ -140,7 +140,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
   }
 
   const option = (value: string, selected: boolean, onClick: () => void) => <Button key={value} variant={selected ? 'secondary' : 'outline'} data-testid="question-option" data-option={value}
-    aria-pressed={question.items.length > 0 ? selected : undefined} disabled={unavailable} onClick={onClick} className="h-auto min-h-8 w-full justify-start whitespace-normal text-start">
+    aria-pressed={question.items.length > 0 ? selected : undefined} disabled={unavailable} onClick={onClick} className="h-auto min-h-8 w-full justify-start @max-md:min-h-11 whitespace-normal text-start">
     {selected && <CheckIcon data-icon="inline-start" aria-hidden="true" />}{value}
   </Button>;
 
@@ -158,7 +158,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
       labels={{ question: labels.questionForYou, send: labels.answer, placeholder: labels.typeAnswer, placeholderMore: labels.ownAnswer }} />
   </div>;
   // A form of several questions: the same flat warning tint as InlineQuestion.
-  return <div role="group" data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question} className="my-2 flex min-w-0 flex-col gap-3 rounded-(--radius) bg-(--chat-warning-soft) p-3 text-start text-(--chat-warning-soft-foreground)">
+  return <div role="group" data-testid="question-card" data-state={state} data-call-id={call.id} aria-label={labels.question} className="@container my-2 flex min-w-0 flex-col gap-3 rounded-(--radius) bg-(--chat-warning-soft) p-3 text-start text-(--chat-warning-soft-foreground)">
     <div className="flex min-w-0 flex-col gap-1">
       <p className="m-0 font-mono text-xs">{labels.questionForYou}</p>
       <p data-testid="question-text" className="m-0 text-sm font-medium [overflow-wrap:anywhere]">{question.question || labels.askedQuestion}</p>
@@ -172,7 +172,7 @@ export function QuestionCard({ call, result, answer, questionId, live = false }:
         <Input data-testid="question-input" value={item.options.includes(values[i] ?? '') ? '' : values[i] ?? ''} maxLength={2000} disabled={unavailable}
           placeholder={item.options.length ? labels.ownAnswer : labels.typeAnswer} aria-label={`${labels.yourAnswerInput} ${i + 1}`} onChange={event => setValue(i, event.currentTarget.value)} />
       </div>)}
-      <div><Button type="submit" data-testid="question-submit" disabled={unavailable || !values.some(value => value.trim())}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button></div>
+      <div><Button type="submit" className="@max-md:min-h-11 @max-md:w-full" data-testid="question-submit" disabled={unavailable || !values.some(value => value.trim())}><SendIcon data-icon="inline-start" aria-hidden="true" />{labels.answer}</Button></div>
     </form>
     {notice}
   </div>;
