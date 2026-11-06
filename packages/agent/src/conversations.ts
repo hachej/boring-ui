@@ -104,7 +104,11 @@ const managed = (meta: Readonly<ConversationMetadata> | undefined, owner?: strin
 const spoken = (text: string | undefined): string | undefined => {
   if (text === undefined) return undefined;
   const said = withoutTarget(text);
-  return said === text ? text : said.trim() || undefined;
+  if (said !== text) return said.trim() || undefined;
+  // Metadata boundary: older or host-written text need not be canonical, so a `<target>` start that is not a valid block still never leaks.
+  if (!text.startsWith('<target>')) return text;
+  const end = text.indexOf('</target>');
+  return end < 0 ? undefined : text.slice(end + 9).trim() || undefined;
 };
 const clip = (text: string, max: number): string => { const flat = text.replace(/\s+/g, ' ').trim(); return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat; };
 
