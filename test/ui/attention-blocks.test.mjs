@@ -158,3 +158,26 @@ test('status narrative never fetches or reads a clock', async () => {
   const source = readFileSync(join(root, 'registry/status-narrative/status-narrative.tsx'), 'utf8');
   assert.doesNotMatch(source, /\bfetch\s*\(|XMLHttpRequest|useEffect|localStorage|Date\.now|new Date/);
 });
+
+test('a status narrative link is an inline text link: no padding, height or leading, underlined, in the link colour', () => {
+  const markup = html.narr();
+  const found = markup.match(/<button([^>]*)>the supplier import<\/button>/);
+  assert.equal(found !== null, true, 'the link button is rendered');
+  const cls = (found[1].match(/class="([^"]*)"/) || [, ''])[1].split(/\s+/).filter(Boolean);
+  for (const want of ['text-link', 'underline', 'underline-offset-4', 'font-medium']) {
+    assert.equal(cls.includes(want), true, `link has ${want}: ${cls.join(' ')}`);
+  }
+  const bad = cls.filter(c => /(^|:)(p|px|py|pt|pb|pl|pr|ps|pe|h|min-h|leading)-/.test(c) || /^has-\[/.test(c));
+  assert.equal(bad.join(' '), '', 'no padding, h-*, min-h-* or leading-* class on the link');
+});
+
+test('the theme item defines the link role in light and dark', () => {
+  const reg = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.find(i => i.name === 'theme');
+  const built = JSON.parse(readFileSync(join(root, 'public/r/theme.json'), 'utf8'));
+  for (const [where, item] of [['registry.json', reg], ['public/r/theme.json', built]]) {
+    for (const mode of ['light', 'dark']) {
+      // Literal copied from hachej/boring-factory templates/app/web/src/theme.derived.css (not readable from here).
+      assert.equal(item.cssVars[mode].link, 'color-mix(in oklab, var(--primary) 70%, var(--foreground))', `${where} ${mode} has the template's link`);
+    }
+  }
+});

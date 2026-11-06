@@ -17,7 +17,7 @@ export const statusNarrativeLabels: StatusNarrativeLabels = {
 };
 
 export type StatusNarrativeProps = {
-  /** The paragraph as parts, in order. Strings are shown as is; link parts become buttons that call `onOpen`. */
+  /** The paragraph as parts, in order. Strings are shown as is; link parts become inline text links (plain buttons, exempt from the 44px rule) that call `onOpen`. */
   segments: readonly StatusSegment[];
   /** When the status was made, already formatted by the host ("2 min ago", "on open"). The block reads no clock. */
   at?: string;
@@ -46,9 +46,14 @@ export function StatusNarrative({ segments, at, by, needsYou, onOpen, onRefresh,
           typeof part === 'string' ? (
             <span key={index}>{part}</span>
           ) : onOpen ? (
-            <Button key={index} variant="link" className="inline h-auto align-baseline" onClick={() => onOpen(part)}>
+            <button
+              key={index}
+              type="button"
+              className="inline cursor-pointer rounded-sm text-start font-medium text-link underline underline-offset-4 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              onClick={() => onOpen(part)}
+            >
               {part.label}
-            </Button>
+            </button>
           ) : (
             <span key={index} className="font-medium">{part.label}</span>
           ),

@@ -6,9 +6,12 @@
     { "id": "layout", "reason": "Layout metrics such as gaps, widths, grid tracks and 44px touch targets arrange content and remain permitted. They cannot set colour, font, shadow, radius, border width or motion." },
     { "id": "agent-avatar-shape", "reason": "A thread tells agents from people by shape: an agent is a rounded square with a glyph, a person is a circle with an initial. The shape is meaning, not skin; the colour stays on theme tokens (info-soft). Only SharedChat's member avatar may do this." },
     { "id": "theme-definition", "reason": "The optional registry theme defines defaults; the fictional browser fixture defines a host theme. Only these theme definitions may contain visual literals." },
-    { "id": "drawing-document", "reason": "A drawing's own white page and the native renderers' output (Excalidraw, and the vendored diagrams.net viewer run only inside the drawing viewer's opaque sandbox frame) are document content drawn as the tool draws it, never host chrome or a control skin. D-1398." }
+    { "id": "drawing-document", "reason": "A drawing's own white page and the native renderers' output (Excalidraw, and the vendored diagrams.net viewer run only inside the drawing viewer's opaque sandbox frame) are document content drawn as the tool draws it, never host chrome or a control skin. D-1398." },
+    { "id": "inline-text-link", "reason": "A link inside a sentence is text, not a control box: a plain button without padding or height flows with the line (D-1715, D-1696). Only StatusNarrative's link parts may do this." }
   ],
   "allow": [
+    { "file": "registry/status-narrative/status-narrative.tsx", "rules": ["primitive"], "pattern": "^<button$", "exception": "inline-text-link" },
+    { "file": "registry/status-narrative/status-narrative.tsx", "rules": ["radius"], "pattern": "^rounded-sm$", "exception": "inline-text-link" },
     { "file": "registry/mockup-viewer/mockup-tailwind.ts", "rules": ["color", "font", "motion", "radius"], "pattern": ".*", "exception": "mockup-compiler-input" },
     { "file": "registry.json#theme", "rules": ["color", "radius", "font", "shadow", "border-width", "motion"], "pattern": ".*", "exception": "theme-definition" },
     { "file": "registry/app-shell/app-shell.tsx", "rules": ["shadcn-restyle"], "pattern": "^SidebarProvider className changes appearance: app-shell h-dvh min-h-0 overflow-hidden$", "exception": "layout" },
