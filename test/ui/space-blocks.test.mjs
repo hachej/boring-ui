@@ -46,7 +46,7 @@ test.after(() => rmSync(dir, { recursive: true, force: true }));
 test('a busy space shows working and waiting counts, the last ship, and is a button when it can open', () => {
   const markup = html.busy();
   assert.match(markup, /<button/); assert.match(markup, />2<\/b>/); assert.match(markup, />1<\/b>/);
-  assert.match(markup, /wait on you/); assert.match(markup, /last ship 2h ago/); assert.doesNotMatch(markup, /Quiet/);
+  assert.match(markup, /wait on you/); assert.match(markup, /Last ship 2h ago/); assert.doesNotMatch(markup, /Quiet/);
 });
 
 test('a space with nothing working or waiting reads Quiet, and is static without onOpen', () => {
@@ -57,11 +57,11 @@ test('a space with nothing working or waiting reads Quiet, and is static without
 
 test('an unreadable space is never shown as Quiet and hides the last ship', () => {
   const markup = html.unknown();
-  assert.match(markup, /Status unreadable/); assert.doesNotMatch(markup, /Quiet/); assert.doesNotMatch(markup, /last ship/);
+  assert.match(markup, /Status unreadable/); assert.doesNotMatch(markup, /Quiet/); assert.doesNotMatch(markup, /Last ship/);
 });
 
 test('the last ship is optional', () => {
-  assert.doesNotMatch(html.noShip(), /last ship/);
+  assert.doesNotMatch(html.noShip(), /Last ship/);
 });
 
 test('wiring chips carry a state dot and a spoken state for anything but ok', () => {
