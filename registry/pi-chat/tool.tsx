@@ -55,11 +55,11 @@ export function ToolCard({ entry, onOpenImage, details = true }: { readonly entr
   return <TraceCollapsible data-testid="tool-card" data-boring="tool-card" data-status={status} data-tool={call.name} data-call-id={call.id} open={open} onOpenChange={setChosen}>
     {details ? <TraceCollapsibleTrigger className="min-h-8 max-md:min-h-11 pointer-coarse:min-h-11">{line}</TraceCollapsibleTrigger> : line}
     {details && <TraceCollapsibleContent><div data-testid="tool-details" className="flex flex-col gap-3">
-      <Section title={labels.arguments}><pre className="m-0 max-h-60 overflow-auto bg-muted p-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{JSON.stringify(call.arguments, null, 2)}</pre></Section>
+      <Section title={labels.arguments}><pre className="m-0 max-h-60 overflow-auto bg-secondary p-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{JSON.stringify(call.arguments, null, 2)}</pre></Section>
       {result && <Section title={result.isError ? labels.error : labels.result}>
         {result.isError
           ? <Alert variant="destructive" role="alert"><AlertDescription>{resultBody}</AlertDescription></Alert>
-          : <div role="status" className="flex flex-col gap-2 bg-muted p-2">{resultBody}</div>}
+          : <div role="status" className="flex flex-col gap-2 bg-secondary p-2">{resultBody}</div>}
       </Section>}
     </div></TraceCollapsibleContent>}
   </TraceCollapsible>;
