@@ -95,3 +95,9 @@ test('destructive keeps a visible red share; the other statuses use the template
     assert.equal(theme[mode]['destructive-soft-foreground'], 'color-mix(in oklab, var(--destructive) 85%, var(--foreground))');
   }
 });
+
+test('every status soft fill, in every mode, is a color-mix over var(--card)', () => {
+  for (const mode of ['light', 'dark']) for (const status of STATUSES) {
+    assert.match(theme[mode][`${status}-soft`], /^color-mix\(in oklab, var\(--[\w-]+\) \d+%, var\(--card\)\)$/, `${mode} ${status}-soft`);
+  }
+});
