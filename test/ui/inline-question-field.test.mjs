@@ -77,6 +77,7 @@ test('InlineQuestion free text is one input group with a trailing Answer icon bu
   assert.equal(touch['[data-slot="question-field"] [data-slot="input-group-addon"]']['padding-block'], '0', 'addon without vertical padding');
   const submit = touch['[data-slot="question-field"] [data-testid="question-submit"]'];
   assert.equal(submit.width === '2.75rem' && submit.height === '2.75rem', true, 'submit 44px');
+  assert.equal(submit['margin-block'], '-1px', 'the 44px button overlaps the group edge instead of pushing past it');
   await draw(createElement(QuestionCard, { call: { type: 'toolCall', id: 'c', name: 'ask_user', arguments: { question: 'Two questions', questions: [{ question: 'Which?', options: ['a', 'b'] }] } }, answer: async () => ({ kind: 'answered' }), questionId: 'q' }));
   const formInput = element.querySelector('[data-testid=question-input]');
   assert.equal(has(formInput, 'border-input'), true, 'the form field draws the same --input edge (its fill is the primitive\'s own)');
