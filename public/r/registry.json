@@ -3264,6 +3264,46 @@
       ]
     },
     {
+      "name": "inline-question",
+      "type": "registry:component",
+      "title": "Inline question",
+      "description": "A waiting question shown where it is mentioned. A decision (gate or review) is approve or refuse; a question takes up to four choices or free text. Props only: the host posts the answer under the signed-in person's own login. Soft info or warning tint while waiting, a muted answered state, 44px targets on phones.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.59/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.59/r/_shared.json"
+      ],
+      "files": [
+        {
+          "path": "registry/inline-question/inline-question.tsx",
+          "type": "registry:component",
+          "target": "components/inline-question/inline-question.tsx"
+        }
+      ]
+    },
+    {
+      "name": "status-narrative",
+      "type": "registry:component",
+      "title": "Status narrative",
+      "description": "The status paragraph of a home or a chat: text and link parts in order, the time and author underneath, one needs-you count, an optional refresh. Props only: the host fetches, writes the sentences and formats the time.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.59/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.59/r/_shared.json"
+      ],
+      "files": [
+        {
+          "path": "registry/status-narrative/status-narrative.tsx",
+          "type": "registry:component",
+          "target": "components/status-narrative/status-narrative.tsx"
+        }
+      ]
+    },
+    {
       "name": "space-card",
       "type": "registry:component",
       "title": "Space card",
