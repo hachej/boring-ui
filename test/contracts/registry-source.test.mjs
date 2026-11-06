@@ -236,7 +236,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
           assert.ok(dependency && item.registryDependencies?.includes('@boring-ui/' + dependency.name) && dependency.files.some(entry => entry.path.replace(/\.tsx?$/, '') === `registry/${dependency.name}/${sibling[2]}`), `${file.path} imports unshipped or undeclared ${imported}`);
           continue;
         }
-        if (item.name === 'board-viewer' || item.name === 'mockup-viewer' || item.name === 'looks-viewer' || item.name === 'highlights' || item.name === 'markdown-editor' || item.name === 'spaces' || ['_shared', 'kpi-stat', 'list-row', 'empty-state', 'page-header', 'data-table'].includes(item.name)) {
+        if (item.name === 'board-viewer' || item.name === 'mockup-viewer' || item.name === 'looks-viewer' || item.name === 'highlights' || item.name === 'markdown-editor' || item.name === 'spaces' || ['_shared', 'kpi-stat', 'list-row', 'empty-state', 'page-header', 'data-table', 'inline-question', 'status-narrative', 'space-card', 'wiring-chips'].includes(item.name)) {
           if (imported.startsWith('./')) assert.ok(item.files.some(entry => entry.path.replace(/\.tsx?$/, '').endsWith('/' + imported.slice(2))), `${file.path} imports unshipped ${imported}`);
           else {
             const pkg = imported.startsWith('@') ? imported.split('/').slice(0, 2).join('/') : imported.split('/')[0];

@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`inline-question` block (new).** `InlineQuestion` `{ id, kind, text, options?, onAnswer }`: a `decision` (gate or review) is Approve/Refuse, a `question` takes up to four choices or free text. Props in, `onAnswer(id, value)` out; a decision answers with the stable values `'approve'` or `'refuse'`, never the translated button words; the host posts the answer under the signed-in person's own login. Install it with `shadcn add <registry>/inline-question.json`; nothing existing changes.
+- **`status-narrative` block (new).** `StatusNarrative` `{ segments, at?, by?, needsYou?, onOpen?, onRefresh? }`: the status paragraph with link parts, the time and author, one needs-you count. Props only; no clock read. Install it with `shadcn add <registry>/status-narrative.json`; nothing existing changes.
 - **`theme` item declares `@fontsource-variable/geist-mono`.** The default style's mono face (`Geist Mono`) now ships as a dependency, as Phosphor does, so an app made from the template gets it from the kit. Nothing existing changes.
 
 # Migrating to 0.4.59
