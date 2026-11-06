@@ -49,6 +49,9 @@ test('approval and question cards stack text over a full-width 44px decision row
     assert.ok(wrapped.length >= 2, 'tool line and argument values are present');
     for (const text of wrapped) assert.equal(tokens(text).some(name => name.includes('overflow-wrap:anywhere')), false, 'no mid-word break: ' + text.getAttribute('data-testid'));
     for (const text of wrapped) assert.equal(has(text, 'break-words'), true, 'long words still wrap: ' + text.getAttribute('data-testid'));
+    // `break-words` leaves a token its full min-content width: the title (`w-fit` in the primitive) must be capped by the card, and the desktop track must be able to shrink.
+    if (summary) { const title = card.querySelector('[data-testid=approval-summary]'); assert.equal(has(title, 'max-w-full') && has(title, 'min-w-0'), true, 'a long token wraps inside the card'); }
+    assert.equal(has(card.querySelector('dl'), 'grid-cols-[auto_minmax(0,1fr)]'), true, 'the desktop value track may shrink below its content');
     const dd = card.querySelector('dd');
     assert.equal(has(dd, 'font-mono') && has(dd, 'whitespace-pre-wrap'), true, 'the command is a wrapping mono block');
     assert.equal(has(card.querySelector('dl'), '@max-md:grid-cols-1'), true, 'name over value in a narrow card, so the command has the full width');

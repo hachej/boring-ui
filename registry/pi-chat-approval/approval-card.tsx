@@ -74,7 +74,7 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
     </ItemMedia>
     <ItemContent className="min-w-0 basis-0">
       <ItemDescription className="line-clamp-none"><Badge variant={open ? 'outline' : denied ? 'destructive' : 'secondary'}>{status}</Badge></ItemDescription>
-      {summary && <ItemTitle data-testid="approval-summary" className="line-clamp-none break-words">{summary}</ItemTitle>}
+      {summary && <ItemTitle data-testid="approval-summary" className="line-clamp-none max-w-full min-w-0 break-words">{summary}</ItemTitle>}
       <ItemDescription data-testid="approval-tool" className="line-clamp-none break-words">{labels.wantsToRun} <code className="font-mono">{call.name}</code></ItemDescription>
       {args.length > 0 && (() => {
         const list = <dl data-testid="approval-args" className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs @max-md:grid-cols-1 @max-md:gap-y-0.5">
