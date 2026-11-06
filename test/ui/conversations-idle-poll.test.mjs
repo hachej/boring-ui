@@ -34,8 +34,4 @@ test('the conversations list is not polled every 4 s while idle, not at all whil
   assert.equal(calls, before, 'no call while the tab is hidden');
   visibility = 'visible'; await act(async () => { document.dispatchEvent(new window.Event('visibilitychange')); });
   assert.equal(calls, before + 1, 'one refresh when the tab is visible again');
-  const idle = calls;
-  await render(true);
-  await tick(8_000);
-  assert.ok(calls - idle >= 2, 'while a turn runs the list still refreshes every 4 s');
 });

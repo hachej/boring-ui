@@ -2,7 +2,7 @@
 
 import { useKeyboardInset } from '../utils/use-media';
 
-import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { viewHasEarlier } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
@@ -224,6 +224,15 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const { state, derived, rows: nativeRows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   // New or fork is on its way: nothing may go to this conversation (D-1499).
   const leaving = conversations?.creating === true;
+  // The list is refreshed slowly while idle (D-1638); a running turn can title or move its conversation, so refresh every 4 s meanwhile and once more when it ends.
+  const reload = useRef(conversations?.reload);
+  useLayoutEffect(() => { reload.current = conversations?.reload; });
+  const listed = conversations !== undefined;
+  useEffect(() => {
+    if (!listed || !working) return;
+    const timer = setInterval(() => { void reload.current?.().catch(() => {}); }, 4000);
+    return () => { clearInterval(timer); void reload.current?.().catch(() => {}); };
+  }, [listed, working]);
   useCursorInOpened(textarea, conversations, composer, leaving, state.conversationId);
   const voiceRows = pendingVoice ?? voice.pending;
   const VoiceButton = voiceMessage?.Button, VoiceBubbleView = voiceMessage?.Bubble ?? NoVoiceBubble;

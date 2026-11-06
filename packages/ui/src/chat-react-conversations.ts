@@ -38,7 +38,7 @@ export interface ConversationsClientOptions {
   readonly activeId: string | undefined;
   readonly onSelect: (id: string) => void;
   readonly onChange?: (() => void | Promise<void>) | undefined;
-  /** Refresh interval while a turn runs (`busy`). Default 4 s. */
+  /** Refresh interval while a turn runs (`busy`), 4 s by default. A host that sets it and not `idlePollMs` keeps this cadence while idle too (never while the tab is hidden). */
   readonly pollMs?: number;
   /** Refresh interval while the page is visible and idle, so a conversation made elsewhere appears within it. Default 30 s. No call is made while the tab is hidden. */
   readonly idlePollMs?: number;
@@ -93,7 +93,8 @@ function holdTyping(onComposing: (composing: boolean) => void) {
   return held;
 }
 
-export function useConversationsClient({ endpoint, fetch, activeId, onSelect, onChange, pollMs = 4000, idlePollMs = 30000, busy = false, openTimeoutMs = 15000 }: ConversationsClientOptions): ConversationsClient | undefined {
+export function useConversationsClient({ endpoint, fetch, activeId, onSelect, onChange, pollMs: givenPollMs, idlePollMs: givenIdleMs, busy = false, openTimeoutMs = 15000 }: ConversationsClientOptions): ConversationsClient | undefined {
+  const pollMs = givenPollMs ?? 4000, idlePollMs = givenIdleMs ?? givenPollMs ?? 30000;
   const [items, setItems] = useState<readonly ConversationItem[] | undefined>();
   const [creating, setCreating] = useState(false);
   const [opened, setOpened] = useState<string | undefined>();
