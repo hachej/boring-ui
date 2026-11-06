@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import type { PointerEvent } from 'react';
 import type { ImageContent } from '@earendil-works/pi-ai';
-import { ChevronLeftIcon, ChevronRightIcon, XIcon } from 'lucide-react';
+import { ChevronLeftIcon, ChevronRightIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { imageSource } from './composer';

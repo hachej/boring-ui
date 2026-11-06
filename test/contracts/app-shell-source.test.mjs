@@ -61,10 +61,11 @@ test('the item pins no shadcn style: kit items, tokens and classes only', () => 
 });
 
 test('the item imports only React, its declared packages and the app setup shadcn components', () => {
-  const allowed = new Set(['react', 'react-dom', 'lucide-react', '@base-ui/react/drawer', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-ui-kit/native-chat', '@hachej/boring-ui-kit/voice-capture', '@hachej/boring-ui-kit/chat-text', '@hachej/boring-ui-kit/chat-react/voice']);
+  const allowed = new Set(['react', 'react-dom', '@base-ui/react/drawer', '@hachej/boring-feedback/page', '@hachej/boring-feedback/ui', '@hachej/boring-ui-kit/native-chat', '@hachej/boring-ui-kit/voice-capture', '@hachej/boring-ui-kit/chat-text', '@hachej/boring-ui-kit/chat-react/voice']);
   for (const name of files) {
     for (const [, imported] of source(name).matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)) {
       if (imported.startsWith('./')) { assert.ok(files.some(file => file.replace(/\.tsx?$/, '') === imported.slice(2)), `${name} imports missing ${imported}`); continue; }
+      if (imported === '../_shared/icons') { assert.ok(item.registryDependencies.includes('@boring-ui/_shared')); continue; }
       if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|feedback|utils|dock)\//.test(imported)) continue;
       const ui = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
       if (ui) { assert.ok(SHADCN_BUILTINS.includes(ui[1]), `${name}: ${imported} is not in the app setup`); continue; }

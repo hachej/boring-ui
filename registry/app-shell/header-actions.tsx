@@ -4,7 +4,7 @@
 // buttons (or links), the rest in « … ». Imports nothing from header.tsx or agent-layer.tsx (the shell's import graph has no cycle).
 import { useState } from 'react';
 import type { ComponentType, MouseEvent } from 'react';
-import { EllipsisIcon } from 'lucide-react';
+import { EllipsisIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { afterBack } from '../utils/back';

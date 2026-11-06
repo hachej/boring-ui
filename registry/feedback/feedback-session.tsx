@@ -5,7 +5,7 @@
 // (registry/pi-chat): ONE annotate toggle and a count chip, structurally, so neither item imports the other.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { MicIcon, SquareIcon, XIcon } from 'lucide-react';
+import { MicIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/toggle';
 import { Badge } from '@/components/ui/badge';

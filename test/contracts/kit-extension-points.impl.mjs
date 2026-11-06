@@ -8,6 +8,10 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 
+// Native Phosphor path identity (not the removed Lucide CSS class).
+const checkIcon = 'svg[viewBox="0 0 256 256"][aria-hidden=true] path[d^="M229.66,77.66"]';
+const chevronIcon = 'svg[viewBox="0 0 256 256"][aria-hidden=true] path[d^="M181.66,133.66"]';
+
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const out = join(root, '.cache/kit-extension-points-test');
 mkdirSync(out, { recursive: true });
@@ -178,8 +182,8 @@ for (const [locale, names] of [['en', ['Document', 'HTML page', 'SVG image', 'Co
       assert.equal(card.querySelector('[data-testid=artifact-hint]'), null, 'no duplicate action hint');
       assert.ok(card.querySelector('[data-slot=item-media][data-variant=image] [data-slot=item][data-variant=muted] svg[aria-hidden=true]'), 'the icon sits in stock tinted square media');
       assert.equal(card.querySelectorAll('svg').length, 2, 'type icon and one action cue');
-      assert.ok(card.querySelector('svg.lucide-chevron-right[aria-hidden=true]'));
-      assert.equal(card.querySelector('svg.lucide-check'), null);
+      assert.ok(card.querySelector(chevronIcon));
+      assert.equal(card.querySelector(checkIcon), null);
     }
     await page.act(async () => cards[1].click());
     assert.deepEqual(opened, [artifacts[1]], 'clicking the card sends the exact descriptor to the host');
@@ -195,8 +199,8 @@ test('an open artifact has a check and pressed state; a disabled card has no act
   assert.equal(card().getAttribute('aria-pressed'), 'true');
   assert.equal(card().dataset.open, 'true');
   assert.equal(card().getAttribute('aria-label'), 'Open Fictional HTML guide, version 2');
-  assert.ok(card().querySelector('svg.lucide-check[aria-hidden=true]'));
-  assert.equal(card().querySelector('svg.lucide-chevron-right'), null);
+  assert.ok(card().querySelector(checkIcon));
+  assert.equal(card().querySelector(chevronIcon), null);
   assert.doesNotMatch(card().textContent, /Open|Ouvrir/);
   assert.ok(card().classList.contains('bg-secondary'), 'the open card uses the host secondary variant');
   await page.act(async () => card().click());
@@ -204,8 +208,8 @@ test('an open artifact has a check and pressed state; a disabled card has no act
   await page.rerender({ artifacts: { open: artifact => opened.push(artifact), isOpen: () => false } });
   assert.equal(card().getAttribute('aria-pressed'), 'false');
   assert.equal(card().hasAttribute('data-open'), false);
-  assert.ok(card().querySelector('svg.lucide-chevron-right'));
-  assert.equal(card().querySelector('svg.lucide-check'), null);
+  assert.ok(card().querySelector(chevronIcon));
+  assert.equal(card().querySelector(checkIcon), null);
   await page.rerender({ artifacts: {} });
   assert.equal(card().disabled, true);
   assert.equal(card().hasAttribute('aria-pressed'), false);

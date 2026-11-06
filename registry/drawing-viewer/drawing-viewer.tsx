@@ -5,7 +5,7 @@
 // network. Each renderer loads the first time a drawing of its format opens. The result is shown as an image from a blob URL, so nothing
 // in the file runs on this page, and what the renderer read goes to `onRead` (shapes and arrows, see drawing.ts) for describing it to a model.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { TriangleAlertIcon } from 'lucide-react';
+import { TriangleAlertIcon } from '../_shared/icons';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { DrawingError, drawingFormat } from './drawing';

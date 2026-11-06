@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
-import { CheckIcon, ShieldAlertIcon, XIcon } from 'lucide-react';
+import { CheckIcon, ShieldAlertIcon, XIcon } from '../_shared/icons';
 import { waits, type ApprovalDecision } from '@hachej/boring-ui-kit/chat-view';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

@@ -2,7 +2,7 @@
 
 import { lazy } from 'react';
 import type { ComponentType, ReactNode } from 'react';
-import { PenToolIcon } from 'lucide-react';
+import { PenToolIcon } from '../_shared/icons';
 import { isDrawingPath } from './drawing';
 import { drawingLabelsFor } from './drawing-labels';
 import type { DrawingLabels, DrawingLocale } from './drawing-labels';

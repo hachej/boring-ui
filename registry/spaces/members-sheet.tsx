@@ -4,7 +4,7 @@
 // What a person may do is the host's to decide: the sheet only hides what would be refused.
 import { useState } from 'react';
 import { copyToClipboard } from '@hachej/boring-files/platform';
-import { CopyIcon, LogOutIcon, ShieldAlertIcon, UserMinusIcon } from 'lucide-react';
+import { CopyIcon, LogOutIcon, ShieldAlertIcon, UserMinusIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Item, ItemActions, ItemContent } from '@/components/ui/item';

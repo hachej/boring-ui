@@ -2,7 +2,7 @@
 
 import { useId } from 'react';
 import type { ComponentPropsWithRef } from 'react';
-import { TypeIcon, CodeXmlIcon, EllipsisIcon, ListIcon, PencilLineIcon } from 'lucide-react';
+import { TypeIcon, CodeXmlIcon, EllipsisIcon, ListIcon, PencilLineIcon } from '../_shared/icons';
 import { MarkdownEditor as RuntimeMarkdownEditor } from '@hachej/boring-ui-kit/markdown-editor';
 import type { MarkdownEditorMenuProps, MarkdownEditorProps } from '@hachej/boring-ui-kit/markdown-editor';
 import { Button } from '@/components/ui/button';

@@ -4,7 +4,7 @@
 // the kind of the pi-app-kinds default list for `.diagram.json` files; an app kind placed before it in `artifactKinds` wins. The maquette
 // viewer draws its workflow ("How it works") with the same `DiagramView`. It draws data only: nothing in the file runs.
 import { useMemo } from 'react';
-import { InfoIcon, TriangleAlertIcon } from 'lucide-react';
+import { InfoIcon, TriangleAlertIcon } from '../_shared/icons';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { DIAGRAM_FORMAT_VERSION, parseDiagram } from './diagram';
 import { diagramLabelsFor } from './diagram-labels';

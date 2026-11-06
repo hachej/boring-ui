@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { CodeXmlIcon, EyeIcon, RotateCcwIcon, SaveIcon, SearchCheckIcon } from 'lucide-react';
+import { CodeXmlIcon, EyeIcon, RotateCcwIcon, SaveIcon, SearchCheckIcon } from '../_shared/icons';
 import { HtmlViewer } from '@hachej/boring-ui-kit/html-viewer';
 import type { HtmlController } from '@hachej/boring-ui-kit/html';
 import { Button } from '@/components/ui/button';

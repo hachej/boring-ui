@@ -11,7 +11,7 @@
 import { createPortal } from 'react-dom';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, CSSProperties, HTMLAttributes, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, Ref, RefObject } from 'react';
-import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Loader2Icon, MicIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, XIcon } from 'lucide-react';
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Loader2Icon, MicIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, XIcon } from '../_shared/icons';
 // Behaviour only: Base UI's keyboard-inset provider for the host drawer's content. It renders nothing visible.
 import * as BaseDrawerParts from '@base-ui/react/drawer';
 import { Button } from '@/components/ui/button';

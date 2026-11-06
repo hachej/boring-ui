@@ -2,7 +2,7 @@
 
 import { lazy } from 'react';
 import type { ComponentType, ReactNode } from 'react';
-import { CodeXmlIcon } from 'lucide-react';
+import { CodeXmlIcon } from '../_shared/icons';
 import { isMockupPath } from './mockup-path';
 import type { MockupComments } from './mockup-viewer';
 

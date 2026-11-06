@@ -7,7 +7,7 @@ import { readPersistedJson, writePersistedJson } from '../utils/persisted';
 import { createPortal } from 'react-dom';
 import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useId } from 'react';
 import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from 'react';
-import { GripIcon, MinusIcon, PanelsTopLeftIcon, XIcon } from 'lucide-react';
+import { GripIcon, MinusIcon, PanelsTopLeftIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';

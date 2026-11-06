@@ -40,11 +40,36 @@
       "display": "grid",
       "gap": "0.5rem"
     },
+    ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] h2": {
+      "font-size": "var(--text-sm)",
+      "font-weight": "600"
+    },
     ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] li": {
+      "display": "grid",
+      "grid-template-columns": "minmax(0, 1fr) auto",
+      "align-items": "center",
+      "gap": "0.5rem"
+    },
+    ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] li > label": {
       "display": "flex",
       "align-items": "center",
       "gap": "0.5rem",
-      "flex-wrap": "wrap"
+      "min-width": "0",
+      "overflow-wrap": "anywhere"
+    },
+    ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] form": {
+      "display": "grid",
+      "grid-template-columns": "minmax(0, 1fr) auto",
+      "align-items": "center",
+      "gap": "0.5rem"
+    },
+    ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] form > label": {
+      "grid-column": "1 / -1"
+    },
+    ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] .boring-task-list-actions": {
+      "display": "flex",
+      "flex-wrap": "wrap",
+      "gap": "0.5rem"
     },
     ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] [role=\"alert\"]": {
       "color": "var(--destructive)"

@@ -111,7 +111,7 @@ test('installed registry Markdown wrapper with real React/Tiptap/SQLite (DOM, no
       assert.equal(f.button(pin).dataset.slot, 'toggle');
       assert.equal(f.button(pin).getAttribute('aria-pressed'), 'false');
       assert.equal(f.button(pin).getAttribute('title'), pin);
-      assert.ok(f.button(pin).querySelector('svg.lucide-type'));
+      assert.ok(f.button(pin).querySelector('svg[viewBox="0 0 256 256"] path[d^="M208,56V88"]'));
       await f.click(pin);
       assert.equal(f.button(pin).getAttribute('aria-pressed'), 'true');
       await f.click(more);

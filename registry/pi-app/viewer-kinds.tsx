@@ -6,7 +6,7 @@
 // kinds (the viewer items' `markdownKind`, `imageKind`...) satisfy these types structurally; none of the viewers is in this item.
 import { lazy, useEffect } from 'react';
 import type { ComponentType, ReactNode } from 'react';
-import { LoaderCircleIcon } from 'lucide-react';
+import { LoaderCircleIcon } from '../_shared/icons';
 import type { MarkdownController } from '@hachej/boring-ui-kit/markdown';
 import type { HtmlController } from '@hachej/boring-ui-kit/html';
 import type { MarkdownEditorProps } from '@hachej/boring-ui-kit/markdown-editor';

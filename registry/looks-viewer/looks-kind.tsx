@@ -2,7 +2,7 @@
 
 import { lazy } from 'react';
 import type { ComponentType, ReactNode } from 'react';
-import { PaletteIcon } from 'lucide-react';
+import { PaletteIcon } from '../_shared/icons';
 import { isLooksPath } from './looks';
 import type { LookPick } from './looks-viewer';
 

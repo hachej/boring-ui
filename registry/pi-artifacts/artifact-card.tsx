@@ -1,7 +1,7 @@
 'use client';
 
 import type { ComponentType } from 'react';
-import { CheckIcon, ChevronRightIcon, FileCodeIcon, FileTextIcon, GlobeIcon, ImageIcon, PenToolIcon, ListTodoIcon } from 'lucide-react';
+import { CheckIcon, ChevronRightIcon, FileCodeIcon, FileTextIcon, GlobeIcon, ImageIcon, PenToolIcon, ListTodoIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { Shimmer } from '../pi-chat/shimmer';

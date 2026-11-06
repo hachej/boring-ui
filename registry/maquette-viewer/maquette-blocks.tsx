@@ -6,7 +6,7 @@
 // in a box marked `data-feedback-id` (the maquette path, screen id and block id), so a note pinned on it with the feedback item's point mode
 // says exactly which block it is about; the screen is a `data-feedback-visible` region, so the block's words go with the note.
 import type { ReactNode, Ref } from 'react';
-import { BoxIcon } from 'lucide-react';
+import { BoxIcon } from '../_shared/icons';
 import { Badge } from '@/components/ui/badge';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
 import { Button } from '@/components/ui/button';

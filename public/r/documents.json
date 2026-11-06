@@ -6,8 +6,7 @@
   "dependencies": [
     "@hachej/boring-ui-kit@^0.4.58",
     "@hachej/boring-files@^0.4.58",
-    "react@^19.0.0",
-    "lucide-react@^1.51.0"
+    "react@^19.0.0"
   ],
   "registryDependencies": [
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.58/r/utils.json",

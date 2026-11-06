@@ -7,7 +7,7 @@
       "name": "theme",
       "type": "registry:theme",
       "title": "Theme",
-      "description": "The shadcn tokens every Tailwind item is styled with (neutral base, light and dark) and their Tailwind v4 `@theme inline` bindings. The CLI adds only the tokens the host does not define yet. The examples compile the same values (lab/studio/tailwind.mjs).",
+      "description": "Optional default theme tokens and Tailwind v4 bindings: original grey canvas, flat white surface roles, compact type and semantic statuses. Explicit shadcn add overwrites matching host tokens; blocks never install this theme automatically. Font families are declarations only; hosts load the fonts and own primitive geometry and icons.",
       "cssVars": {
         "theme": {
           "color-background": "var(--background)",
@@ -83,35 +83,47 @@
           "radius-pm-popover": "var(--pm-radius-popover)",
           "radius-pm-send": "var(--pm-radius-send)",
           "shadow-pm-popover": "var(--pm-shadow-popover)",
-          "color-pm-label": "var(--pm-label)"
+          "color-pm-label": "var(--pm-label)",
+          "font-sans": "var(--font-sans)",
+          "font-mono": "var(--font-mono)",
+          "color-success-soft": "var(--success-soft)",
+          "color-success-soft-foreground": "var(--success-soft-foreground)",
+          "color-warning": "var(--warning)",
+          "color-warning-soft": "var(--warning-soft)",
+          "color-warning-soft-foreground": "var(--warning-soft-foreground)",
+          "color-info": "var(--info)",
+          "color-info-soft": "var(--info-soft)",
+          "color-info-soft-foreground": "var(--info-soft-foreground)",
+          "color-destructive-soft": "var(--destructive-soft)",
+          "color-destructive-soft-foreground": "var(--destructive-soft-foreground)"
         },
         "light": {
-          "radius": "0.75rem",
-          "background": "oklch(1 0 0)",
-          "foreground": "oklch(0.141 0.005 285.823)",
+          "radius": "0.5rem",
+          "background": "oklch(0.97 0 0)",
+          "foreground": "oklch(0.2 0 0)",
           "card": "oklch(1 0 0)",
-          "card-foreground": "oklch(0.141 0.005 285.823)",
-          "popover": "oklch(1 0 0)",
-          "popover-foreground": "oklch(0.141 0.005 285.823)",
+          "card-foreground": "var(--foreground)",
+          "popover": "var(--card)",
+          "popover-foreground": "var(--foreground)",
           "primary": "oklch(0.21 0.006 285.885)",
           "primary-foreground": "oklch(0.985 0 0)",
-          "secondary": "oklch(0.967 0.001 286.375)",
-          "secondary-foreground": "oklch(0.21 0.006 285.885)",
-          "muted": "oklch(0.967 0.001 286.375)",
-          "muted-foreground": "oklch(0.52 0.016 285.938)",
-          "accent": "oklch(0.955 0.003 286.375)",
-          "accent-foreground": "oklch(0.21 0.006 285.885)",
-          "destructive": "oklch(0.577 0.245 27.325)",
+          "secondary": "var(--muted)",
+          "secondary-foreground": "var(--foreground)",
+          "muted": "oklch(0.95 0 0)",
+          "muted-foreground": "color-mix(in oklab, var(--foreground) 55%, var(--background))",
+          "accent": "oklch(0.94 0 0)",
+          "accent-foreground": "var(--foreground)",
+          "destructive": "oklch(0.577 0.2 27)",
           "success": "oklch(0.527 0.154 150)",
-          "border": "oklch(0.92 0.004 286.32)",
-          "input": "oklch(0.89 0.005 286.32)",
-          "ring": "oklch(0.55 0.02 286.067)",
-          "chart-1": "oklch(0.646 0.222 41.116)",
-          "chart-2": "oklch(0.6 0.118 184.704)",
-          "chart-3": "oklch(0.398 0.07 227.392)",
-          "chart-4": "oklch(0.828 0.189 84.429)",
-          "chart-5": "oklch(0.769 0.188 70.08)",
-          "shell": "oklch(0.975 0.002 286)",
+          "border": "oklch(0.91 0 0)",
+          "input": "var(--border)",
+          "ring": "oklch(0.55 0.02 286)",
+          "chart-1": "oklch(0.55 0.17 264)",
+          "chart-2": "oklch(0.58 0.15 160)",
+          "chart-3": "oklch(0.63 0.15 75)",
+          "chart-4": "oklch(0.6 0.18 15)",
+          "chart-5": "oklch(0.57 0.12 300)",
+          "shell": "var(--background)",
           "text-body": "0.75rem",
           "text-title": "0.875rem",
           "sidebar": "var(--background)",
@@ -156,34 +168,46 @@
           "pm-shadow-popover": "0 0 0 1px var(--border), 0 8px 24px rgb(0 0 0 / 0.14)",
           "pm-label": "var(--foreground)",
           "pm-mark-line": "35%",
-          "pm-mark-width": "2px"
+          "pm-mark-width": "2px",
+          "warning": "oklch(0.6 0.15 65)",
+          "info": "oklch(0.5 0.2 264)",
+          "font-sans": "'Geist', ui-sans-serif, system-ui, sans-serif",
+          "font-mono": "'Geist Mono', ui-monospace, Menlo, monospace",
+          "success-soft": "color-mix(in oklab, var(--success) 14%, var(--card))",
+          "success-soft-foreground": "var(--success)",
+          "warning-soft": "color-mix(in oklab, var(--warning) 16%, var(--card))",
+          "warning-soft-foreground": "var(--warning)",
+          "info-soft": "color-mix(in oklab, var(--info) 12%, var(--card))",
+          "info-soft-foreground": "var(--info)",
+          "destructive-soft": "color-mix(in oklab, var(--destructive) 12%, var(--card))",
+          "destructive-soft-foreground": "var(--destructive)"
         },
         "dark": {
-          "background": "oklch(0.175 0.006 285.885)",
-          "foreground": "oklch(0.985 0 0)",
-          "card": "oklch(0.205 0.006 285.885)",
-          "card-foreground": "oklch(0.985 0 0)",
-          "popover": "oklch(0.205 0.006 285.885)",
-          "popover-foreground": "oklch(0.985 0 0)",
-          "primary": "oklch(0.92 0.004 286.32)",
-          "primary-foreground": "oklch(0.21 0.006 285.885)",
-          "secondary": "oklch(0.274 0.006 286.033)",
-          "secondary-foreground": "oklch(0.985 0 0)",
-          "muted": "oklch(0.255 0.006 286.033)",
-          "muted-foreground": "oklch(0.72 0.015 286.067)",
-          "accent": "oklch(0.3 0.006 286.033)",
-          "accent-foreground": "oklch(0.985 0 0)",
-          "destructive": "oklch(0.704 0.191 22.216)",
+          "background": "oklch(0.18 0 0)",
+          "foreground": "oklch(0.96 0 0)",
+          "card": "oklch(0.23 0 0)",
+          "card-foreground": "var(--foreground)",
+          "popover": "var(--card)",
+          "popover-foreground": "var(--foreground)",
+          "primary": "oklch(0.92 0 0)",
+          "primary-foreground": "oklch(0.2 0 0)",
+          "secondary": "var(--muted)",
+          "secondary-foreground": "var(--foreground)",
+          "muted": "oklch(0.27 0 0)",
+          "muted-foreground": "color-mix(in oklab, var(--foreground) 62%, var(--background))",
+          "accent": "oklch(0.28 0 0)",
+          "accent-foreground": "var(--foreground)",
+          "destructive": "oklch(0.7 0.19 22)",
           "success": "oklch(0.7 0.17 150)",
-          "border": "oklch(1 0 0 / 11%)",
-          "input": "oklch(1 0 0 / 16%)",
-          "ring": "oklch(0.65 0.02 286.067)",
-          "chart-1": "oklch(0.488 0.243 264.376)",
-          "chart-2": "oklch(0.696 0.17 162.48)",
-          "chart-3": "oklch(0.769 0.188 70.08)",
-          "chart-4": "oklch(0.627 0.265 303.9)",
-          "chart-5": "oklch(0.645 0.246 16.439)",
-          "shell": "oklch(0.13 0.005 285.823)",
+          "border": "oklch(1 0 0 / 10%)",
+          "input": "var(--border)",
+          "ring": "oklch(0.65 0.02 286)",
+          "chart-1": "oklch(0.72 0.15 264)",
+          "chart-2": "oklch(0.75 0.15 160)",
+          "chart-3": "oklch(0.78 0.15 75)",
+          "chart-4": "oklch(0.73 0.16 15)",
+          "chart-5": "oklch(0.74 0.12 300)",
+          "shell": "var(--background)",
           "sidebar": "var(--background)",
           "sidebar-foreground": "var(--foreground)",
           "sidebar-primary": "var(--primary)",
@@ -226,7 +250,17 @@
           "pm-shadow-popover": "0 0 0 1px var(--border), 0 8px 24px rgb(0 0 0 / 0.14)",
           "pm-label": "var(--foreground)",
           "pm-mark-line": "35%",
-          "pm-mark-width": "2px"
+          "pm-mark-width": "2px",
+          "warning": "oklch(0.78 0.15 75)",
+          "info": "oklch(0.72 0.14 254)",
+          "success-soft": "color-mix(in oklab, var(--success) 22%, var(--card))",
+          "success-soft-foreground": "var(--success)",
+          "warning-soft": "color-mix(in oklab, var(--warning) 22%, var(--card))",
+          "warning-soft-foreground": "var(--warning)",
+          "info-soft": "color-mix(in oklab, var(--info) 22%, var(--card))",
+          "info-soft-foreground": "var(--info)",
+          "destructive-soft": "color-mix(in oklab, var(--destructive) 22%, var(--card))",
+          "destructive-soft-foreground": "var(--destructive)"
         }
       }
     },
@@ -280,11 +314,11 @@
       "description": "Host action metadata composed with the consumer’s shadcn Button, Toggle and DropdownMenu.",
       "dependencies": [
         "react@^19.0.0",
-        "react-dom@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/utils"
+        "@boring-ui/utils",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -321,8 +355,7 @@
         "@tiptap/extension-image@^3.31.4",
         "@tiptap/extension-highlight@^3.31.4",
         "@tiptap/extension-bubble-menu@^3.31.4",
-        "@tiptap/extension-floating-menu@^3.31.4",
-        "lucide-react@^1.51.0"
+        "@tiptap/extension-floating-menu@^3.31.4"
       ],
       "files": [
         {
@@ -377,6 +410,7 @@
           "max-width": "75ch",
           "width": "100%",
           "margin-inline": "auto",
+          "font-size": "var(--text-xs)",
           "line-height": "var(--leading-relaxed)",
           "overflow-wrap": "anywhere"
         },
@@ -384,19 +418,19 @@
           "margin": "0.75rem 0"
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content h1": {
-          "font-size": "var(--text-3xl)",
+          "font-size": "var(--text-sm)",
           "line-height": "var(--leading-tight)",
           "margin": "1.25rem 0 0.75rem",
           "font-weight": "var(--font-weight-semibold)"
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content h2": {
-          "font-size": "var(--text-2xl)",
+          "font-size": "var(--text-sm)",
           "line-height": "var(--leading-tight)",
           "margin": "1.25rem 0 0.75rem",
           "font-weight": "var(--font-weight-semibold)"
         },
         ".boring-markdown-recipe[data-boring=\"markdown-editor\"] .boring-markdown-content h3": {
-          "font-size": "var(--text-xl)",
+          "font-size": "var(--text-sm)",
           "margin": "1rem 0 0.5rem",
           "font-weight": "var(--font-weight-semibold)"
         },
@@ -462,7 +496,8 @@
       },
       "docs": "Create and own a MarkdownController from @hachej/boring-ui-kit/markdown. Pass it to MarkdownEditor. The wrapper does not acquire resources or dispose the controller. Check the repository release notes for available npm versions; local tarball tests do not establish registry availability.",
       "registryDependencies": [
-        "@boring-ui/button"
+        "@boring-ui/button",
+        "@boring-ui/_shared"
       ]
     },
     {
@@ -538,13 +573,13 @@
         "@earendil-works/chord@~1.4.0",
         "@earendil-works/pi-ai@~1.4.0",
         "@modelcontextprotocol/sdk@^1.32.2",
-        "lucide-react@^1.51.0",
         "@shadcn/react@0.3.1",
         "zod@^4.6.5"
       ],
       "registryDependencies": [
         "@boring-ui/utils",
-        "@boring-ui/button"
+        "@boring-ui/button",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -764,11 +799,11 @@
       "description": "The composer's `/` menu of commands and skills (and the Commands entry of the + menu). Plug it in with `slash={{ ...config, Picker: SlashPicker }}`; without it pi-chat has no `/` menu.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.58",
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat"
+        "@boring-ui/pi-chat",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -784,11 +819,11 @@
       "title": "Pi chat mentions",
       "description": "The composer's `@` picker for files and other mentionable things. Plug it in with `mentions={{ ...config, Picker: MentionPicker }}`; without it typing `@` opens nothing (sent mentions still show as chips).",
       "dependencies": [
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat"
+        "@boring-ui/pi-chat",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -804,11 +839,11 @@
       "title": "Pi chat model and effort picker",
       "description": "The composer's one model-and-effort pill. Plug it in with `model={{ ...config, Picker: ModelEffortPicker }}` (or on `effort`); without it pi-chat shows no pill.",
       "dependencies": [
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat"
+        "@boring-ui/pi-chat",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -825,12 +860,12 @@
       "description": "Tap-to-record voice messages: a compatibility export of the kit's chat-react/voice recorder hook, the composer's record button and the pending voice bubble, plus useHoldToRecord. Plug it in with `voiceMessage={{ ...config, ...voiceMessagePlugin }}`; without it pi-chat has no voice button.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.58",
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/utils",
-        "@boring-ui/pi-chat"
+        "@boring-ui/pi-chat",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -862,11 +897,11 @@
       "description": "The full-screen phone camera the composer's + menu opens (Take a photo). Plug it in with `attachments={{ ...config, Camera: CameraSheet }}`; without it the menu offers file upload only.",
       "dependencies": [
         "react@^19.0.0",
-        "react-dom@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat"
+        "@boring-ui/pi-chat",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -883,11 +918,11 @@
       "description": "The human-in-the-loop question card for `ask_user` (choices, free text, answered state). Plug it in with `cards={{ question: QuestionCard }}`; without it pi-chat shows a \"waiting for your answer\" notice with no answer UI.",
       "dependencies": [
         "react@^19.0.0",
-        "lucide-react@^1.51.0",
         "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat"
+        "@boring-ui/pi-chat",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -905,11 +940,11 @@
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.58",
         "react@^19.0.0",
-        "lucide-react@^1.51.0",
         "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat"
+        "@boring-ui/pi-chat",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -926,11 +961,11 @@
       "description": "The card for a tool call that ran a sub-agent (`delegate`, and the run card of a started run). Plug it in with `cards={{ subagent: subagentCard }}`; without it the call is an ordinary tool step.",
       "dependencies": [
         "react@^19.0.0",
-        "lucide-react@^1.51.0",
         "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat"
+        "@boring-ui/pi-chat",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -953,12 +988,12 @@
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.58",
         "react@^19.0.0",
-        "lucide-react@^1.51.0",
         "@earendil-works/pi-ai@~1.4.0",
         "@earendil-works/pi-durable@~1.4.0"
       ],
       "registryDependencies": [
-        "@boring-ui/pi-chat"
+        "@boring-ui/pi-chat",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -1012,8 +1047,7 @@
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "@earendil-works/pi-durable@~1.4.0",
-        "@earendil-works/pi-ai@~1.4.0",
-        "lucide-react@^1.51.0"
+        "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
         "@boring-ui/pi-chat",
@@ -1022,7 +1056,8 @@
         "@boring-ui/pi-artifacts",
         "@boring-ui/pi-workspace",
         "@boring-ui/utils",
-        "@boring-ui/button"
+        "@boring-ui/button",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -1095,12 +1130,12 @@
       "description": "Sandboxed *.mockup.html artifacts with host theme variables (or a given shadcn theme through themeOverride), lazy Tailwind compilation and feedback point comments. Host presentation only; artifact scripts run in an opaque-origin InteractiveFrame, never in the host.",
       "dependencies": [
         "react@^19.0.0",
-        "lucide-react@^1.51.0",
         "tailwindcss@4.3.3",
         "zod@^4.6.5"
       ],
       "registryDependencies": [
-        "@boring-ui/viewer-frame"
+        "@boring-ui/viewer-frame",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -1141,12 +1176,12 @@
       "title": "Looks viewer",
       "description": "A looks@1 artifact kind for *.looks.json: the same *.mockup.html key screen in 2 to 6 shadcn themes side by side (label, one-line personality, colour, font and radius swatches, Pick), then layout variants in the chosen look. A look is a shadcn preset and its theme block, applied to each sandboxed frame through MockupViewer's themeOverride. The host decides what a pick does.",
       "dependencies": [
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/mockup-viewer",
-        "@boring-ui/utils"
+        "@boring-ui/utils",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -1172,8 +1207,7 @@
       "title": "Record viewer",
       "description": "Typed RecordTable and RecordList, with grouping, app-defined status badges and host row actions. createRecordsKind renders *.records.json (records@1), with a phone list and exact raw-text fallback for invalid files. English and French labels and locale formatting.",
       "dependencies": [
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "files": [
         {
@@ -1196,6 +1230,9 @@
           "type": "registry:component",
           "target": "components/record-viewer/records-kind.tsx"
         }
+      ],
+      "registryDependencies": [
+        "@boring-ui/_shared"
       ]
     },
     {
@@ -1204,8 +1241,7 @@
       "title": "Diagram viewer",
       "description": "DiagramViewer, DiagramView and diagramKind: an agent's *.diagram.json (format v1, versioned: nodes, edges, optional groups, highlighted path and note) as boxes and numbered arrows with a legend that says what happens and who acts. Layers run left to right while they fit and top to bottom on a phone, scrolling inside their own box; no layout library. A superset of a maquette's workflow, which the maquette viewer draws with DiagramView. Its kind is in the pi-app-kinds default list, which an app passes to the pi-app artifact panel; an app kind placed before it wins.",
       "dependencies": [
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "files": [
         {
@@ -1233,6 +1269,9 @@
           "type": "registry:component",
           "target": "components/diagram-viewer/diagram-kind.tsx"
         }
+      ],
+      "registryDependencies": [
+        "@boring-ui/_shared"
       ]
     },
     {
@@ -1243,7 +1282,6 @@
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.58",
         "react@^19.0.0",
-        "lucide-react@^1.51.0",
         "@excalidraw/excalidraw@0.18.1"
       ],
       "files": [
@@ -1282,6 +1320,9 @@
           "type": "registry:component",
           "target": "components/drawing-viewer/drawing-kind.tsx"
         }
+      ],
+      "registryDependencies": [
+        "@boring-ui/_shared"
       ]
     },
     {
@@ -1290,12 +1331,12 @@
       "title": "Maquette viewer",
       "description": "MaquetteViewer and maquetteKind: a PM agent's *.maquette.json mock-up (format v1, versioned) one screen at a time, drawn from the host's shadcn components, under one thin icon bar: Back, previous and next (also arrow keys and swipe), an optional comment icon (point mode of the feedback item: a note pinned on a block names the maquette path, screen id and block id) and a menu with guided tours and How it works (the workflow, inline or a linked *.diagram.json, drawn by the diagram-viewer item in a dialog). Optional phone or desktop frame and #screen=<id> deep links. Its kind is in the pi-app-kinds default list, which an app passes to the pi-app artifact panel; an app kind placed before it wins.",
       "dependencies": [
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/diagram-viewer",
-        "@boring-ui/data-table"
+        "@boring-ui/data-table",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -1363,14 +1404,14 @@
         "@hachej/boring-ui-kit@^0.4.58",
         "@hachej/boring-files@^0.4.58",
         "react@^19.0.0",
-        "lucide-react@1.51.0",
         "tldraw@5.6.0"
       ],
       "registryDependencies": [
         "@boring-ui/maquette-viewer",
         "@boring-ui/mockup-viewer",
         "@boring-ui/pi-artifacts",
-        "@boring-ui/utils"
+        "@boring-ui/utils",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -1407,15 +1448,15 @@
       "description": "Optional multi-party host log presentation over PiChat's generic composition seams. No agent runtime or speaking policy.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.58",
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/pi-chat",
         "@boring-ui/pi-chat-plugins",
         "@boring-ui/pi-chat-markdown",
         "@boring-ui/pi-chat-mentions",
-        "@boring-ui/utils"
+        "@boring-ui/utils",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -1474,8 +1515,7 @@
         "@hachej/boring-ui-kit@^0.4.58",
         "@hachej/boring-files@^0.4.58",
         "react@^19.0.0",
-        "react-dom@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react-dom@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/pi-chat",
@@ -1485,7 +1525,8 @@
         "@boring-ui/viewer-frame",
         "@boring-ui/utils",
         "@boring-ui/button",
-        "@boring-ui/file-tree"
+        "@boring-ui/file-tree",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -1597,14 +1638,14 @@
       "description": "PlacedAgentWorkspace: AgentWorkspace over ONE controller, as a page (the app's Agent tab) or collapsed beside the app. Collapsed on a wide screen it is a floating AmbientChat; on a phone inside an app shell the same controller is lent to the shell's bottom drawer (useAgentLoan of app-shell), so one chat drawer serves the app. Outside a shell on a phone it stays the page. Placement is remembered (usePlacedAgentState) or controlled; usePlacedAgent gives collapse and expand to buttons inside it. The page stays mounted while collapsed, so its open file survives. Layout only: Pi owns the conversation.",
       "dependencies": [
         "react@^19.0.0",
-        "react-dom@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react-dom@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/pi-app",
         "@boring-ui/pi-ambient",
         "@boring-ui/app-shell",
-        "@boring-ui/utils"
+        "@boring-ui/utils",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -1624,8 +1665,7 @@
         "@hachej/boring-ui-kit@^0.4.58",
         "@hachej/boring-files@^0.4.58",
         "react@^19.0.0",
-        "react-dom@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react-dom@^19.0.0"
       ],
       "files": [
         {
@@ -2102,7 +2142,8 @@
       "registryDependencies": [
         "@boring-ui/pi-chat",
         "@boring-ui/pi-chat-voice",
-        "@boring-ui/utils"
+        "@boring-ui/utils",
+        "@boring-ui/_shared"
       ]
     },
     {
@@ -2115,8 +2156,7 @@
         "@hachej/boring-ui-kit@^0.4.58",
         "@base-ui/react@^1.9.0",
         "react@^19.0.0",
-        "react-dom@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react-dom@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/pi-chat",
@@ -2125,7 +2165,8 @@
         "@boring-ui/dock",
         "@boring-ui/feedback",
         "@boring-ui/utils",
-        "@boring-ui/button"
+        "@boring-ui/button",
+        "@boring-ui/_shared"
       ],
       "css": {
         "@layer base": {
@@ -2256,13 +2297,13 @@
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.58",
         "react@^19.0.0",
-        "react-dom@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react-dom@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/utils",
         "@boring-ui/button",
-        "@boring-ui/version-history"
+        "@boring-ui/version-history",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -2686,7 +2727,6 @@
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.58",
         "react@^19.0.0",
-        "lucide-react@^1.51.0",
         "marked@^17.0.6",
         "@tiptap/core@^3.31.4",
         "@tiptap/react@^3.31.4",
@@ -2705,7 +2745,8 @@
         "@boring-ui/viewer-frame",
         "@boring-ui/markdown-editor",
         "@boring-ui/utils",
-        "@boring-ui/button"
+        "@boring-ui/button",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -2727,13 +2768,13 @@
       "description": "The HTML kind: `htmlKind` (match, loader) and `HtmlPane`, the passive HTML preview (sandboxed when the host opts in) and source editor, in the viewer frame. The pane loads the first time an HTML file opens.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.58",
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/viewer-frame",
         "@boring-ui/utils",
-        "@boring-ui/button"
+        "@boring-ui/button",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -2754,12 +2795,12 @@
       "title": "Image viewer",
       "description": "The image kind: `imageKind` (match on PNG, JPEG, GIF, WebP and SVG, loader) and `ImagePane`, zoom and pan in the viewer frame. The pane loads the first time an image opens.",
       "dependencies": [
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/viewer-frame",
-        "@boring-ui/utils"
+        "@boring-ui/utils",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -2787,12 +2828,12 @@
       "dependencies": [
         "@hachej/boring-files@^0.4.58",
         "react@^19.0.0",
-        "lucide-react@^1.51.0",
         "pdfjs-dist@6.5.438"
       ],
       "registryDependencies": [
         "@boring-ui/viewer-frame",
-        "@boring-ui/viewer-image"
+        "@boring-ui/viewer-image",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -2823,12 +2864,12 @@
       "title": "Code viewers",
       "description": "The SVG and CSV kinds: `svgKind` (a preview from a blob URL, or its source) and `csvKind` (a table), drawn inside the artifact panel's bar. Each view loads the first time its artifact opens; other code stays in the panel's code block.",
       "dependencies": [
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/viewer-frame",
-        "@boring-ui/pi-chat"
+        "@boring-ui/pi-chat",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -2870,11 +2911,11 @@
       "description": "A shadcn popover for configuring model access: pick any registered Pi provider and model, save an API key (masked, shows \"saved\"), run a device-code subscription sign-in (code, link and status), set an optional gateway and see when a provider needs one. Transport-agnostic: props in, callbacks out, no fetch. Owned, editable source; fits the pi-chat controls slot.",
       "dependencies": [
         "react@^19.0.0",
-        "react-dom@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/utils"
+        "@boring-ui/utils",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -2923,11 +2964,36 @@
           "display": "grid",
           "gap": "0.5rem"
         },
+        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] h2": {
+          "font-size": "var(--text-sm)",
+          "font-weight": "600"
+        },
         ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] li": {
+          "display": "grid",
+          "grid-template-columns": "minmax(0, 1fr) auto",
+          "align-items": "center",
+          "gap": "0.5rem"
+        },
+        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] li > label": {
           "display": "flex",
           "align-items": "center",
           "gap": "0.5rem",
-          "flex-wrap": "wrap"
+          "min-width": "0",
+          "overflow-wrap": "anywhere"
+        },
+        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] form": {
+          "display": "grid",
+          "grid-template-columns": "minmax(0, 1fr) auto",
+          "align-items": "center",
+          "gap": "0.5rem"
+        },
+        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] form > label": {
+          "grid-column": "1 / -1"
+        },
+        ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] .boring-task-list-actions": {
+          "display": "flex",
+          "flex-wrap": "wrap",
+          "gap": "0.5rem"
         },
         ".boring-task-list-recipe[data-boring=\"task-list-viewer\"] [role=\"alert\"]": {
           "color": "var(--destructive)"
@@ -2987,8 +3053,7 @@
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.58",
         "@hachej/boring-files@^0.4.58",
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/utils",
@@ -3088,11 +3153,11 @@
       "description": "Host utility windows with shared pointer-capture drag, resize, focus stacking, minimize/close, remembered rectangles and a keyboard launcher; full-screen Drawer below 768px. No agent or content persistence.",
       "dependencies": [
         "react@^19.0.0",
-        "react-dom@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "@boring-ui/utils"
+        "@boring-ui/utils",
+        "@boring-ui/_shared"
       ],
       "files": [
         {
@@ -3109,8 +3174,7 @@
       "description": "A client for a host's Spaces service: useSpaces, SpaceSwitcher and MembersSheet over a transport the app gives. Membership and roles stay the host's; no route or app wording.",
       "dependencies": [
         "@hachej/boring-files@^0.4.58",
-        "react@^19.0.0",
-        "lucide-react@^1.51.0"
+        "react@^19.0.0"
       ],
       "files": [
         {
@@ -3138,15 +3202,19 @@
           "type": "registry:component",
           "target": "components/spaces/members-sheet.tsx"
         }
+      ],
+      "registryDependencies": [
+        "@boring-ui/_shared"
       ]
     },
     {
       "name": "_shared",
       "type": "registry:lib",
       "title": "Kit icons",
-      "description": "The one module the pattern blocks import icons from (`icons.ts`, lucide-react behind it). A Phosphor swap changes this file only.",
+      "description": "One fixed semantic icon-symbol map for all kit blocks and bundled primitives. Real Phosphor defaults; hosts may replace this shared module or use existing icon props, independently of theme tokens.",
       "dependencies": [
-        "lucide-react@^1.51.0"
+        "@phosphor-icons/react@2.1.10",
+        "react@^19.0.0"
       ],
       "files": [
         {

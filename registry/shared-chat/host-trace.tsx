@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { AlertCircleIcon, CheckIcon, WrenchIcon } from 'lucide-react';
+import { AlertCircleIcon, CheckIcon, WrenchIcon } from '../_shared/icons';
 import type { Step } from '@hachej/boring-ui-kit/shared-chat';
 import { Spinner } from '@/components/ui/spinner';
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';

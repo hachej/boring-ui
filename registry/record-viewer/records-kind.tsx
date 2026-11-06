@@ -2,7 +2,7 @@
 
 import { lazy } from 'react';
 import type { ComponentType, ReactNode } from 'react';
-import { Rows3Icon } from 'lucide-react';
+import { Rows3Icon } from '../_shared/icons';
 import { isRecordsPath } from './records';
 import { recordsLabelsFor } from './records-labels';
 import type { RecordTableProps, Words } from './record-viewer';

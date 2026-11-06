@@ -3,7 +3,7 @@
  * `ViewerWindowProvider` (every viewer below reads it) or to one `ViewerFrame`; what it leaves out keeps the default below.
  */
 import { createContext, useContext, useMemo } from 'react';
-import { EllipsisIcon, Maximize2Icon, Minimize2Icon, Share2Icon, XIcon } from 'lucide-react';
+import { EllipsisIcon, Maximize2Icon, Minimize2Icon, Share2Icon, XIcon } from '../_shared/icons';
 import type { ReactNode } from 'react';
 import type { MarkdownEditorProps } from '@hachej/boring-ui-kit/markdown-editor';
 import type { BlockAction, BlockIcon } from '../button/actions';

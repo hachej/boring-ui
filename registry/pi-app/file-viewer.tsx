@@ -6,7 +6,7 @@
 // text. Each viewer loads the first time its kind opens. A host viewer (`viewers[kind]`) wins over a document kind.
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { DownloadIcon } from 'lucide-react';
+import { DownloadIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { randomUUID } from '@hachej/boring-files/platform';
 import type { ResourceLocator, ResourceSnapshot } from '@hachej/boring-files';

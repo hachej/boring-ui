@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { XIcon } from 'lucide-react';
+import { XIcon } from '../_shared/icons';
 import type { FeedbackReport as Report } from '@hachej/boring-feedback/format';
 import type { PickerOverlay, PrivacyPolicy } from '@hachej/boring-feedback/page';
 import { reportView, showAnchor, type ShowOutcome } from '@hachej/boring-feedback/ui';

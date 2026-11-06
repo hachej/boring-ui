@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { HistoryIcon } from 'lucide-react';
+import { HistoryIcon } from '../_shared/icons';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';

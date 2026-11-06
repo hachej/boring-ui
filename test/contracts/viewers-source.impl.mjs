@@ -426,7 +426,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(pin.dataset.slot, 'toggle', 'Formatting uses the host Toggle pressed-state skin');
     assert.equal(pin.getAttribute('aria-pressed'), 'false');
     assert.equal(pin.getAttribute('title'), 'Formatting');
-    assert.ok(pin.querySelector('svg.lucide-type'));
+    assert.ok(pin.querySelector('svg[viewBox="0 0 256 256"] path[d^="M208,56V88"]'));
     await view.click('[data-testid="viewer-formatting"]');
     assert.ok(view.q('.boring-markdown-toolbar button[aria-label="Bold"] svg'), 'the header icon pins the formatting row');
     await view.click('[data-testid="viewer-more"]');

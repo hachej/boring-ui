@@ -7,7 +7,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Maximize2Icon, PictureInPicture2Icon } from 'lucide-react';
+import { Maximize2Icon, PictureInPicture2Icon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { AgentWorkspace } from '../pi-app/agent-workspace';
 import type { AgentWorkspaceProps, OpenedView } from '../pi-app/agent-workspace';

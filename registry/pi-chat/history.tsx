@@ -5,7 +5,7 @@ import { usePhone } from '../utils/use-media';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ChatHistoryState } from '@hachej/boring-ui-kit/native-chat';
-import { ArchiveIcon, ArchiveRestoreIcon, ArrowLeftIcon, CheckIcon, EllipsisIcon, Loader2Icon, MessageSquareIcon, PencilIcon, SearchIcon, Trash2Icon, XIcon } from 'lucide-react';
+import { ArchiveIcon, ArchiveRestoreIcon, ArrowLeftIcon, CheckIcon, EllipsisIcon, Loader2Icon, MessageSquareIcon, PencilIcon, SearchIcon, Trash2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { targetContent } from './rows';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
