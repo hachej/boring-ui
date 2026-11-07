@@ -66,7 +66,7 @@ try {
     assert.ok(layout, 'reference composer has a separate controls row');
     assert.ok(layout.boxes.length >= 2);
     assert.ok(Math.max(...layout.boxes.map(box => box.centre)) - Math.min(...layout.boxes.map(box => box.centre)) <= 1, JSON.stringify(layout));
-    const expectedHeight = await browser.evaluate("matchMedia('(max-width: 640px), (pointer: coarse)').matches ? 44 : 32");
+    const expectedHeight = await browser.evaluate("matchMedia('(max-width: 640px), (pointer: coarse)').matches ? 44 : 36");
     assert.ok(layout.boxes.every(box => box.height === expectedHeight), JSON.stringify(layout));
     assert.ok(layout.textBottom <= layout.controlsTop + 1, 'text occupies the full-width row above the controls');
   };

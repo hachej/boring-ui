@@ -204,7 +204,7 @@ test('PiChat surfaces: the panel is --card and no chat surface equals the one un
     const send = q('[data-testid=composer-submit]');
     assert.equal(send.getAttribute('aria-label'), 'Send');
     assert.equal(send.disabled, true);
-    assert.equal(items.find(item => item.name === 'pi-chat').css['@layer utilities']['@media (width < 768px), (pointer: coarse)']['.pi-chat :is([data-slot="button"], [data-slot="toggle"], [class~="group/button"], [class~="group/toggle"])']['min-height'], '2.75rem');
+    assert.equal(items.find(item => item.name === 'pi-chat').css['@layer utilities']['@media (width < 768px), (pointer: coarse)']['.pi-chat :is([data-slot="button"], [data-slot="toggle"], [class~="group/button"], [class~="group/toggle"])']['min-height'], 'var(--control-min, 2.75rem)');
     assert.equal(send.closest('[data-slot=input-group]') !== null, true, 'inside the one field');
     assert.equal(send.dataset.state, 'send');
   });

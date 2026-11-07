@@ -90,7 +90,8 @@ export function checkDesign(root = designRoot, { config = readDesignConfig(root)
   // Registry css is shipped even when there is no adjacent .css file. Include it without scanning generated public/r twice.
   for (const item of manifest.items) {
     const file = item.name === 'theme' ? 'registry.json#theme' : `registry/${item.name}/@css`;
-    const text = registryCss({ css: item.css ?? item.cssVars ?? {} });
+    // An item may carry both (the theme: token values and the control-size token's css); scan each.
+    const text = [item.cssVars, item.css].filter(Boolean).map(css => registryCss({ css })).join('\n');
     for (const finding of scanDesign(file, text)) add(finding);
   }
   findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column || a.rule.localeCompare(b.rule));
