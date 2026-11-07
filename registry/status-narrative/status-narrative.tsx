@@ -66,7 +66,7 @@ export function StatusNarrative({ segments, at, by, needsYou, onOpen, onRefresh,
       <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
         {waiting ? <span className="rounded-(--radius) bg-warning-soft px-2 text-warning-soft-foreground">{t.needsYou(needsYou)}</span> : null}
         {by ? <span className="truncate">{by}</span> : null}
-        {at instanceof Date ? <ShortDate date={at} className="truncate" /> : at ? <span className="truncate">{at}</span> : null}
+        {typeof at === 'string' ? (at ? <span className="truncate">{at}</span> : null) : at ? <ShortDate date={at} className="truncate" /> : null}
         {onRefresh ? (
           <Button variant="ghost" size="icon-sm" className={cn('ml-auto', tap)} aria-label={t.refresh} onClick={onRefresh}>
             <RefreshCwIcon aria-hidden className="size-4" />

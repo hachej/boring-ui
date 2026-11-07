@@ -33,7 +33,7 @@ const hoverFill = 'hover:bg-accent';
 export function SpaceCard({ name, leading, activity, lastShip, onOpen, labels, className }: SpaceCardProps) {
   const t = { ...spaceCardLabels, ...labels };
   const unknown = activity === 'unknown';
-  const shipped = lastShip instanceof Date ? (Number.isNaN(lastShip.getTime()) ? null : <ShortDate date={lastShip} />) : lastShip;
+  const shipped = typeof lastShip === 'string' ? lastShip : lastShip && !Number.isNaN(lastShip.getTime()) ? <ShortDate date={lastShip} /> : null;
   const quiet = !unknown && activity.working === 0 && activity.waiting === 0;
   const content = (
     <>
