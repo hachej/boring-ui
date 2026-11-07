@@ -195,3 +195,12 @@ test('space-card skins its clickable Button through item css, never through clas
   assert.equal(css[`${scope}:hover`]['background-color'], 'var(--accent)');
   assert.deepEqual(checkDesign().findings.filter(finding => finding.file.startsWith('registry/space-card/')), []);
 });
+
+// D-1767: size="inline" is the sanctioned way to a link label in a row; the h-auto p-0 min-h-0 override it replaces still fires.
+test('Button size="inline" passes the host-control rule and the h-auto p-0 min-h-0 override still fires', t => {
+  const f = fixture(t, '', ['button']);
+  const button = 'import { Button } from "@/components/ui/button";';
+  assert.equal(restyled(f, `${button} const a = <Button size="inline">Compte 706</Button>;`).length, 0);
+  assert.equal(restyled(f, `${button} const a = <Button variant="link" size="inline" className="whitespace-nowrap">Compte 706</Button>;`).length, 0, 'layout stays allowed');
+  assert.equal(restyled(f, `${button} const a = <Button variant="link" className="h-auto p-0 min-h-0">Compte 706</Button>;`).length, 1);
+});

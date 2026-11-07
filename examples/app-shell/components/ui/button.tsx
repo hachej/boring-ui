@@ -26,6 +26,10 @@ const buttonVariants = cva(
         xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
         sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
         lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
+        // A link-style label inside a table row or a sentence (D-1767): text height, no padding, no border; icon-free. The touch floor of the base is cancelled
+        // for the layout and kept as a hit area only (a centred ::after, 44px high, at least 44 wide), so a row does not grow. Rendered with the link variant.
+        inline:
+          "relative h-auto min-h-0 min-w-0 underline decoration-current decoration-1 underline-offset-2 max-md:min-h-0 max-md:min-w-0 pointer-coarse:min-h-0 pointer-coarse:min-w-0 gap-0 rounded-sm border-0 p-0 align-baseline text-[length:inherit] leading-[inherit] whitespace-normal text-left max-md:after:absolute max-md:after:top-1/2 max-md:after:left-1/2 max-md:after:h-[var(--control-min,2.75rem)] max-md:after:w-full max-md:after:min-w-[var(--control-min,2.75rem)] max-md:after:-translate-1/2 max-md:after:content-[''] pointer-coarse:after:absolute pointer-coarse:after:top-1/2 pointer-coarse:after:left-1/2 pointer-coarse:after:h-[var(--control-min,2.75rem)] pointer-coarse:after:w-full pointer-coarse:after:min-w-[var(--control-min,2.75rem)] pointer-coarse:after:-translate-1/2 pointer-coarse:after:content-['']",
         icon: "size-[var(--control-h,2.25rem)]",
         "icon-xs":
           "size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
@@ -43,14 +47,15 @@ const buttonVariants = cva(
 
 function Button({
   className,
-  variant = "default",
+  variant,
   size = "default",
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
   return (
     <ButtonPrimitive
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      data-size={size}
+      className={cn(buttonVariants({ variant: variant === undefined ? (size === "inline" ? "link" : "default") : variant, size, className }))}
       {...props}
     />
   )
