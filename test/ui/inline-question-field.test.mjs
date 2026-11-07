@@ -73,11 +73,14 @@ test('InlineQuestion free text is one input group with a trailing Answer icon bu
   const fill = css['@layer utilities']['[data-slot="question-field"] [data-slot="input-group"]'];
   assert.equal(fill['background-color'], 'var(--card)', 'fill is --card in light and dark; the selector (0,2,0) beats the group\'s dark:bg-input/30 in the same layer');
   const touch = css['@layer utilities']['@media (width < 768px), (pointer: coarse)'];
-  assert.equal(JSON.stringify(touch['[data-slot="question-field"] [data-slot="input-group"]']), JSON.stringify({ height: '2.75rem' }), 'group 44px under md or on a coarse pointer');
+  assert.equal(JSON.stringify(touch['[data-slot="question-field"] [data-slot="input-group"]']), JSON.stringify({ height: 'var(--control-h, 2.75rem)' }), 'group takes --control-h (44px under md or on a coarse pointer; 36px in data-density="compact"), 44px if the theme has no token');
   assert.equal(touch['[data-slot="question-field"] [data-slot="input-group-addon"]']['padding-block'], '0', 'addon without vertical padding');
   const submit = touch['[data-slot="question-field"] [data-testid="question-submit"]'];
-  assert.equal(submit.width === '2.75rem' && submit.height === '2.75rem', true, 'submit 44px');
-  assert.equal(submit['margin-block'], '-1px', 'the 44px button overlaps the group edge instead of pushing past it');
+  assert.equal(submit.width === 'var(--control-h, 2.75rem)' && submit.height === 'var(--control-h, 2.75rem)', true, 'submit is --control-h square');
+  assert.equal(submit['margin-block'], '-1px', 'the touch-size button overlaps the group edge instead of pushing past it');
+  // D-1741 nit: a disabled arrow reads as quiet as the placeholder (--muted-foreground, no fill), not a lighter grey than the field in dark.
+  const disabled = css['@layer utilities']['[data-slot="question-field"] [data-testid="question-submit"]:disabled'];
+  assert.equal(JSON.stringify(disabled), JSON.stringify({ 'background-color': 'transparent', color: 'var(--muted-foreground)', opacity: '1' }), 'disabled send: muted-foreground like the placeholder');
   await draw(createElement(QuestionCard, { call: { type: 'toolCall', id: 'c', name: 'ask_user', arguments: { question: 'Two questions', questions: [{ question: 'Which?', options: ['a', 'b'] }] } }, answer: async () => ({ kind: 'answered' }), questionId: 'q' }));
   const formInput = element.querySelector('[data-testid=question-input]');
   assert.equal(has(formInput, 'border-input'), true, 'the form field draws the same --input edge (its fill is the primitive\'s own)');

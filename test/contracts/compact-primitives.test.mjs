@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { registryCss } from '../../lab/studio/tailwind.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 // Optional read-only pinned toolchain; never installs into the source workspace.
@@ -37,7 +38,7 @@ test('bundled compact primitives: rendered defaults, states, keyboard behavior a
   const block = roles => Object.entries(roles).map(([key, value]) => `--${key}: ${value};`).join('\n');
   const fontDir = process.env.COMPACT_FONT_DIR;
   const fontCss = fontDir ? ['Geist', 'Geist Mono'].map(family => `@font-face { font-family: '${family}'; font-style: normal; font-weight: 100 900; src: url('/${family === 'Geist' ? 'sans' : 'mono'}.woff2') format('woff2'); }`).join('\n') : '';
-  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${fontCss}`;
+  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${fontCss}\n${registryCss(JSON.parse(sources['registry.json']).items.find(item => item.name === 'theme'))}`;
   const compiler = await compile(cssSource, { base: root, loadStylesheet: async id => {
     const path = require.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id);
     return { path, base: dirname(path), content: readFileSync(path, 'utf8') };
@@ -111,20 +112,20 @@ test('bundled compact primitives: rendered defaults, states, keyboard behavior a
       for (const key of ['cardTitle', 'emptyTitle']) check(result[key].fontSize === '14px', `${label} ${key}: expected 14px, got ${result[key].fontSize}`);
       check(result.card.shadow === 'none' && result.card.border === '0px', `${label} Card must be flat`);
       check(result.card.radius === '8px', `${label} Card radius`);
-      for (const key of ['button', 'input', 'select']) check(result[key].height === (width === 390 ? 44 : 28), `${label} ${key} height: ${result[key].height}`);
-      check(result.input.fontSize === (width === 390 ? '16px' : '12px'), `${label} input font exception`);
+      for (const key of ['button', 'input', 'select']) check(result[key].height === (width === 390 ? 44 : 36), `${label} ${key} height: ${result[key].height}`);
+      check(result.input.fontSize === (width === 390 ? '16px' : '14px'), `${label} input font: 16px on a phone, 14px at md+ (D-1741)`);
       check(result.input.border === '1px' && result.outline.border === '1px', `${label} control hairlines`);
       check(!result.pageOverflow, `${label} page overflow`);
       for (const table of result.tables) check(table.wrapperScroll <= table.wrapperClient && table.tableScroll <= table.tableClient && table.maxCellOverflow <= 1, `${label} internal table overflow at ${table.requested}px: ${JSON.stringify(table)}`);
       check(Number(result.disabled.opacity) <= 0.5, `${label} disabled opacity`);
       check(result.cell.color === result.body.color, `${label} settled table foreground inherits body`);
       check(result.outline.background === (mode === 'dark' ? vars.dark.card : vars.light.card), `${label} outline uses card, not primary fill`);
-      for (const [name, value] of Object.entries(result.chatBody)) check(value.fontSize === (width === 390 && name.includes('textarea') ? '16px' : '12px'), `${label} ${name} chat body font ${value.fontSize}`);
+      for (const [name, value] of Object.entries(result.chatBody)) check(value.fontSize === (name.includes('textarea') ? (width === 390 ? '16px' : '14px') : '12px'), `${label} ${name} chat body font ${value.fontSize}`);
       for (const value of result.neutralContrast) check(value.ratio >= 4.5, `${label} muted-foreground/${value.surface} contrast ${value.ratio} below 4.5:1`);
       check(result.destructiveButtonContrast >= 4.5, `${label} enabled destructive Button contrast ${result.destructiveButtonContrast} below 4.5:1`);
       for (const value of result.statusContrast) for (const key of ['badge', 'description']) check(value[key] >= 4.5, `${label} ${value.status} ${key} contrast ${value[key]} below 4.5:1`);
       for (const [status, value] of Object.entries(result.statuses)) check(value.badge.background === value.expectedBackground && value.alert.background === value.expectedBackground, `${label} ${status} soft status roles`);
-      for (const [size, value] of Object.entries(result.sizes)) check(value.height === (width === 390 ? 44 : { xs: 20, sm: 24, default: 28, lg: 36 }[size]), `${label} ${size} size height`);
+      for (const [size, value] of Object.entries(result.sizes)) check(value.height === (width === 390 ? 44 : { xs: 20, sm: 24, default: 36, lg: 36 }[size]), `${label} ${size} size height`);
       check(result.tabs.direction === 'column' && result.tabs.panelBelow, `${label} horizontal tab content below list`);
       check(result.tabs.list.height === (width === 390 ? 48 : 28), `${label} tab list height`);
       if (fontDir) for (const family of ['Geist', 'Geist Mono']) check(result.fonts.some(f => f.family === family && f.status === 'loaded'), `${label} declared ${family} face loaded`);
