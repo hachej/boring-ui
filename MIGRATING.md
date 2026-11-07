@@ -1,5 +1,7 @@
 # Unreleased
 
+- **A Badge in a table cell keeps the row height (bundled `badge` primitive; D-1819).** A `Badge` placed directly in a kit `TableCell` (`data-slot="table-cell"`) is now `align-middle` with `-my-0.5`, so its 18px box adds nothing to the cell's line box: a row with a Badge is as tall as a row of plain text (was 2px taller). Visible size, padding, colours and radius are unchanged; no new prop or variant. Consumer action: re-sync `badge`. Test: `test/contracts/badge-table-row-geometry.test.mjs`.
+
 # Migrating to 0.4.68
 
 - **An inline Button in a table cell is underlined on hover and focus only (bundled `button` primitive, `size="inline"`; D-1814).** Inside a kit `TableCell` (`data-slot="table-cell"`), `<Button size="inline">` now has no underline at rest and shows it on `:hover` and `:focus-visible`, through `in-data-[slot=table-cell]:` variants in the inline size string (not a new prop or variant). Colour, the 44px touch hit area and the focus ring are unchanged; in prose it is still underlined at rest. Visual change for apps with inline buttons in tables: expert-comptable's Compta ledger (two per row) loses its resting underlines. Consumer action: re-sync `button` (`registry:build` refreshes `public/r`). Test: `test/ui/button-inline-table.test.mjs`.
