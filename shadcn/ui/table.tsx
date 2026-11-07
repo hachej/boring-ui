@@ -75,16 +75,42 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
   )
 }
 
-function TableCell({ className, ...props }: React.ComponentProps<"td">) {
+/**
+ * `truncate` makes the cell one line with an ellipsis (D-1861): the children go in an inner block, because a td ignores max-width in an
+ * auto-layout table. The block is bounded by `--table-cell-truncate-max` (default 16rem). The full text stays in `title`; a plain string
+ * child is the default title. The block uses `overflow: clip` with a clip margin, not `hidden`, so an inline link's or Button's focus ring paints
+ * outside it: `truncate` is for text and inline links; a 44px touch target still needs a row of at least 44px (the inline Button rule).
+ */
+function TableCell({
+  className,
+  truncate,
+  title,
+  children,
+  ...props
+}: React.ComponentProps<"td"> & { truncate?: boolean }) {
   return (
     <td
       data-slot="table-cell"
+      data-truncate={truncate ? "" : undefined}
+      title={title ?? (truncate && typeof children === "string" ? children : undefined)}
       className={cn(
         "p-2 align-middle whitespace-normal break-words [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}
-    />
+    >
+      {truncate ? (
+        <div
+          data-slot="table-cell-truncate"
+          className="overflow-clip text-ellipsis whitespace-nowrap"
+          style={{ maxWidth: "var(--table-cell-truncate-max, 16rem)", overflowClipMargin: "0.5rem" }}
+        >
+          {children}
+        </div>
+      ) : (
+        children
+      )}
+    </td>
   )
 }
 

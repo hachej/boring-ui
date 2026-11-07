@@ -959,7 +959,7 @@ export const KIT_SLOTS = Object.freeze([
   'sidebar-group-content', 'sidebar-header', 'sidebar-inner', 'sidebar-input', 'sidebar-inset', 'sidebar-menu',
   'sidebar-menu-badge', 'sidebar-menu-item', 'sidebar-menu-skeleton', 'sidebar-menu-sub', 'sidebar-menu-sub-item',
   'sidebar-rail', 'sidebar-separator', 'sidebar-trigger', 'sidebar-wrapper', 'skeleton', 'spinner', 'switch', 'switch-thumb',
-  'table', 'table-body', 'table-caption', 'table-cell', 'table-container', 'table-footer', 'table-head', 'table-header',
+  'table', 'table-body', 'table-caption', 'table-cell', 'table-cell-truncate', 'table-container', 'table-footer', 'table-head', 'table-header',
   'table-row', 'tabs', 'tabs-content', 'tabs-list', 'tabs-trigger', 'textarea', 'toggle', 'toggle-group', 'toggle-group-item',
   'tooltip', 'tooltip-content', 'tooltip-provider', 'tooltip-trigger', 'trace', 'trace-collapsible', 'trace-collapsible-content',
   'trace-collapsible-content-inner', 'trace-collapsible-trigger', 'trace-description', 'trace-icon', 'trace-line', 'trace-title',
