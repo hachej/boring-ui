@@ -24,6 +24,9 @@ export const inlineQuestionLabels: InlineQuestionLabels = {
   replyInChat: 'Reply in chat', approved: 'Approved', refused: 'Refused', answered: 'Answered',
 };
 
+/** A choice as data: `recommended` is the host's explicit say-so that this one is the suggested answer. Without it, every choice looks the same. */
+export type InlineQuestionOption = { label: string; recommended?: boolean };
+
 export type InlineQuestionProps = {
   /** Identifies the question to the host; echoed back by `onAnswer`. */
   id: string;
@@ -32,8 +35,8 @@ export type InlineQuestionProps = {
   text: string;
   /** Who is asking (an agent or a gate), shown small above the question. */
   source?: string;
-  /** A `question` with options offers up to four one-tap choices plus a free-text field; without options it is free text only. A `decision` ignores them. */
-  options?: readonly string[];
+  /** A `question` with options offers up to four one-tap choices plus a free-text field; without options it is free text only. A `decision` ignores them. A choice is its text, or `{ label, recommended }`; the answer is always the text. All choices are outline buttons; only the first one marked `recommended` is the primary button (never by position). */
+  options?: readonly (string | InlineQuestionOption)[];
   /** Most one-tap choices shown (default 4). A longer list is a form, not an inline question. */
   maxOptions?: number;
   /** `false`: choices only, no free-text field (a question with options only). Default true; without options the field always shows. */
@@ -62,9 +65,10 @@ export function InlineQuestion({ id, kind, text, source, options, answered, onAn
   const [draft, setDraft] = useState('');
   const decision = kind === 'decision';
   const attention = tone === 'attention';
-  const choices: readonly { value: string; label: string }[] = decision
-    ? [{ value: DECISION_VALUES[0], label: t.approve }, { value: DECISION_VALUES[1], label: t.refuse }]
-    : (options ?? []).slice(0, maxOptions).map(option => ({ value: option, label: option }));
+  const shown = (options ?? []).slice(0, maxOptions).map(option => typeof option === 'string' ? { value: option, label: option, recommended: false } : { value: option.label, label: option.label, recommended: option.recommended === true });
+  const choices: readonly { value: string; label: string; primary: boolean }[] = decision
+    ? [{ value: DECISION_VALUES[0], label: t.approve, primary: true }, { value: DECISION_VALUES[1], label: t.refuse, primary: false }]
+    : shown.map(option => ({ value: option.value, label: option.label, primary: option.recommended && option === shown.find(other => other.recommended) }));
   const showField = !decision && (freeText || choices.length === 0);
   const send = () => { const value = draft.trim(); if (value && !disabled) onAnswer(id, value); };
   if (answered !== undefined) {
@@ -88,8 +92,8 @@ export function InlineQuestion({ id, kind, text, source, options, answered, onAn
       </div>
       {choices.length > 0 || onReplyInChat ? (
         <div className="flex flex-wrap gap-1">
-          {choices.map((choice, index) => (
-            <Button key={choice.value} variant={index === 0 ? 'default' : 'secondary'} size="sm" className={cn(tap, 'h-auto max-w-full justify-start whitespace-normal text-start [overflow-wrap:anywhere]')} data-testid="question-option" data-option={choice.value} disabled={disabled} onClick={() => onAnswer(id, choice.value)}>{choice.label}</Button>
+          {choices.map(choice => (
+            <Button key={choice.value} variant={decision ? (choice.primary ? 'default' : 'secondary') : choice.primary ? 'default' : 'outline'} size="sm" className={cn(tap, 'h-auto max-w-full justify-start whitespace-normal text-start [overflow-wrap:anywhere]')} data-testid="question-option" data-option={choice.value} disabled={disabled} onClick={() => onAnswer(id, choice.value)}>{choice.label}</Button>
           ))}
           {onReplyInChat ? <Button variant="ghost" size="sm" className={tap} onClick={onReplyInChat}>{t.replyInChat}</Button> : null}
         </div>

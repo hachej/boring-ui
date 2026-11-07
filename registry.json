@@ -2126,7 +2126,7 @@
             "bottom": "12px",
             "flex-wrap": "wrap"
           },
-          "[data-boring=\"feedback\"] :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
+          "[data-boring=\"feedback\"] :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"]):where(:not([data-size=\"inline\"]))": {
             "min-height": "2.75rem",
             "min-width": "2.75rem"
           }
