@@ -19,6 +19,7 @@ The agent runs on Pi (`@earendil-works/pi-durable`). The app's server opens Pi's
 | Create an app with an agent, or add an agent to an existing React/Node app | `build-agent-app` |
 | Lay out the app (AppShell layouts, navigation, list and detail), place the agent (shell layer, full page, embedded, ambient), customise the chat (labels, conversations, mentions, cards) | `app-layout-and-agent` |
 | Install, update, restyle or check UI blocks | `add-blocks` |
+| Style an app: theme tokens, DESIGN.md, which kit part to use, fixing a `boring-ui-blocks design` hit | `boring-design-system` |
 | Give the agent tools, file access, approvals, questions, sub-agents or schedules | `agent-capabilities` |
 
 ## Packages
