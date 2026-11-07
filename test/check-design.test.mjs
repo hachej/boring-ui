@@ -151,3 +151,47 @@ test('the committed inventory covers all source and every shipped CSS item, with
   const manifest = JSON.parse(readFileSync(join(designRoot, 'VERIFY.json'), 'utf8'));
   assert.deepEqual(manifest.invariants['BORING-UI-1'].verifiers.find(verifier => verifier.scope === 'runtime').command, ['npm', 'run', 'test:design']);
 });
+
+// D-1745: the host-control rule must not be evaded by member tags, descendant variants or a class held in a const.
+const restyled = (f, source) => { f.write('registry/button/button.tsx', source); return checkDesign(f.root, f).findings.filter(finding => finding.rule === 'shadcn-restyle'); };
+
+test('member-expression host controls cannot be restyled', t => {
+  const f = fixture(t, '', ['textarea', 'button']);
+  const textarea = 'import { Textarea } from "@/components/ui/textarea"; const editorControls = { textarea: Textarea };';
+  assert.equal(restyled(f, `${textarea} const a = <editorControls.textarea className="bg-card" />;`).length, 1);
+  assert.equal(restyled(f, 'import * as ui from "@/components/ui/button"; const a = <ui.Button className="rounded-full" />;').length, 1);
+  assert.equal(restyled(f, `${textarea} const a = <editorControls.textarea className="w-full gap-2" />;`).length, 0, 'layout stays allowed');
+  assert.equal(restyled(f, 'const a = <motion.div className="bg-card" />;').length, 0, 'not a host control');
+});
+
+test('arbitrary descendant variants cannot restyle a host control', t => {
+  const f = fixture(t, '');
+  assert.equal(restyled(f, 'const a = <form className="[&_[data-slot=input-group]]:bg-card" />;').length, 1);
+  assert.equal(restyled(f, 'const a = <div className="flex [&_button]:bg-card" />;').length, 1);
+  assert.equal(restyled(f, 'const a = <div className="[&_button]:size-11" />;').length, 0, '44px touch metric stays allowed');
+  assert.equal(restyled(f, 'const a = <div className="[&_button]:w-full [&_svg]:size-4" />;').length, 0, 'layout and non-controls stay allowed');
+});
+
+test('a class held in a const is checked when passed to a host control', t => {
+  const f = fixture(t, '');
+  const button = 'import { Button } from "@/components/ui/button"; ';
+  assert.equal(restyled(f, `${button}const cls = "bg-card px-4"; const a = <Button className={cls} />;`).length, 1);
+  assert.equal(restyled(f, `${button}const cls = cn("w-full", "shadow-sm"); const a = <Button className={cls} />;`).length, 1);
+  assert.equal(restyled(f, `${button}const cls = "w-full gap-2"; const a = <Button className={cls} />;`).length, 0);
+  assert.equal(restyled(f, 'const cls = "bg-card"; const a = <div className={cls} />;').length, 0);
+});
+
+test('space-card skins its clickable Button through item css, never through classes on the Button (D-1745)', () => {
+  const source = readFileSync(join(designRoot, 'registry/space-card/space-card.tsx'), 'utf8');
+  const button = /<Button\b[^>]*>/.exec(source)[0];
+  assert.match(button, /data-boring="space-card"/);
+  assert.doesNotMatch(button, /className=\{cn\([^)]*(?:skin|hoverFill)/);
+  assert.match(source, /const layout = '[^']*'/);
+  assert.doesNotMatch(/const layout = '([^']*)'/.exec(source)[1], /(?<![\w-])(?:bg|rounded|border|shadow|ring|text-(?!left)|p[xytrbl]?)-|hover:/, 'the Button layout holds no appearance');
+  const css = JSON.parse(readFileSync(join(designRoot, 'registry.json'), 'utf8')).items.find(item => item.name === 'space-card').css['@layer utilities'];
+  const scope = '[data-slot="button"][data-boring="space-card"]';
+  assert.deepEqual(Object.keys(css), [scope, `${scope}:hover`]);
+  assert.deepEqual(css[scope], { 'background-color': 'var(--card)', color: 'var(--card-foreground)', 'border-radius': 'var(--radius)', padding: '0.75rem' });
+  assert.equal(css[`${scope}:hover`]['background-color'], 'var(--accent)');
+  assert.deepEqual(checkDesign().findings.filter(finding => finding.file.startsWith('registry/space-card/')), []);
+});
