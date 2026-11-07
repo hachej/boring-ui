@@ -1,0 +1,87 @@
+/*
+ * Derived from the app's theme.core.css roles. Shipped by the kit; an app imports it and keeps no copy.
+ * A change here is a visual change for every app: its PR carries before/after shots of one card screen in a
+ * stock app and coach-max, light and dark, and the release notes say so.
+ *
+ * Import order: app.css, then this file, then ./theme.core.css last, so the core's roles and its EXCEPTIONS
+ * block (same selectors) beat the derived values. No @layer: the @theme inline block below cannot sit in one.
+ */
+
+:root, .dark {
+    --card-foreground: var(--foreground);
+    --popover-foreground: var(--foreground);
+    --secondary: var(--muted);
+    --secondary-foreground: var(--foreground);
+    --accent-foreground: var(--foreground);
+
+    --sidebar-foreground: var(--foreground);
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: var(--accent);
+    --sidebar-accent-foreground: var(--accent-foreground);
+    --sidebar-border: var(--border);
+    --sidebar-ring: var(--ring);
+
+    --chart-1: var(--chart-series-1);
+    --chart-2: var(--chart-series-2);
+    --chart-3: var(--chart-series-3);
+    --chart-4: var(--chart-series-4);
+    --chart-5: var(--chart-series-5);
+}
+
+:root {
+    --popover: var(--card);
+    --muted-foreground: color-mix(in oklab, var(--foreground) 57%, var(--background));
+    --input: color-mix(in oklab, var(--border) 65%, var(--foreground));
+    --primary-active: color-mix(in oklab, var(--primary) 85%, var(--foreground));
+    --sidebar: var(--background);
+    --link: color-mix(in oklab, var(--primary) 70%, var(--foreground));
+
+    --success-foreground: color-mix(in oklab, var(--background) 98%, var(--foreground));
+    --warning-foreground: color-mix(in oklab, var(--background) 98%, var(--foreground));
+    --info-foreground: color-mix(in oklab, var(--background) 98%, var(--foreground));
+    --success-soft: color-mix(in oklab, var(--success) 14%, var(--card));
+    --warning-soft: color-mix(in oklab, var(--warning) 16%, var(--card));
+    --info-soft: color-mix(in oklab, var(--info) 12%, var(--card));
+    --destructive-soft: color-mix(in oklab, var(--destructive) 12%, var(--card));
+    --destructive-soft-foreground: color-mix(in oklab, var(--destructive) 85%, var(--foreground));
+    --success-soft-foreground: color-mix(in oklab, var(--success) 75%, var(--foreground));
+    --warning-soft-foreground: color-mix(in oklab, var(--warning) 75%, var(--foreground));
+    --info-soft-foreground: color-mix(in oklab, var(--info) 75%, var(--foreground));
+
+}
+
+.dark {
+    --popover: var(--card);
+    --muted-foreground: color-mix(in oklab, var(--foreground) 62%, var(--background));
+    --input: color-mix(in oklab, var(--border) 75%, var(--foreground));
+    --primary-active: color-mix(in oklab, var(--primary) 85%, var(--background));
+    --sidebar: var(--background);
+    --link: color-mix(in oklab, var(--primary) 70%, var(--foreground));
+
+    --success-foreground: var(--background);
+    --warning-foreground: var(--background);
+    --info-foreground: var(--background);
+    --success-soft: color-mix(in oklab, var(--success) 22%, var(--card));
+    --warning-soft: color-mix(in oklab, var(--warning) 22%, var(--card));
+    --info-soft: color-mix(in oklab, var(--info) 22%, var(--card));
+    --destructive-soft: color-mix(in oklab, var(--destructive) 27%, var(--card));
+    --destructive-soft-foreground: color-mix(in oklab, var(--destructive) 85%, var(--foreground));
+    --success-soft-foreground: color-mix(in oklab, var(--success) 55%, var(--foreground));
+    --warning-soft-foreground: color-mix(in oklab, var(--warning) 55%, var(--foreground));
+    --info-soft-foreground: color-mix(in oklab, var(--info) 55%, var(--foreground));
+
+}
+
+@theme inline {
+    --font-heading: var(--font-display);
+    --color-primary-active: var(--primary-active);
+    --color-link: var(--link);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}

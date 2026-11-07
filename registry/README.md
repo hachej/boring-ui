@@ -963,14 +963,14 @@ The kit owns the app's base stylesheet, `@hachej/boring-ui-kit/app.css` (`packag
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
 @import "@hachej/boring-ui-kit/app.css";
-/* Theme last: its :root tokens win over the kit's defaults; derived first, so the core's exceptions win. */
-@import "./theme.derived.css";
+/* Core last: its roles and its EXCEPTIONS block beat the derived values (same selectors, the later one wins). */
+@import "@hachej/boring-ui-kit/theme.derived.css";
 @import "./theme.core.css";
 @source "./";
 @source "../../.boring/ui/candidates.txt"; /* a bundle app: the bundled components live in the ignored .boring/ui */
 ```
 
-`@custom-variant dark` lives in `app.css` (Tailwind v4 accepts it in an imported file). Only `@source` lines stay in the app. The Factory bundle maps `@hachej/boring-ui-kit/<file>` to `packages/ui/styles/<file>`.
+`@custom-variant dark` lives in `app.css` (Tailwind v4 accepts it in an imported file). `@hachej/boring-ui-kit/theme.derived.css` is the kit's theme derivation (core roles to component tokens); the app keeps only `theme.core.css`. No `@layer` around it: its `@theme inline` block cannot sit in one. Only `@source` lines stay in the app. The Factory bundle maps `@hachej/boring-ui-kit/<file>` to `packages/ui/styles/<file>`.
 
 `lab/studio/tailwind.mjs` builds the examples with Tailwind's library API. It includes upstream preflight around Library and viewer fixtures, matching a consumer's standard Tailwind baseline. It is not part of an installation.
 

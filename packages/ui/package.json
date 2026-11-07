@@ -145,6 +145,7 @@
     },
     "./file-tree.css": "./styles/file-tree.css",
     "./app.css": "./styles/app.css",
+    "./theme.derived.css": "./styles/theme.derived.css",
     "./markdown-quote": {
       "types": "./dist/markdown-quote.d.ts",
       "import": "./dist/markdown-quote.js"

@@ -3,9 +3,11 @@
  * CSS variables into Tailwind colours, the :root defaults, the base layer, the resets for .app-shell,
  * .pi-chat and [data-boring="feedback"], and the overlay-blur rule.
  *
- * Apps IMPORT this file and never copy it (a copy drifts). Import it BEFORE ./theme.derived.css and
- * ./theme.core.css: the theme's :root tokens are read by the @theme inline map at use time, and a :root
- * default here (--shell, the durations) is overridden by the theme because it comes later in the cascade.
+ * Apps IMPORT this file and never copy it (a copy drifts). Import order:
+ *   @import "@hachej/boring-ui-kit/app.css"; @import "@hachej/boring-ui-kit/theme.derived.css"; @import "./theme.core.css";
+ * theme.core.css comes last so its core roles and its EXCEPTIONS block beat the derived values (same selectors,
+ * the later one wins); the theme's :root tokens are read by the @theme inline map at use time, and a :root
+ * default here (--shell, the durations) is overridden by the theme. No @layer: @theme inline cannot sit in one.
  * Needs "tailwindcss" imported first. See registry/README.md ("The app's index.css").
  */
 
