@@ -38,6 +38,7 @@ Pick by placement ([full table](../../registry/README.md#blocks-what-to-install)
 | The Library and file history alone | `file-tree`, `documents`, `version-history` |
 | Viewers for agent artifacts | `viewers`, `markdown-editor`, `html-viewer`, `mockup-viewer`, `diagram-viewer`, `maquette-viewer`, `record-viewer`, `board-viewer`, `task-list-viewer` |
 | User feedback (point, dictate, send) | `feedback`, `feedback-preview` |
+| A "choose a file" Button, or a dashed drop strip, with type and size refusals | `file-pick` |
 | Model and key picker | `provider-setup` |
 | Floating utility windows | `windows` |
 
