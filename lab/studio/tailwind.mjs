@@ -3,7 +3,7 @@
 // Global preflight would restyle viewer panels, so chat brings scoped base rules (see registry.json).
 // Library and viewer shadcn controls use upstream preflight scoped to their roots, as a normal consumer's Tailwind setup does.
 // The tokens are the `theme` item of registry.json (the one source: the CLI installs the same values into a consumer's CSS).
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
 
 function files(directory, pattern) {
+  if (!existsSync(directory)) return []; // fileless registry items (touch-floor) carry css only
   return readdirSync(directory).flatMap(name => {
     const path = join(directory, name);
     return statSync(path).isDirectory() ? (name === 'out' ? [] : files(path, pattern)) : pattern.test(name) ? [path] : [];
@@ -27,7 +28,7 @@ export function registryCss(item) {
 }
 
 /** Every item written in Tailwind: their source is scanned for classes and their `css` is compiled in. */
-const TAILWIND_ITEMS = ['button', 'utils', 'file-tree', 'version-history', 'pi-chat', 'inline-question', 'space-card', 'pi-chat-markdown', 'pi-chat-slash', 'pi-chat-mentions', 'pi-chat-pickers', 'pi-chat-voice', 'pi-chat-attachments', 'pi-chat-question', 'pi-chat-approval', 'pi-chat-subagent', 'pi-artifacts', 'pi-chat-plugins', 'shared-chat', 'pi-ambient', 'pi-workspace', 'pi-app', 'viewer-frame', 'viewer-markdown', 'viewer-html', 'viewer-image', 'viewer-pdf', 'viewer-code', 'markdown-editor', 'html-viewer', 'app-shell', 'maquette-viewer', 'diagram-viewer', 'record-viewer'];
+const TAILWIND_ITEMS = ['button', 'utils', 'file-tree', 'version-history', 'pi-chat', 'inline-question', 'space-card', 'pi-chat-markdown', 'pi-chat-slash', 'pi-chat-mentions', 'pi-chat-pickers', 'pi-chat-voice', 'pi-chat-attachments', 'pi-chat-question', 'pi-chat-approval', 'pi-chat-subagent', 'pi-artifacts', 'pi-chat-plugins', 'shared-chat', 'pi-ambient', 'pi-workspace', 'pi-app', 'viewer-frame', 'viewer-markdown', 'viewer-html', 'viewer-image', 'viewer-pdf', 'viewer-code', 'markdown-editor', 'html-viewer', 'app-shell', 'maquette-viewer', 'diagram-viewer', 'record-viewer', 'touch-floor'];
 
 /**
  * The registry `theme` item as CSS: light tokens on `:root`, dark tokens on `.dark` (as the CLI writes them in a consumer app; the
