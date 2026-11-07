@@ -23,7 +23,7 @@ export type FilePickProps = {
   /** Largest file in bytes; a larger one is refused as `size`. */
   maxSize?: number;
   disabled?: boolean;
-  /** Working: the Button shows the kit's spinner and neither a pick nor a drop is taken. */
+  /** Working: the Button keeps its variant colours (`aria-disabled`, not `disabled`) and shows the kit's spinner; neither a pick nor a drop is taken. */
   busy?: boolean;
   /** The Button's own variant and size, passed through. */
   variant?: ComponentProps<typeof Button>['variant'];
@@ -58,19 +58,25 @@ export function sortFiles(files: readonly File[], { accept, multiple, maxSize }:
   return { accepted, refused };
 }
 
+/** The dropped files minus folders (a folder arrives as a File that cannot be read). Skipped quietly; browsers without `webkitGetAsEntry` deliver everything. */
+function withoutFolders(transfer: DataTransfer): File[] {
+  return Array.from(transfer.files).filter((_, index) => transfer.items?.[index]?.webkitGetAsEntry?.()?.isDirectory !== true);
+}
+
 /** A hidden file input behind a Button, optionally inside a dashed drop strip. The Button is the one control (keyboard, touch, accessible name); the strip is a drop target only. The input is reset after every pick, so the same file can be picked twice. */
 export function FilePick({ onFiles, onRefused, accept, multiple = false, maxSize, disabled = false, busy = false, variant, size, drop = false, hint, labels, children, className }: FilePickProps) {
   const t = { ...filePickLabels, ...labels };
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const idle = !disabled && !busy;
+  if (!idle && over) setOver(false);
   const deliver = (files: readonly File[]) => {
     const { accepted, refused } = sortFiles(files, { accept, multiple, maxSize });
     if (accepted.length > 0) onFiles(accepted);
     if (refused.length > 0) onRefused?.(refused);
   };
   const button = (
-    <Button type="button" variant={variant} size={size} disabled={!idle} aria-busy={busy || undefined} className={drop ? undefined : className} onClick={() => input.current?.click()}>
+    <Button type="button" variant={variant} size={size} disabled={disabled || undefined} aria-disabled={busy || undefined} aria-busy={busy || undefined} className={drop ? undefined : className} onClick={() => { if (idle) input.current?.click(); }}>
       {busy ? <Spinner data-icon="inline-start" aria-hidden="true" /> : null}
       {children}
     </Button>
@@ -85,12 +91,12 @@ export function FilePick({ onFiles, onRefused, accept, multiple = false, maxSize
   if (!drop) return <>{button}{field}</>;
   const carriesFiles = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes('Files');
   return (
-    <div data-boring="file-pick-drop" data-drag-over={over} aria-busy={busy || undefined}
+    <div data-boring="file-pick-drop" data-drag-over={over && idle} aria-busy={busy || undefined}
       className={cn('flex w-full min-w-0 flex-col items-center gap-2 p-4 text-center', className)}
       onDragEnter={event => { if (idle && carriesFiles(event)) { event.preventDefault(); setOver(true); } }}
       onDragOver={event => { if (carriesFiles(event)) { event.preventDefault(); if (idle) setOver(true); } }}
       onDragLeave={event => { if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setOver(false); }}
-      onDrop={event => { if (!carriesFiles(event)) return; event.preventDefault(); setOver(false); if (idle) deliver(Array.from(event.dataTransfer.files)); }}>
+      onDrop={event => { if (!carriesFiles(event)) return; event.preventDefault(); setOver(false); if (idle) deliver(withoutFolders(event.dataTransfer)); }}>
       {button}
       <span className="text-xs text-muted-foreground">{hint ?? (multiple ? t.dropHintMore : t.dropHint)}</span>
       {field}

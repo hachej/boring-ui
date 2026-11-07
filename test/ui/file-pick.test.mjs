@@ -39,9 +39,9 @@ const mount = async (t, initial) => {
     await act(async () => { input().dispatchEvent(new window.Event('change', { bubbles: true })); });
     return valueSet;
   };
-  const drag = async (type, files = []) => {
+  const drag = async (type, files = [], items) => {
     const event = new window.Event(type, { bubbles: true, cancelable: true });
-    Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], files } });
+    Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'], files, items } });
     await act(async () => { strip().dispatchEvent(event); });
     return event.defaultPrevented;
   };
@@ -99,7 +99,6 @@ test('disabled and busy refuse picks and drops; busy shows the spinner and aria-
   await ui.pick([ui.file('c.txt', 'text/plain')]);
   await ui.drag('drop', [ui.file('d.txt', 'text/plain')]);
   assert.equal(ui.got.files.length + ui.got.refused.length, 0);
-  assert.equal(ui.button().disabled, true);
   assert.equal(ui.button().getAttribute('aria-busy'), 'true');
   assert.equal(ui.strip().getAttribute('aria-busy'), 'true');
   assert.equal(ui.button().querySelector('[data-slot=spinner]') !== null, true);
@@ -121,14 +120,58 @@ test('the Button is the accessible control named by its label; the input is hidd
   assert.equal(ui.element.textContent.includes('or drop files here'), true);
 });
 
-test('Enter and Space on the Button open the picker (the input is clicked)', async t => {
+test('a click on the Button opens the picker (the input is clicked), and not while busy', async t => {
   const ui = await mount(t, {});
   let clicks = 0;
   ui.input().click = () => { clicks += 1; };
-  // A native button turns Enter and Space into a click; the Button's click is what opens the picker.
+  // Only the click is driven here; a native button turns Enter and Space into that click, which this test does not exercise.
   await ui.act(async () => { ui.button().click(); });
   assert.equal(clicks, 1);
   await ui.draw({ busy: true });
   await ui.act(async () => { ui.button().click(); });
   assert.equal(clicks, 1);
+});
+
+test('busy keeps the Button enabled-looking (aria-disabled, no disabled attribute) and ignores the click; disabled sets the attribute', async t => {
+  const ui = await mount(t, { busy: true });
+  let clicks = 0;
+  ui.input().click = () => { clicks += 1; };
+  assert.equal(ui.button().hasAttribute('disabled'), false);
+  assert.equal(ui.button().getAttribute('aria-disabled'), 'true');
+  assert.equal(ui.input().disabled, true);
+  await ui.act(async () => { ui.button().click(); });
+  await ui.pick([ui.file('a.txt', 'text/plain')]);
+  assert.equal(clicks, 0);
+  assert.equal(ui.got.files.length + ui.got.refused.length, 0);
+  await ui.draw({ disabled: true });
+  assert.equal(ui.button().hasAttribute('disabled'), true);
+  assert.equal(ui.button().hasAttribute('aria-disabled'), false);
+  assert.equal(ui.input().disabled, true);
+  await ui.draw({});
+  assert.equal(ui.button().hasAttribute('disabled') || ui.button().hasAttribute('aria-disabled'), false);
+});
+
+test('a dropped folder is skipped, not delivered and not refused; the files dropped with it arrive', async t => {
+  const ui = await mount(t, { drop: true, multiple: true });
+  const folder = ui.file('Photos', ''); const doc = ui.file('a.txt', 'text/plain');
+  const items = [{ kind: 'file', webkitGetAsEntry: () => ({ isDirectory: true }) }, { kind: 'file', webkitGetAsEntry: () => ({ isDirectory: false }) }];
+  await ui.drag('drop', [folder, doc], items);
+  assert.deepEqual(ui.got.files, [['a.txt']]);
+  assert.equal(ui.got.refused.length, 0);
+  await ui.drag('drop', [folder], [items[0]]);
+  assert.equal(ui.got.files.length, 1);
+  assert.equal(ui.got.refused.length, 0);
+});
+
+test('the drag-over highlight clears when the component turns busy or disabled', async t => {
+  const ui = await mount(t, { drop: true });
+  await ui.drag('dragenter');
+  assert.equal(ui.strip().getAttribute('data-drag-over'), 'true');
+  await ui.draw({ drop: true, busy: true });
+  assert.equal(ui.strip().getAttribute('data-drag-over'), 'false');
+  await ui.draw({ drop: true });
+  assert.equal(ui.strip().getAttribute('data-drag-over'), 'false');
+  await ui.drag('dragenter');
+  await ui.draw({ drop: true, disabled: true });
+  assert.equal(ui.strip().getAttribute('data-drag-over'), 'false');
 });
