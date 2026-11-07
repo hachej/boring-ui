@@ -30,41 +30,61 @@ test('--sidebar-width is a theme token: default 256px, a theme :root wins withou
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
   const vars = item('theme').cssVars;
-  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${['theme', 'app-shell'].map(name => registryCss(item(name))).join('\n')}`;
-  const compiler = await compile(cssSource, { base: root, loadStylesheet: async id => {
+  const base = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n`;
+  const loadStylesheet = async id => {
     const path = require.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id);
     return { path, base: dirname(path), content: readFileSync(path, 'utf8') };
-  } });
-  const css = compiler.build(sources.flatMap(source => source.split(/[\s"'`]+/)));
+  };
+  const candidates = sources.flatMap(source => source.split(/[\s"'`]+/));
+  // The full kit CSS (theme and app-shell items), and the shadcn sidebar alone: the same utilities, no item css.
+  const css = (await compile(base + ['theme', 'app-shell'].map(name => registryCss(item(name))).join('\n'), { base: root, loadStylesheet })).build(candidates);
+  const bare = (await compile(base, { base: root, loadStylesheet })).build(candidates);
   const html = '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script type="module" src="/app.js"></script></body></html>';
   const server = createServer((req, res) => {
     const path = req.url.split('?')[0];
     res.setHeader('content-type', path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : 'text/html');
-    res.end(path === '/app.js' ? js : path === '/app.css' ? css : html);
+    res.end(path === '/app.js' ? js : path === '/app.css' ? css : path === '/bare.css' ? bare : html);
   });
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   await build({ entryPoints: [join(root, 'packages/testing/src/browser.ts')], bundle: true, platform: 'node', format: 'esm', outfile: join(work, 'browser.mjs') });
   const { launch } = await import(pathToFileURL(join(work, 'browser.mjs')));
   const browser = await launch('about:blank', { evidence: work });
-  const widths = async query => {
+  const width = async (query, selector = '[data-slot=sidebar-gap]') => {
     await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?${query}` });
-    await browser.until('fixture mounted', `document.querySelector('[data-slot=sidebar-gap]') !== null && document.readyState === 'complete'`);
-    await new Promise(done => setTimeout(done, 250));
-    return browser.evaluate(`(() => {
-      const gap = document.querySelector('[data-slot=sidebar-gap]').getBoundingClientRect().width;
-      const root = getComputedStyle(document.documentElement);
-      return { gap, icon: root.getPropertyValue('--sidebar-width-icon').trim(), mobile: parseFloat(getComputedStyle(document.documentElement).fontSize) * parseFloat(root.getPropertyValue('--sidebar-width-mobile')) };
-    })()`);
+    await browser.until('fixture mounted', `document.querySelector('${selector}') !== null && document.readyState === 'complete'`);
+    await new Promise(done => setTimeout(done, 600));
+    return browser.evaluate(`document.querySelector('${selector}').getBoundingClientRect().width`);
+  };
+  const device = async (w, mobile) => {
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: w, height: 800, deviceScaleFactor: 1, mobile });
+    await browser.send('Emulation.setTouchEmulationEnabled', { enabled: mobile, maxTouchPoints: 5 });
   };
   try {
-    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-    const fallback = await widths('');
-    assert.equal(fallback.gap, 256, 'default sidebar is 256px');
-    assert.equal(fallback.mobile, 288, 'default mobile sheet token is 18rem');
-    assert.equal(fallback.icon, 'calc(2.25rem + 1rem)', 'the icon width is a defaulted token');
-    assert.equal((await widths('theme=15.5rem')).gap, 248, 'a theme :root --sidebar-width of 15.5rem gives 248px without !important');
-    assert.equal((await widths('provider=20rem')).gap, 320, 'a SidebarProvider style gives 320px');
-    assert.equal((await widths('theme=15.5rem&provider=20rem')).gap, 320, 'a provider style wins over the theme');
+    await device(1280, false);
+    for (const bare of ['', '&bare=1']) {
+      const tag = bare ? 'sidebar primitive alone' : 'with the app-shell css';
+      assert.equal(await width(`x=1${bare}`), 256, `${tag}: default sidebar is 256px`);
+      assert.equal(await width(`theme=15.5rem${bare}`), 248, `${tag}: a theme :root --sidebar-width of 15.5rem gives 248px without !important`);
+      assert.equal(await width(`provider=20rem${bare}`), 320, `${tag}: a SidebarProvider style gives 320px`);
+      assert.equal(await width(`theme=15.5rem&provider=20rem${bare}`), 320, `${tag}: a provider style wins over the theme`);
+      // The icon rail is --sidebar-row (the wrapper's --control-h) + 1rem: 36 + 16 on a fine pointer, and it follows a --control-h set on an ancestor.
+      assert.equal(await width(`open=0${bare}`), 52, `${tag}: icon rail on a fine pointer is 2.25rem + 1rem`);
+      assert.equal(await width(`open=0&ch=3rem${bare}`), 64, `${tag}: the icon rail follows an ancestor --control-h (3rem + 1rem)`);
+      assert.equal(await width(`open=0&theme=5rem${bare}`), 52, `${tag}: --sidebar-width does not touch the icon rail`);
+    }
+    await device(1280, true);
+    for (const bare of ['', '&bare=1']) {
+      assert.equal(await width(`open=0${bare}`), 60, `coarse pointer${bare}: icon rail is max(control-h, 2.75rem) + 1rem`);
+      assert.equal(await width(`open=0&ch=3rem${bare}`), 64, `coarse pointer${bare}: a larger ancestor --control-h still wins`);
+    }
+    await device(390, true);
+    for (const bare of ['', '&bare=1']) {
+      assert.equal(await width(`sheet=1${bare}`, '[data-mobile=true]'), 288, `mobile sheet${bare}: default is 18rem`);
+    }
+    // The portaled sheet reads the theme token on :root (capped at 75vw, as the Sheet always was: 500px leaves room for 20rem).
+    await device(500, true);
+    assert.equal(await width('sheet=1&tm=20rem', '[data-mobile=true]'), 320, 'mobile sheet: a theme :root --sidebar-width-mobile of 20rem gives 320px');
+    assert.equal(await width('sheet=1&tm=20rem&bare=1', '[data-mobile=true]'), 320, 'mobile sheet alone: the same');
     assert.deepEqual(browser.problems, []);
   } finally { await browser.close(); await new Promise(done => server.close(done)); }
 });

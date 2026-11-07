@@ -2235,16 +2235,6 @@
       ],
       "css": {
         "@layer base": {
-          ":root": {
-            "--sidebar-width": "16rem",
-            "--sidebar-width-mobile": "18rem",
-            "--sidebar-width-icon": "calc(var(--control-h, 2.25rem) + 1rem)"
-          },
-          "@media (pointer: coarse)": {
-            ":root": {
-              "--sidebar-width-icon": "calc(max(var(--control-h, 2.25rem), var(--control-min, 2.75rem)) + 1rem)"
-            }
-          },
           ".app-shell :where(*, ::before, ::after)": {
             "border-color": "var(--border)"
           },

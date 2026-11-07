@@ -1,6 +1,6 @@
 # Unreleased
 
-- **The sidebar width is a theme token (`app-shell`, bundled `sidebar` primitive; D-1789).** `sidebar.tsx` no longer sets `--sidebar-width` or `--sidebar-width-icon` inline; `app-shell` defaults `--sidebar-width` (16rem), `--sidebar-width-icon` and the new `--sidebar-width-mobile` (18rem, the phone sheet) on `:root` in `@layer base`. Set --sidebar-width in theme.core.css; drop !important. A `SidebarProvider` `style` still wins. Re-sync `sidebar` and `app-shell` together (`registry:build` refreshes `public/r`). Test: `test/contracts/sidebar-width-token.test.mjs`.
+- **The sidebar width is a theme token (bundled `sidebar` primitive, `app-shell`; D-1789).** `sidebar.tsx` no longer sets `--sidebar-width` or `--sidebar-width-icon` inline: it reads them with `var()` fallbacks (16rem; control height + 1rem) on its wrapper, and the phone sheet reads the new `--sidebar-width-mobile` (18rem). Set --sidebar-width in theme.core.css; drop !important. A `SidebarProvider` `style` still wins. Re-sync `sidebar` and `app-shell` (`registry:build` refreshes `public/r`). Test: `test/contracts/sidebar-width-token.test.mjs`.
 
 # Migrating to 0.4.66
 
