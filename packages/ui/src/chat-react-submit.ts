@@ -3,13 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 
 /** What the host's `answer` callback settles with: kind `answered`, or a refusal with an optional reason of its own. */
-export interface SubmitOutcome { readonly kind: string; readonly reason?: string | undefined }
+export type SubmitOutcome<K extends string = string> = { readonly kind: 'answered'; readonly reason?: undefined } | { readonly kind: K; readonly reason?: string | undefined };
 
-export interface SubmitOutcomeOptions {
+export interface SubmitOutcomeOptions<K extends string = string> {
   /** Sends one answer or decision; the host's `answer` bound to the question. A rejection is shown as its message. */
-  readonly send: (value: string) => Promise<SubmitOutcome>;
-  /** The words for a refusal without a reason of its own (the label key stays the caller's). */
-  readonly refused: (kind: string) => string;
+  readonly send: (value: string) => Promise<SubmitOutcome<K>>;
+  /** The words for a refusal without a reason of its own (the label key stays the caller's); `K` is the host's own union of refusal kinds. */
+  readonly refused: (kind: K) => string;
   /** The words for a send that threw something that is not an `Error`. */
   readonly notSent: string;
 }
@@ -28,7 +28,7 @@ export interface SubmitOutcomeState {
  * The submit state of an answer or decision card: `sent` once accepted, `sending` while in flight, `refusal` after a refused or failed
  * send. After unmount a late settle sets no `sending` state. Headless: the card owns the words and the markup.
  */
-export function useSubmitOutcome({ send, refused, notSent }: SubmitOutcomeOptions): SubmitOutcomeState {
+export function useSubmitOutcome<K extends string = string>({ send, refused, notSent }: SubmitOutcomeOptions<K>): SubmitOutcomeState {
   const [sent, setSent] = useState<string | undefined>();
   const [sending, setSending] = useState<string | undefined>();
   const [refusal, setRefusal] = useState<string | undefined>();
