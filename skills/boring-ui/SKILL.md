@@ -50,6 +50,7 @@ Follow these on every change. They come from [INVARIANTS.md](../../INVARIANTS.md
 ## Where to read more
 
 - [features/README.md](../../features/README.md): the feature map. What the kit does, with sub-feature IDs, code paths and how to drive each; start here to find where something lives.
+- Settings and choices: choices are bordered rows, settings are flat rows (`FieldLabel variant="flat"`); in a flat list use a trailing Switch, a Checkbox row is a choice and is bordered; see `pattern-labelled-row-flat` in [features/patterns.md](../../features/patterns.md).
 - [README.md](../../README.md): pitch, quickstart and package overview.
 - [registry/README.md](../../registry/README.md): every block, its props and install command.
 - [packages/agent/README.md](../../packages/agent/README.md): agent tools, transport, approvals, schedules.
