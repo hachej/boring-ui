@@ -66,7 +66,7 @@ function InputGroupAddon({
 }
 
 const inputGroupButtonVariants = cva(
-  "-my-px flex items-center gap-2 text-xs shadow-none",
+  "-my-[var(--border-width,1px)] flex items-center gap-2 text-xs shadow-none",
   {
     variants: {
       size: {
@@ -124,7 +124,7 @@ function InputGroupInput({
     <Input
       data-slot="input-group-control"
       className={cn(
-        "h-full min-h-0! flex-1 rounded-none border-0 bg-transparent shadow-none ring-0 focus-visible:ring-0 aria-invalid:ring-0 dark:bg-transparent",
+        "-my-[var(--border-width,1px)] h-[calc(100%+2*var(--border-width,1px))] min-h-0! flex-1 rounded-none border-0 bg-transparent shadow-none ring-0 focus-visible:ring-0 aria-invalid:ring-0 dark:bg-transparent",
         className
       )}
       {...props}

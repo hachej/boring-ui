@@ -77,7 +77,7 @@ for (const primitives of ['shadcn/ui', 'examples/app-shell/components/ui']) for 
     for (const [name, box] of Object.entries(defaults)) expect(`${label} ${name} height`, box?.h, name === 'button lg' && wanted === 36 ? 36 : wanted);
     expect(`${label} icon width`, m.buttons.icon?.w, wanted);
     expect(`${label} generic InputGroup height`, m.group?.h, wanted);
-    for (const [selector, inside, height] of m.groupInside) if (!inside) violations.push(`${label} ${selector} (${height}px) sticks out of its ${m.group?.h}px InputGroup`);
+    for (const [selector, inside, height] of m.groupInside) if (selector.includes('group-input') && height < wanted) violations.push(`${label} the group's input is ${height}px, a tap target of ${wanted} was asked`); else if (!inside) violations.push(`${label} ${selector} (${height}px) sticks out of its ${m.group?.h}px InputGroup`);
     // The collapsed rail: the row follows the token and sits inside the rail (the rail is a Sheet under md, so only from md).
     if (m.railRow) { expect(`${label} collapsed sidebar row`, [m.railRow.h, m.railRow.w], [wanted, wanted]); if (!m.railInside) violations.push(`${label} collapsed sidebar row ${m.railRow.w}px sticks out of the ${m.rail?.w}px rail`); }
     expect(`${label} native-select wrapper stays level`, m.native?.h, m.input?.h);
