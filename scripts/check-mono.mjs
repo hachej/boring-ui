@@ -14,6 +14,8 @@ export const MONO_ROOTS = ['registry', 'shadcn/ui', 'packages/ui/src'];
 export const MONO_TAGS = new Set(['code', 'kbd', 'pre', 'samp']);
 /** Files where the string `font-mono` is not a class. */
 export const MONO_EXEMPT = { 'registry/looks-viewer/looks.ts': 'CSS variable names of the shadcn shape, not classes' };
+/** The one file whose <textarea> may carry font-mono: the kit Textarea, for its `variant="code"` (D-1782). */
+export const MONO_CODE_FIELD = 'shadcn/ui/textarea.tsx';
 const SOURCE = /\.(tsx|ts|jsx|js|mjs)$/;
 /** A token's variants and utility, split at the colons outside brackets (`[&_code]:font-mono`, `md:font-mono!`). */
 const parts = token => token.split(/:(?![^[]*\])/);
@@ -46,7 +48,8 @@ export function monoViolations(text, file = 'file.tsx') {
       } else {
         const tag = owner.tagName.getText(source);
         const marked = owner.attributes.properties.some(item => attributeName(item) === 'data-mono-id');
-        if (!MONO_TAGS.has(tag) && !marked) found.push({ line: lineOf(node), tag, reason: `font-mono on <${tag}>: use sans, or <code>/<kbd>/<pre>/<samp>, or data-mono-id for an id` });
+        const codeField = file === MONO_CODE_FIELD && tag === 'textarea'; // D-1782: Textarea variant="code", the kit's one mono field
+        if (!MONO_TAGS.has(tag) && !marked && !codeField) found.push({ line: lineOf(node), tag, reason: `font-mono on <${tag}>: use sans, or <code>/<kbd>/<pre>/<samp>, or data-mono-id for an id` });
       }
     }
     ts.forEachChild(node, visit);

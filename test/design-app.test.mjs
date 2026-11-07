@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BLOCK_ITEMS, LEVELS } from '../packages/ui/bin/boring-ui-blocks.mjs';
+import { BLOCK_ITEMS, KIT_SLOTS, LEVELS } from '../packages/ui/bin/boring-ui-blocks.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bin = join(root, 'packages/ui/bin/boring-ui-blocks.mjs');
@@ -32,7 +32,14 @@ const EXPECTED = {
   'design-no-kit-restyle': ['restyle.css', 'warn'],
   'design-no-important': ['important.css', 'warn'],
   'design-hand-touch-size': ['hand-touch.tsx', 'warn'],
+  'design-border-width': ['border-width.tsx', 'warn'],
+  'design-literal-value': ['literal-value.css', 'warn'],
+  'design-dark-variant': ['dark-variant.tsx', 'warn'],
+  'design-no-x-scroll': ['x-scroll.tsx', 'warn'],
+  'design-overlay-has-title': ['overlay.tsx', 'warn'],
 };
+// The rules with no file of their own in the fixture app: the length limits (a temp app below) and the theme rules (test/fixtures/design-theme).
+const ELSEWHERE = ['line-length', 'component-length', 'file-length', 'design-theme-core-only', 'design-theme-roles-both-modes'];
 
 const report = json(fixture);
 
@@ -44,7 +51,7 @@ for (const [rule, [file, level]] of Object.entries(EXPECTED)) test(`design ${rul
 });
 
 test('the fixture hits only its own rule, the clean file and the theme file report nothing, and a path-wide error fails the run', () => {
-  assert.deepEqual(report.findings.filter(finding => /\/(?:clean\.tsx|theme\.core\.css)$/.test(finding.file)), []);
+  assert.deepEqual(report.findings.filter(finding => /\/(?:clean\.tsx|clean\.css|theme\.core\.css)$/.test(finding.file)), []);
   for (const finding of report.findings) assert.equal(finding.file.endsWith(`/${EXPECTED[finding.rule]?.[0]}`), true, `${finding.rule} in ${finding.file}`);
   assert.equal(report.ok, false);
   assert.equal(report.status, 1);
@@ -53,7 +60,7 @@ test('the fixture hits only its own rule, the clean file and the theme file repo
 });
 
 test('every rule in the level table has a fixture, and every error in the template stays an error', () => {
-  assert.deepEqual(Object.keys(LEVELS).filter(rule => !(rule in EXPECTED) && !['line-length', 'component-length', 'file-length', 'design-border-width', 'design-literal-value', 'design-dark-variant', 'design-no-x-scroll'].includes(rule)), []);
+  assert.deepEqual(Object.keys(LEVELS).filter(rule => !(rule in EXPECTED) && !ELSEWHERE.includes(rule)), []);
   for (const rule of ['raw-element', 'design-card-flat', 'design-no-dark-overrides', 'design-link-token', 'design-mono-for-code']) assert.equal(LEVELS[rule], 'error');
 });
 
@@ -108,4 +115,149 @@ test('every block a kit-block hint names is an item of registry.json', () => {
   const items = new Set(JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.map(item => item.name));
   for (const [need, names] of Object.entries(BLOCK_ITEMS)) for (const name of names) assert.ok(items.has(name), `${need}: ${name}`);
   assert.match(report.findings.find(finding => finding.rule === 'kit-block').message, /FilePick/);
+});
+
+// ---- Round 2: theme rules, one finding per hit, the breaker's cases ---------------------------------------------------------------
+
+const themeBad = json(join(root, 'test/fixtures/design-theme/bad/web/src'));
+const themeFindings = (rule, file) => themeBad.findings.filter(finding => finding.rule === rule && finding.file.endsWith(`/${file}`)).map(finding => finding.line);
+
+test('design-theme-core-only: theme.core.css sets only core roles (below the EXCEPTIONS comment is exempt); theme.derived.css holds no colour literal and no core role', () => {
+  assert.deepEqual(themeFindings('design-theme-core-only', 'theme.core.css'), [4]);
+  assert.deepEqual(themeFindings('design-theme-core-only', 'theme.derived.css'), [3, 4]);
+  assert.ok(themeBad.findings.filter(finding => finding.rule.startsWith('design-theme')).every(finding => finding.level === 'warn' && LEVELS[finding.rule] === 'warn'));
+});
+
+test('design-theme-roles-both-modes: a colour role in :root and not in .dark is reported, and the reverse; non-colour roles and the exceptions are not', () => {
+  assert.deepEqual(themeFindings('design-theme-roles-both-modes', 'theme.core.css'), [4, 5, 12]);
+  const messages = themeBad.findings.filter(finding => finding.rule === 'design-theme-roles-both-modes').map(finding => finding.message);
+  assert.ok(messages.some(message => /--accent is set in \.dark but not in :root/.test(message)));
+  assert.ok(messages.some(message => /--primary is set in :root but not in \.dark/.test(message)));
+  assert.ok(!messages.some(message => /--radius|--brand-teal/.test(message)));
+});
+
+test('a clean theme (both modes, core roles, derived from var() and color-mix(), an exception below the comment) reports nothing', () => {
+  assert.deepEqual(json(join(root, 'test/fixtures/design-theme/clean/web/src')).findings, []);
+});
+
+test('design-overlay-has-title: a Dialog, Sheet, AlertDialog or Drawer content without its own *Title is reported; with it, or self-closing, it is not', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'web/src'), { recursive: true });
+  const overlay = (name, title) => `export const ${name}A = () => <${name}Content>${title ? `<${name}Title>T</${name}Title>` : '<p />'}</${name}Content>;\n`;
+  writeFileSync(join(dir, 'web/src/bad.tsx'), ['Dialog', 'Sheet', 'AlertDialog', 'Drawer'].map(name => overlay(name, false)).join(''));
+  writeFileSync(join(dir, 'web/src/good.tsx'), ['Dialog', 'Sheet', 'AlertDialog', 'Drawer'].map(name => overlay(name, true)).join('') + 'export const W = (p) => <DialogContent {...p} />;\n');
+  const found = JSON.parse(spawnSync(process.execPath, [bin, 'design', 'web/src', '--json'], { cwd: dir, encoding: 'utf8' }).stdout).findings;
+  assert.deepEqual(found.map(finding => [finding.file, finding.line, finding.rule]), [1, 2, 3, 4].map(line => ['web/src/bad.tsx', line, 'design-overlay-has-title']));
+});
+
+test('D-1782: design-mono-for-code accepts a Textarea variant="code" and nothing else new', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'web/src'), { recursive: true });
+  writeFileSync(join(dir, 'web/src/code.tsx'), 'export const A = () => <Textarea variant="code" />;\nexport const B = () => <Textarea variant={"code"} />;\nexport const C = () => <Input variant="code" />;\nexport const D = () => <Textarea className="font-mono" />;\nexport const E = () => <Textarea variant="default" className="font-mono" />;\nexport const F = () => <div data-mono="code" className="font-mono" />;\n');
+  const found = JSON.parse(spawnSync(process.execPath, [bin, 'design', 'web/src', '--json'], { cwd: dir, encoding: 'utf8' }).stdout).findings.filter(finding => finding.rule === 'design-mono-for-code');
+  assert.deepEqual(found.map(finding => finding.line), [4, 5, 6]);
+});
+
+test('bg-[#fff], p-[13px] and text-[#123456] each give exactly one finding (design-color, design-tokens-only, design-literal-value never double-report)', () => {
+  const one = json(join(root, 'test/fixtures/design-one/web/src'));
+  assert.deepEqual(one.findings.map(finding => [finding.line, finding.rule]), [[1, 'design-color'], [2, 'design-tokens-only'], [3, 'design-color']]);
+  const result = run(join(root, 'test/fixtures/design-one/web/src'));
+  assert.match(result.stdout, /^warning test\/fixtures\/design-one\/web\/src\/one-finding\.tsx:1 design-color colour literal or palette class: .* \(#fff\)$/m);
+});
+
+test('breaker 1: only <root>/components/ui is exempt; a nested components/ui folder is app code and a raw element there is an error', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'web/src/features/invoices/components/ui'), { recursive: true });
+  writeFileSync(join(dir, 'web/src/features/invoices/components/ui/action.tsx'), 'export const A = () => <button />;\n');
+  const nested = JSON.parse(spawnSync(process.execPath, [bin, 'design', 'web/src', '--json'], { cwd: dir, encoding: 'utf8' }).stdout);
+  assert.deepEqual(nested.findings.map(finding => [finding.rule, finding.level]), [['raw-element', 'error']]);
+  mkdirSync(join(dir, 'web/src/components/ui'), { recursive: true });
+  writeFileSync(join(dir, 'web/src/components/ui/action.tsx'), 'export const A = () => <button />;\n');
+  const own = JSON.parse(spawnSync(process.execPath, [bin, 'design', 'web/src', '--json'], { cwd: dir, encoding: 'utf8' }).stdout);
+  assert.deepEqual(own.findings.filter(finding => finding.file.endsWith('/components/ui/action.tsx') && !finding.file.includes('features')), [], 'the root components/ui is the legacy exemption');
+  assert.equal(own.findings.filter(finding => finding.file.includes('features')).length, 1);
+});
+
+test('breaker 2: dot folders are scanned, as the template does (only node_modules and platform-owned paths are skipped)', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'web/src/.hidden'), { recursive: true });
+  mkdirSync(join(dir, 'web/src/node_modules/pkg'), { recursive: true });
+  writeFileSync(join(dir, 'web/src/.hidden/action.tsx'), 'export const A = () => <button />;\n');
+  writeFileSync(join(dir, 'web/src/node_modules/pkg/action.tsx'), 'export const A = () => <button />;\n');
+  const found = JSON.parse(spawnSync(process.execPath, [bin, 'design', 'web/src', '--json'], { cwd: dir, encoding: 'utf8' }).stdout);
+  assert.deepEqual(found.findings.map(finding => [finding.file, finding.rule]), [['web/src/.hidden/action.tsx', 'raw-element']]);
+});
+
+test('breaker 3: a dangling link, a looping folder link and a linked folder do not crash the walk; a fatal error is JSON with a non-zero exit', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+  t.after(() => { chmodSync(join(dir, 'web/src/locked.tsx'), 0o644); rmSync(dir, { recursive: true, force: true }); });
+  mkdirSync(join(dir, 'web/src'), { recursive: true });
+  symlinkSync('missing.tsx', join(dir, 'web/src/dangling.tsx'));
+  symlinkSync('.', join(dir, 'web/src/loop'));
+  writeFileSync(join(dir, 'web/src/ok.tsx'), 'export const K = () => <div />;\n');
+  const ok = spawnSync(process.execPath, [bin, 'design', 'web/src', '--json'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.deepEqual(JSON.parse(ok.stdout).findings, []);
+  writeFileSync(join(dir, 'web/src/locked.tsx'), 'export const L = () => <div />;\n');
+  chmodSync(join(dir, 'web/src/locked.tsx'), 0o000);
+  const fatal = spawnSync(process.execPath, [bin, 'design', 'web/src', '--json'], { cwd: dir, encoding: 'utf8' });
+  if (process.getuid?.() === 0) return; // root reads a locked file
+  assert.notEqual(fatal.status, 0);
+  assert.match(JSON.parse(fatal.stdout).error, /EACCES/);
+});
+
+test('breaker 4: no-kit-restyle matches only the kit\'s own data-slot values, from shadcn/ui and the registry; an app\'s own slot is its own', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'web/src'), { recursive: true });
+  writeFileSync(join(dir, 'web/src/own.css'), '[data-slot=invoice-total]{display:flex}\n[data-slot="invoice-row"] .x{display:flex}\n');
+  writeFileSync(join(dir, 'web/src/kit.css'), '[data-slot=button]{display:flex}\n[data-slot="dialog-content"]{display:flex}\n');
+  writeFileSync(join(dir, 'web/src/own.tsx'), 'export const A = () => <div className="[&_[data-slot=invoice-total]]:flex" />;\n');
+  writeFileSync(join(dir, 'web/src/kit.tsx'), 'export const A = () => <div className="[&_[data-slot=button]]:flex" />;\n');
+  const found = JSON.parse(spawnSync(process.execPath, [bin, 'design', 'web/src', '--json'], { cwd: dir, encoding: 'utf8' }).stdout).findings.filter(finding => finding.rule === 'design-no-kit-restyle');
+  assert.deepEqual(found.map(finding => `${finding.file}:${finding.line}`).sort(), ['web/src/kit.css:1', 'web/src/kit.css:2', 'web/src/kit.tsx:1']);
+});
+
+test('the embedded kit slot list equals the data-slot values of shadcn/ui and the registry (regenerate KIT_SLOTS when a slot is added)', () => {
+  const slots = new Set();
+  const walk = dir => { for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules') continue;
+    if (entry.isDirectory()) walk(join(dir, entry.name));
+    else if (entry.name.endsWith('.tsx')) for (const m of readFileSync(join(dir, entry.name), 'utf8').matchAll(/data-slot=["']([a-z0-9-]+)["']/g)) slots.add(m[1]);
+  } };
+  walk(join(root, 'shadcn')); walk(join(root, 'registry'));
+  assert.deepEqual([...KIT_SLOTS], [...slots].sort());
+});
+
+test('breaker 5: tokens-only reads class contexts only (className, class, cn, cva, clsx, tw); prose and other strings are not classes', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'web/src'), { recursive: true });
+  writeFileSync(join(dir, 'web/src/prose.tsx'), 'export const note = `Set w-[340px] here`;\nexport const hint = "use p-[13px] instead";\n');
+  writeFileSync(join(dir, 'web/src/classes.tsx'), [
+    'export const A = () => <div className="w-[340px]" />;',
+    'export const B = () => <div className={cn("flex", on && "p-[13px]")} />;',
+    'export const C = cva("h-[7px]", { variants: {} });',
+    'export const D = clsx("m-[5px]");',
+    'export const E = tw`gap-[9px]`;',
+    'export const F = () => <div class="top-[3px]" />;',
+    '',
+  ].join('\n'));
+  const found = JSON.parse(spawnSync(process.execPath, [bin, 'design', 'web/src', '--json'], { cwd: dir, encoding: 'utf8' }).stdout).findings.filter(finding => finding.rule === 'design-tokens-only');
+  assert.deepEqual(found.map(finding => `${finding.file}:${finding.line}`), [1, 2, 3, 4, 5, 6].map(line => `web/src/classes.tsx:${line}`));
+});
+
+test('the length limits pass at the limit: a 200 character line, a 150 line component and a 400 line file are clean', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'web/src'), { recursive: true });
+  writeFileSync(join(dir, 'web/src/line.tsx'), `export const A = () => <div title="${'x'.repeat(200 - 'export const A = () => <div title="" />;'.length)}" />;\n`);
+  writeFileSync(join(dir, 'web/src/component.tsx'), `export function B() {\n  return (\n    <div>\n${'      <span />\n'.repeat(144)}    </div>\n  );\n}\n`);
+  writeFileSync(join(dir, 'web/src/file.tsx'), `export const C = 1;\n${'// filler\n'.repeat(399)}`);
+  const result = spawnSync(process.execPath, [bin, 'design', 'web/src', '--json'], { cwd: dir, encoding: 'utf8' });
+  assert.deepEqual(JSON.parse(result.stdout).findings, []);
 });

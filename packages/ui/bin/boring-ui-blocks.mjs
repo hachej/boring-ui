@@ -492,6 +492,9 @@ export const LEVELS = Object.freeze({
   'design-no-kit-restyle': 'warn', // flip to 'error' here
   'design-no-important': 'warn', // flip to 'error' here
   'design-hand-touch-size': 'warn', // flip to 'error' here
+  'design-theme-core-only': 'warn', // flip to 'error' here
+  'design-theme-roles-both-modes': 'warn', // flip to 'error' here
+  'design-overlay-has-title': 'warn', // flip to 'error' here
 });
 
 /** The utilities whose arbitrary value is structure that composes tokens (tracks, a ratio, a stacking index), not a visual value. */
@@ -834,6 +837,7 @@ function linkToken(file, source, code) {
 
 const MONO_CLASS = /(?<![\w$-])(?:[\w-]+:)*(?:font-mono|font-\[family-name:var\(--font-mono\)\])(?![\w-])/;
 const MONO_TAG = /^(?:code|kbd|pre|samp)$/;
+const CODE_VARIANT = /(?<![\w$-])variant\s*=\s*(?:"code"|'code'|\{\s*["']code["']\s*\})/;
 const MONO_FIX = 'use the sans token; add tabular-nums for numbers';
 
 function monoForCode(file, source, code) {
@@ -841,6 +845,7 @@ function monoForCode(file, source, code) {
   for (const match of code.matchAll(/(?<![\w$.)\]])<([A-Za-z][\w.]*)(?=[\s/>])/g)) {
     const end = tagEnd(code, match.index), open = bare.slice(match.index, end);
     if (MONO_TAG.test(match[1]) || /(?<![\w$-])data-mono-id\b/.test(open)) continue;
+    if (match[1] === 'Textarea' && CODE_VARIANT.test(open)) continue; // D-1782: the kit Textarea variant="code" is the one mono field
     if (classTokens(classProps(open)).flatMap((t) => t.split(/[\s"'`{}$?()]+/)).some((t) => MONO_CLASS.test(t)) || MONO_CLASS.test(classProps(open)))
       found.push(hit(file, source, match.index, 'design-mono-for-code', `<${match[1]}> uses the mono font outside code, kbd, pre, samp or data-mono-id: ${MONO_FIX}`));
   }
@@ -858,12 +863,27 @@ const ARBITRARY_VALUE = /(?<![\w-])(?:[\w-]+:)*(-?[a-z][a-z0-9]*(?:-[a-z0-9]+)*)
 const COLOR_LITERAL = /^(?:#|(?:rgb|rgba|hsl|hsla|oklch|oklab)\()/; // design-color owns these
 const HAND_TOUCH = /^(?:[\w-]+:)*(?:h|min-h|size|min-w)-11$/; // 44px by hand, with or without a pointer-coarse:/max-md: variant
 
+/** The source ranges that hold Tailwind classes: className=/class= values, the arguments of cn(), cva(), clsx(), cx(), twMerge(), tw() and tw`...`. Prose elsewhere is not classes. */
+function classRanges(source) {
+  const code = mask(source), ranges = [];
+  const add = (from, to) => ranges.push([from, to < 0 ? source.length : to]);
+  for (const m of code.matchAll(/(?<![\w$-])(?:className|class)\s*=\s*/g)) {
+    const i = m.index + m[0].length;
+    if (source[i] === '"' || source[i] === "'") add(i, source.indexOf(source[i], i + 1) + 1 || -1);
+    else if (code[i] === '{') add(i, closing(code, i));
+  }
+  for (const m of code.matchAll(/(?<![\w$.-])(?:cn|cva|clsx|cx|twMerge|tw)\s*\(/g)) add(m.index, closing(code, m.index + m[0].length - 1));
+  for (const m of code.matchAll(/(?<![\w$.-])tw\s*`/g)) add(m.index, source.indexOf('`', m.index + m[0].length) + 1 || -1);
+  return ranges;
+}
+
 function classRules(file, source) {
-  const found = [], bare = mask(source, { strings: false });
+  const found = [], bare = mask(source, { strings: false }), ranges = classRanges(source);
   const darkLines = new Set();
   for (const m of bare.matchAll(DARK_COLOR)) { darkLines.add(lineAt(source, m.index)); found.push(hit(file, source, m.index, 'design-no-dark-overrides', 'a dark: colour class: set the dark value on the token in the theme, the tokens switch with .dark')); }
   for (const m of bare.matchAll(ARBITRARY_VALUE)) {
     const [whole, utility, value] = m;
+    if (!ranges.some(([from, to]) => m.index >= from && m.index < to)) continue; // prose in a string, not a class
     if (value.includes('var(--') || value.startsWith('--') || COLOR_LITERAL.test(value) || STRUCTURAL.includes(utility)) continue;
     found.push(hit(file, source, m.index, 'design-tokens-only', `arbitrary value ${whole}: use a scale step or a var(--token). ${APP_SENTENCE}`));
   }
@@ -881,17 +901,63 @@ function handTouchSize(file, source, code) {
   return found;
 }
 
-const RESTYLE_SELECTOR = /\[data-slot\b|\[data-boring\b|\.app-shell(?![\w-])|\.pi-chat(?![\w-])/;
-const RESTYLE_VARIANT = /\[&[^\s"'`]*(?:\[data-slot\b|\[data-boring\b|\.app-shell(?![\w-])|\.pi-chat(?![\w-]))/g;
+/** The data-slot values of the kit's own parts (shadcn/ui and registry); an app's own data-slot is its own. A test keeps this list equal to the sources. */
+export const KIT_SLOTS = Object.freeze([
+  'accordion', 'accordion-content', 'accordion-item', 'accordion-trigger', 'accordion-trigger-icon', 'alert', 'alert-action',
+  'alert-description', 'alert-dialog', 'alert-dialog-action', 'alert-dialog-cancel', 'alert-dialog-content',
+  'alert-dialog-description', 'alert-dialog-footer', 'alert-dialog-header', 'alert-dialog-media', 'alert-dialog-overlay',
+  'alert-dialog-portal', 'alert-dialog-title', 'alert-dialog-trigger', 'alert-title', 'attachment', 'attachment-action',
+  'attachment-actions', 'attachment-content', 'attachment-description', 'attachment-group', 'attachment-media',
+  'attachment-title', 'avatar', 'avatar-badge', 'avatar-fallback', 'avatar-group', 'avatar-group-count', 'avatar-image',
+  'breadcrumb', 'breadcrumb-ellipsis', 'breadcrumb-item', 'breadcrumb-list', 'breadcrumb-page', 'breadcrumb-separator', 'bubble',
+  'bubble-group', 'bubble-reactions', 'button', 'button-group', 'button-group-separator', 'card', 'card-action', 'card-content',
+  'card-description', 'card-footer', 'card-header', 'card-title', 'checkbox', 'checkbox-indicator', 'collapsible',
+  'collapsible-content', 'collapsible-trigger', 'composer-field', 'composer-mention-backdrop', 'composer-mention-query',
+  'composer-placeholder', 'composer-recording', 'dialog', 'dialog-close', 'dialog-content', 'dialog-description',
+  'dialog-footer', 'dialog-header', 'dialog-overlay', 'dialog-portal', 'dialog-title', 'dialog-trigger', 'drawer',
+  'drawer-close', 'drawer-content', 'drawer-description', 'drawer-footer', 'drawer-header', 'drawer-overlay', 'drawer-popup',
+  'drawer-portal', 'drawer-swipe-handle', 'drawer-title', 'drawer-trigger', 'drawer-viewport', 'dropdown-menu',
+  'dropdown-menu-checkbox-item', 'dropdown-menu-checkbox-item-indicator', 'dropdown-menu-content', 'dropdown-menu-group',
+  'dropdown-menu-item', 'dropdown-menu-label', 'dropdown-menu-portal', 'dropdown-menu-radio-group', 'dropdown-menu-radio-item',
+  'dropdown-menu-radio-item-indicator', 'dropdown-menu-separator', 'dropdown-menu-shortcut', 'dropdown-menu-sub',
+  'dropdown-menu-sub-content', 'dropdown-menu-sub-trigger', 'dropdown-menu-trigger', 'empty', 'empty-content',
+  'empty-description', 'empty-header', 'empty-icon', 'empty-title', 'field', 'field-content', 'field-description', 'field-error',
+  'field-group', 'field-label', 'field-legend', 'field-separator', 'field-separator-content', 'field-set', 'input',
+  'input-group', 'input-group-addon', 'input-group-control', 'item-actions', 'item-content', 'item-description', 'item-footer',
+  'item-group', 'item-header', 'item-media', 'item-separator', 'item-title', 'kbd', 'kbd-group', 'label', 'marker-content',
+  'marker-icon', 'message', 'message-avatar', 'message-content', 'message-footer', 'message-group', 'message-header',
+  'message-images', 'message-scroller', 'message-scroller-button', 'message-scroller-content', 'message-scroller-item',
+  'message-scroller-viewport', 'native-select', 'native-select-icon', 'native-select-optgroup', 'native-select-option',
+  'native-select-wrapper', 'pagination', 'pagination-content', 'pagination-ellipsis', 'pagination-item', 'pagination-link',
+  'popover', 'popover-content', 'popover-description', 'popover-header', 'popover-title', 'popover-trigger', 'progress',
+  'progress-indicator', 'progress-label', 'progress-track', 'progress-value', 'question-field', 'radio-group',
+  'radio-group-indicator', 'radio-group-item', 'scroll-area', 'scroll-area-scrollbar', 'scroll-area-thumb',
+  'scroll-area-viewport', 'select-content', 'select-group', 'select-item', 'select-label', 'select-scroll-down-button',
+  'select-scroll-up-button', 'select-separator', 'select-trigger', 'select-value', 'separator', 'sheet', 'sheet-close',
+  'sheet-content', 'sheet-description', 'sheet-footer', 'sheet-header', 'sheet-overlay', 'sheet-portal', 'sheet-title',
+  'sheet-trigger', 'sidebar', 'sidebar-container', 'sidebar-content', 'sidebar-footer', 'sidebar-gap', 'sidebar-group',
+  'sidebar-group-content', 'sidebar-header', 'sidebar-inner', 'sidebar-input', 'sidebar-inset', 'sidebar-menu',
+  'sidebar-menu-badge', 'sidebar-menu-item', 'sidebar-menu-skeleton', 'sidebar-menu-sub', 'sidebar-menu-sub-item',
+  'sidebar-rail', 'sidebar-separator', 'sidebar-trigger', 'sidebar-wrapper', 'skeleton', 'spinner', 'switch', 'switch-thumb',
+  'table', 'table-body', 'table-caption', 'table-cell', 'table-container', 'table-footer', 'table-head', 'table-header',
+  'table-row', 'tabs', 'tabs-content', 'tabs-list', 'tabs-trigger', 'textarea', 'toggle', 'toggle-group', 'toggle-group-item',
+  'tooltip', 'tooltip-content', 'tooltip-provider', 'tooltip-trigger', 'trace', 'trace-collapsible', 'trace-collapsible-content',
+  'trace-collapsible-content-inner', 'trace-collapsible-trigger', 'trace-description', 'trace-icon', 'trace-line', 'trace-title',
+]);
+const KIT_SLOT_SET = new Set(KIT_SLOTS);
+const RESTYLE_SELECTOR = /\[data-slot\s*(?:[~|^$*]?=\s*["']?([\w-]+)["']?)?\s*\]|\[data-boring\b|\.app-shell(?![\w-])|\.pi-chat(?![\w-])/g;
+const RESTYLE_VARIANT = /\[&[^\s"'`]*?(?:\[data-slot\s*(?:[~|^$*]?=\s*["']?([\w-]+)["']?)?\s*\]|\[data-boring\b|\.app-shell(?![\w-])|\.pi-chat(?![\w-]))/g;
+/** A match reaches the kit unless it names a data-slot value the kit does not use. A bare [data-slot] matches every part. */
+const reachesKit = (m) => !m[1] || KIT_SLOT_SET.has(m[1]) || (/[~|^$*]=/.test(m[0]) && KIT_SLOTS.some((slot) => slot.includes(m[1])));
 
 /** css selectors, and Tailwind arbitrary descendant variants, that reach into a kit part. */
 function restyle(file, source) {
   const found = [], bare = mask(source, { strings: false });
   if (file.endsWith('.css')) bare.split('\n').forEach((text, i) => {
-    const m = RESTYLE_SELECTOR.exec(text);
+    const m = [...text.matchAll(RESTYLE_SELECTOR)].find(reachesKit);
     if (m) found.push({ file, line: i + 1, rule: 'design-no-kit-restyle', message: `selector ${m[0]} restyles a kit part from app css: set a theme token instead. ${APP_SENTENCE}` });
   });
-  else for (const m of bare.matchAll(RESTYLE_VARIANT)) found.push(hit(file, source, m.index, 'design-no-kit-restyle', `variant ${m[0]} restyles a kit part: set a theme token instead. ${APP_SENTENCE}`));
+  else for (const m of bare.matchAll(RESTYLE_VARIANT)) if (reachesKit(m)) found.push(hit(file, source, m.index, 'design-no-kit-restyle', `variant ${m[0]} restyles a kit part: set a theme token instead. ${APP_SENTENCE}`));
   return found;
 }
 
@@ -914,15 +980,89 @@ const PROFILE = Object.freeze({
   'design-no-x-scroll': ['design-no-x-scroll', 'a table with a horizontal scroll container: truncate the cells and stack below the container width'],
 });
 
+// ---- Theme files and overlays ---------------------------------------------------------------------------------------------------------
+
+/** The core roles: what the Factory template's theme.core.css sets (its :root and .dark colour roles, and the radius, border width, font, text and shadow tokens). */
+export const CORE_ROLES = Object.freeze(['background', 'card', 'foreground', 'primary', 'primary-foreground', 'accent', 'muted', 'border', 'ring', 'destructive', 'success', 'warning', 'info', 'chart-series-1', 'chart-series-2', 'chart-series-3', 'chart-series-4', 'chart-series-5', 'radius', 'border-width', 'font-sans', 'font-display', 'font-mono', 'text-body', 'text-title', 'shadow-xs', 'shadow-sm', 'shadow-md', 'shadow-lg']);
+/** Core roles that are not colours: set once, with no dark value. */
+const NON_COLOR_ROLE = /^(?:radius|border-width|font-|text-|shadow-)/;
+const COLOR_VALUE = /#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla|oklch|oklab|lab|lch)\(/;
+const EXCEPTIONS_MARK = '=== EXCEPTIONS ===';
+
+/** The custom-property declarations of a css file: `{ name, value, line, selector, offset }` (comments blanked, lines kept). */
+function cssDeclarations(text) {
+  const bare = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+  const found = [], stack = [];
+  let start = 0;
+  const flush = (end) => {
+    const m = /^(\s*)--([\w-]+)\s*:\s*([\s\S]*?)\s*$/.exec(bare.slice(start, end));
+    if (m) found.push({ name: m[2], value: m[3], line: bare.slice(0, start + m[1].length).split('\n').length, selector: stack.at(-1) ?? '', offset: start });
+  };
+  for (let i = 0; i < bare.length; i++) {
+    if (bare[i] === '{') { stack.push(bare.slice(start, i).trim().replace(/\s+/g, ' ')); start = i + 1; }
+    else if (bare[i] === '}') { flush(i); stack.pop(); start = i + 1; }
+    else if (bare[i] === ';') { flush(i); start = i + 1; }
+  }
+  return found;
+}
+
+/**
+ * design-theme-core-only: theme.core.css sets only core roles (a declaration after its "=== EXCEPTIONS ===" comment is the app's declared
+ * exception, exempt from both theme rules). theme.derived.css is computed from the core roles and never edited by hand; it is edited by hand when a declaration holds a
+ * colour literal (hex, rgb, hsl, oklch...) or sets a core role: its values are var() and color-mix() of core roles.
+ * design-theme-roles-both-modes: every colour role set in theme.core.css :root is also set in .dark, and the reverse.
+ */
+function themeRules(file, text) {
+  const found = [], name = basename(file), declarations = cssDeclarations(text);
+  if (name === 'theme.core.css') {
+    const exceptionsAt = text.indexOf(EXCEPTIONS_MARK);
+    const declared = exceptionsAt < 0 ? declarations : declarations.filter((d) => d.offset < exceptionsAt); // below the marker: the app's declared exceptions
+    for (const d of declared) {
+      if (!CORE_ROLES.includes(d.name)) found.push({ file, line: d.line, rule: 'design-theme-core-only', message: `--${d.name} is not a core role: theme.core.css sets only the core roles, the rest is computed in theme.derived.css (an app exception goes below the "${EXCEPTIONS_MARK}" comment)` });
+    }
+    const modes = { light: new Map(), dark: new Map() };
+    for (const d of declared) {
+      if (NON_COLOR_ROLE.test(d.name)) continue;
+      const selectors = d.selector.split(',').map((part) => part.trim());
+      if (selectors.includes(':root')) modes.light.set(d.name, d.line);
+      if (selectors.includes('.dark')) modes.dark.set(d.name, d.line);
+    }
+    for (const [role, line] of modes.light) if (!modes.dark.has(role)) found.push({ file, line, rule: 'design-theme-roles-both-modes', message: `--${role} is set in :root but not in .dark: set the dark value too` });
+    for (const [role, line] of modes.dark) if (!modes.light.has(role)) found.push({ file, line, rule: 'design-theme-roles-both-modes', message: `--${role} is set in .dark but not in :root: set the light value too` });
+  } else if (name === 'theme.derived.css') {
+    for (const d of declarations) {
+      if (COLOR_VALUE.test(d.value)) found.push({ file, line: d.line, rule: 'design-theme-core-only', message: `--${d.name} holds a colour literal: theme.derived.css is computed from the core roles and never edited by hand; set the core role in theme.core.css` });
+      else if (CORE_ROLES.includes(d.name)) found.push({ file, line: d.line, rule: 'design-theme-core-only', message: `--${d.name} is a core role set in theme.derived.css: set it in theme.core.css` });
+    }
+  }
+  return found;
+}
+
+const OVERLAYS = ['AlertDialog', 'Dialog', 'Sheet', 'Drawer'];
+/** A kit overlay content (DialogContent, SheetContent, AlertDialogContent, DrawerContent) with no matching *Title inside it. */
+function overlayHasTitle(file, source, code) {
+  const found = [];
+  for (const prefix of OVERLAYS) {
+    for (const match of code.matchAll(new RegExp(String.raw`(?<![\w$.)\]])<${prefix}Content(?=[\s/>])`, 'g'))) {
+      const end = tagEnd(code, match.index);
+      if (code[end - 1] === '/') continue;
+      const close = code.indexOf(`</${prefix}Content>`, end);
+      const body = code.slice(end, close < 0 ? undefined : close);
+      if (!new RegExp(String.raw`<${prefix}Title(?=[\s/>])`).test(body)) found.push(hit(file, source, match.index, 'design-overlay-has-title', `<${prefix}Content> has no <${prefix}Title> inside: add one (className="sr-only" when the design shows none), it is the overlay's accessible name`));
+    }
+  }
+  return found;
+}
+
 const SOURCE = /\.(?:[cm]?[jt]sx?|css)$/;
 
 /**
  * The findings of one file: `file` is its path in the report, `source` its text, `scan` the kit's `scanAppDesign`. `legacy`: the app
  * keeps its own components/ui, its design findings are warnings everywhere and a file inside that folder only gets the design-* rules.
  */
-export function checkSource(file, source, { legacy = false, scan } = {}) {
+export function checkSource(file, source, { legacy = false, ui = false, scan } = {}) {
   const name = basename(file), tsx = /\.[jt]sx$/.test(file);
-  const inUi = /(?:^|\/)components\/ui\//.test(file);
+  const inUi = ui; // the app's own <root>/components/ui, decided by the caller from the path under the scanned root
   const found = [];
   const darkLines = new Set();
   if (tsx) {
@@ -930,7 +1070,7 @@ export function checkSource(file, source, { legacy = false, scan } = {}) {
     const design = [...cardClasses(file, source, code), ...iconsPhosphor(file, source, code), ...touchTarget(file, source, code), ...buttonRawHeight(file, source, code), ...(inUi ? [] : linkToken(file, source, code)), ...(inUi ? [] : monoForCode(file, source, code))];
     const classes = classRules(file, source);
     classes.darkLines.forEach((line) => darkLines.add(line));
-    design.push(...classes.found, ...handTouchSize(file, source, code));
+    design.push(...classes.found, ...handTouchSize(file, source, code), ...overlayHasTitle(file, source, code));
     found.push(...design.map((f) => (inUi || legacy ? { ...f, soft: true } : f)));
     if (!inUi) {
       found.push(...kitBlocks(file, source, code, tags), ...rawElements(file, source, tags), ...longLines(file, source, code), ...components(file, source, code));
@@ -938,6 +1078,7 @@ export function checkSource(file, source, { legacy = false, scan } = {}) {
       if (lines > LIMITS.file) found.push({ file, line: 1, rule: 'file-length', message: `${lines} lines (max ${LIMITS.file}): split it into modules` });
     }
   }
+  if (THEME_FILES.has(name)) found.push(...themeRules(file, source));
   if (SOURCE.test(file) && name !== 'theme.core.css') {
     found.push(...restyle(file, source), ...important(file, source), ...fontFace(file, source));
     const bare = mask(source, { strings: false });
@@ -964,7 +1105,7 @@ function platformPaths(dir) {
   return { root: dir, owned: [] };
 }
 
-/** The scanned files under `dir` (absolute, sorted): code and css, without node_modules, dot folders, declarations and platform-owned paths. */
+/** The scanned files under `dir` (absolute, sorted): code and css, without node_modules (as the template), declarations, platform-owned paths, broken links and symlinked folders. */
 export function designFiles(dir) {
   const { root, owned } = platformPaths(dir);
   const skipped = (path) => { const rel = relative(root, path).split(sep).join('/'); return owned.some((own) => rel === own || rel.startsWith(`${own}/`)); };
@@ -972,8 +1113,11 @@ export function designFiles(dir) {
   const walk = (current) => {
     for (const name of readdirSync(current).sort()) {
       const path = join(current, name);
-      if (name === 'node_modules' || name.startsWith('.') || skipped(path)) continue;
-      if (statSync(path).isDirectory()) walk(path);
+      if (name === 'node_modules' || skipped(path)) continue;
+      let stat;
+      try { stat = statSync(path); } catch { continue; } // a dangling or looping link
+      if (lstatSync(path).isSymbolicLink() && stat.isDirectory()) continue; // a linked folder can loop
+      if (stat.isDirectory()) walk(path);
       else if (SOURCE.test(name) && !name.endsWith('.d.ts')) files.push(path);
     }
   };
@@ -985,7 +1129,7 @@ export function designFiles(dir) {
 export function designFindings(dir, { cwd = process.cwd(), changed = null, scan } = {}) {
   const legacy = existsSync(join(dir, UI_DIR));
   return designFiles(dir).filter((path) => !changed || changed.has(path))
-    .flatMap((path) => checkSource(relative(cwd, path).split(sep).join('/'), readFileSync(path, 'utf8'), { legacy, scan }));
+    .flatMap((path) => checkSource(relative(cwd, path).split(sep).join('/'), readFileSync(path, 'utf8'), { legacy, ui: relative(dir, path).split(sep).join('/').startsWith(`${UI_DIR}/`), scan }));
 }
 
 export const formatFinding = ({ file, line, rule, message, level }) => `${level === 'warn' ? 'warning ' : ''}${file}:${line} ${rule} ${message}`;
@@ -1011,7 +1155,12 @@ export function designMain(args, cwd, log, error, scan = scanAppDesign) {
     error(`error: ${cause.message}\n${DESIGN_USAGE}`);
     return 2;
   }
-  const findings = designFindings(dir, { cwd, changed, scan });
+  let findings;
+  try { findings = designFindings(dir, { cwd, changed, scan }); } catch (cause) {
+    if (json) log(JSON.stringify({ error: cause.message }));
+    else error(`error: ${cause.message}`);
+    return 1;
+  }
   const errors = findings.filter((f) => f.level === 'error').length, warnings = findings.length - errors;
   const counts = {};
   for (const f of findings) counts[f.rule] = (counts[f.rule] ?? 0) + 1;

@@ -1,0 +1,16 @@
+:root {
+    --background: oklch(0.97 0 0);
+    --foreground: oklch(0.2 0 0);
+    --brand-gold: oklch(0.8 0.15 90);
+    --primary: oklch(0.21 0.006 285.885);
+    --radius: 0.5rem;
+}
+
+.dark {
+    --background: oklch(0.18 0 0);
+    --foreground: oklch(0.96 0 0);
+    --accent: oklch(0.28 0 0);
+}
+
+/* === EXCEPTIONS === */
+:root { --brand-teal: oklch(0.7 0.1 190); }

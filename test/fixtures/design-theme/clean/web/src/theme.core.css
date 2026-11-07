@@ -1,0 +1,21 @@
+:root {
+    --background: oklch(0.97 0 0);
+    --foreground: oklch(0.2 0 0);
+    --primary: oklch(0.21 0.006 285.885);
+    --radius: 0.5rem;
+    --border-width: 1px;
+}
+
+.dark {
+    --background: oklch(0.18 0 0);
+    --foreground: oklch(0.96 0 0);
+    --primary: oklch(0.92 0 0);
+}
+
+@theme {
+    --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+
+/* === EXCEPTIONS === */
+:root { --brand-teal: oklch(0.7 0.1 190); }

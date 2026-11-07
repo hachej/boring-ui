@@ -1,0 +1,3 @@
+/* An app's own data-slot is its own: only the kit's slot names are kit parts. */
+[data-slot=invoice-total] { display: flex; }
+.invoice-total { border-radius: var(--radius); box-shadow: var(--shadow-md); }

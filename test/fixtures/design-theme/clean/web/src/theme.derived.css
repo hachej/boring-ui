@@ -1,0 +1,12 @@
+:root, .dark {
+    --card-foreground: var(--foreground);
+    --chart-1: var(--chart-series-1);
+}
+
+:root {
+    --muted-foreground: color-mix(in oklab, var(--foreground) 57%, var(--background));
+}
+
+@theme inline {
+    --radius-sm: calc(var(--radius) * 0.6);
+}
