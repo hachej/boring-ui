@@ -432,10 +432,10 @@ export function Composer(props: ComposerProps) {
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
       <div data-slot="composer-recording" data-testid="composer-recording" className={cn('flex w-full min-w-0 items-center gap-2 px-2', props.placeholderContent ? 'min-h-16' : 'min-h-11')}>{props.recordingStatus}</div>
       <InputGroupAddon align="block-end" data-testid="composer-controls">{startAndPlus}{end}</InputGroupAddon>
-    </InputGroup> : props.recording ? <InputGroup>
+    </InputGroup> : props.recording ? <InputGroup className={pill ? 'h-auto' : undefined}>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
       {!pill && <div data-slot="composer-recording" aria-hidden="true" className="min-h-11 w-0 shrink-0" />}
-      <InputGroupAddon align="block-end" data-testid="composer-controls" className={cn('w-full', pill && 'py-0')}>{props.recording}</InputGroupAddon>
+      <InputGroupAddon align={pill ? 'inline-start' : 'block-end'} data-testid="composer-controls" className="w-full">{props.recording}</InputGroupAddon>
     </InputGroup> : pill ? <InputGroup>
       <InputGroupAddon>{startAndPlus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
       {input}
