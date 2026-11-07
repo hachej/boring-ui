@@ -8,9 +8,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { compile } from 'tailwindcss';
 
-// D-1861: <TableCell truncate> is one line with an ellipsis and its row is as tall as a row of short text. Happy-dom has no layout, so a real Chromium mounts the real
+// D-1861: <TableCell truncate> is one line with an ellipsis (also in a table-auto table, and at 390 touch) and its row is as tall as a row of short text. Happy-dom has no layout, so a real Chromium mounts the real
 // Table, TableRow and TableCell (shadcn/ui) and measures at 1280 fine (light, dark): one line box, scrollWidth > clientWidth, equal row heights (0px), the label cell
-// still wrapping-capable, no sideways scroll. At 390 touch the Table has no stacked layout of its own: a cell without the prop wraps as on main and its row is taller than a short row. Set EVIDENCE_DIR to also write the screenshots there. In CI a missing browser fails the test; it never skips (D-1731).
+// still wrapping-capable, no sideways scroll. The Table has no stacked mode (DataTable's phone list is a separate render), so 390 touch checks the same one line and bound. A focused inline Button keeps its 3px ring (overflow: clip with a clip margin). Set EVIDENCE_DIR to also write the screenshots there. In CI a missing browser fails the test; it never skips (D-1731).
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
 const registry = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8'));
@@ -47,16 +47,22 @@ test('TableCell truncate is one line with an ellipsis, in a row as tall as short
   const browser = await launch('about:blank', { evidence: shots ?? work });
   const open = async query => {
     await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?${query}` });
-    await browser.until('fixture mounted', `document.querySelectorAll('[data-case] tr').length === 3 && document.readyState === 'complete'`);
+    await browser.until('fixture mounted', `document.querySelectorAll('[data-case] tr').length === 6 && document.readyState === 'complete'`);
     await new Promise(done => setTimeout(done, 250));
   };
   const measure = () => browser.evaluate(`(() => {
-    const trs = [...document.querySelectorAll('[data-case=table] tr')];
+    const trs = [...document.querySelectorAll('[data-case=table] table:not([data-auto]) tr')].slice(0, 3);
     const inner = document.querySelector('[data-cell=long] [data-slot=table-cell-truncate]');
     if (!inner) return { noInner: true };
     const cs = getComputedStyle(inner), cell = document.querySelector('[data-cell=long]');
     const line = parseFloat(cs.lineHeight);
-    return { heights: trs.map(tr => tr.getBoundingClientRect().height), inner: { h: inner.getBoundingClientRect().height, line, scrollWidth: inner.scrollWidth, clientWidth: inner.clientWidth,
+    const btn = document.querySelector('[data-btn]'), bi = document.querySelector('[data-cell=button] [data-slot=table-cell-truncate]');
+    btn.focus();
+    const bcs = getComputedStyle(bi), br = btn.getBoundingClientRect(), ir = bi.getBoundingClientRect();
+    const ring = { margin: parseFloat(bcs.overflowClipMargin) || 0, overflow: bcs.overflow, leftGap: br.left - ir.left, btnH: br.height, lineH: parseFloat(bcs.lineHeight) };
+    const au = document.querySelector('[data-cell=auto] [data-slot=table-cell-truncate]'), acs = getComputedStyle(au);
+    const auto = { h: au.getBoundingClientRect().height, line: parseFloat(acs.lineHeight), w: au.getBoundingClientRect().width, max: parseFloat(getComputedStyle(document.documentElement).fontSize) * 16, sw: au.scrollWidth, cw: au.clientWidth, layout: getComputedStyle(au.closest('table')).tableLayout };
+    return { ring, auto, heights: trs.map(tr => tr.getBoundingClientRect().height), inner: { h: inner.getBoundingClientRect().height, line, scrollWidth: inner.scrollWidth, clientWidth: inner.clientWidth,
       overflow: cs.overflow, whiteSpace: cs.whiteSpace, textOverflow: cs.textOverflow }, truncateAttr: cell.hasAttribute('data-truncate'), title: cell.title,
       shortTitle: document.querySelector('[data-cell=short]').title, plainClass: document.querySelector('[data-cell=plain]').className, plainInner: !!document.querySelector('[data-cell=plain] [data-slot=table-cell-truncate]'),
       plainWhiteSpace: getComputedStyle(document.querySelector('[data-cell=plain]')).whiteSpace, scrollX: document.documentElement.scrollWidth - document.documentElement.clientWidth };
@@ -74,12 +80,20 @@ test('TableCell truncate is one line with an ellipsis, in a row as tall as short
         if (shots) await browser.screenshot(`table-cell-truncate-${width}-${theme}.png`);
         const label = `${width} ${theme}`;
         if (m.scrollX > 0) problems.push(`${label}: the page scrolls sideways by ${m.scrollX}px`);
-        if (m.plainInner || !m.plainClass.includes('whitespace-normal') || m.plainWhiteSpace !== 'normal') problems.push(`${label}: a cell without the prop changed (${m.plainClass}, ${m.plainWhiteSpace})`);
-        if (mobile) { if (m.heights[2] <= m.heights[1]) problems.push(`${label}: the plain long cell should still wrap on a phone, rows ${m.heights}`); continue; }
+        if (!mobile && (m.plainInner || !m.plainClass.includes('whitespace-normal') || m.plainWhiteSpace !== 'normal')) problems.push(`${label}: a cell without the prop changed (${m.plainClass}, ${m.plainWhiteSpace})`);
+        // The Table never stacks (DataTable's phone list is a separate render): at 390 touch the truncate cell is still one line within the same bound.
+        if (m.auto.layout !== 'auto') problems.push(`${label}: the second table is ${m.auto.layout}, not auto`);
+        if (Math.abs(m.auto.h - m.auto.line) > 0.5) problems.push(`${label}: the table-auto identifier cell is ${m.auto.h}px tall, one line is ${m.auto.line}px`);
+        if (m.auto.w > m.auto.max + 0.5) problems.push(`${label}: the table-auto identifier cell is ${m.auto.w}px wide, over the ${m.auto.max}px bound`);
+        if (m.auto.sw <= m.auto.cw) problems.push(`${label}: the identifier has no ellipsis in table-auto (${m.auto.sw} <= ${m.auto.cw})`);
+        if (m.ring.margin < m.ring.leftGap + 4) problems.push(`${label}: the clip margin ${m.ring.margin}px does not leave the 3px focus ring of a flush inline Button unclipped (${m.ring.overflow})`);
+        if (m.inner.h > 0 && Math.abs(m.inner.h - m.inner.line) > 0.5) problems.push(`${label}: the truncate cell is ${m.inner.h}px tall, one line is ${m.inner.line}px`);
+        if (m.inner.clientWidth > m.auto.max + 0.5) problems.push(`${label}: the truncate cell is ${m.inner.clientWidth}px wide, over the ${m.auto.max}px bound`);
+        if (mobile) continue;
         if (!m.truncateAttr) problems.push(`${label}: the cell has no data-truncate`);
         if (Math.abs(m.inner.h - m.inner.line) > 0.5) problems.push(`${label}: the truncate cell is ${m.inner.h}px tall, one line is ${m.inner.line}px`);
         if (m.inner.scrollWidth <= m.inner.clientWidth) problems.push(`${label}: no ellipsis, scrollWidth ${m.inner.scrollWidth} <= clientWidth ${m.inner.clientWidth}`);
-        if (m.inner.overflow !== 'hidden' || m.inner.whiteSpace !== 'nowrap' || m.inner.textOverflow !== 'ellipsis') problems.push(`${label}: inner styles ${JSON.stringify(m.inner)}`);
+        if (m.inner.overflow !== 'clip' || m.inner.whiteSpace !== 'nowrap' || m.inner.textOverflow !== 'ellipsis') problems.push(`${label}: inner styles ${JSON.stringify(m.inner)}`);
         if (m.heights[0] !== m.heights[1]) problems.push(`${label}: the long row is ${m.heights[0]}px, the short row ${m.heights[1]}px`);
         if (!m.title.startsWith('Camille Durand-Lefebvre') || m.shortTitle !== 'Camille') problems.push(`${label}: the full text is not in the title (${m.title} / ${m.shortTitle})`);
       }
