@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unpkg.com/@hachej/boring-ui-kit/atlas.schema.json",
+  "title": "Atlas manifest",
+  "description": "web/src/atlas.json of an app: every screen and state the Atlas shoots. Checked by `boring-ui-blocks atlas <dir> --check`.",
+  "type": "object",
+  "required": ["states"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "states": { "type": "array", "items": { "$ref": "#/$defs/state" } }
+  },
+  "$defs": {
+    "state": {
+      "type": "object",
+      "required": ["id", "page", "title", "given"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Stable id, e.g. ecritures.empty. Unique in the manifest.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)*$"
+        },
+        "page": { "description": "The route to open.", "type": "string", "pattern": "^/" },
+        "title": { "description": "What a person sees in the viewer.", "type": "string", "pattern": "\\S" },
+        "given": { "$ref": "#/$defs/given" },
+        "flow": { "description": "The flow this state belongs to.", "type": "string", "pattern": "\\S" },
+        "after": { "description": "Label of the arrow that leads to this state. Only with flow.", "type": "string", "pattern": "\\S" }
+      },
+      "dependentRequired": { "after": ["flow"] }
+    },
+    "given": {
+      "description": "How the state is reached, in the grammar of an app's features/examples.json.",
+      "type": "object",
+      "required": ["fixture"],
+      "additionalProperties": false,
+      "properties": {
+        "fixture": {
+          "description": "A file name in the app's features/fixtures/, matching *.synthetic.* (invented data only).",
+          "type": "string",
+          "pattern": "^[^/\\\\\\s]+\\.synthetic\\.[^/\\\\\\s]+$"
+        },
+        "steps": {
+          "description": "In order: open <screen>, upload [<fixture>] (default given.fixture), click <label>, fill <label> <value>, wait <text> (atlas only). Quote a multi-word label or value \"like this\" or with guillemets.",
+          "type": "array",
+          "items": { "type": "string", "pattern": "^\\s*(?:(?:open|click|fill|wait)\\s+\\S|upload(?:\\s+\\S+)?\\s*$)" }
+        }
+      }
+    }
+  }
+}

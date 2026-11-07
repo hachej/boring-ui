@@ -13,6 +13,13 @@ for (const name of readdirSync(join(root, 'packages'))) {
     const dir = join(root, 'packages', name);
     const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
     for (const [subpath, entry] of Object.entries(manifest.exports)) {
+      if (subpath === './atlas.schema.json') {
+        // The Atlas manifest's JSON schema: a data file at the package root, not a stylesheet (D-1831).
+        assert.equal(manifest.name, '@hachej/boring-ui-kit');
+        assert.equal(entry, './atlas.schema.json');
+        assert.equal(JSON.parse(readFileSync(join(dir, entry), 'utf8')).title, 'Atlas manifest');
+        continue;
+      }
       if (typeof entry === 'string') {
         assert.match(subpath, /^\.\/[\w.-]+\.css$/);
         assert.equal(manifest.name, '@hachej/boring-ui-kit');

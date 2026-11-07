@@ -16,7 +16,7 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
   const agentNotices = manifest.name === '@hachej/boring-agent' ? ['NOTICE', 'licenses/Apache-2.0.txt', 'THIRD_PARTY_NOTICES.md'] : [];
   for (const path of agentNotices) if (!files.has(path)) errors.push(`Missing ${path}`);
   // The kit's stylesheets an app imports: the file tree's and the app base stylesheet (D-1789).
-  const isTreeStyles = path => manifest.name === '@hachej/boring-ui-kit' && (path === 'styles/file-tree.css' || path === 'styles/app.css' || path === 'styles/theme.derived.css');
+  const isTreeStyles = path => manifest.name === '@hachej/boring-ui-kit' && (path === 'styles/file-tree.css' || path === 'styles/app.css' || path === 'styles/theme.derived.css' || path === 'atlas.schema.json' /* the Atlas manifest's JSON schema (D-1831) */);
   const isRegistryFile = path => manifest.name === '@hachej/boring-ui-kit' && /^r\/[\w.-]+\.json$/.test(path);
   // The kit's one command (`boring-ui-blocks`: installed blocks, design rule and generated shadcn ui checks; update).
   const isKitBin = path => manifest.name === '@hachej/boring-ui-kit' && path === 'bin/boring-ui-blocks.mjs';
