@@ -1,6 +1,7 @@
 # Unreleased
 
 - **`boring-ui-blocks design`: comments only, no behaviour change (D-1789).** The check's header now says every rule is an error, with existing hits frozen in `design.exceptions.json`; the BLOCKS map's comment points app authors to the 'Need to block' section of `skills/boring-design-system/SKILL.md` instead of boring-factory's kit-blocks.md. No consumer action.
+- **A Badge in a table cell keeps the row height (bundled `badge` primitive; D-1819).** A `Badge` placed directly in a kit `TableCell` (`data-slot="table-cell"`) is now `align-middle` with `-my-0.5`, so its 18px box adds nothing to the cell's line box: a row with a Badge is as tall as a row of plain text (was 2px taller). Visible size, padding, colours and radius are unchanged; no new prop or variant. Consumer action: re-sync `badge`. Test: `test/contracts/badge-table-row-geometry.test.mjs`.
 
 # Migrating to 0.4.68
 
