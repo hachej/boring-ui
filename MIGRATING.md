@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.68
+
 - **An inline Button in a table cell is underlined on hover and focus only (bundled `button` primitive, `size="inline"`; D-1814).** Inside a kit `TableCell` (`data-slot="table-cell"`), `<Button size="inline">` now has no underline at rest and shows it on `:hover` and `:focus-visible`, through `in-data-[slot=table-cell]:` variants in the inline size string (not a new prop or variant). Colour, the 44px touch hit area and the focus ring are unchanged; in prose it is still underlined at rest. Visual change for apps with inline buttons in tables: expert-comptable's Compta ledger (two per row) loses its resting underlines. Consumer action: re-sync `button` (`registry:build` refreshes `public/r`). Test: `test/ui/button-inline-table.test.mjs`.
 
 # Migrating to 0.4.67
