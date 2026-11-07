@@ -81,6 +81,7 @@ export const frenchChatLabels: ChatLabels = {
   voiceBlocked: 'Non envoyé. Vérifiez l’avis de la conversation avant de réessayer.',
   voiceUnconfirmed: 'L’envoi n’est pas confirmé. Vérifiez l’avis de la conversation.',
   voiceStop: 'Arrêter l’enregistrement',
+  starting: 'Démarrage…',
   voiceCancel: 'Annuler l’enregistrement',
   voiceTranscribing: 'Transcription…',
   voiceNothingHeard: 'Rien n’a été entendu. Réessayez.',

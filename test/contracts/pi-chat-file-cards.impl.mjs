@@ -17,7 +17,7 @@ async function load(name, contents) {
   return import(pathToFileURL(join(out, `${name}.mjs`)).href);
 }
 const { frenchChatLabels } = await load('labels', `export { frenchChatLabels } from '${root}registry/pi-chat/labels-fr.ts';`);
-let PiChat, AmbientChat, voiceMessagePlugin;
+let PiChat, AmbientChat, voiceMessagePlugin, Composer;
 
 const SENT = 'Read @uploads/report-1a2b3c4d.pdf please';
 const pageComments = (extra = {}) => draftReport({
@@ -43,7 +43,7 @@ async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, loca
   }
   // Base UI chooses its layout effects at import time; load the rendered blocks only after this browser realm exists.
   // The microphone, recorder and pending bubble are the optional pi-chat-voice item's, plugged in through voiceMessage (one bundle: one labels context).
-  if (!PiChat) ({ PiChat, voiceMessagePlugin } = await load('pi-chat', `export { PiChat } from '${root}registry/pi-chat/pi-chat.tsx'; export { voiceMessagePlugin } from '${root}registry/pi-chat-voice/voice-message.tsx';`));
+  if (!PiChat) ({ PiChat, voiceMessagePlugin, Composer } = await load('pi-chat', `export { PiChat } from '${root}registry/pi-chat/pi-chat.tsx'; export { Composer } from '${root}registry/pi-chat/composer.tsx'; export { voiceMessagePlugin } from '${root}registry/pi-chat-voice/voice-message.tsx';`));
   if (!AmbientChat) ({ AmbientChat } = await load('pi-ambient', `export { AmbientChat } from '${root}registry/pi-ambient/ambient.tsx';`));
   const { Harness: NativeHarness, MemoryStorage, createRegistry } = await import('@earendil-works/pi-durable');
   const { BACKGROUND_CONTEXT: context } = await import('@earendil-works/chord/context');
@@ -1039,4 +1039,77 @@ test('photos sent as links (data empty, url) are drawn from the link; a link the
   assert.equal(container.querySelectorAll('[data-testid=message-image-missing]').length, 1, 'a 404 photo shows the placeholder');
   assert.deepEqual(sources(), [`data:image/png;base64,${pixel}`], 'the other photo stays');
   assert.match(container.textContent, /Fictional meal photos/, 'the message still renders');
+});
+
+// D-1759: tapping the microphone keeps the composer's box and its trailing slot. happy-dom has no layout, so this checks the structure
+// (one text-high field, one controls row, the stop in the microphone's slot); the real boxes are measured by test/contracts/composer-recording-geometry.test.mjs.
+for (const layout of ['card', 'pill']) test(`the ${layout} composer keeps its slots while recording: Starting… without 0:00 or dot, then dot and timer, the stop where the microphone was`, async t => {
+  const ui = await voiceHarness(t, { extra: { composerLayout: layout, voiceReplacesSend: true } });
+  let open; const permission = new Promise(resolve => { open = resolve; });
+  Object.defineProperty(ui.window.navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => { await permission; return { getTracks: () => [{ stop() {} }] }; } } });
+  const q = selector => ui.container.querySelector(selector);
+  const slot = () => q('[data-testid=composer-controls]');
+  const trailing = () => q('[data-testid=composer-when-empty] > [data-testid=voice-message-record]');
+  assert.equal(trailing()?.getAttribute('aria-label'), 'Record a message', 'idle: the microphone is the trailing control');
+  assert.equal(q('[data-testid=composer-recording]') === null, true);
+  await ui.click('voice-message-record');
+  assert.equal(ui.button().dataset.state, 'starting');
+  assert.equal(q('[data-testid=composer-input]') === null, true, 'the textarea gives way to the status field');
+  assert.equal(q('[data-testid=composer-recording]') !== null && slot() !== null, true, 'the field and the controls row both stay');
+  assert.equal(/Starting…/.test(q('[data-testid=composer-recording]').textContent), true, 'starting says so');
+  assert.equal(/0:00/.test(ui.container.textContent), false, 'no timer while starting');
+  assert.equal(q('[data-testid=voice-recording-dot]') === null, true, 'no dot while starting');
+  assert.equal(trailing() !== null && trailing().disabled === true, true, 'the stop holds the microphone slot, waiting');
+  open();
+  await ui.until(() => ui.button()?.dataset.state === 'recording');
+  assert.equal(/Starting…/.test(ui.container.textContent), false);
+  assert.equal(/0:00/.test(q('[data-testid=voice-recording]').textContent), true, 'the timer shows once recording');
+  assert.equal(q('[data-testid=voice-recording-dot]') !== null, true, 'the dot shows once recording');
+  assert.equal(trailing() !== null && trailing() === ui.button(), true, 'the same trailing slot');
+  assert.equal(trailing().getAttribute('aria-label'), 'Stop recording');
+  assert.equal(trailing().disabled, false);
+  assert.equal(q('[data-testid=composer-plus]') === null || q('[data-testid=composer-plus]').disabled === true, true, 'attach is disabled, not moved');
+});
+
+for (const layout of ['card', 'pill']) test(`an app's own recording node still renders in the ${layout} composer and the box keeps its field height`, async t => {
+  const { createElement } = await import('react');
+  const ui = await voiceHarness(t, { extra: { composerLayout: layout, composerRecording: createElement('button', { 'data-testid': 'app-recording', type: 'button' }, 'Stop') } });
+  assert.equal(ui.container.querySelector('[data-testid=app-recording]') !== null, true, 'the app node shows');
+  assert.equal(ui.container.querySelector('[data-testid=composer-input]') === null, true);
+  assert.equal(ui.container.querySelector('[data-slot=composer-recording]') !== null, layout === 'card', 'card: a field-high gap stands in for the text');
+});
+
+test('a multi-line draft is intact and editable after a recording is stopped and after one is cancelled', async t => {
+  const ui = await voiceHarness(t); const draft = 'First fictional line\nSecond line\nThird line';
+  const field = () => ui.container.querySelector('[data-testid=composer-input]');
+  await ui.act(async () => ui.controller.setText(draft));
+  for (const ending of ['voice-message-record', 'composer-voice-cancel']) {
+    await ui.click('voice-message-record');
+    assert.equal(field() === null, true, 'recording: the textarea is not mounted');
+    await ui.click(ending);
+    await ui.until(() => field() !== null && !ui.container.querySelector('[data-testid=voice-pending]'));
+    assert.equal(ui.controller.getSnapshot().draft.text === draft && field().value === draft, true, `${ending}: the draft is intact`);
+    assert.equal(field().readOnly === false && field().disabled === false, true, `${ending}: the field is editable`);
+  }
+  await ui.act(async () => ui.controller.setText(`${draft}\nFourth`));
+  assert.equal(field().value.endsWith('Fourth'), true);
+});
+
+test('one recording slot alone never discards a legacy recording row (the stop and cancel stay reachable)', async t => {
+  const { createElement } = await import('react');
+  const ui = await harness(t, { extra: { renderComposer: value => createElement(Composer, { ...value, text: 'A fictional draft', recording: createElement('button', { 'data-testid': 'legacy-stop', type: 'button' }, 'Stop'), recordingStatus: createElement('span', { 'data-testid': 'status-only' }, 'status') }) } });
+  assert.equal(ui.container.querySelector('[data-testid=legacy-stop]') !== null, true, 'the legacy row shows when only one new slot is given');
+  assert.equal(ui.container.querySelector('[data-testid=status-only]') === null, true);
+});
+
+test('the stop stays in Send\'s slot for the whole capture, even when content arrives meanwhile', async t => {
+  const ui = await voiceHarness(t, { extra: { voiceReplacesSend: true } });
+  const slot = () => ui.container.querySelector('[data-testid=composer-when-empty] > [data-testid=voice-message-record]');
+  const where = () => [slot() !== null, ui.container.querySelector('[data-testid=composer-submit]') === null, ui.container.querySelector('[data-testid=composer-tools] [data-testid=voice-message-record]') === null];
+  await ui.click('voice-message-record');
+  await ui.until(() => ui.button()?.dataset.state === 'recording');
+  assert.deepEqual(where(), [true, true, true]);
+  await ui.act(async () => ui.controller.setText('Text that arrives during the capture'));
+  assert.deepEqual(where(), [true, true, true], 'hasContent flipped: the stop did not move and no Send appeared');
+  assert.equal(slot().getAttribute('aria-label'), 'Stop recording');
 });
