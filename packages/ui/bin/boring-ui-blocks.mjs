@@ -446,8 +446,8 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
 // prints { ok, errors, warnings, counts, findings } with each finding { file, line, rule, level, message }. `--changed` keeps only
 // the findings of the listed files. A path listed in platform.json `paths` (found in <dir> or up to three parents) is skipped.
 //
-// LEVELS below is the one place that sets a rule's level. The rules new to apps start as 'warn', so no app breaks today; to make a rule
-// block, change its entry to 'error' (and run the fleet baseline in the pull request that does it).
+// LEVELS below is the one place that sets a rule's level. Every rule is an error (D-1789); an app's existing hits are frozen in its
+// design.exceptions.json, which only shrinks. A new rule lands as an error, with the fleet baseline in the pull request that adds it.
 //
 // Rules: raw-element, kit-block, line-length, component-length, file-length | design-card-flat, design-icons-phosphor,
 // design-touch-target, design-button-raw-height, design-no-dark-overrides, design-link-token, design-mono-for-code (the Factory
@@ -579,7 +579,7 @@ function rawElements(file, source, tags) {
 }
 
 // The kit's blocks (the UI bundle's @boring/ui/blocks/<block>/...), by the hand-made UI they replace. The table of needs and blocks
-// is boring-factory's skills/boring-app-template/references/kit-blocks.md.
+// for app authors is the 'Need to block' section of skills/boring-design-system/SKILL.md; this map is its source of truth.
 /** The registry.json items each hint may name (a test checks they exist). */
 export const BLOCK_ITEMS = Object.freeze({ upload: ['file-pick', 'file-tree', 'pi-chat-attachments'], overlay: ['app-shell'], chat: ['pi-chat', 'app-shell'], voice: ['pi-chat-voice', 'app-shell'], camera: ['pi-chat-attachments'] });
 export const BLOCKS = Object.freeze({
