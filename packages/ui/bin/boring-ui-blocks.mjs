@@ -886,7 +886,9 @@ function classRanges(source) {
 function classRules(file, source) {
   const found = [], bare = mask(source, { strings: false }), ranges = classRanges(source);
   const darkLines = new Set();
-  for (const m of bare.matchAll(DARK_COLOR)) { darkLines.add(lineAt(source, m.index)); found.push(hit(file, source, m.index, 'design-no-dark-overrides', 'a dark: colour class: set the dark value on the token in the theme, the tokens switch with .dark')); }
+  for (const m of bare.matchAll(DARK_COLOR)) {
+    if (!ranges.some(([from, to]) => m.index >= from && m.index < to)) continue; // a sample string or prose, not a class
+    darkLines.add(lineAt(source, m.index)); found.push(hit(file, source, m.index, 'design-no-dark-overrides', 'a dark: colour class: set the dark value on the token in the theme, the tokens switch with .dark')); }
   for (const m of bare.matchAll(ARBITRARY_VALUE)) {
     const [whole, utility, value] = m;
     if (!ranges.some(([from, to]) => m.index >= from && m.index < to)) continue; // prose in a string, not a class
@@ -1045,20 +1047,18 @@ function themeRules(file, text, exceptions = new Set()) {
     const undocumented = [...new Set(pinned.filter((d) => !exceptions.has(d.name)).map((d) => d.name))];
     if (undocumented.length) found.push({ file, line: pinned.find((d) => !exceptions.has(d.name)).line, rule: 'design-theme-core-only', message: `${undocumented.length} token(s) pinned below the "${EXCEPTIONS_MARK}" comment have no entry under "exceptions:" in DESIGN.md (${undocumented.slice(0, 4).map((n) => `--${n}`).join(', ')}${undocumented.length > 4 ? ', ...' : ''}): add one with the reason` });
     const modes = { light: new Map(), dark: new Map() };
-    for (const d of declared) {
-      if (NON_COLOR_ROLE.test(d.name) || !(COLOR_VALUE.test(d.value) || CORE_ROLES.includes(d.name) || KIT_DERIVED.includes(d.name))) continue;
+    // Kit-defined colour names only (core roles, and the kit-derived names an app pins below the comment). An app's own token (--cta,
+    // --highlight, --overlay, --pm-shadow-*) may be mode-independent and is never a hit.
+    for (const d of declarations) {
+      if (NON_COLOR_ROLE.test(d.name) || !(CORE_ROLES.includes(d.name) || KIT_DERIVED.includes(d.name))) continue;
       const selectors = d.selector.split(',').map((part) => part.trim());
       if (selectors.includes(':root')) modes.light.set(d.name, d.line);
       if (selectors.includes('.dark')) modes.dark.set(d.name, d.line);
     }
     for (const [role, line] of modes.light) if (!modes.dark.has(role)) found.push({ file, line, rule: 'design-theme-roles-both-modes', message: `--${role} is set in :root but not in .dark: set the dark value too` });
     for (const [role, line] of modes.dark) if (!modes.light.has(role)) found.push({ file, line, rule: 'design-theme-roles-both-modes', message: `--${role} is set in .dark but not in :root: set the light value too` });
-  } else if (name === 'theme.derived.css') {
-    for (const d of declarations) {
-      if (COLOR_VALUE.test(d.value)) found.push({ file, line: d.line, rule: 'design-theme-core-only', message: `--${d.name} holds a colour literal: theme.derived.css is computed from the core roles and never edited by hand; set the core role in theme.core.css` });
-      else if (CORE_ROLES.includes(d.name)) found.push({ file, line: d.line, rule: 'design-theme-core-only', message: `--${d.name} is a core role set in theme.derived.css: set it in theme.core.css` });
-    }
   }
+  // theme.derived.css is not read here: an app that has one gets design-theme-local-derived (one report; deleting the file clears it).
   return found;
 }
 
@@ -1081,10 +1081,10 @@ function overlayHasTitle(file, source, code) {
 const SOURCE = /\.(?:[cm]?[jt]sx?|css)$/;
 
 /**
- * The findings of one file: `file` is its path in the report, `source` its text, `scan` the kit's `scanAppDesign`. `legacy`: the app
- * keeps its own components/ui, its design findings are warnings everywhere and a file inside that folder only gets the design-* rules.
+ * The findings of one file: `file` is its path in the report, `source` its text, `scan` the kit's `scanAppDesign`. `ui`: the file is in the app's own
+ * components/ui (legacy): only its findings are warnings, the rest of the app is checked as an error.
  */
-export function checkSource(file, source, { legacy = false, ui = false, scan, exceptions } = {}) {
+export function checkSource(file, source, { ui = false, scan, exceptions } = {}) {
   const name = basename(file), tsx = /\.[jt]sx$/.test(file);
   const inUi = ui; // the app's own <root>/components/ui, decided by the caller from the path under the scanned root
   const found = [];
@@ -1095,7 +1095,7 @@ export function checkSource(file, source, { legacy = false, ui = false, scan, ex
     const classes = classRules(file, source);
     classes.darkLines.forEach((line) => darkLines.add(line));
     design.push(...classes.found, ...handTouchSize(file, source, code), ...overlayHasTitle(file, source, code));
-    found.push(...design.map((f) => (inUi || legacy ? { ...f, soft: true } : f)));
+    found.push(...design.map((f) => (inUi ? { ...f, soft: true } : f)));
     if (!inUi) {
       found.push(...kitBlocks(file, source, code, tags), ...rawElements(file, source, tags), ...longLines(file, source, code), ...components(file, source, code));
       const lines = source.endsWith('\n') ? source.split('\n').length - 1 : source.split('\n').length;
@@ -1111,15 +1111,19 @@ export function checkSource(file, source, { legacy = false, ui = false, scan, ex
       const profile = PROFILE[f.rule];
       if (!profile) continue; // card rules (ported above), arbitrary values (design-tokens-only)
       if (f.rule === 'color' && TEST_FILE.test(file)) continue; // a test or fixture file holds sample data
-      if (f.rule === 'color' && script && COLOR_LITERAL.test(String(f.value))) {
-        // A colour literal in script is a style only in a class, or as the value of a colour property or attribute; a code sample, user text and url(#id) are not.
+      if (f.rule === 'color' && script) {
+        // A colour (literal or palette name) in script is a style only in a class, or as the value of a colour property or attribute; a code sample, user text and url(#id) are not.
         const at = starts[f.line - 1] + f.column - 1;
         if (!ranges.some(([from, to]) => at >= from && at < to) && !COLOR_PROPERTY.test(source.slice(Math.max(0, at - 40), at))) continue;
+      }
+      if (f.rule === 'dark' && script) { // a dark: variant is a style only in a class; a sample string and prose are not
+        const at = starts[f.line - 1] + f.column - 1;
+        if (!ranges.some(([from, to]) => at >= from && at < to)) continue;
       }
       if (name === 'theme.derived.css' && f.rule !== 'font') continue;
       if (f.rule === 'dark' && darkLines.has(f.line)) continue; // already design-no-dark-overrides
       if (f.rule === 'color' && darkLines.has(f.line) && !/^[#(]|\(/.test(f.value)) continue; // the palette class of that dark: override
-      found.push({ file, line: f.line, rule: profile[0], message: `${profile[1]} (${String(f.value).trim().slice(0, 60)})`, soft: inUi || legacy });
+      found.push({ file, line: f.line, rule: profile[0], message: `${profile[1]} (${String(f.value).trim().slice(0, 60)})`, soft: inUi });
     }
   }
   return found.map(({ soft, ...f }) => ({ ...f, level: soft ? 'warn' : LEVELS[f.rule] ?? 'error', ...(soft && inUi ? { message: `${f.message} (${LEGACY_NOTE})` } : {}) }))
@@ -1176,9 +1180,9 @@ export function designExceptions(dir) {
 
 /** Every finding under `dir`; paths are relative to `cwd`. `changed`: absolute paths to keep (null: all). */
 export function designFindings(dir, { cwd = process.cwd(), changed = null, scan } = {}) {
-  const legacy = existsSync(join(dir, UI_DIR)), exceptions = designExceptions(dir);
+  const exceptions = designExceptions(dir);
   const files = designFiles(dir).filter((path) => !changed || changed.has(path));
-  const found = files.flatMap((path) => checkSource(relative(cwd, path).split(sep).join('/'), readFileSync(path, 'utf8'), { legacy, ui: relative(dir, path).split(sep).join('/').startsWith(`${UI_DIR}/`), scan, exceptions }));
+  const found = files.flatMap((path) => checkSource(relative(cwd, path).split(sep).join('/'), readFileSync(path, 'utf8'), { ui: relative(dir, path).split(sep).join('/').startsWith(`${UI_DIR}/`), scan, exceptions }));
   const local = files.find((path) => basename(path) === 'theme.derived.css'); // one hit per app, not per line
   if (local) found.push({ file: relative(cwd, local).split(sep).join('/'), line: 1, rule: 'design-theme-local-derived', level: LEVELS['design-theme-local-derived'], message: 'this app has its own theme.derived.css: delete it and import the kit\'s: app.css, then @hachej/boring-ui-kit/theme.derived.css, then ./theme.core.css' });
   return found;

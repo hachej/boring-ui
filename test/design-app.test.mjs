@@ -124,6 +124,40 @@ test('false-positive guard: a code sample, user text, a test file, an svg asset,
   const report = json(join(root, 'test/fixtures/design-fp/web/src'));
   const four = ['design-color', 'design-literal-value', 'design-dark-variant', 'design-font-tokens', 'design-tokens-only'];
   assert.deepEqual(report.findings.filter(finding => four.includes(finding.rule)), []);
+  assert.deepEqual(report.findings, [], 'the whole fixture is clean, design-no-dark-overrides and design-dark-variant included');
+  assert.equal(report.status, 0);
+  assert.equal(run(join(root, 'test/fixtures/design-fp/web/src')).status, 0);
+});
+
+test('round 7: an empty components/ui folder does not downgrade the rest of the app; only files inside it are warnings', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+  try {
+    mkdirSync(join(dir, 'components/ui'), { recursive: true });
+    writeFileSync(join(dir, 'a.tsx'), 'export const A = () => <div className="bg-[#fff]" />;\n');
+    const report = json(dir);
+    assert.ok(report.findings.length > 0);
+    assert.ok(report.findings.every(finding => finding.level === 'error'), JSON.stringify(report.findings));
+    assert.equal(report.status, 1);
+    writeFileSync(join(dir, 'components/ui/b.tsx'), 'export const B = () => <div className="bg-[#fff]" />;\n');
+    const both = json(dir);
+    assert.ok(both.findings.filter(finding => finding.file.endsWith('/components/ui/b.tsx')).every(finding => finding.level === 'warn'));
+    assert.ok(both.findings.filter(finding => finding.file.endsWith('/a.tsx')).every(finding => finding.level === 'error'));
+    assert.equal(both.status, 1);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('round 7: a palette class name in a plain string is not design-color; in a class or a colour property it is', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+  try {
+    writeFileSync(join(dir, 'sample.ts'), 'const example = "text-red-500";\nconst other = "bg-blue-600 is a palette class";\n');
+    const sample = json(dir);
+    assert.deepEqual(sample.findings.filter(finding => finding.rule === 'design-color'), []);
+    assert.equal(sample.status, 0);
+    writeFileSync(join(dir, 'real.tsx'), 'export const A = () => <div className="text-red-500" />;\n');
+    const real = json(dir);
+    assert.ok(real.findings.some(finding => finding.rule === 'design-color' && finding.file.endsWith('/real.tsx')));
+    assert.equal(real.status, 1);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('the four promoted rules are errors in LEVELS and a real hit of each fails the run', () => {
@@ -144,7 +178,8 @@ test('design-theme-core-only: a kit-derived name above the EXCEPTIONS comment is
   const lines = themeFindings('design-theme-core-only', 'theme.core.css');
   assert.ok(lines.includes(4) && lines.includes(14));
   assert.ok(!lines.includes(5) && !lines.includes(6) && !lines.includes(2) && !lines.includes(3) && !lines.includes(7), `app tokens and core roles are never hits: ${lines}`);
-  assert.deepEqual(themeFindings('design-theme-core-only', 'theme.derived.css'), [3, 4]);
+  assert.deepEqual(themeFindings('design-theme-core-only', 'theme.derived.css'), [], 'theme.derived.css is reported once, by design-theme-local-derived');
+  assert.deepEqual(themeFindings('design-theme-local-derived', 'theme.derived.css'), [1]);
   assert.ok(themeBad.findings.filter(finding => finding.rule.startsWith('design-theme')).every(finding => finding.level === 'error' && LEVELS[finding.rule] === 'error'));
 });
 
@@ -161,11 +196,11 @@ test('KIT_DERIVED and CORE_ROLES do not overlap', () => {
   assert.deepEqual(KIT_DERIVED.filter(name => CORE_ROLES.includes(name)), []);
 });
 
-test('design-theme-roles-both-modes: a colour core role in :root and not in .dark is reported, and the reverse; app tokens set in both, non-colour roles and the exceptions are not', () => {
-  assert.deepEqual(themeFindings('design-theme-roles-both-modes', 'theme.core.css'), [7]);
+test('design-theme-roles-both-modes: a kit-defined colour role (core or pinned) in :root and not in .dark is reported, and the reverse; an app-own token (--cta, set in :root only) is never a hit; app tokens, non-colour roles and the exceptions are not', () => {
+  assert.deepEqual(themeFindings('design-theme-roles-both-modes', 'theme.core.css'), [7, 20, 20], 'a kit role set in :root only, above or pinned below the comment');
   const messages = themeBad.findings.filter(finding => finding.rule === 'design-theme-roles-both-modes').map(finding => finding.message);
   assert.ok(messages.some(message => /--accent is set in :root but not in \.dark/.test(message)));
-  assert.ok(!messages.some(message => /--radius|--brand-teal|--shadow-halo|--pm-gold/.test(message)));
+  assert.ok(!messages.some(message => /--radius|--brand-teal|--shadow-halo|--pm-gold|--cta/.test(message)));
 });
 
 test('a clean theme (both modes, core roles, app tokens, derived from var() and color-mix(), documented exceptions below the comment) reports nothing', () => {

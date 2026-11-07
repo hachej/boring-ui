@@ -2,6 +2,7 @@ import { Badge } from '@boring/ui/shadcn/badge';
 
 const sample = '#fff';
 const gradient = 'url(#gradient)';
+const example = "text-red-500";
 // dark: bg-black and a hex #123456 in a comment
 const note = 'dark:bg-black';
 

@@ -2,6 +2,7 @@
     --background: oklch(0.97 0 0);
     --foreground: oklch(0.2 0 0);
     --primary: oklch(0.21 0.006 285.885);
+    --cta: oklch(0.6 0.2 30);
     --pm-gold: oklch(0.8 0.15 90);
     --pm-gold-foreground: oklch(0.2 0 0);
     --shadow-halo: 0 0 0 1px oklch(0.5 0 0 / 0.2);
@@ -30,3 +31,4 @@
 
 /* === EXCEPTIONS === */
 :root { --brand-teal: oklch(0.7 0.1 190); --link: oklch(0.6 0.2 260); }
+.dark { --link: oklch(0.8 0.1 260); }
