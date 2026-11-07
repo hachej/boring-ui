@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkAtlas, parseStep } from '../packages/ui/bin/atlas.mjs';
+import { checkAtlas, parseStep } from '../packages/ui/bin/boring-ui-blocks.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bin = join(root, 'packages/ui/bin/boring-ui-blocks.mjs');
