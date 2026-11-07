@@ -348,11 +348,11 @@ try {
     const layer = await browser.evaluate(rect(LAYER));
     assert.ok(layer.y > 200 && layer.y < 600 && Math.round(layer.bottom) >= 844, JSON.stringify(layer));
     assert.ok(await browser.evaluate(`!!document.querySelector('[data-slot=drawer-overlay]')`), 'modal backdrop');
-    // AppShell overlayBlur={false} marks <html data-overlay-blur="off">; the app-shell item's CSS then drops the overlay's blur.
+    // AppShell overlayBlur (default false) marks <html data-overlay-blur="on"> only when true; the overlay's own classes then add the blur.
     const filter = `getComputedStyle(document.querySelector('[data-slot=drawer-overlay]')).backdropFilter`;
-    assert.match(await browser.evaluate(filter), /blur/, 'the overlay blurs the page by default');
-    await browser.evaluate(`document.documentElement.dataset.overlayBlur = 'off'`);
-    assert.equal(await browser.evaluate(filter), 'none', 'overlayBlur off: only the dim, no blur');
+    assert.equal(await browser.evaluate(filter), 'none', 'the overlay only dims by default, no blur');
+    await browser.evaluate(`document.documentElement.dataset.overlayBlur = 'on'`);
+    assert.match(await browser.evaluate(filter), /blur/, 'overlayBlur on: the overlay blurs the page');
     await browser.evaluate(`delete document.documentElement.dataset.overlayBlur`);
     const before = await browser.evaluate(taps);
     await tapAt(TAB);
@@ -1141,6 +1141,8 @@ try {
     await tap(TRIGGER);
     await browser.until('390: the coach at half, the PM closed', `${snap} === 'half' && ${q(PM)}.hidden`);
     await browser.screenshot('d1375-390-coach.png');
+    // Let the drawer finish opening, as the first close above does (without the overlay blur the page paints faster and the tap landed mid-animation).
+    await pause(500);
     await tap('[data-testid=agent-layer-close]');
     await browser.until('390: closed again', `!${q(LAYER)} || ${snap} === 'closed'`);
     await pause(500);

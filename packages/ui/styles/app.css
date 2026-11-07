@@ -200,9 +200,14 @@
     }
     }
 
-/* The app's own rule for AppShell overlayBlur={false} (kit 0.4.17): the shell marks <html data-overlay-blur="off">, and the
-   overlays, portalled outside .app-shell, keep only their dim. A kit item's CSS never reaches outside its root, so it lives here. */
-:root[data-overlay-blur="off"] :is([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"], [data-slot="sheet-overlay"], [data-slot="drawer-overlay"]) {
+/* Overlay blur (D-1799): no blur unless the shell opts in, including for an older copy of the overlays that still carries an unconditional
+   backdrop-blur class. Without <html data-overlay-blur="on"> the four overlay slots get none; with it (AppShell overlayBlur) they blur by
+   --overlay-blur (4px). The overlays are portalled outside .app-shell and a kit item's CSS never reaches outside its root, so both rules live here. */
+:root:not([data-overlay-blur="on"]) :is([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"], [data-slot="sheet-overlay"], [data-slot="drawer-overlay"]) {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+:root[data-overlay-blur="on"] :is([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"], [data-slot="sheet-overlay"], [data-slot="drawer-overlay"]) {
+  -webkit-backdrop-filter: blur(var(--overlay-blur, 4px));
+  backdrop-filter: blur(var(--overlay-blur, 4px));
 }

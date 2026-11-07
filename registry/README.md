@@ -676,14 +676,9 @@ The screen layout (`AppShell`) takes an optional `locale` (`'en' | 'fr'`) for it
 
 **Where the sidebar toggle lives (D-1734, approved by the designer).** The toggle sits inside the sidebar, in its header, only where the rail exists: from md up, at the top of the left bar (next to the title, alone as an icon when folded), never in the screen header; Ctrl+B folds it too. On a phone there is no rail while the sidebar is closed (it is an off-canvas sheet), so a toggle inside it could never open it: the opener stays in the screen header, at the leading place, and the open sheet carries the same control as its close. Hosts select it by `[data-slot="sidebar-trigger"]`, not by its place.
 
-`AppShell overlayBlur={false}` (default `true`) keeps only the dim behind dialogs, alert dialogs, sheets and drawers, without the backdrop blur that costs frames on slow phones. The overlays are the app's shadcn components, portalled outside `.app-shell`, and an item's CSS never reaches outside its root, so the shell only marks `<html data-overlay-blur="off">` while mounted and the app's own stylesheet carries the rule (the Factory template has it):
+`AppShell overlayBlur` (default `false`, D-1799) keeps only the dim behind dialogs, alert dialogs, sheets and drawers: the blur costs frames on slow phones, so the kit no longer blurs. `overlayBlur` (true) brings it back. The overlays are the app's shadcn components, portalled outside `.app-shell`, and an item's CSS never reaches outside its root, so the shell marks `<html data-overlay-blur="on">` while mounted and the four overlay slots carry the one rule themselves, `in-data-[overlay-blur=on]:backdrop-blur-[var(--overlay-blur,4px)]` (`--overlay-blur` retunes the radius in the theme). An app that copied its overlays before D-1799 keeps its old blur class until it re-syncs `dialog`, `alert-dialog`, `sheet` and `drawer`.
 
-```css
-:root[data-overlay-blur="off"] :is([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"], [data-slot="sheet-overlay"], [data-slot="drawer-overlay"]) {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-```
+`DialogContent`, `SheetContent` and `DrawerContent` take `height?: 'auto' | 'tall' | 'full'` (D-1800) and set `data-height`: `auto` (default) is today's look; `tall` is `max-height: var(--overlay-height-tall, 85dvh)` with the content scrolling inside; `full` is `height: var(--overlay-height-full, 100dvh)` (a Dialog keeps its 2rem of side margin: 100dvh less 2rem). A Sheet takes `tall` on any side and `full` on `top` and `bottom` (a left or right sheet is already full height). Both tokens are retuned in the theme.
 
 `ListDetail` folds its list on a wide screen with `collapsible`: a toggle on the pane (named by `labels`, English by default) switches it between 20rem and a `railWidth` rail (default `3rem`). `collapsed` and `onCollapsedChange` control it (without them the pane keeps its own state, starting open), and `list` may be a function `({ collapsed }) => ReactNode` so the app renders the rail's content. A phone never folds; without `collapsible` nothing changes.
 

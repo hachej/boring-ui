@@ -29,7 +29,7 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-50 bg-black/10 duration-100 in-data-[overlay-blur=on]:backdrop-blur-[var(--overlay-blur,4px)] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -41,17 +41,21 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  height = "auto",
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  /** "auto" (default) is as tall as its content; "tall" caps it at --overlay-height-tall (85dvh) and scrolls inside; "full" is --overlay-height-full (100dvh) less the 2rem of side margin the dialog keeps. */
+  height?: "auto" | "tall" | "full"
 }) {
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
+        data-height={height}
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-6 rounded-xl bg-popover p-6 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-6 rounded-xl bg-popover p-6 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-[height=tall]:max-h-[var(--overlay-height-tall,85dvh)] data-[height=tall]:overflow-y-auto data-[height=full]:h-[calc(var(--overlay-height-full,100dvh)-2rem)] data-[height=full]:overflow-y-auto",
           className
         )}
         {...props}

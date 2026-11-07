@@ -90,14 +90,44 @@ test('no agent: the nav and the header render at once, with the locale prop and 
   await unmount();
 });
 
-test('overlayBlur={false} marks <html data-overlay-blur="off"> while the shell is mounted; the default marks nothing', async t => {
+test('overlayBlur marks <html data-overlay-blur="on"> while the shell is mounted; the default (no blur) and false mark nothing', async t => {
   const plain = await render(t, {});
-  assert.equal(plain.window.document.documentElement.dataset.overlayBlur, undefined, 'blur stays on by default');
+  assert.equal(plain.window.document.documentElement.dataset.overlayBlur, undefined, 'no blur by default');
   await plain.unmount();
-  const { window, unmount } = await render(t, { overlayBlur: false });
-  assert.equal(window.document.documentElement.dataset.overlayBlur, 'off');
+  const off = await render(t, { overlayBlur: false });
+  assert.equal(off.window.document.documentElement.dataset.overlayBlur, undefined);
+  await off.unmount();
+  const { window, unmount } = await render(t, { overlayBlur: true });
+  assert.equal(window.document.documentElement.dataset.overlayBlur, 'on');
   await unmount();
-  assert.equal(window.document.documentElement.dataset.overlayBlur, undefined, 'unmounting the shell gives the blur back');
+  assert.equal(window.document.documentElement.dataset.overlayBlur, undefined, 'unmounting the shell takes the blur away');
+});
+
+test('two shells with overlayBlur share the attribute: unmounting one keeps the blur, unmounting both removes it, an app-set value is restored', async t => {
+  const window = dom(t);
+  const { AppShell } = await bundle('app-shell.tsx');
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const html = window.document.documentElement;
+  const mount = async () => {
+    const container = window.document.createElement('div');
+    window.document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => root.render(h(AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, overlayBlur: true })));
+    return () => act(async () => root.unmount());
+  };
+  const first = await mount();
+  const second = await mount();
+  assert.equal(html.dataset.overlayBlur, 'on');
+  await first();
+  assert.equal(html.dataset.overlayBlur, 'on', 'the shell still mounted keeps the blur');
+  await second();
+  assert.equal(html.dataset.overlayBlur, undefined, 'the last shell leaving removes it');
+  html.dataset.overlayBlur = 'off';
+  const third = await mount();
+  assert.equal(html.dataset.overlayBlur, 'on');
+  await third();
+  assert.equal(html.dataset.overlayBlur, 'off', 'a value the app set before any shell is restored');
 });
 
 test('the hover rail starts collapsed, reveals on pointer hover or focus within, and collapses on leave, blur or Escape', async t => {
