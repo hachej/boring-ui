@@ -4,6 +4,7 @@
 //
 //   npx boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <app web dir>] [--json]
 //   npx boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline]   (the one design check of an app's web/src; needs no components.json)
+//   npx boring-ui-blocks atlas <dir> --check [--fixtures <dir>] [--json]   (validates <dir>/atlas.json against atlas.schema.json; shooting is the next slice)
 //   npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>]
 //   npx boring-ui-blocks add <shadcn add arguments...> [--overwrite] [--manifest <path>] [--cwd <dir>]
 //   npx boring-ui-blocks manifest [--manifest <path>] [--cwd <dir>]
@@ -15,6 +16,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSy
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { atlasMain } from './atlas.mjs';
 
 // BORING-UI-1 rule engine, one implementation: this repository's `scripts/check-design.mjs` imports `scanDesign` (DESIGN_RULES) from
 // here for the registry and the kit; `check --design` applies APP_RULES to an app's own code. Lexical guard, not a CSS cascade or data-flow
@@ -273,7 +275,7 @@ export function check(app, design = [], manifest = MANIFEST) {
   return { version, blocks: blocks.map(block => block.name), violations };
 }
 
-const USAGE = `usage: boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline] | check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--overwrite] [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
+const USAGE = `usage: boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline] | atlas <dir> --check [--fixtures <dir>] [--json] | check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--overwrite] [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
   'Blocks: pi-app is the whole agent app with every chat feature and viewer. pi-chat is the core chat only: add pi-chat-plugins for every ' +
   'feature, or one of pi-chat-markdown, pi-chat-slash, pi-chat-mentions, pi-chat-pickers, pi-chat-voice, pi-chat-attachments, ' +
   'pi-chat-question, pi-chat-approval, pi-chat-subagent and pi-artifacts. Viewers are viewer-frame plus viewer-markdown, viewer-html, ' +
@@ -390,6 +392,7 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
   const [command, ...rest] = argv;
   if (['help', '--help', '-h'].includes(command)) { log(USAGE); return 0; }
   if (command === 'design') return designMain(rest, cwd, log, error);
+  if (command === 'atlas') return atlasMain(rest, cwd, log, error);
   let flags;
   try {
     if (!['check', 'update', 'add', 'manifest'].includes(command)) throw new Error(command ? `unknown command ${command}` : 'missing command');

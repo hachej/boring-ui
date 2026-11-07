@@ -13,6 +13,7 @@
     "dist/**/*.d.ts",
     "r/*.json",
     "bin/*.mjs",
+    "atlas.schema.json",
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
@@ -143,6 +144,7 @@
       "types": "./dist/file-tree-view.d.ts",
       "import": "./dist/file-tree-view.js"
     },
+    "./atlas.schema.json": "./atlas.schema.json",
     "./file-tree.css": "./styles/file-tree.css",
     "./app.css": "./styles/app.css",
     "./theme.derived.css": "./styles/theme.derived.css",
