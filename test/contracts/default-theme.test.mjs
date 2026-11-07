@@ -40,7 +40,7 @@ test('default theme source and published output expose the original surface, typ
       for (const [role, value] of Object.entries(expected)) assert.equal(vars[role], value, `${mode} ${role}`);
       for (const [role, value] of Object.entries({ popover: 'var(--card)', sidebar: 'var(--background)', shell: 'var(--background)', input: `color-mix(in oklab, var(--border) ${mode === 'dark' ? 75 : 65}%, var(--foreground))` })) assert.equal(vars[role], value, `${mode} ${role}`);
       for (const status of ['success', 'warning', 'info', 'destructive']) {
-        const percentage = mode === 'dark' ? 27 : ({ success: 14, warning: 16, info: 12, destructive: 12 })[status];
+        const percentage = mode === 'dark' ? (status === 'destructive' ? 27 : 22) : ({ success: 14, warning: 16, info: 12, destructive: 12 })[status];
         assert.equal(vars[`${status}-soft`], `color-mix(in oklab, var(--${status}) ${percentage}%, var(--card))`);
         const share = status === 'destructive' ? 85 : mode === 'dark' ? 55 : 75;
         assert.equal(vars[`${status}-soft-foreground`], `color-mix(in oklab, var(--${status}) ${share}%, var(--foreground))`);
