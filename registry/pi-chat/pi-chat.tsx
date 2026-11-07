@@ -1,6 +1,6 @@
 'use client';
 
-import { useKeyboardInset } from '../utils/use-media';
+import { useKeyboardInset, useBelowLg, useToastOffset } from '../utils/use-media';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
@@ -268,6 +268,9 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const [titleError, setTitleError] = useState(false);
   const page = useRef<HTMLElement>(null);
   useKeyboardInset(page, keyboardInset);
+  // Toasts sit above the composer while it is docked below lg (D-1801); the token goes with the chat.
+  const dock = useRef<HTMLElement>(null), belowLg = useBelowLg();
+  useToastOffset(dock, belowLg && placement === 'docked');
 
   return <section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative box-border flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card text-card-foreground ', keyboardInset && 'max-md:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'md:justify-center', className)}>
     {header && <header className={cn(empty && emptyLayout === 'centered' && 'md:absolute md:inset-x-0 md:top-0', 'flex h-13 shrink-0 items-center gap-2 px-3 md:gap-3 md:px-4')}>
@@ -310,7 +313,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
         </div></div>}
     </div>
 
-    <footer data-testid="composer-dock" className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-4 md:pt-1.5">
+    <footer ref={dock} data-testid="composer-dock" className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-4 md:pt-1.5">
       <div className="mx-auto w-full max-w-[720px] space-y-2">
         <div {...(session.natural ? {} : { 'aria-live': 'polite' as const })} className="space-y-2 empty:hidden">
           <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} sending={session.sending} />

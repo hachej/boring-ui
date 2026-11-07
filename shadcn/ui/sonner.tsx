@@ -36,6 +36,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--border-radius": "var(--radius)",
         } as React.CSSProperties
       }
+      // Bottom toasts clear what the app docks there: an app's theme sets --toast-offset-bottom and always wins; else pi-chat's --toast-offset-composer while its composer is docked below lg; else sonner's own offsets.
+      offset={{ bottom: "var(--toast-offset-bottom, var(--toast-offset-composer, 24px))" }}
+      mobileOffset={{ bottom: "var(--toast-offset-bottom, var(--toast-offset-composer, 16px))" }}
       toastOptions={{
         classNames: {
           toast: "cn-toast",
