@@ -668,10 +668,12 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   }, [open, peek, close, triggerUntil]);
 
   // The sheet stops under the page header it opens over, so the trigger there is not covered: at full the sheet would otherwise reach 1.5rem from the top and sit on it.
-  const [triggerClear, setTriggerClear] = useState(0);
+  const [measuredClear, setTriggerClear] = useState(0);
+  const triggerClear = open && !peek ? measuredClear : 0;
   useLayoutEffect(() => {
-    if (!open || peek) { setTriggerClear(0); return; }
+    if (!open || peek) return;
     // Follows the real geometry while open: a header that grows later (an async leading control) moves the trigger down. The lowest of the triggers in the top half counts.
+    // State is set only from the callbacks below (the first call is the observer's initial one), never synchronously in this effect.
     const measure = () => {
       let bottom = 0;
       for (const trigger of document.querySelectorAll('[data-agent-trigger]')) {
@@ -680,12 +682,24 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
       }
       setTriggerClear(bottom ? Math.ceil(bottom + 4) : 0);
     };
-    measure();
-    const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
-    for (const trigger of document.querySelectorAll('[data-agent-trigger]')) for (const node of [trigger, trigger.parentElement, trigger.closest('header, [role=banner]')]) if (node) watch?.observe(node);
+    const size = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    const mutation = typeof MutationObserver === 'undefined' ? null : new MutationObserver(measure);
+    const first = requestAnimationFrame(measure);
+    // The header can change without the trigger's own box changing: watch the header's size and its subtree's attributes and children, and the page.
+    for (const trigger of document.querySelectorAll('[data-agent-trigger]')) {
+      const header = trigger.closest('header, [role=banner]');
+      for (const node of [trigger, trigger.parentElement, header]) if (node) size?.observe(node);
+      if (header) mutation?.observe(header, { attributes: true, childList: true, subtree: true });
+    }
+    size?.observe(document.body);
     window.addEventListener('resize', measure);
     window.visualViewport?.addEventListener('resize', measure);
-    return () => { watch?.disconnect(); window.removeEventListener('resize', measure); window.visualViewport?.removeEventListener('resize', measure); };
+    document.addEventListener('transitionend', measure, true);
+    return () => {
+      cancelAnimationFrame(first); size?.disconnect(); mutation?.disconnect();
+      window.removeEventListener('resize', measure); window.visualViewport?.removeEventListener('resize', measure);
+      document.removeEventListener('transitionend', measure, true);
+    };
   }, [open, peek, vv?.height]);
 
   // While « Améliorer l'app » shows, the PM panel owns the layer's Back entry (AgentLayerProvider).
