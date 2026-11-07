@@ -280,6 +280,14 @@
         "--control-h": "2.25rem",
         "--control-min": "0rem"
       }
+    },
+    "@layer utilities": {
+      "@media (width < 768px), (pointer: coarse)": {
+        ":root :is([data-slot=\"button\"], [data-slot=\"toggle\"], [data-slot=\"toggle-group-item\"], [class~=\"group/button\"], [class~=\"group/toggle\"]):where(:not([data-size=\"inline\"], [data-density=\"compact\"], [data-density=\"compact\"] *))": {
+          "min-height": "var(--control-min, 2.75rem)",
+          "min-width": "var(--control-min, 2.75rem)"
+        }
+      }
     }
   },
   "type": "registry:theme"

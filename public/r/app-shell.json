@@ -154,14 +154,6 @@
         "--app-shell-tabbar-min": "calc(3.5rem + env(safe-area-inset-bottom))",
         "--app-shell-sheet-max": "85dvh"
       }
-    },
-    "@layer utilities": {
-      "@media (width < 768px), (pointer: coarse)": {
-        ".app-shell :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
-          "min-height": "var(--control-min, 2.75rem)",
-          "min-width": "var(--control-min, 2.75rem)"
-        }
-      }
     }
   },
   "type": "registry:block"
