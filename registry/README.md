@@ -967,6 +967,7 @@ The kit owns the app's base stylesheet, `@hachej/boring-ui-kit/app.css` (`packag
 @import "./theme.derived.css";
 @import "./theme.core.css";
 @source "./";
+@source "../../.boring/ui/candidates.txt"; /* a bundle app: the bundled components live in the ignored .boring/ui */
 ```
 
 `@custom-variant dark` lives in `app.css` (Tailwind v4 accepts it in an imported file). Only `@source` lines stay in the app. The Factory bundle maps `@hachej/boring-ui-kit/<file>` to `packages/ui/styles/<file>`.
