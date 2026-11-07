@@ -47,15 +47,16 @@ test('A Badge in a table cell keeps the row as tall as plain text and stays 18px
   const browser = await launch('about:blank', { evidence: shots ?? work });
   const open = async query => {
     await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?${query}` });
-    await browser.until('fixture mounted', `document.querySelectorAll('[data-case] tr').length === 3 && document.readyState === 'complete'`);
+    await browser.until('fixture mounted', `document.querySelectorAll('[data-case] tr').length === 3 && document.querySelectorAll('[data-stack] [data-slot=badge]').length === 2 && document.readyState === 'complete'`);
     await new Promise(done => setTimeout(done, 250));
   };
   const measure = () => browser.evaluate(`(() => {
     const trs = [...document.querySelectorAll('[data-case=table] tr')];
     const heights = trs.map(tr => tr.getBoundingClientRect().height);
     const withBadge = trs.findIndex(tr => tr.dataset.badge === '1');
-    const b = document.querySelector('[data-slot=badge]').getBoundingClientRect(), r = trs[withBadge].getBoundingClientRect();
-    return { heights, withBadge, badge: { h: b.height, offset: (b.top + b.height / 2) - (r.top + r.height / 2) } };
+    const b = document.querySelector('[data-case=table] [data-slot=badge]').getBoundingClientRect(), r = trs[withBadge].getBoundingClientRect();
+    const [first, second] = [...document.querySelectorAll('[data-stack] [data-slot=badge]')].map(el => el.getBoundingClientRect());
+    return { stack: { gap: second.top - first.bottom }, heights, withBadge, badge: { h: b.height, offset: (b.top + b.height / 2) - (r.top + r.height / 2) } };
   })()`);
   const report = [], problems = [];
   try {
@@ -71,6 +72,7 @@ test('A Badge in a table cell keeps the row as tall as plain text and stays 18px
         const own = m.heights[m.withBadge], plain = m.heights.filter((_, i) => i !== m.withBadge);
         if (!plain.every(h => Math.abs(h - own) <= 0.5)) problems.push(`${label}: the row with a Badge is ${own}px, the rows with plain text are ${plain}px`);
         if (Math.abs(m.badge.h - 18) > 0.5) problems.push(`${label}: the badge is ${m.badge.h}px tall, not 18`);
+        if (m.stack.gap < 0) problems.push(`${label}: two stacked badges overlap by ${-m.stack.gap}px`);
         if (Math.abs(m.badge.offset) > 1) problems.push(`${label}: the badge centre is ${m.badge.offset}px from the row centre`);
       }
     }
