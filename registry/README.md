@@ -655,7 +655,7 @@ Register the kind in `agent.chatProps.mentions`. Configure `agent.voice` as usua
 
 Fictional consumer: `examples/app-shell/?talkAbout=1&send=message#jour`; `node examples/app-shell/journey-talk-about.mjs` drives swipe on phone and mic click on desktop, transcript-only voice send and reload, plus phone one-/three-line and file-mention alignment geometry/screenshots.
 
-**Dense opt-out (touch targets).** Below 768px or on a coarse pointer, `app-shell` gives every button and toggle inside `.app-shell` a 44px minimum (WCAG 2.5.5). Put `data-dense` on a container (or on a control) and it and everything inside keep their own size. For dense document cards only; the default stays 44px. Do not use it for navigation or primary actions.
+**Control size (touch targets).** The `theme` item defines `--control-h` (44px under 768px or on a coarse pointer, 36px on a fine pointer from md) and `--control-min` (the 44px touch floor, 0 on a fine pointer); `app-shell` gives its buttons and toggles `min-height`/`min-width: var(--control-min)`. Put `data-density="compact"` on a container for 36px and no floor inside it (a framed narrow column). For dense document cards only; do not use it for navigation or primary actions. Replaces `data-dense`.
 
 On phones, the peek strip is the persistent resting state when an `agent` is set: swipe-down, outside tap and Escape step down to peek, and there is no full close from peek (owner ruling 2026-10-14). Apps with only `improve` have no peek.
 
