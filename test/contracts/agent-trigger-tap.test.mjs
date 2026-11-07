@@ -173,8 +173,9 @@ test('390x844 touch: a header that grows after the sheet opens at full does not 
   await open('full');
   await browser.evaluate(`document.querySelector('[data-agent-trigger]').closest('header').style.minHeight = '150px'`);
   await wait(900);
-  const hit = await browser.evaluate(`(() => { const t = document.querySelector('[data-agent-trigger]'), r = t.getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === t || t.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); })()`);
-  assert.equal(hit, true, 'the trigger is the element at its own centre (not under the sheet)');
+  // The modal backdrop is above the page by design (a press on the trigger is told apart by its coordinates); what must not happen is the sheet covering it.
+  const covered = await browser.evaluate(`(() => { const t = document.querySelector('[data-agent-trigger]'), r = t.getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return Boolean(top && top.closest('[data-slot=drawer-popup]')); })()`);
+  assert.equal(covered, false, 'the sheet does not sit over the trigger after the header grew');
   await tap(true); await wait(900);
   assert.equal(await state(), 'closed');
 });
