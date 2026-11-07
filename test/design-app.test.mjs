@@ -254,6 +254,52 @@ test('round 9: design-no-important is one hit per line, and reads stylesheets an
   assert.equal(count('real.css', 'a { color: red !important; }\n'), 1, 'a stylesheet still fails');
 });
 
+const appFindings = (name, source, rule) => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+  try {
+    writeFileSync(join(dir, name), source);
+    const report = json(dir);
+    return { status: report.status, count: report.findings.filter(finding => finding.rule === rule).length };
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+};
+
+test('round 10: overlay-has-title with a shadowed name needs the Title in every binding of it', () => {
+  const head = "import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';\n";
+  const shadowed = `${head}const body = <DialogTitle>Unused</DialogTitle>;\nexport function A() {\n  const body = <p>Untitled</p>;\n  return <Dialog><DialogContent>{body}</DialogContent></Dialog>;\n}\n`;
+  assert.equal(appFindings('shadow.tsx', shadowed, 'design-overlay-has-title').count, 1);
+  const both = `${head}const body = <DialogTitle>Outer</DialogTitle>;\nexport function A() {\n  const body = <DialogTitle>Inner</DialogTitle>;\n  return <Dialog><DialogContent>{body}</DialogContent></Dialog>;\n}\n`;
+  assert.equal(appFindings('both.tsx', both, 'design-overlay-has-title').count, 0);
+});
+
+test('round 10: a class string kept in a variable is class context (cn(), cva() and className={id}); prose strings still pass', () => {
+  const direct = 'const cls = "bg-red-500 dark:bg-blue-500";\nexport const A = () => <div className={cls} />;\n';
+  const report = appFindings('direct.tsx', direct, 'design-no-dark-overrides');
+  assert.equal(report.count, 1);
+  assert.equal(report.status, 1);
+  assert.equal(appFindings('plain.tsx', 'const cls = "bg-red-500";\nexport const A = () => <div className={cls} />;\n', 'design-color').count, 1);
+  const merged = 'const cls = "bg-red-500";\nexport const A = () => <div className={cn(cls, "p-2")} />;\n';
+  assert.equal(appFindings('merged.tsx', merged, 'design-color').count, 1);
+  const prose = 'const note = "bg-red-500 is a palette class";\nexport const A = () => <div className={cn("p-2")}>{note}</div>;\n';
+  assert.equal(appFindings('prose.tsx', prose, 'design-color').count, 0);
+});
+
+test('round 10: a one-mode kit pin with a colour literal outside var() fails, and so does a literal var() fallback unless the token is set in both modes', () => {
+  const count = (pinned, ...extra) => {
+    const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+    try {
+      mkdirSync(join(dir, 'web/src'), { recursive: true });
+      writeFileSync(join(dir, 'web/src/theme.core.css'), `:root {\n  --background: oklch(1 0 0);\n  --card: oklch(0.98 0 0);\n  ${extra.join('\n  ')}\n}\n.dark {\n  --background: oklch(0.1 0 0);\n  --card: oklch(0.2 0 0);\n}\n/* === EXCEPTIONS === */\n:root { ${pinned} }\n`);
+      writeFileSync(join(dir, 'DESIGN.md'), '## Exceptions\n\n- `--primary` a reason\n- `--popover` a reason\n');
+      return json(join(dir, 'web/src')).findings.filter(finding => finding.rule === 'design-theme-roles-both-modes').length;
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  };
+  assert.equal(count('--popover: color-mix(in oklab, var(--card) 50%, #000);'), 1, 'a literal beside a var()');
+  assert.equal(count('--popover: var(--card, #fff);'), 0, 'a fallback of a both-modes token');
+  assert.equal(count('--popover: var(--x, #fff);', '--x: var(--card);'), 1, 'a fallback of a :root-only token');
+  assert.equal(count('--popover: var(--nowhere, #fff);'), 1, 'a fallback of a missing token');
+  assert.equal(count('--popover: color-mix(in oklab, var(--card) 50%, var(--background));'), 0);
+});
+
 test('a clean theme (both modes, core roles, app tokens, derived from var() and color-mix(), documented exceptions below the comment) reports nothing', () => {
   const report = json(join(root, 'test/fixtures/design-theme/clean/web/src'));
   assert.deepEqual(report.findings.filter(finding => finding.rule !== 'design-theme-local-derived'), []);

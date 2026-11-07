@@ -880,6 +880,18 @@ function classRanges(source) {
   }
   for (const m of code.matchAll(/(?<![\w$.-])(?:cn|cva|clsx|cx|twMerge|tw)\s*\(/g)) add(m.index, closing(code, m.index + m[0].length - 1));
   for (const m of code.matchAll(/(?<![\w$.-])tw\s*`/g)) add(m.index, source.indexOf('`', m.index + m[0].length) + 1 || -1);
+  // A class string kept in a variable: an identifier used in one of those ranges is bound, in this file, to a string that is class context too.
+  const seen = new Set();
+  for (const [from, to] of [...ranges]) {
+    for (const id of code.slice(from, to).matchAll(/(?<![\w$.'"`-])([A-Za-z_$][\w$]*)(?![\w$'"`:(-])/g)) {
+      if (seen.has(id[1])) continue;
+      seen.add(id[1]);
+      for (const b of code.matchAll(new RegExp(String.raw`\b(?:const|let|var)\s+${id[1].replace(/\$/g, '\\$')}\s*(?::[^=\n]+)?=\s*(?=["'\`])`, 'g'))) {
+        const q = b.index + b[0].length;
+        add(q, source.indexOf(source[q], q + 1) + 1 || -1);
+      }
+    }
+  }
   return ranges;
 }
 
@@ -1077,7 +1089,13 @@ function themeRules(file, text, exceptions = new Set()) {
     const resolves = (name, seen) => { // the var() references in every value of `name` all follow
       if (seen.has(name) || !valueOf.has(name)) return false; // a cycle, or a token that is not declared here
       const next = new Set(seen).add(name);
-      return valueOf.get(name).every((value) => { const refs = [...value.matchAll(/var\(\s*--([\w-]+)/g)].map((m) => m[1]); return refs.length > 0 && refs.every((ref) => follows(ref, next)); });
+      return valueOf.get(name).every((value) => {
+        const calls = [...value.matchAll(/var\(\s*--([\w-]+)\s*(?:,((?:[^()]|\([^()]*\))*))?\)/g)];
+        if (!calls.length) return false;
+        // A colour literal outside var() fails, and so does a literal var() fallback unless the token it falls back from is set in both modes.
+        if (COLOR_VALUE.test(calls.reduce((rest, call) => rest.replace(call[0], ' '), value))) return false;
+        return calls.every((call) => follows(call[1], next) && (!call[2] || !COLOR_VALUE.test(call[2]) || (setIn.light.has(call[1]) && setIn.dark.has(call[1]))));
+      });
     };
     const follows = (name, seen) => CORE_ROLES.includes(name) || (setIn.light.has(name) && setIn.dark.has(name)) || resolves(name, seen);
     for (const role of [...modes.light.keys(), ...modes.dark.keys()]) if (modes.light.has(role) !== modes.dark.has(role) && resolves(role, new Set())) { modes.light.delete(role); modes.dark.delete(role); }
@@ -1090,17 +1108,19 @@ function themeRules(file, text, exceptions = new Set()) {
 
 const OVERLAYS = ['AlertDialog', 'Dialog', 'Sheet', 'Drawer'];
 /** The text of the `const|let|var name = …` or `function name(…)` of this file, to the next statement at the same or a lower indent ('' when not bound here). */
-function binding(code, name) {
-  const at = code.search(new RegExp(String.raw`(?:\b(?:const|let|var)\s+${name.replace(/\$/g, '\\$')}\b|\bfunction\s+${name.replace(/\$/g, '\\$')}\b)`));
-  if (at < 0) return '';
-  const from = code.lastIndexOf('\n', at) + 1, indent = /^\s*/.exec(code.slice(from))[0].length;
-  const lines = code.slice(from).split('\n');
-  let text = lines[0];
-  for (const line of lines.slice(1)) {
-    if (line.trim() && /^\s*/.exec(line)[0].length <= indent && /^\s*(?:const|let|var|function|export|return|if|for|\}|async)\b/.test(line)) break;
-    text += `\n${line}`;
+function bindings(code, name) {
+  const escaped = name.replace(/\$/g, '\\$'), texts = [];
+  for (const m of code.matchAll(new RegExp(String.raw`(?:\b(?:const|let|var)\s+${escaped}\b|\bfunction\s+${escaped}\b)`, 'g'))) {
+    const from = code.lastIndexOf('\n', m.index) + 1, indent = /^\s*/.exec(code.slice(from))[0].length;
+    const lines = code.slice(from).split('\n');
+    let text = lines[0];
+    for (const line of lines.slice(1)) {
+      if (line.trim() && /^\s*/.exec(line)[0].length <= indent && /^\s*(?:const|let|var|function|export|return|if|for|\}|async)\b/.test(line)) break;
+      text += `\n${line}`;
+    }
+    texts.push(text);
   }
-  return text;
+  return texts;
 }
 /** A kit overlay content (DialogContent, SheetContent, AlertDialogContent, DrawerContent) with no matching *Title inside it. */
 function overlayHasTitle(file, source, code) {
@@ -1110,9 +1130,10 @@ function overlayHasTitle(file, source, code) {
       const end = tagEnd(code, match.index);
       if (code[end - 1] === '/') continue;
       const close = code.indexOf(`</${prefix}Content>`, end);
-      let body = code.slice(end, close < 0 ? undefined : close);
-      for (const ref of body.matchAll(/\{\s*([A-Za-z_$][\w$]*)\s*(?:\(\s*\))?\s*\}/g)) body += ` ${binding(code, ref[1])}`; // children bound in this file: look for the Title in the binding
-      if (!new RegExp(String.raw`<${prefix}Title(?=[\s/>])`).test(body)) found.push(hit(file, source, match.index, 'design-overlay-has-title', `<${prefix}Content> has no <${prefix}Title> inside: add one (className="sr-only" when the design shows none), it is the overlay's accessible name`));
+      const body = code.slice(end, close < 0 ? undefined : close), title = new RegExp(String.raw`<${prefix}Title(?=[\s/>])`);
+      // Children bound in this file: a name bound more than once (shadowing) must hold the Title in every binding.
+      const bound = [...body.matchAll(/\{\s*([A-Za-z_$][\w$]*)\s*(?:\(\s*\))?\s*\}/g)].some((ref) => { const all = bindings(code, ref[1]); return all.length > 0 && all.every((text) => title.test(text)); });
+      if (!title.test(body) && !bound) found.push(hit(file, source, match.index, 'design-overlay-has-title', `<${prefix}Content> has no <${prefix}Title> inside: add one (className="sr-only" when the design shows none), it is the overlay's accessible name`));
     }
   }
   return found;
