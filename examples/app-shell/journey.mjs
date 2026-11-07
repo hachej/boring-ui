@@ -1141,6 +1141,8 @@ try {
     await tap(TRIGGER);
     await browser.until('390: the coach at half, the PM closed', `${snap} === 'half' && ${q(PM)}.hidden`);
     await browser.screenshot('d1375-390-coach.png');
+    // Let the drawer finish opening, as the first close above does (without the overlay blur the page paints faster and the tap landed mid-animation).
+    await pause(500);
     await tap('[data-testid=agent-layer-close]');
     await browser.until('390: closed again', `!${q(LAYER)} || ${snap} === 'closed'`);
     await pause(500);
