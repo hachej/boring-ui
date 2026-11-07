@@ -55,11 +55,12 @@ test('the composer keeps its box and its trailing control from idle to starting 
   const browser = await launch('about:blank', { evidence: shots ?? work });
   const rect = `(selector, scope) => { const node = scope.querySelector(selector); if (!node) return null; const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }`;
   const measure = () => browser.evaluate(`(() => { const rect = ${rect}; const out = {};
-    for (const id of ['replace', 'beside']) { const scope = document.querySelector('[data-case="' + id + '"]');
+    for (const scope of document.querySelectorAll('[data-case]')) { const id = scope.getAttribute('data-case');
       out[id] = { box: rect('[data-slot=input-group]', scope), controls: rect('[data-testid=composer-controls]', scope),
-        stop: rect(id === 'replace' ? '[data-testid=composer-when-empty] button' : '[data-testid=composer-tools] button:last-child', scope), send: rect('[data-testid=composer-submit]', scope),
+        stop: rect(id !== 'beside' ? '[data-testid=composer-when-empty] button' : '[data-testid=composer-tools] button:last-child', scope), send: rect('[data-testid=composer-submit]', scope), pause: rect('[data-testid=voice-pause]', scope),
+        glyph: (() => { const g = scope.querySelector(id !== 'beside' ? '[data-testid=composer-when-empty] button svg' : '[data-testid=composer-tools] button:last-child svg'); return g ? getComputedStyle(g).fill : null; })(),
         starting: !!scope.querySelector('[data-testid=voice-starting]'), dot: !!scope.querySelector('[data-testid=voice-recording-dot]'), timer: scope.querySelector('[data-testid=voice-recording]')?.textContent.trim() ?? null,
-        label: scope.querySelector(id === 'replace' ? '[data-testid=composer-when-empty] button' : '[data-testid=composer-tools] button:last-child')?.getAttribute('aria-label'),
+        label: scope.querySelector(id !== 'beside' ? '[data-testid=composer-when-empty] button' : '[data-testid=composer-tools] button:last-child')?.getAttribute('aria-label'),
         dotColor: (() => { const dot = scope.querySelector('[data-testid=voice-recording-dot]'); return dot ? getComputedStyle(dot).color : null; })() }; }
     return out; })()`);
   const report = [], violations = [];
@@ -72,24 +73,27 @@ test('the composer keeps its box and its trailing control from idle to starting 
         const seen = {};
         for (const state of ['idle', 'starting', 'recording']) {
           await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?layout=${layout}&state=${state}&theme=${theme}&w=${width}` });
-          await browser.until('fixture mounted', `document.querySelectorAll('[data-slot=input-group]').length === 2 && document.readyState === 'complete'`);
+          await browser.until('fixture mounted', `document.querySelectorAll('[data-slot=input-group]').length === ${layout === 'card' ? 3 : 2} && document.readyState === 'complete'`);
           await new Promise(done => setTimeout(done, 400));
           seen[state] = await measure();
           if (shots && layout === 'card') await browser.screenshot(`composer-${width}-${theme}-${state}.png`);
-          report.push({ width, theme, layout, state, replace: seen[state].replace, beside: seen[state].beside });
+          report.push({ width, theme, layout, state, replace: seen[state].replace, beside: seen[state].beside, hint: seen[state].hint });
         }
-        for (const id of ['replace', 'beside']) for (const state of ['starting', 'recording']) {
+        for (const id of (layout === 'card' ? ['replace', 'beside', 'hint'] : ['replace', 'beside'])) for (const state of ['starting', 'recording']) {
           const label = `${width} ${theme} ${layout} ${id} ${state}`;
           same(`${label} box height`, seen.idle[id].box.h, seen[state][id].box.h);
           same(`${label} trailing control rect`, seen.idle[id].stop && [seen.idle[id].stop.x, seen.idle[id].stop.y, seen.idle[id].stop.w, seen.idle[id].stop.h], seen[state][id].stop && [seen[state][id].stop.x, seen[state][id].stop.y, seen[state][id].stop.w, seen[state][id].stop.h]);
           same(`${label} send rect`, seen.idle[id].send, seen[state][id].send);
           assert.equal(seen[state][id].stop?.h, mobile ? 44 : 36, `${label} the stop is ${mobile ? 44 : 36}px`);
         }
-        for (const id of ['replace', 'beside']) {
+        for (const id of (layout === 'card' ? ['replace', 'beside', 'hint'] : ['replace', 'beside'])) {
           const s = seen.starting[id], r = seen.recording[id];
           assert.equal(s.starting && !s.dot && s.timer === null, true, `${width} ${theme} ${layout} ${id}: Starting… with no dot and no timer`);
           assert.equal(!r.starting && r.dot && r.timer !== null && r.timer.endsWith('0:07'), true, `${width} ${theme} ${layout} ${id}: dot and timer once recording`);
           assert.equal(r.label, 'Stop recording');
+          assert.equal(r.pause !== null && r.pause.w === (mobile ? 44 : 36) && r.pause.h === (mobile ? 44 : 36), true, `${width} ${theme} ${layout} ${id}: pause is ${mobile ? 44 : 36}px, got ${JSON.stringify(r.pause)}`);
+          assert.equal(r.pause.x + r.pause.w <= r.box.x + r.box.w && r.pause.x > r.box.x + r.box.w / 2, true, 'pause stays at the right of the row');
+          assert.equal(r.glyph !== null && r.glyph !== 'none', true, 'the stop square is filled');
         }
       }
     }

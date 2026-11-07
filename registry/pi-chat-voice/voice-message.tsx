@@ -1,6 +1,6 @@
 'use client';
 
-import { CircleIcon, MicIcon, PauseIcon, PlayIcon, Trash2Icon } from '../_shared/icons';
+import { CircleIcon, MicIcon, PauseIcon, PlayIcon, SquareIcon, Trash2Icon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Bubble, BubbleContent } from '@/components/ui/bubble';
@@ -50,8 +50,8 @@ export function RecordingStatus({ voice }: { readonly voice: VoiceMessageHandle 
 
 /** The filled stop in the microphone's place; it finishes the message, as Send did. Waits (disabled, same box) until the microphone is open. */
 export function RecordingStop({ voice, testId = 'voice-message-record' }: Pick<VoiceMessageButtonProps, 'voice' | 'testId'>) {
-  const { labels, icons } = useChatText();
-  return <Button variant="default" size="icon" data-testid={testId} data-state={voice.phase} aria-label={labels.voiceStop} title={labels.voiceStop} onClick={voice.finish} disabled={voice.phase === 'starting'} className="shrink-0"><icons.stop aria-hidden="true" /></Button>;
+  const { labels } = useChatText();
+  return <Button variant="default" size="icon" data-testid={testId} data-state={voice.phase} aria-label={labels.voiceStop} title={labels.voiceStop} onClick={voice.finish} disabled={voice.phase === 'starting'} className="shrink-0"><SquareIcon className="fill-current" aria-hidden="true" /></Button>;
 }
 
 export function VoiceMessageButton({ voice, disabled, primary = false, testId = 'voice-message-record' }: VoiceMessageButtonProps) {

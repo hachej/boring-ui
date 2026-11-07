@@ -13,9 +13,9 @@ document.documentElement.classList.toggle('dark', query.get('theme') === 'dark')
 const levels = [0.1, 0.3, 0.5, 0.2, 0.7, 0.4, 0.6, 0.3, 0.2, 0.5, 0.8, 0.4, 0.3, 0.6, 0.2, 0.1];
 const voice = { phase: state, canStart: true, seconds: 7, levels: state === 'recording' ? levels : [], paused: false, start: noop, cancel: noop, finish: noop, pause: noop, resume: noop, problem: undefined, pending: [], captureSequence: 0 };
 
-function Case({ id, replaces }) {
+function Case({ id, replaces, hint }) {
   const ref = useRef(null);
-  const props = { attachments: [], onRemoveAttachment: noop, working: false, sendBlocked: false, disabled: false, stopRequested: false, onSend: noop, onStop: noop, uploading: false, canAttach: true, fileAccept: '', onPickFiles: noop, textareaRef: ref, text: '', onText: noop, layout };
+  const props = { attachments: [], onRemoveAttachment: noop, working: false, sendBlocked: false, disabled: false, stopRequested: false, onSend: noop, onStop: noop, uploading: false, canAttach: true, fileAccept: '', onPickFiles: noop, textareaRef: ref, text: '', onText: noop, layout, ...(hint ? { placeholderContent: <span>Ask about a fictional picnic</span> } : {}) };
   const mic = <VoiceMessageButton voice={voice} primary={replaces} />;
   const capturing = state !== 'idle';
   return <div data-case={id} className="pi-chat mx-auto w-full max-w-[720px]">
@@ -27,4 +27,5 @@ function Case({ id, replaces }) {
 createRoot(document.getElementById('root')).render(<main className="flex flex-col gap-6 p-4">
   <Case id="replace" replaces />
   <Case id="beside" replaces={false} />
+  {layout === 'card' && <Case id="hint" replaces hint />}
 </main>);

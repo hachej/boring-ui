@@ -126,6 +126,7 @@ export interface ComposerProps {
   /** An active capture, laid out as when idle: this takes the text's place (a timer, a dot, "Starting…"; the textarea is not mounted) and the
    * leading "+" is disabled. The box keeps its height and the trailing control does not move. Pair it with `recordingStop`. */
   readonly recordingStatus?: ReactNode;
+  // Both or neither: the laid-out recording needs the status and the stop; one alone is ignored (a `recording` row still shows).
   /** The stop control, in the microphone's place: the trailing slot where `whenEmpty` or `barEnd` sit when idle. */
   readonly recordingStop?: ReactNode;
   /** The optional Feedback button and chip. */
@@ -263,7 +264,8 @@ export function Composer(props: ComposerProps) {
   const canPhoto = canAttach && coarse && acceptsPhotos(props.fileAccept) && Camera !== undefined;
   const slash = Slash ? props.slash : undefined, mentions = Mention ? props.mentions : undefined;
   const items = useMemo<SlashItem[]>(() => slash ? slashItems(slash) : [], [slash]);
-  const slots = props.recordingStatus !== undefined || props.recordingStop !== undefined;
+  // The pair works together: with only one of them, a legacy `recording` row (or nothing) is what shows, so a recording is never left with no way to stop.
+  const slots = props.recordingStatus !== undefined && props.recordingStop !== undefined;
   const recording = Boolean(props.recording) || slots;
   const setRef = (element: HTMLTextAreaElement | null) => {
     inner.current = element;
@@ -395,11 +397,12 @@ export function Composer(props: ComposerProps) {
   const send = working
     ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={(disabled && !props.stopOpen) || stopRequested} onClick={props.onStop} className="shrink-0">
       {stopRequested ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop data-icon="inline-start" aria-hidden="true" />}</Button>
-    : props.whenEmpty && !hasContent ? <div data-testid="composer-when-empty" className="flex shrink-0 items-center">{slots && props.recordingStop !== undefined ? props.recordingStop : props.whenEmpty}</div>
+    : props.whenEmpty && (!hasContent || slots) ? <div data-testid="composer-when-empty" className="flex shrink-0 items-center">{slots ? props.recordingStop : props.whenEmpty}</div>
     : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="shrink-0">
       <icons.send data-icon="inline-start" aria-hidden="true" /></Button>;
   // While recording, the stop takes the microphone's place: Send's slot when the microphone stands in for Send, else the tools slot.
-  const stopInSend = slots && !working && props.whenEmpty !== undefined && !hasContent;
+  // It stays there for the whole capture, even if a file or text arrives meanwhile (`hasContent` would move it).
+  const stopInSend = slots && !working && props.whenEmpty !== undefined;
   const end = <>
     {!slots && props.barStart}
     {!slots && props.chips && <div className="flex min-w-0 items-center gap-2">{props.chips}</div>}
@@ -427,7 +430,7 @@ export function Composer(props: ComposerProps) {
       <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>
     </InputGroup> : <InputGroup>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
-      <div data-slot="composer-recording" data-testid="composer-recording" className="flex min-h-11 w-full min-w-0 items-center gap-2 px-2">{props.recordingStatus}</div>
+      <div data-slot="composer-recording" data-testid="composer-recording" className={cn('flex w-full min-w-0 items-center gap-2 px-2', props.placeholderContent ? 'min-h-16' : 'min-h-11')}>{props.recordingStatus}</div>
       <InputGroupAddon align="block-end" data-testid="composer-controls">{startAndPlus}{end}</InputGroupAddon>
     </InputGroup> : props.recording ? <InputGroup>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
