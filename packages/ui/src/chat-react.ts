@@ -7,6 +7,8 @@ import { artifactKey, artifactVersionKey, artifactTurn, artifactVersions, create
 import type { PresentedArtifact, ArtifactDetect, PresentAcksHost, PresentationShown, PresentationFailed, TaskSubject } from './chat-view.js';
 
 export { useChatDraft } from './chat-react-draft.js';
+export { useSubmitOutcome } from './chat-react-submit.js';
+export type { SubmitOutcome, SubmitOutcomeOptions, SubmitOutcomeState } from './chat-react-submit.js';
 export { useControllerPerConversation } from './chat-react-controller.js';
 export type { ControllerPerConversationOptions, ConversationControllerState } from './chat-react-controller.js';
 export { chunkKeys, useRowChunks, useTranscript, useTranscriptWindow, PAGE_FIRST, PAGE_MORE, CHUNK } from './chat-react-transcript.js';

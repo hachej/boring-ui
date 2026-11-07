@@ -6,8 +6,7 @@ import { CircleCheckIcon, CircleAlertIcon, MessageCircleQuestionIcon, XIcon } fr
 import { Button } from '@/components/ui/button';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { notifyWhenHidden } from './browser-notify';
-import { parseQuestion } from '../pi-chat-question/question-card';
-import { defaultNoticeText, pendingNotice } from '@hachej/boring-ui-kit/chat-view';
+import { defaultNoticeText, parseQuestion, pendingNotice } from '@hachej/boring-ui-kit/chat-view';
 import { useRunNotifications as useKitRunNotifications, watchConversation as watchKitConversation } from '@hachej/boring-ui-kit/chat-react';
 import type { AgentNotification, NotificationKind, NotificationStore, RunNotificationOptions } from '@hachej/boring-ui-kit/chat-react';
 import type { NoticeText } from '@hachej/boring-ui-kit/chat-view';
@@ -37,12 +36,12 @@ export function pendingQuestion(rows: readonly Row[], text?: NoticeText): string
  * run finishes or fails and while a question waits. Returns the unsubscribe. `AmbientChat` does the same for its own conversation.
  */
 export function watchConversation(controller: NativeChatController, store: NotificationStore, options: { readonly conversationId: string; readonly title: string | (() => string); readonly labels?: Partial<NotificationLabels> | undefined }): () => void {
-  return watchKitConversation(controller, store, { ...options, text: noticeTextOf({ ...defaultNotificationLabels, ...options.labels }), question: call => parseQuestion(call).question });
+  return watchKitConversation(controller, store, { ...options, text: noticeTextOf({ ...defaultNotificationLabels, ...options.labels }) });
 }
 
-/** Presentation supplies only the ask_user grammar; the kit owns every transition. */
+/** The kit owns the ask_user grammar and every transition. */
 export function useRunNotifications(controller: NativeChatController, store: NotificationStore, options: Omit<RunNotificationOptions, 'question'>): void {
-  useKitRunNotifications(controller, store, { ...options, question: call => parseQuestion(call).question });
+  useKitRunNotifications(controller, store, options);
 }
 
 const ICONS = {

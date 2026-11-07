@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import { CheckIcon, ShieldAlertIcon, XIcon } from '../_shared/icons';
 import { waits, type ApprovalDecision } from '@hachej/boring-ui-kit/chat-view';
+import { useSubmitOutcome } from '@hachej/boring-ui-kit/chat-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Item, ItemActions, ItemContent, ItemDescription, ItemFooter, ItemMedia, ItemTitle } from '@/components/ui/item';
@@ -40,11 +40,8 @@ export type { ApprovalCardProps };
 /** Human approval for a gated tool call: pending (Approve and Deny), then approved or denied. Answering uses the host's `answer`. */
 export function ApprovalCard({ call, result, answer, questionId, summary, decision, live = false }: ApprovalCardProps) {
   const { labels } = useChatText();
-  const [sent, setSent] = useState<string | undefined>();
-  const [sending, setSending] = useState<string | undefined>();
-  const [refusal, setRefusal] = useState<string | undefined>();
-  const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const outcome = useSubmitOutcome({ send: value => answer!(questionId!, value), refused: labels.decisionRefused, notSent: labels.decisionNotSent });
+  const { sent, sending, refusal } = outcome;
   // `pending` is the kit's waiting rule (`waits`, as the chat's status line uses); `writing` means the model is still generating the call.
   const waiting = waits({ kind: 'approval', key: call.id, call, result, live, questionId, summary: summary ?? '', ...(decision ? { decision } : {}) });
   const state = decisionOf(result, decision) ?? (sent === APPROVE ? 'approved-sent' : sent === DENY ? 'denied-sent' : waiting ? 'pending' : 'writing');
@@ -54,13 +51,7 @@ export function ApprovalCard({ call, result, answer, questionId, summary, decisi
 
   async function decide(value: string) {
     if (!answer || !questionId || busy) return;
-    setRefusal(undefined); setSending(value);
-    try {
-      const outcome = await answer(questionId, value);
-      if (outcome.kind === 'answered') setSent(value);
-      else setRefusal(outcome.reason || labels.decisionRefused(outcome.kind));
-    } catch (cause) { setRefusal(cause instanceof Error ? cause.message : labels.decisionNotSent); }
-    finally { if (mounted.current) setSending(undefined); }
+    await outcome.submit(value);
   }
   const approved = state === 'approved' || state === 'approved-sent', denied = state === 'denied' || state === 'denied-sent';
 
