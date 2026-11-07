@@ -1055,6 +1055,23 @@ function themeRules(file, text, exceptions = new Set()) {
       if (selectors.includes(':root')) modes.light.set(d.name, d.line);
       if (selectors.includes('.dark')) modes.dark.set(d.name, d.line);
     }
+    // var() resolves where it is used: a one-mode pin follows the mode when every var() in its value resolves, along the chain, to a token set in
+    // both modes or to a core role. A literal, a token set in one mode with a literal, a missing token and a cycle do not.
+    const setIn = { light: new Set(), dark: new Set() }, valueOf = new Map();
+    for (const d of declarations) {
+      const selectors = d.selector.split(',').map((part) => part.trim());
+      if (selectors.includes(':root')) setIn.light.add(d.name);
+      if (selectors.includes('.dark')) setIn.dark.add(d.name);
+      if (!valueOf.has(d.name)) valueOf.set(d.name, []);
+      valueOf.get(d.name).push(d.value);
+    }
+    const resolves = (name, seen) => { // the var() references in every value of `name` all follow
+      if (seen.has(name) || !valueOf.has(name)) return false; // a cycle, or a token that is not declared here
+      const next = new Set(seen).add(name);
+      return valueOf.get(name).every((value) => { const refs = [...value.matchAll(/var\(\s*--([\w-]+)/g)].map((m) => m[1]); return refs.length > 0 && refs.every((ref) => follows(ref, next)); });
+    };
+    const follows = (name, seen) => CORE_ROLES.includes(name) || (setIn.light.has(name) && setIn.dark.has(name)) || resolves(name, seen);
+    for (const role of [...modes.light.keys(), ...modes.dark.keys()]) if (modes.light.has(role) !== modes.dark.has(role) && resolves(role, new Set())) { modes.light.delete(role); modes.dark.delete(role); }
     for (const [role, line] of modes.light) if (!modes.dark.has(role)) found.push({ file, line, rule: 'design-theme-roles-both-modes', message: `--${role} is set in :root but not in .dark: set the dark value too` });
     for (const [role, line] of modes.dark) if (!modes.light.has(role)) found.push({ file, line, rule: 'design-theme-roles-both-modes', message: `--${role} is set in .dark but not in :root: set the light value too` });
   }

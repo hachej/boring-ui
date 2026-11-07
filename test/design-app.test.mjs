@@ -203,6 +203,29 @@ test('design-theme-roles-both-modes: a kit-defined colour role (core or pinned) 
   assert.ok(!messages.some(message => /--radius|--brand-teal|--shadow-halo|--pm-gold|--cta/.test(message)));
 });
 
+test('round 8: a kit name pinned in one mode passes when every var() in its value follows to a both-modes token or a core role; a literal, a :root-only token, a missing token and a cycle fail', () => {
+  const lines = (pinned, ...extra) => {
+    const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+    try {
+      mkdirSync(join(dir, 'web/src'), { recursive: true });
+      const css = `:root {\n  --background: oklch(1 0 0);\n  --card: oklch(0.98 0 0);\n  ${extra.join('\n  ')}\n}\n.dark {\n  --background: oklch(0.1 0 0);\n  --card: oklch(0.2 0 0);\n}\n/* === EXCEPTIONS === */\n:root { ${pinned} }\n`;
+      writeFileSync(join(dir, 'web/src/theme.core.css'), css);
+      writeFileSync(join(dir, 'DESIGN.md'), '## Exceptions\n\n- `--popover` a reason\n- `--secondary` a reason\n');
+      return json(join(dir, 'web/src')).findings.filter(finding => finding.rule === 'design-theme-roles-both-modes').length;
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  };
+  assert.equal(lines('--popover: var(--card);'), 0, 'var of a both-modes token');
+  assert.equal(lines('--popover: var(--background);'), 0, 'var of a core role');
+  assert.equal(lines('--popover: color-mix(in oklch, var(--card) 50%, var(--background));'), 0);
+  assert.equal(lines('--popover: #fff;'), 1, 'a literal in :root only');
+  assert.equal(lines('--popover: var(--x);', '--x: oklch(0.5 0 0);'), 1, 'a var of a :root-only token');
+  assert.equal(lines('--popover: var(--x);', '--x: var(--y);', '--y: oklch(0.5 0 0);'), 1, 'a chain that ends at a :root-only literal');
+  assert.equal(lines('--popover: var(--x);', '--x: var(--card);'), 0, 'a chain that ends at a both-modes token');
+  assert.equal(lines('--popover: var(--nowhere);'), 1, 'a missing token');
+  assert.equal(lines('--popover: var(--x);', '--x: var(--popover);'), 1, 'a cycle');
+  assert.equal(lines('--popover: var(--secondary); --secondary: var(--popover);'), 2, 'a cycle between two pins');
+});
+
 test('a clean theme (both modes, core roles, app tokens, derived from var() and color-mix(), documented exceptions below the comment) reports nothing', () => {
   const report = json(join(root, 'test/fixtures/design-theme/clean/web/src'));
   assert.deepEqual(report.findings.filter(finding => finding.rule !== 'design-theme-local-derived'), []);
