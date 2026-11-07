@@ -767,3 +767,4 @@ function FileHistory({ components: { Button, Versions, Separator }, locale, cont
     {preview && <div data-testid="file-history-preview" data-revision={preview.ref.revision}><p>{labels.readOnlyRevision(preview.bytes.byteLength)}</p>{text === undefined ? <p>{labels.binaryFile(preview.mediaType)}</p> : <pre className="max-h-80 overflow-auto whitespace-pre-wrap">{text}</pre>}</div>}
   </section></>;
 }
+export { useWorkspaceChangeFeed } from './workspace-change-feed.js';
