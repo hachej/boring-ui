@@ -268,6 +268,24 @@
           "destructive-soft-foreground": "color-mix(in oklab, var(--destructive) 85%, var(--foreground))",
           "link": "color-mix(in oklab, var(--primary) 70%, var(--foreground))"
         }
+      },
+      "css": {
+        "@layer base": {
+          ":root": {
+            "--control-h": "2.25rem",
+            "--control-min": "0rem"
+          },
+          "@media (width < 768px), (pointer: coarse)": {
+            ":root": {
+              "--control-h": "2.75rem",
+              "--control-min": "2.75rem"
+            }
+          },
+          "[data-density=\"compact\"]": {
+            "--control-h": "2.25rem",
+            "--control-min": "0rem"
+          }
+        }
       }
     },
     {
@@ -766,8 +784,8 @@
           },
           "@media (width < 768px), (pointer: coarse)": {
             ".pi-chat :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
-              "min-height": "2.75rem",
-              "min-width": "2.75rem"
+              "min-height": "var(--control-min, 2.75rem)",
+              "min-width": "var(--control-min, 2.75rem)"
             },
             ".pi-chat [data-testid=\"message-feedback\"] [data-slot=\"button\"]": {
               "min-height": "3rem",
@@ -2224,9 +2242,9 @@
         },
         "@layer utilities": {
           "@media (width < 768px), (pointer: coarse)": {
-            ".app-shell :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"]):not([data-dense]):not([data-dense] *)": {
-              "min-height": "2.75rem",
-              "min-width": "2.75rem"
+            ".app-shell :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
+              "min-height": "var(--control-min, 2.75rem)",
+              "min-width": "var(--control-min, 2.75rem)"
             }
           }
         }
@@ -2396,12 +2414,12 @@
           },
           "@media (width < 768px), (pointer: coarse)": {
             ".boring-viewer :is([data-slot=\"button\"], [data-slot=\"toggle\"], [data-slot=\"toggle-group-item\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
-              "min-height": "2.75rem",
-              "min-width": "2.75rem"
+              "min-height": "var(--control-min, 2.75rem)",
+              "min-width": "var(--control-min, 2.75rem)"
             },
             ".boring-viewer.boring-markdown-bubble :is([data-slot=\"button\"], [data-slot=\"toggle\"])": {
-              "min-height": "2.75rem",
-              "min-width": "2.75rem"
+              "min-height": "var(--control-min, 2.75rem)",
+              "min-width": "var(--control-min, 2.75rem)"
             }
           }
         },
@@ -3334,16 +3352,21 @@
           },
           "@media (width < 768px), (pointer: coarse)": {
             "[data-slot=\"question-field\"] [data-slot=\"input-group\"]": {
-              "height": "2.75rem"
+              "height": "var(--control-h, 2.75rem)"
             },
             "[data-slot=\"question-field\"] [data-slot=\"input-group-addon\"]": {
               "padding-block": "0"
             },
             "[data-slot=\"question-field\"] [data-testid=\"question-submit\"]": {
-              "width": "2.75rem",
-              "height": "2.75rem",
+              "width": "var(--control-h, 2.75rem)",
+              "height": "var(--control-h, 2.75rem)",
               "margin-block": "-1px"
             }
+          },
+          "[data-slot=\"question-field\"] [data-testid=\"question-submit\"]:disabled": {
+            "background-color": "transparent",
+            "color": "var(--muted-foreground)",
+            "opacity": "1"
           }
         }
       }

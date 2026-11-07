@@ -66,7 +66,7 @@ try {
     assert.match(await browser.evaluate(`${control('composer-model-label')}.textContent`), / · /, 'the pill shows the model and the effort');
     const buttons = await browser.evaluate(`[...${control('composer-controls')}.querySelectorAll('button')].filter(e => e.checkVisibility()).map(e => { const r = e.getBoundingClientRect(); return { centre: r.top + r.height / 2, height: r.height, native: e.classList.contains('group/button') }; })`);
     assert.ok(Math.max(...buttons.map(r => r.centre)) - Math.min(...buttons.map(r => r.centre)) <= 1, JSON.stringify(buttons));
-    assert.ok(buttons.every(r => r.height === 32 && r.native), `attach, model and Send use the stock native Button height: ${JSON.stringify(buttons)}`);
+    assert.ok(buttons.every(r => r.height === 36 && r.native), `attach, model and Send use the stock native Button height: ${JSON.stringify(buttons)}`);
     assert.equal(await browser.evaluate(`!${control('effort-picker')} && !${control('model-picker')}`), true, 'no separate model or effort triggers');
     await browser.type(INPUT, '/');
     await browser.until('the slash menu', `!!${popup('slash-menu')}`, 5000);

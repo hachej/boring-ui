@@ -264,5 +264,23 @@
       "link": "color-mix(in oklab, var(--primary) 70%, var(--foreground))"
     }
   },
+  "css": {
+    "@layer base": {
+      ":root": {
+        "--control-h": "2.25rem",
+        "--control-min": "0rem"
+      },
+      "@media (width < 768px), (pointer: coarse)": {
+        ":root": {
+          "--control-h": "2.75rem",
+          "--control-min": "2.75rem"
+        }
+      },
+      "[data-density=\"compact\"]": {
+        "--control-h": "2.25rem",
+        "--control-min": "0rem"
+      }
+    }
+  },
   "type": "registry:theme"
 }

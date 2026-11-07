@@ -78,12 +78,12 @@
       },
       "@media (width < 768px), (pointer: coarse)": {
         ".boring-viewer :is([data-slot=\"button\"], [data-slot=\"toggle\"], [data-slot=\"toggle-group-item\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
-          "min-height": "2.75rem",
-          "min-width": "2.75rem"
+          "min-height": "var(--control-min, 2.75rem)",
+          "min-width": "var(--control-min, 2.75rem)"
         },
         ".boring-viewer.boring-markdown-bubble :is([data-slot=\"button\"], [data-slot=\"toggle\"])": {
-          "min-height": "2.75rem",
-          "min-width": "2.75rem"
+          "min-height": "var(--control-min, 2.75rem)",
+          "min-width": "var(--control-min, 2.75rem)"
         }
       }
     },
