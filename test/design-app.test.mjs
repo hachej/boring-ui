@@ -18,28 +18,28 @@ const json = (...args) => { const result = run(...args, '--json'); return { stat
 // The fixture bundle app (no components.json, no components/ui): one violation per rule, and clean.tsx.
 const EXPECTED = {
   'raw-element': ['raw-element.tsx', 'error'],
-  'kit-block': ['kit-block.tsx', 'warn'],
+  'kit-block': ['kit-block.tsx', 'error'],
   'design-card-flat': ['card-flat.tsx', 'error'],
-  'design-icons-phosphor': ['icons.tsx', 'warn'],
-  'design-touch-target': ['touch-target.tsx', 'warn'],
-  'design-button-raw-height': ['button-raw-height.tsx', 'warn'],
+  'design-icons-phosphor': ['icons.tsx', 'error'],
+  'design-touch-target': ['touch-target.tsx', 'error'],
+  'design-button-raw-height': ['button-raw-height.tsx', 'error'],
   'design-no-dark-overrides': ['dark.tsx', 'error'],
   'design-link-token': ['link-token.tsx', 'error'],
   'design-mono-for-code': ['mono.tsx', 'error'],
-  'design-tokens-only': ['tokens-only.tsx', 'warn'],
+  'design-tokens-only': ['tokens-only.tsx', 'error'],
   'design-color': ['color.tsx', 'error'],
   'design-font-tokens': ['font.css', 'error'],
-  'design-no-kit-restyle': ['restyle.css', 'warn'],
-  'design-no-important': ['important.css', 'warn'],
-  'design-hand-touch-size': ['hand-touch.tsx', 'warn'],
-  'design-border-width': ['border-width.tsx', 'warn'],
+  'design-no-kit-restyle': ['restyle.css', 'error'],
+  'design-no-important': ['important.css', 'error'],
+  'design-hand-touch-size': ['hand-touch.tsx', 'error'],
+  'design-border-width': ['border-width.tsx', 'error'],
   'design-literal-value': ['literal-value.css', 'error'],
   'design-dark-variant': ['dark-variant.tsx', 'error'],
-  'design-no-x-scroll': ['x-scroll.tsx', 'warn'],
-  'design-overlay-has-title': ['overlay.tsx', 'warn'],
+  'design-no-x-scroll': ['x-scroll.tsx', 'error'],
+  'design-overlay-has-title': ['overlay.tsx', 'error'],
 };
 // The rules with no file of their own in the fixture app: the length limits (a temp app below) and the theme rules (test/fixtures/design-theme).
-const ELSEWHERE = ['line-length', 'component-length', 'file-length', 'design-theme-core-only', 'design-theme-roles-both-modes'];
+const ELSEWHERE = ['line-length', 'component-length', 'file-length', 'design-theme-core-only', 'design-theme-roles-both-modes', 'design-theme-local-derived', 'design-exceptions-shrink'];
 
 const report = json(fixture);
 
@@ -59,22 +59,22 @@ test('the fixture hits only its own rule, the clean file and the theme file repo
   assert.deepEqual(Object.keys(report.counts).sort(), Object.keys(EXPECTED).sort());
 });
 
-test('every rule in the level table has a fixture, and every error in the template stays an error', () => {
+test('every rule in the level table has a fixture, and every rule is an error (frozen by design-master)', () => {
   assert.deepEqual(Object.keys(LEVELS).filter(rule => !(rule in EXPECTED) && !ELSEWHERE.includes(rule)), []);
-  for (const rule of ['raw-element', 'design-card-flat', 'design-no-dark-overrides', 'design-link-token', 'design-mono-for-code']) assert.equal(LEVELS[rule], 'error');
+  for (const rule of Object.keys(LEVELS)) assert.equal(LEVELS[rule], 'error', rule);
 });
 
-test('text output is file:line rule message, warnings are prefixed, the exit code is 1 on an error', () => {
+test('text output is file:line rule message, no finding is a warning outside a legacy components/ui, the exit code is 1 on an error', () => {
   const result = run(fixture);
   assert.equal(result.status, 1);
   assert.match(result.stdout, /^test\/fixtures\/design-app\/web\/src\/link-token\.tsx:1 design-link-token link <a> without text-link/m);
-  assert.match(result.stdout, /^warning test\/fixtures\/design-app\/web\/src\/tokens-only\.tsx:1 design-tokens-only arbitrary value w-\[340px\]/m);
+  assert.match(result.stdout, /^test\/fixtures\/design-app\/web\/src\/tokens-only\.tsx:1 design-tokens-only arbitrary value w-\[340px\]/m);
 });
 
 test('--changed limits the run to the listed files', () => {
   const only = json(fixture, '--changed', join(fixture, 'icons.tsx'));
   assert.deepEqual(only.findings.map(finding => finding.rule), ['design-icons-phosphor']);
-  assert.equal(only.status, 0, 'a warning alone does not fail the run');
+  assert.equal(only.status, 1);
   const clean = json(fixture, '--changed', join(fixture, 'clean.tsx'), join(fixture, 'theme.core.css'));
   assert.deepEqual(clean.findings, []);
   assert.equal(clean.ok, true);
@@ -145,7 +145,7 @@ test('design-theme-core-only: a kit-derived name above the EXCEPTIONS comment is
   assert.ok(lines.includes(4) && lines.includes(14));
   assert.ok(!lines.includes(5) && !lines.includes(6) && !lines.includes(2) && !lines.includes(3) && !lines.includes(7), `app tokens and core roles are never hits: ${lines}`);
   assert.deepEqual(themeFindings('design-theme-core-only', 'theme.derived.css'), [3, 4]);
-  assert.ok(themeBad.findings.filter(finding => finding.rule.startsWith('design-theme')).every(finding => finding.level === 'warn' && LEVELS[finding.rule] === 'warn'));
+  assert.ok(themeBad.findings.filter(finding => finding.rule.startsWith('design-theme')).every(finding => finding.level === 'error' && LEVELS[finding.rule] === 'error'));
 });
 
 test('design-theme-core-only: a token pinned below the comment with an entry in DESIGN.md exceptions is fine; two without an entry are ONE hit for the missing reason', () => {
@@ -169,7 +169,18 @@ test('design-theme-roles-both-modes: a colour core role in :root and not in .dar
 });
 
 test('a clean theme (both modes, core roles, app tokens, derived from var() and color-mix(), documented exceptions below the comment) reports nothing', () => {
-  assert.deepEqual(json(join(root, 'test/fixtures/design-theme/clean/web/src')).findings, []);
+  const report = json(join(root, 'test/fixtures/design-theme/clean/web/src'));
+  assert.deepEqual(report.findings.filter(finding => finding.rule !== 'design-theme-local-derived'), []);
+});
+
+test('design-theme-local-derived: an app with its own theme.derived.css gets ONE hit, with the kit import order; an app without one gets none', () => {
+  const report = json(join(root, 'test/fixtures/design-theme/clean/web/src'));
+  const hits = report.findings.filter(finding => finding.rule === 'design-theme-local-derived');
+  assert.equal(hits.length, 1);
+  assert.match(hits[0].file, /theme\.derived\.css$/);
+  assert.equal(hits[0].level, 'error');
+  assert.match(hits[0].message, /delete it and import the kit's: app\.css, then @hachej\/boring-ui-kit\/theme\.derived\.css, then \.\/theme\.core\.css/);
+  assert.equal(json(fixture).findings.filter(finding => finding.rule === 'design-theme-local-derived').length, 0);
 });
 
 test('design-overlay-has-title: a Dialog, Sheet, AlertDialog or Drawer content without its own *Title is reported; with it, or self-closing, it is not', t => {

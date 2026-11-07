@@ -3,7 +3,7 @@
 // is documented once, in registry/README.md, "Updating installed blocks".
 //
 //   npx boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <app web dir>] [--json]
-//   npx boring-ui-blocks design <dir> [--changed <file>...] [--json]   (the one design check of an app's web/src; needs no components.json)
+//   npx boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline]   (the one design check of an app's web/src; needs no components.json)
 //   npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>]
 //   npx boring-ui-blocks add <shadcn add arguments...> [--overwrite] [--manifest <path>] [--cwd <dir>]
 //   npx boring-ui-blocks manifest [--manifest <path>] [--cwd <dir>]
@@ -273,7 +273,7 @@ export function check(app, design = [], manifest = MANIFEST) {
   return { version, blocks: blocks.map(block => block.name), violations };
 }
 
-const USAGE = `usage: boring-ui-blocks design <dir> [--changed <file>...] [--json] | check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--overwrite] [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
+const USAGE = `usage: boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline] | check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--overwrite] [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
   'Blocks: pi-app is the whole agent app with every chat feature and viewer. pi-chat is the core chat only: add pi-chat-plugins for every ' +
   'feature, or one of pi-chat-markdown, pi-chat-slash, pi-chat-mentions, pi-chat-pickers, pi-chat-voice, pi-chat-attachments, ' +
   'pi-chat-question, pi-chat-approval, pi-chat-subagent and pi-artifacts. Viewers are viewer-frame plus viewer-markdown, viewer-html, ' +
@@ -440,7 +440,7 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
 // it instead of a copy of the template script. Dependency-free and lexical: it reads text, it does not run the app. It needs no
 // components.json and no copied shadcn files: a bundle app imports @boring/ui/shadcn/* and @boring/ui/blocks/*.
 //
-//   boring-ui-blocks design <dir> [--changed <file>...] [--json]
+//   boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline]
 //
 // Output: one `[warning ]file:line rule message` per finding (paths relative to the working directory), exit 1 on any error. `--json`
 // prints { ok, errors, warnings, counts, findings } with each finding { file, line, rule, level, message }. `--changed` keeps only
@@ -462,9 +462,10 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
 
 
 /**
- * The level of each rule: 'error' fails the run (exit 1), 'warn' is listed. THE one place to flip a rule: change its entry.
- * A rule becomes error once it has zero live hits across bundle apps and zero reviewed false positives (D-1415 bar); design-master
- * reviews each promotion. What the Factory template made an error stays an error: never downgrade one.
+ * The level of each rule: 'error' fails the run (exit 1), 'warn' is listed. THE one place to set a rule's level.
+ * Every rule is an error, frozen by design-master after a false-positive read. An app with existing hits lists them in
+ * design.exceptions.json (a list that only shrinks, see applyExceptions); an unlisted hit fails. The only warn left is a finding in an
+ * app's own legacy components/ui folder.
  */
 export const LEVELS = Object.freeze({
   // The Factory template's rules, at the levels they have there.
@@ -472,29 +473,31 @@ export const LEVELS = Object.freeze({
   'line-length': 'error',
   'component-length': 'error',
   'file-length': 'error',
-  'kit-block': 'warn', // template: promote only after the fleet's hits and reviewed false positives are zero
+  'kit-block': 'error',
   'design-card-flat': 'error',
-  'design-icons-phosphor': 'warn',
-  'design-touch-target': 'warn',
-  'design-button-raw-height': 'warn', // template D-1753: an error once the live apps are migrated
+  'design-icons-phosphor': 'error',
+  'design-touch-target': 'error',
+  'design-button-raw-height': 'error',
   'design-no-dark-overrides': 'error',
   'design-link-token': 'error',
   'design-mono-for-code': 'error',
   // The kit's app profile and the tokens-only rule, new to apps.
-  'design-tokens-only': 'warn', // flip to 'error' here
-  'design-color': 'error', // promoted from warn with zero hits in the 8 bundle apps (design-master)
-  'design-border-width': 'warn', // flip to 'error' here
-  'design-font-tokens': 'error', // promoted from warn with zero hits in the 8 bundle apps (design-master)
-  'design-literal-value': 'error', // promoted from warn with zero hits in the 8 bundle apps (design-master)
-  'design-dark-variant': 'error', // promoted from warn with zero hits in the 8 bundle apps (design-master)
-  'design-no-x-scroll': 'warn', // flip to 'error' here
+  'design-tokens-only': 'error',
+  'design-color': 'error',
+  'design-border-width': 'error',
+  'design-font-tokens': 'error',
+  'design-literal-value': 'error',
+  'design-dark-variant': 'error',
+  'design-no-x-scroll': 'error',
   // New rules.
-  'design-no-kit-restyle': 'warn', // flip to 'error' here
-  'design-no-important': 'warn', // flip to 'error' here
-  'design-hand-touch-size': 'warn', // flip to 'error' here
-  'design-theme-core-only': 'warn', // flip to 'error' here
-  'design-theme-roles-both-modes': 'warn', // flip to 'error' here
-  'design-overlay-has-title': 'warn', // flip to 'error' here
+  'design-no-kit-restyle': 'error',
+  'design-no-important': 'error',
+  'design-hand-touch-size': 'error',
+  'design-theme-core-only': 'error',
+  'design-theme-roles-both-modes': 'error',
+  'design-overlay-has-title': 'error',
+  'design-theme-local-derived': 'error',
+  'design-exceptions-shrink': 'error',
 });
 
 /** The utilities whose arbitrary value is structure that composes tokens (tracks, a ratio, a stacking index), not a visual value. */
@@ -1174,21 +1177,73 @@ export function designExceptions(dir) {
 /** Every finding under `dir`; paths are relative to `cwd`. `changed`: absolute paths to keep (null: all). */
 export function designFindings(dir, { cwd = process.cwd(), changed = null, scan } = {}) {
   const legacy = existsSync(join(dir, UI_DIR)), exceptions = designExceptions(dir);
-  return designFiles(dir).filter((path) => !changed || changed.has(path))
-    .flatMap((path) => checkSource(relative(cwd, path).split(sep).join('/'), readFileSync(path, 'utf8'), { legacy, ui: relative(dir, path).split(sep).join('/').startsWith(`${UI_DIR}/`), scan, exceptions }));
+  const files = designFiles(dir).filter((path) => !changed || changed.has(path));
+  const found = files.flatMap((path) => checkSource(relative(cwd, path).split(sep).join('/'), readFileSync(path, 'utf8'), { legacy, ui: relative(dir, path).split(sep).join('/').startsWith(`${UI_DIR}/`), scan, exceptions }));
+  const local = files.find((path) => basename(path) === 'theme.derived.css'); // one hit per app, not per line
+  if (local) found.push({ file: relative(cwd, local).split(sep).join('/'), line: 1, rule: 'design-theme-local-derived', level: LEVELS['design-theme-local-derived'], message: 'this app has its own theme.derived.css: delete it and import the kit\'s: app.css, then @hachej/boring-ui-kit/theme.derived.css, then ./theme.core.css' });
+  return found;
 }
 
-export const formatFinding = ({ file, line, rule, message, level }) => `${level === 'warn' ? 'warning ' : ''}${file}:${line} ${rule} ${message}`;
+/**
+ * The exception list, `{"<rule>": {"<file relative to the scanned dir>": <count>}}`, that only shrinks. A rule's first `count` hits in a file are
+ * excepted (`excepted: true`, they do not fail); a hit beyond the count, or in an unlisted file, fails at its level. A count above the real
+ * count, or a listed rule or file with no hits, is a `design-exceptions-shrink` error ("N hits left, lower the list to N"). The Factory gate,
+ * not the kit, refuses a PR that grows the list. With `changed`, only listed files in that set are checked for shrink.
+ */
+export function applyExceptions(findings, list, { dir, cwd, listFile, changed = null }) {
+  const rel = (file) => relative(dir, resolve(cwd, file)).split(sep).join('/');
+  const groups = new Map(), used = new Map();
+  for (const [rule, files] of Object.entries(list)) {
+    if (!files || typeof files !== 'object' || Array.isArray(files)) throw new Error(`${listFile}: "${rule}" must map relative files to counts`);
+    for (const [file, count] of Object.entries(files)) {
+      if (!Number.isInteger(count) || count < 1) throw new Error(`${listFile}: "${rule}" "${file}" must be a positive integer count`);
+      groups.set(`${rule}\0${file}`, count);
+      used.set(`${rule}\0${file}`, 0);
+    }
+  }
+  const out = findings.map((finding) => {
+    const key = `${finding.rule}\0${rel(finding.file)}`;
+    if (!groups.has(key)) return finding;
+    const seen = used.get(key) + 1;
+    used.set(key, seen);
+    return seen <= groups.get(key) ? { ...finding, excepted: true } : finding;
+  });
+  for (const [key, count] of groups) {
+    const [rule, file] = key.split('\0'), real = used.get(key);
+    if (real >= count || (changed && !changed.has(resolve(dir, file)))) continue;
+    out.push({ file: relative(cwd, listFile).split(sep).join('/'), line: 1, rule: 'design-exceptions-shrink', level: LEVELS['design-exceptions-shrink'], message: `${rule} in ${file}: ${real} hits left, lower the list to ${real}${real ? '' : ' (remove it)'}` });
+  }
+  return out;
+}
 
-export const DESIGN_USAGE = 'usage: boring-ui-blocks design <dir> [--changed <file>...] [--json]';
+/** The list for the current hits: every rule's hit count per file, sorted. What `--baseline` prints. */
+export function baselineList(findings, dir, cwd) {
+  const list = {};
+  for (const finding of findings) {
+    const file = relative(dir, resolve(cwd, finding.file)).split(sep).join('/');
+    list[finding.rule] ??= {};
+    list[finding.rule][file] = (list[finding.rule][file] ?? 0) + 1;
+  }
+  return Object.fromEntries(Object.keys(list).sort().map((rule) => [rule, Object.fromEntries(Object.keys(list[rule]).sort().map((file) => [file, list[rule][file]]))]));
+}
+
+export const formatFinding = ({ file, line, rule, message, level, excepted }) => `${excepted ? 'excepted ' : level === 'warn' ? 'warning ' : ''}${file}:${line} ${rule} ${message}`;
+
+export const DESIGN_USAGE = 'usage: boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline]';
+const EXCEPTIONS_FILE = 'design.exceptions.json';
 
 /** `boring-ui-blocks design`: exit 0 when no finding is an error, 1 when one is, 2 on bad arguments. `scan` is the kit's scanAppDesign. */
 export function designMain(args, cwd, log, error, scan = scanAppDesign) {
-  let dir, changed = null, json = false;
+  let dir, changed = null, json = false, listFile = null, baseline = false;
   try {
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '--json') json = true;
-      else if (args[i] === '--changed') {
+      else if (args[i] === '--baseline') baseline = true;
+      else if (args[i] === '--exceptions') {
+        if (!args[i + 1] || args[i + 1].startsWith('--')) throw new Error('--exceptions needs a file');
+        listFile = resolve(cwd, args[++i]);
+        if (!existsSync(listFile)) throw new Error(`no such exceptions file: ${listFile}`);
+      } else if (args[i] === '--changed') {
         changed ??= new Set();
         while (args[i + 1] && !args[i + 1].startsWith('--')) changed.add(resolve(cwd, args[++i]));
       } else if (args[i].startsWith('--')) throw new Error(`unknown argument ${args[i]}`);
@@ -1202,18 +1257,24 @@ export function designMain(args, cwd, log, error, scan = scanAppDesign) {
     return 2;
   }
   let findings;
-  try { findings = designFindings(dir, { cwd, changed, scan }); } catch (cause) {
+  try {
+    findings = designFindings(dir, { cwd, changed, scan });
+    if (baseline) { log(JSON.stringify(baselineList(findings, dir, cwd), null, 2)); return 0; } // prints, writes nothing
+    listFile ??= existsSync(join(dir, EXCEPTIONS_FILE)) ? join(dir, EXCEPTIONS_FILE) : null;
+    if (listFile) findings = applyExceptions(findings, JSON.parse(readFileSync(listFile, 'utf8')), { dir, cwd, listFile, changed });
+  } catch (cause) {
     if (json) log(JSON.stringify({ error: cause.message }));
     else error(`error: ${cause.message}`);
     return 1;
   }
-  const errors = findings.filter((f) => f.level === 'error').length, warnings = findings.length - errors;
+  const live = findings.filter((f) => !f.excepted), excepted = findings.length - live.length;
+  const errors = live.filter((f) => f.level === 'error').length, warnings = live.length - errors;
   const counts = {};
-  for (const f of findings) counts[f.rule] = (counts[f.rule] ?? 0) + 1;
-  if (json) log(JSON.stringify({ ok: !errors, errors, warnings, counts, findings }, null, 2));
+  for (const f of live) counts[f.rule] = (counts[f.rule] ?? 0) + 1;
+  if (json) log(JSON.stringify({ ok: !errors, errors, warnings, excepted, counts, findings }, null, 2));
   else {
     for (const finding of findings) log(formatFinding(finding));
-    log(findings.length ? `design: ${errors} error(s), ${warnings} warning(s)` : 'design: clean');
+    log(findings.length ? `design: ${errors} error(s), ${warnings} warning(s)${excepted ? `, ${excepted} excepted` : ''}` : 'design: clean');
   }
   return errors ? 1 : 0;
 }

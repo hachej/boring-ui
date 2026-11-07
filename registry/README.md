@@ -240,13 +240,15 @@ An app enforces every kit rule with this one command and copies no script; there
 Apps also run their own `lint` (oxlint with the app template's rules) over the blocks they install, except `app-shell`, `pi-chat`, `button` and `utils`. Every other block must pass those rules: `npm run check` runs `scripts/check-block-lint.mjs` with the same config (`scripts/app-oxlint.json`, kept in step with boring-factory's `templates/app/.oxlintrc.json`) over `registry/`, and fails on any error.
 
 ```sh
-npx boring-ui-blocks design <dir> [--changed <file>...] [--json]   # an app's one design check; no components.json needed (features/packages.md, pkg-blocks-design)
+npx boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline]   # an app's one design check; no components.json needed (features/packages.md, pkg-blocks-design)
 npx boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <app web dir>] [--json]
 npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>]
 npx boring-ui-blocks add <shadcn add arguments...> [--overwrite] [--manifest <path>] [--cwd <dir>]
 npx boring-ui-blocks manifest [--manifest <path>] [--cwd <dir>]
 npx boring-ui-blocks help
 ```
+
+`design`: every rule is an error (frozen by design-master after a false-positive read); there is no warn tier, only the `level` field in `--json`. An app with existing hits lists them in `design.exceptions.json` in the scanned directory (or the file named by `--exceptions`), `{"<rule>": {"<file relative to the directory>": <count>}}`. A rule's hits in a file up to the count are `excepted: true` and do not fail; a hit beyond it, or in an unlisted file, fails. The list only shrinks: a count above the real count, or a listed rule or file with no hits, is `design-exceptions-shrink` ("N hits left, lower the list to N"). `--baseline` prints the list for the current hits and writes nothing; the Factory gate, not the kit, refuses a PR that grows a list. `design-theme-local-derived` is one hit per app that has its own `theme.derived.css`: delete it and import the kit's (`app.css`, then `@hachej/boring-ui-kit/theme.derived.css`, then `./theme.core.css`).
 
 `help` (or `--help`) prints the usage and which items to add (`pi-app` for everything, `pi-chat` plus its optional items, the viewer items) and exits 0.
 
