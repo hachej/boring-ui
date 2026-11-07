@@ -3470,6 +3470,39 @@
       ]
     },
     {
+      "name": "file-pick",
+      "type": "registry:component",
+      "title": "File pick",
+      "description": "A Button that opens the file picker (accept, multiple, busy with the kit's spinner), optionally inside a dashed drop strip with a hint. Picks and drops are checked for type and size alike; refused files come back with a reason code and the app writes the words. The input is reset after each pick.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "registry/file-pick/file-pick.tsx",
+          "type": "registry:component",
+          "target": "components/file-pick/file-pick.tsx"
+        }
+      ],
+      "css": {
+        "@layer utilities": {
+          "[data-boring=\"file-pick-drop\"]": {
+            "border-style": "dashed",
+            "border-width": "thin",
+            "border-color": "var(--border)",
+            "border-radius": "var(--radius)"
+          },
+          "[data-boring=\"file-pick-drop\"][data-drag-over=\"true\"]": {
+            "border-color": "var(--primary)",
+            "background-color": "var(--accent)"
+          }
+        }
+      }
+    },
+    {
       "name": "page-header",
       "type": "registry:component",
       "title": "Page header",
