@@ -123,8 +123,17 @@ test('390x844 touch: a tap on the trigger at peek opens half', { skip, timeout: 
   assert.equal(await state(), 'half');
 });
 
-test('390x844 touch: while the sheet is modal, Close is reachable and named; the trigger keeps its role and name in the accessibility tree', { skip, timeout: 120000 }, async () => {
+// The accessibility tree as Chromium computes it (CDP), not only the DOM attributes: is there a non-ignored button named "Ton coach"?
+const exposedInTree = async () => {
+  await browser.send('DOM.enable'); await browser.send('Accessibility.enable');
+  const { root } = await browser.send('DOM.getDocument', { depth: 0 });
+  const { nodes } = await browser.send('Accessibility.queryAXTree', { nodeId: root.nodeId, role: 'button', accessibleName: 'Ton coach' });
+  return nodes.some(node => !node.ignored);
+};
+
+test('390x844 touch: while the sheet is modal, Close is reachable and named; the trigger is a button named "Ton coach" in the accessibility tree', { skip, timeout: 120000 }, async () => {
   await mount(390, 844, true);
+  assert.equal(await exposedInTree(), true, 'closed: the trigger is in the tree');
   for (const at of ['half', 'full']) {
     await open(at);
     const seen = await browser.evaluate(`(() => {
@@ -140,8 +149,32 @@ test('390x844 touch: while the sheet is modal, Close is reachable and named; the
     assert.ok(seen.name && seen.name.trim(), `Close has an accessible name (${at})`);
     assert.equal(seen.triggerRole, true);
     assert.equal(seen.triggerName, 'Ton coach');
-    assert.equal(seen.triggerHidden, false, `the trigger is not under an aria-hidden or inert ancestor at ${at}: a role lookup (button "Ton coach") must find it`);
+    assert.equal(seen.triggerHidden, false, `the trigger is not under an aria-hidden or inert ancestor at ${at}`);
+    assert.equal(await exposedInTree(), true, `the accessibility tree has a button "Ton coach" while the sheet is modal at ${at}`);
     await browser.evaluate(`document.querySelector('[data-testid=agent-layer-close]').click()`); await wait(900);
     assert.equal(await state(), 'closed', `Close closes the layer from ${at}`);
   }
+});
+
+test('390x844 touch: with the agent closed, another modal (a kit Dialog) hides the trigger from assistive tech; at half the trigger is exposed', { skip, timeout: 120000 }, async () => {
+  await mount(390, 844, true);
+  await browser.evaluate(`window.__dialog(true)`); await wait(700);
+  assert.equal(await browser.evaluate(`Boolean(document.querySelector('[role=dialog]'))`), true, 'the Dialog is open');
+  assert.equal(await browser.evaluate(`Boolean(document.querySelector('[data-agent-trigger]').closest('[aria-hidden=true], [inert]'))`), true, 'the trigger is under an aria-hidden ancestor behind the Dialog');
+  assert.equal(await exposedInTree(), false, 'the accessibility tree has no reachable "Ton coach" button behind the Dialog');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-agent-trigger]').hasAttribute('aria-live')`), false, 'no aria-live exception while the agent is closed');
+  await browser.evaluate(`window.__dialog(false)`); await wait(700);
+  await open('half');
+  assert.equal(await exposedInTree(), true, 'at half the trigger is exposed');
+});
+
+test('390x844 touch: a header that grows after the sheet opens at full does not cover the trigger; a tap on it closes', { skip, timeout: 120000 }, async () => {
+  await mount(390, 844, true);
+  await open('full');
+  await browser.evaluate(`document.querySelector('[data-agent-trigger]').closest('header').style.minHeight = '150px'`);
+  await wait(900);
+  const hit = await browser.evaluate(`(() => { const t = document.querySelector('[data-agent-trigger]'), r = t.getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === t || t.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); })()`);
+  assert.equal(hit, true, 'the trigger is the element at its own centre (not under the sheet)');
+  await tap(true); await wait(900);
+  assert.equal(await state(), 'closed');
 });

@@ -1,4 +1,5 @@
-import { useLayoutEffect } from 'react';
+import { useLayoutEffect, useState } from 'react';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../../shadcn/ui/dialog.tsx';
 import { createRoot } from 'react-dom/client';
 import { AppShell } from '../../../registry/app-shell/app-shell.tsx';
 import { useAgentLayer } from '../../../registry/app-shell/agent-layer.tsx';
@@ -10,7 +11,10 @@ const IDLE = Object.freeze({ identity: { runtimeId: 'app', scopeId: 'fictional-t
 const controller = new Proxy({ getSnapshot: () => IDLE, subscribe: () => () => {} }, { get: (target, key) => key in target ? target[key] : () => Promise.resolve() });
 const Mascot = ({ className }) => <svg className={className} viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="currentColor" /></svg>;
 const Probe = () => { const api = useAgentLayer(); useLayoutEffect(() => { window.__layer = api; }); return null; };
-const Day = () => <div><Probe /><p>Ma journée fictive</p><button type="button">Ajouter un repas</button></div>;
+// A kit Dialog the test opens (window.__dialog(true)): another modal, which must hide the trigger from assistive tech.
+const Day = () => { const [shown, show] = useState(false); useLayoutEffect(() => { window.__dialog = show; }, []);
+  return <div><Probe /><p>Ma journée fictive</p><button type="button">Ajouter un repas</button>
+    <Dialog open={shown} onOpenChange={show}><DialogContent><DialogTitle>Confirmer</DialogTitle><DialogDescription>Supprimer ce repas fictif ?</DialogDescription></DialogContent></Dialog></div>; };
 const nav = ['Jour', 'Semaine', 'Mois'].map(label => ({ id: label, label, icon: Mascot, render: () => <Day /> }));
 
 createRoot(document.getElementById('root')).render(

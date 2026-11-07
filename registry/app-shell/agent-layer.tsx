@@ -497,9 +497,11 @@ export function AgentTrigger({ className, children }: { readonly className?: str
   };
   const name = agent.label ?? text.open;
   const Icon = agent.icon;
+  const exposed = layer.showing === 'agent' && (layer.state === 'half' || layer.state === 'full');
   return <Button variant="ghost" size="icon" data-agent-trigger="" data-testid="agent-trigger" aria-label={name} title={name} aria-expanded={layer.state !== 'closed'}
-    // The modal sheet hides the rest of the page from assistive tech (aria-hidden), but Base UI leaves a live region and its ancestors alone: this keeps the trigger a reachable button while the sheet is open. "off" announces nothing.
-    aria-live="off"
+    // Base UI 1.9.0 markOthers (FloatingFocusManager) skips an [aria-live] element and its ancestors in its aria-hidden pass: while the agent's own sheet is
+    // modal (half, full) that keeps the trigger a reachable button; "off" announces nothing. Never otherwise: another modal (a Dialog) must hide it.
+    aria-live={exposed ? 'off' : undefined}
     onPointerDown={down} onPointerUp={release} onPointerCancel={release} onPointerMove={move} onContextMenu={event => event.preventDefault()}
     onClick={event => { if (event.detail === 0) toggle(); }}
     className={cn('touch-none', className)}>
@@ -669,8 +671,21 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const [triggerClear, setTriggerClear] = useState(0);
   useLayoutEffect(() => {
     if (!open || peek) { setTriggerClear(0); return; }
-    const box = document.querySelector('[data-agent-trigger]')?.getBoundingClientRect();
-    setTriggerClear(box && box.bottom > 0 && box.bottom < window.innerHeight / 2 ? Math.ceil(box.bottom + 4) : 0);
+    // Follows the real geometry while open: a header that grows later (an async leading control) moves the trigger down. The lowest of the triggers in the top half counts.
+    const measure = () => {
+      let bottom = 0;
+      for (const trigger of document.querySelectorAll('[data-agent-trigger]')) {
+        const box = trigger.getBoundingClientRect();
+        if (box.bottom > 0 && box.bottom < window.innerHeight / 2) bottom = Math.max(bottom, box.bottom);
+      }
+      setTriggerClear(bottom ? Math.ceil(bottom + 4) : 0);
+    };
+    measure();
+    const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    for (const trigger of document.querySelectorAll('[data-agent-trigger]')) for (const node of [trigger, trigger.parentElement, trigger.closest('header, [role=banner]')]) if (node) watch?.observe(node);
+    window.addEventListener('resize', measure);
+    window.visualViewport?.addEventListener('resize', measure);
+    return () => { watch?.disconnect(); window.removeEventListener('resize', measure); window.visualViewport?.removeEventListener('resize', measure); };
   }, [open, peek, vv?.height]);
 
   // While « Améliorer l'app » shows, the PM panel owns the layer's Back entry (AgentLayerProvider).
