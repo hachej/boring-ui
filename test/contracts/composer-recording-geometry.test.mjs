@@ -58,7 +58,7 @@ test('the composer keeps its box and its trailing control from idle to starting 
     for (const scope of document.querySelectorAll('[data-case]')) { const id = scope.getAttribute('data-case');
       out[id] = { box: rect('[data-slot=input-group]', scope), controls: rect('[data-testid=composer-controls]', scope),
         stop: rect(id !== 'beside' ? '[data-testid=composer-when-empty] button' : '[data-testid=composer-tools] button:last-child', scope), send: rect('[data-testid=composer-submit]', scope), pause: rect('[data-testid=voice-pause]', scope),
-        glyph: (() => { const g = scope.querySelector(id !== 'beside' ? '[data-testid=composer-when-empty] button svg' : '[data-testid=composer-tools] button:last-child svg'); return g ? getComputedStyle(g).fill : null; })(),
+        glyph: (() => { const g = scope.querySelector(id !== 'beside' ? '[data-testid=composer-when-empty] button svg' : '[data-testid=composer-tools] button:last-child svg'); const path = g && g.querySelector('path'); if (!path) return null; const b = path.getBBox(); return path.isPointInFill(new DOMPoint(b.x + b.width / 2, b.y + b.height / 2)); })(),
         starting: !!scope.querySelector('[data-testid=voice-starting]'), dot: !!scope.querySelector('[data-testid=voice-recording-dot]'), timer: scope.querySelector('[data-testid=voice-recording]')?.textContent.trim() ?? null,
         label: scope.querySelector(id !== 'beside' ? '[data-testid=composer-when-empty] button' : '[data-testid=composer-tools] button:last-child')?.getAttribute('aria-label'),
         dotColor: (() => { const dot = scope.querySelector('[data-testid=voice-recording-dot]'); return dot ? getComputedStyle(dot).color : null; })() }; }
@@ -93,7 +93,7 @@ test('the composer keeps its box and its trailing control from idle to starting 
           assert.equal(r.label, 'Stop recording');
           assert.equal(r.pause !== null && r.pause.w === (mobile ? 44 : 36) && r.pause.h === (mobile ? 44 : 36), true, `${width} ${theme} ${layout} ${id}: pause is ${mobile ? 44 : 36}px, got ${JSON.stringify(r.pause)}`);
           assert.equal(r.pause.x + r.pause.w <= r.box.x + r.box.w && r.pause.x > r.box.x + r.box.w / 2, true, 'pause stays at the right of the row');
-          assert.equal(r.glyph !== null && r.glyph !== 'none', true, 'the stop square is filled');
+          assert.equal(r.glyph === true, true, `${width} ${theme} ${layout} ${id}: the stop square is filled at its centre, got ${r.glyph}`);
         }
       }
     }
