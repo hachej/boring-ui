@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Window } from 'happy-dom';
@@ -46,7 +47,23 @@ test.after(() => rmSync(dir, { recursive: true, force: true }));
 
 /** The rendered card (first element on the canvas) of a block. */
 const rendered = markup => { const window = new Window(); window.document.body.innerHTML = markup; return window.document.body.firstElementChild; };
-const classOf = element => String(element.getAttribute('class') ?? '');
+// The clickable SpaceCard's fill is item css in registry.json (D-1745), not classes: the Button's own `secondary` classes are the base and the
+// css wins over them. Read it from there, so removing or changing the css changes what these tests see.
+const spaceCss = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.find(item => item.name === 'space-card').css?.['@layer utilities'] ?? {};
+const token = value => /^var\(--([\w-]+)\)$/.exec(value ?? '')?.[1];
+const skinClasses = element => {
+  if (element.getAttribute('data-boring') !== 'space-card' || element.getAttribute('data-slot') !== 'button') return [];
+  const scope = '[data-slot="button"][data-boring="space-card"]';
+  const fill = token(spaceCss[scope]?.['background-color']), hover = token(spaceCss[`${scope}:hover`]?.['background-color']);
+  return [fill && `bg-${fill}`, hover && `hover:bg-${hover}`].filter(Boolean);
+};
+const classOf = element => {
+  const own = String(element.getAttribute('class') ?? '');
+  const skin = skinClasses(element);
+  if (!skin.length) return own;
+  // The css outranks the Button variant's fill and hover fill, so those classes no longer decide the look.
+  return own.split(/\s+/).filter(name => !/^(?:hover:)?bg-/.test(name)).concat(skin).join(' ');
+};
 const classes = element => classOf(element).split(/\s+/);
 /** The surface an element's ancestors give it: the nearest painted ancestor, else the canvas. */
 const under = (element, mode, card) => { for (let up = element.parentElement; up && up !== card.parentElement; up = up.parentElement) { const token = surfaceOf(classOf(up), mode); if (token) return token; } return 'background'; };
