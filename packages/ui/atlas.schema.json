@@ -43,7 +43,7 @@
         "steps": {
           "description": "In order: open <screen>, upload [<fixture>] (default given.fixture), click <label>, fill <label> <value>, wait <text> (atlas only). Quote a multi-word label or value \"like this\" or with guillemets.",
           "type": "array",
-          "items": { "type": "string", "pattern": "^\\s*(?:(?:open|click|fill|wait)\\s+\\S|upload(?:\\s+\\S)?\\s*$)" }
+          "items": { "type": "string", "pattern": "^\\s*(?:(?:open|click|fill|wait)\\s+\\S|upload(?:\\s+\\S+)?\\s*$)" }
         }
       }
     }
