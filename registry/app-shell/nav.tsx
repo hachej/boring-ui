@@ -154,7 +154,7 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
   </Sidebar>;
   if (rail !== 'hover') return sidebar;
   // Reserve the native inset icon gap even while the fixed sidebar reveals its labels over the page.
-  return <div data-rail="hover" className="relative z-20 w-[calc(var(--sidebar-width-icon)+(--spacing(4)))] shrink-0"
+  return <div data-rail="hover" className="relative z-20 w-[calc(var(--sidebar-w-icon)+(--spacing(4)))] shrink-0"
     onPointerEnter={event => { if (event.pointerType === 'mouse' || event.pointerType === 'pen') setOpen(true); }}
     onPointerLeave={() => setOpen(false)}
     onFocusCapture={event => { if (event.target.matches(':focus-visible')) setOpen(true); }}

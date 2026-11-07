@@ -93,8 +93,9 @@ const FULL = 1;
 /** Hold the trigger this long before it records; shorter is a tap. */
 const HOLD_MS = 350;
 /**
- * From this width the assistant dock and the PM column are open together: the expanded sidebar (16rem) + the screen's least width
+ * From this width the assistant dock and the PM column are open together: the expanded sidebar (the default `--sidebar-width`, 16rem) + the screen's least width
  * (`DockLayout`'s 360px) + the dock's least width (320px) + the PM column (26rem) = 1352px. Below it they are one at a time, as on a phone.
+ * A media query cannot read `--sidebar-width`, so this stays a constant for the default 16rem. A narrower themed sidebar only adds room; a sidebar wider than 16.5rem (8px of slack) needs this raised.
  */
 const TOGETHER_FROM = 1360;
 const TOGETHER_QUERY = `(width >= ${TOGETHER_FROM}px)`;
