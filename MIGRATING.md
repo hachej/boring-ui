@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`TableCell truncate`: a one-line cell with an ellipsis (bundled `table` primitive; D-1861).** `<TableCell truncate>` renders its children in an inner block (`data-slot="table-cell-truncate"`: overflow hidden, nowrap, ellipsis, `max-width: var(--table-cell-truncate-max, 16rem)`, which a td would ignore) and sets `data-truncate` on the td; pass `title` for the full text (a plain string child is the default title). Without the prop nothing changes. The kit Table has no stacked phone layout (only the `data-table` block stacks), so a cell wraps or truncates the same at 390. Consumer action: re-sync `table`; replace `className="max-w-36 truncate"` on a `TableCell` with `truncate` (retune with `--table-cell-truncate-max`). Test: `test/contracts/table-cell-truncate-geometry.test.mjs`.
+
 # Migrating to 0.4.69
 
 - **`boring-ui-blocks design`: comments only, no behaviour change (D-1789).** The check's header now says every rule is an error, with existing hits frozen in `design.exceptions.json`; the BLOCKS map's comment points app authors to the 'Need to block' section of `skills/boring-design-system/SKILL.md` instead of boring-factory's kit-blocks.md. No consumer action.

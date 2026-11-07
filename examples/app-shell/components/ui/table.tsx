@@ -79,16 +79,41 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
   )
 }
 
-function TableCell({ className, ...props }: React.ComponentProps<"td">) {
+/**
+ * `truncate` makes the cell one line with an ellipsis (D-1861): the children go in an inner block, because a td ignores max-width in an
+ * auto-layout table. The block is bounded by `--table-cell-truncate-max` (default 16rem). The full text stays in `title`; a plain string
+ * child is the default title.
+ */
+function TableCell({
+  className,
+  truncate,
+  title,
+  children,
+  ...props
+}: React.ComponentProps<"td"> & { truncate?: boolean }) {
   return (
     <td
       data-slot="table-cell"
+      data-truncate={truncate ? "" : undefined}
+      title={title ?? (truncate && typeof children === "string" ? children : undefined)}
       className={cn(
         "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}
-    />
+    >
+      {truncate ? (
+        <div
+          data-slot="table-cell-truncate"
+          className="overflow-hidden text-ellipsis whitespace-nowrap"
+          style={{ maxWidth: "var(--table-cell-truncate-max, 16rem)" }}
+        >
+          {children}
+        </div>
+      ) : (
+        children
+      )}
+    </td>
   )
 }
 
