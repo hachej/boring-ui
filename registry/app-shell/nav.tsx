@@ -116,7 +116,7 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
   const { before, after } = placeNav(items);
   const navGroup = (group: readonly NavItem[], className?: string, testId?: string) => group.length > 0 && <SidebarGroup className={className} data-testid={testId}><SidebarGroupContent><SidebarMenu>
     {group.map(item => <SidebarMenuItem key={item.id}>
-      <SidebarMenuButton isActive={item.id === activeId} tooltip={item.label} data-testid={`nav-${item.id}`} className="pointer-coarse:min-h-11 pointer-coarse:min-w-11" onClick={() => choose(item.id)}>
+      <SidebarMenuButton isActive={item.id === activeId} tooltip={item.label} data-testid={`nav-${item.id}`} className="pointer-coarse:min-h-[var(--control-min,2.75rem)] pointer-coarse:min-w-[var(--control-min,2.75rem)]" onClick={() => choose(item.id)}>
         <item.icon />
         <span>{item.label}</span>
         {item.badge && <Dot className="ml-auto group-data-[collapsible=icon]:hidden" />}
@@ -141,7 +141,7 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
       {agent && <>
         {items.length > 1 && <SidebarSeparator />}
         <SidebarGroup><SidebarGroupContent><SidebarMenu><SidebarMenuItem>
-          <SidebarMenuButton isActive={pressed} aria-pressed={pressed} tooltip={agentLabel} data-testid="nav-agent" className="pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+          <SidebarMenuButton isActive={pressed} aria-pressed={pressed} tooltip={agentLabel} data-testid="nav-agent" className="pointer-coarse:min-h-[var(--control-min,2.75rem)] pointer-coarse:min-w-[var(--control-min,2.75rem)]"
             onClick={() => { setOpenMobile(false); if (pressed) layer.close(); else layer.open('agent', 'half'); }}>
             <AgentIcon /><span>{agentLabel}</span>
           </SidebarMenuButton>
