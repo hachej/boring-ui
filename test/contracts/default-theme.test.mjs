@@ -61,7 +61,7 @@ test('default theme source and published output expose the original surface, typ
 async function installTheme(existing = '') {
   // The theme may declare exactly one package, its mono font (it loads nothing; see registry/README.md). This offline fixture installs a copy without it, so the CLI never reaches the network.
   assert.deepEqual(published.dependencies, ['@fontsource-variable/geist-mono@5.3.0'], 'the theme declares its font package and nothing else');
-  assert.equal(published.registryDependencies, undefined, 'theme fixture must not fetch dependent items');
+  assert.deepEqual(published.registryDependencies.map(url => url.split('/').at(-1)), ['touch-floor.json'], 'the theme lists the one fileless touch-floor item (D-1770), whose css reaches the app; the offline fixture does not fetch it');
   const evidence = join(root, '.cache/evidence/default-spec');
   mkdirSync(evidence, { recursive: true });
   const directory = mkdtempSync(join(evidence, 'installed-'));
@@ -69,7 +69,7 @@ async function installTheme(existing = '') {
   writeFileSync(join(directory, 'package.json'), JSON.stringify({ name: 'fictional-theme-consumer', private: true, type: 'module', dependencies: {} }));
   writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@/*': ['./src/*'] } } }));
   writeFileSync(join(directory, 'components.json'), JSON.stringify({ $schema: 'https://ui.shadcn.com/schema.json', style: 'base-nova', rsc: false, tsx: true, tailwind: { config: '', css: 'src/index.css', baseColor: 'neutral', cssVariables: true }, aliases: { components: '@/components', utils: '@/lib/utils', ui: '@/components/ui' } }));
-  writeFileSync(join(directory, 'theme.offline.json'), JSON.stringify({ ...published, dependencies: undefined }));
+  writeFileSync(join(directory, 'theme.offline.json'), JSON.stringify({ ...published, dependencies: undefined, registryDependencies: undefined }));
   writeFileSync(join(directory, 'src/index.css'), `@import "tailwindcss";\n${existing}`);
   const installed = spawnSync(process.execPath, [require.resolve('shadcn'), 'add', join(directory, 'theme.offline.json'), '--cwd', directory, '--yes'], { encoding: 'utf8', timeout: 60000, env: { ...process.env, XDG_CACHE_HOME: join(directory, 'cache') } });
   writeFileSync(join(directory, 'cli.log'), installed.stdout + installed.stderr);

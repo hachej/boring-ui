@@ -126,8 +126,8 @@ test('with the feedback prop: ONE annotate button beside the + menu in both layo
     assert.ok(button, name);
     assert.match(button, /aria-pressed="false"/);
     assert.match(button, /data-slot="toggle"/, 'the consumer owns the control');
-    const css = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.find(item => item.name === 'pi-chat').css;
-    assert.equal(css['@layer utilities']['@media (width < 768px), (pointer: coarse)']['.pi-chat :is([data-slot="button"], [data-slot="toggle"], [class~="group/button"], [class~="group/toggle"]):where(:not([data-size="inline"]))']['min-height'], 'var(--control-min, 2.75rem)', '44px on touch (0 in a data-density=compact frame), without overriding the desktop component size');
+    const css = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8')).items.find(item => item.name === 'touch-floor').css;
+    assert.equal(css['@layer utilities']['@media (width < 768px), (pointer: coarse)'][':root :is([data-slot="button"], [data-slot="toggle"], [data-slot="toggle-group-item"], [class~="group/button"], [class~="group/toggle"]):where(:not([data-size="inline"], [data-density="compact"], [data-density="compact"] *))']['min-height'], 'var(--control-min, 2.75rem)', '44px on touch from the touch-floor item (no scope class; no floor in a data-density=compact frame), without overriding the desktop component size');
     assert.ok(html.indexOf('data-attach="true"') < html.indexOf('data-testid="composer-annotate"'), 'after the file input and the + menu');
     assert.equal((html.match(/composer-annotate/g) ?? []).length, 1);
     assert.doesNotMatch(html, /composer-feedback|composer-point|feedback-bar|feedback-chip|feedback-general/, 'no Feedback button, Show in app, or Feedback block');

@@ -6,6 +6,9 @@
   "dependencies": [
     "@fontsource-variable/geist-mono@5.3.0"
   ],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/touch-floor.json"
+  ],
   "cssVars": {
     "theme": {
       "color-background": "var(--background)",

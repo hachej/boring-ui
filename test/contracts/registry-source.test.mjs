@@ -118,6 +118,10 @@ test('registry dependency pins and scoped styles preserve the declared source di
       for (const token of ['background', 'foreground', 'muted', 'muted-foreground', 'border', 'ring', 'primary', 'primary-foreground', 'destructive', 'radius']) assert.ok(token in light, token);
       continue;
     }
+    if (item.name === 'touch-floor') { // D-1770: the one fileless item with the touch floor rule (global, not block-scoped), so it has no block prefix
+      assert.equal(item.files, undefined); assert.deepEqual(Object.keys(item.css), ['@layer utilities']); assert.equal(item.dependencies, undefined);
+      continue;
+    }
     // No item installs the theme: blocks use the app's shadcn tokens, and an app without them adds the theme once (registry/README.md).
     assert.ok(!closureOf(item.name).has('theme'), `${item.name} depends on @boring-ui/theme`);
     const declared = new Set();
