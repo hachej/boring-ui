@@ -8,7 +8,7 @@ The Atlas is one catalogue of every screen and state of an app, shot the same wa
 
 ## How to get to it (user POV)
 
-- An app writes `web/src/atlas.json` (point `$schema` at `@hachej/boring-ui/atlas.schema.json` for editor help) and runs `npx boring-ui-blocks atlas web/src --check --fixtures features/fixtures`. Each finding prints with its path, such as `states[2].given.steps[0]`; the exit code is 1 on any finding, 0 otherwise.
+- An app writes `web/src/atlas.json` (point `$schema` at `@hachej/boring-ui-kit/atlas.schema.json` for editor help) and runs `npx boring-ui-blocks atlas web/src --check --fixtures features/fixtures`. Each finding prints with its path, such as `states[2].given.steps[0]`; the exit code is 1 on any finding, 0 otherwise.
 
 ## Driving it with the kit's node tests
 

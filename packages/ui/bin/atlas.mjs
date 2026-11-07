@@ -2,7 +2,7 @@
 // beside this file); this module is the hand-written validator for it (no JSON Schema dependency) plus what a schema cannot say: duplicate
 // ids, the step grammar and the fixture files an app has. test/atlas.test.mjs holds the two in agreement.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 const ID = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$/;
 const SYNTHETIC = /^[^/\\\s]+\.synthetic\.[^/\\\s]+$/;
@@ -10,24 +10,33 @@ const STATE_KEYS = ['id', 'page', 'title', 'given', 'flow', 'after'];
 const VERBS = ['open', 'upload', 'click', 'fill', 'wait'];
 const nonEmpty = v => typeof v === 'string' && v.trim() !== '';
 const isObject = v => v && typeof v === 'object' && !Array.isArray(v);
-const CLOSE = { '"': '"', '«': '»' };
+// The step grammar is boring-factory's, copied: templates/app/test/examples-core.ts (QUOTES line 13, token 16-25, phrase 28, parseStep 32-43).
+// A phrase is quoted "like this", 'like this', « like this » or “like this” (the quotes come off, the inside is trimmed); an unquoted
+// single-argument step takes the rest of the line; `fill` takes a label (one word or quoted) then the rest as its value. Only stricter
+// than Factory in one place: a phrase that opens a quote and never closes it is a finding (Factory reads it as a plain word).
+const QUOTES = { '"': '"', "'": "'", '«': '»', '“': '”' };
 
-/** One argument at `i`: a "double-quoted" or « guillemet » span, else (`rest`) the rest of the line or (not) the next word. */
-function token(text, i, rest) {
-  const close = CLOSE[text[i]];
+/** The first word or quoted phrase of `text` and what follows it (examples-core.ts `token`), or `{ error }` for an unclosed quote. */
+function token(text) {
+  const s = text.trim();
+  if (!s) return null;
+  const close = QUOTES[s[0]];
   if (close) {
-    const end = text.indexOf(close, i + 1);
-    if (end < 0) return { error: `unbalanced quote: close the ${text[i]} with ${close}` };
-    return { value: text.slice(i + 1, end), end: end + 1 };
+    const end = s.indexOf(close, 1);
+    if (end > 0) return { value: s.slice(1, end).trim(), rest: s.slice(end + 1).trim() };
+    return { error: `unbalanced quote: close the ${s[0]} with ${close}` };
   }
-  const end = rest ? text.length : (/\s/.exec(text.slice(i))?.index ?? text.length - i) + i;
-  return { value: text.slice(i, end).trim(), end };
+  const space = s.search(/\s/);
+  return space < 0 ? { value: s, rest: '' } : { value: s.slice(0, space), rest: s.slice(space).trim() };
+}
+/** A whole phrase, one pair of quotes taken off (examples-core.ts `phrase`). */
+function phrase(text) {
+  const t = token(text);
+  if (t?.error) return t;
+  return { value: t && !t.rest ? t.value : text.trim() };
 }
 
-/**
- * Reads a step of the examples.json grammar: `{ verb, args }`, or `{ error }`. `open <screen>`, `upload [<fixture>]`, `click <label>`,
- * `fill <label> <value>`, `wait <text>`; a multi-word label or value is quoted "like this" or « like this ».
- */
+/** Reads a step: `{ verb, args }`, or `{ error }`. `open <screen>`, `upload [<fixture>]`, `click <label>`, `fill <label> <value>`, `wait <text>`. */
 export function parseStep(step) {
   if (typeof step !== 'string') return { error: 'a step is a string' };
   const text = step.trim();
@@ -35,15 +44,12 @@ export function parseStep(step) {
   if (!VERBS.includes(verb)) return { error: `unknown step verb "${verb}" (${VERBS.join(', ')})` };
   const rest = text.slice(verb.length).trim();
   if (!rest) return verb === 'upload' ? { verb, args: [] } : { error: `${verb} needs ${verb === 'fill' ? 'a label and a value' : 'an argument'}` };
-  const first = token(rest, 0, verb !== 'fill');
-  if (first.error) return first;
-  const after = rest.slice(first.end).trim();
-  if (verb !== 'fill') return after ? { error: `${verb} takes one argument: quote it when it holds spaces` } : { verb, args: [first.value] };
-  if (!after) return { error: 'fill needs a label and a value' };
-  const second = token(after, 0, true);
-  if (second.error) return second;
-  if (after.slice(second.end).trim()) return { error: 'fill takes a label and a value: quote the one that holds spaces' };
-  return { verb, args: [first.value, second.value] };
+  if (verb !== 'fill') { const p = phrase(rest); return p.error ? p : { verb, args: [p.value] }; }
+  const label = token(rest);
+  if (label.error) return label;
+  if (!label.rest) return { error: 'fill needs a label and a value' };
+  const value = phrase(label.rest);
+  return value.error ? value : { verb, args: [label.value, value.value] };
 }
 
 /** Findings `{ id?, path, message }` for a parsed manifest; `fixtures` (file names the app has) makes a missing file an error. */
@@ -113,13 +119,13 @@ export function atlasMain(args, cwd, log, error) {
   }
   if (positional.length !== 1) { error(ATLAS_USAGE); return 2; }
   if (!flags.check) { error('atlas: shooting lands in the next slice; for now only `atlas <dir> --check` runs'); return 2; }
-  const file = join(cwd, positional[0], 'atlas.json');
+  const file = resolve(cwd, positional[0], 'atlas.json');
   const report = list => { if (flags.json) log(JSON.stringify(list, null, 2)); else for (const f of list) log(`${file}: ${f.path || '(root)'}: ${f.message}`); return list.length ? 1 : 0; };
   let fixtures;
   if (flags.fixtures) {
-    const dir = join(cwd, flags.fixtures);
+    const dir = resolve(cwd, flags.fixtures);
     if (!existsSync(dir) || !statSync(dir).isDirectory()) { error(`${flags.fixtures}: --fixtures is the directory of the app's fixture files`); return 2; }
-    fixtures = readdirSync(dir);
+    fixtures = readdirSync(dir).filter(name => { try { return statSync(join(dir, name)).isFile(); } catch { return false; } });
   }
   if (!existsSync(file)) return report([{ path: '', message: 'atlas.json not found' }]);
   let manifest;
