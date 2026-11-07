@@ -1,6 +1,7 @@
 # Unreleased
 
 - **Atlas manifest and `boring-ui-blocks atlas <dir> --check` (new, additive; D-1831 slice 1).** An app may write `web/src/atlas.json` (states with `id`, `page`, `title`, `given: { fixture, steps }`, optional `flow` and `after`) and validate it with the new `atlas` command against the published `@hachej/boring-ui-kit/atlas.schema.json`; `--fixtures <dir>` also requires each named fixture file to exist. Shooting and the viewer come in later slices. No consumer action. Test: `test/atlas.test.mjs`; see `features/atlas.md`.
+
 # Migrating to 0.4.69
 
 - **`boring-ui-blocks design`: comments only, no behaviour change (D-1789).** The check's header now says every rule is an error, with existing hits frozen in `design.exceptions.json`; the BLOCKS map's comment points app authors to the 'Need to block' section of `skills/boring-design-system/SKILL.md` instead of boring-factory's kit-blocks.md. No consumer action.
