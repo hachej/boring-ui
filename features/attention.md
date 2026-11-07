@@ -20,6 +20,7 @@ Preconditions: `node_modules` installed, so in CI on this VM.
 
 ## Gotchas
 
+- `inline-question-equal-options` (D-1764) the choices of a `question` are all outline buttons: none is primary by position. An option is its text or `{ label, recommended }`; only the first option marked `recommended` is the primary (filled) button; the answer is still the label. A `decision` keeps Approve primary and Refuse secondary. The chat's `ask_user` arguments are plain strings (`packages/agent/src/ask-user.ts`, schema owned here, not by Pi), so a chat question has no marked option today. Drive it: `node --test test/ui/inline-question-options.test.mjs` (no marker, one marked in the middle, two marked, a decision), or pass `options: ['a', { label: 'b', recommended: true }]` in the studio.
 - The block sends nothing. `onAnswer` is the host's job; keep the question id in the host's closure.
 - Store the decision value (`'approve'` or `'refuse'`), not the label; pass it back as `answered`. Labels (`labels`) only change the words.
 - Choices beyond four are dropped; a longer list is a form, not an inline question.
