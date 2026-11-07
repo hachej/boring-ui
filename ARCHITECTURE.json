@@ -629,7 +629,8 @@
       "@hachej/boring-ui-kit/text-buffer",
       "@hachej/boring-ui-kit/file-tree",
       "@hachej/boring-ui-kit/file-tree-view",
-      "@hachej/boring-ui-kit/file-tree.css"
+      "@hachej/boring-ui-kit/file-tree.css",
+      "@hachej/boring-ui-kit/app.css"
     ],
     "defaultIcons": "registry/_shared/icons.ts is the fixed semantic symbol map for registry blocks and bundled shadcn/ui primitives; @phosphor-icons/react@2.1.10 by default. Existing icon props and installed shared-module swaps remain host customization; tokens do not choose icons. Package-owned file-tree and embedded licensed Markdown assets remain separate."
   }

@@ -144,6 +144,7 @@
       "import": "./dist/file-tree-view.js"
     },
     "./file-tree.css": "./styles/file-tree.css",
+    "./app.css": "./styles/app.css",
     "./markdown-quote": {
       "types": "./dist/markdown-quote.d.ts",
       "import": "./dist/markdown-quote.js"
