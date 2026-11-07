@@ -25,10 +25,7 @@ import { PanelLeftIcon } from "../../registry/_shared/icons"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
-const SIDEBAR_WIDTH = "16rem"
-const SIDEBAR_WIDTH_MOBILE = "18rem"
-// The collapsed row is the control size (--control-h, never under the 44px touch floor on a coarse pointer); the rail is that and the 1rem of padding.
-const SIDEBAR_WIDTH_ICON = "calc(var(--sidebar-row) + 1rem)"
+// --sidebar-width, --sidebar-width-icon and --sidebar-width-mobile are theme tokens: the app-shell item defaults them on :root (@layer base); an app sets them in its theme.core.css, a SidebarProvider `style` still wins.
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
 type SidebarContextProps = {
@@ -129,13 +126,7 @@ function SidebarProvider({
     <SidebarContext.Provider value={contextValue}>
       <div
         data-slot="sidebar-wrapper"
-        style={
-          {
-            "--sidebar-width": SIDEBAR_WIDTH,
-            "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
-            ...style,
-          } as React.CSSProperties
-        }
+        style={style}
         className={cn(
           "group/sidebar-wrapper flex min-h-svh w-full [--sidebar-row:var(--control-h,2.25rem)] pointer-coarse:[--sidebar-row:max(var(--control-h,2.25rem),var(--control-min,2.75rem))] has-data-[variant=inset]:bg-sidebar",
           className
@@ -186,12 +177,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
-          style={
-            {
-              "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
-            } as React.CSSProperties
-          }
+          className="w-(--sidebar-width-mobile) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
           side={side}
         >
           <SheetHeader className="sr-only">
