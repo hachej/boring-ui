@@ -111,8 +111,13 @@ try {
     await browser.click(q('[data-testid=voice-pause]')); await pause(400);
     assert.equal(await browser.evaluate(`!!${q('[data-testid=agent-recording]')}`), false, 'no separate recording bar');
     assert.equal(await browser.evaluate(`${q('[data-testid=composer]')}.contains(${q('[data-testid=voice-recording]')})`), true);
+    // D-1741: 44px on touch / under md, the control height (`--control-h`, read from the page) on a fine pointer from md up.
+    const touch = await browser.evaluate('matchMedia("(pointer: coarse)").matches || innerWidth < 768');
+    const controlHeight = await browser.evaluate(`(() => { const probe = document.createElement('div'); probe.style.cssText = 'position:absolute;visibility:hidden;height:var(--control-h, 2.25rem)'; document.body.append(probe); const h = probe.getBoundingClientRect().height; probe.remove(); return h; })()`);
+    const expected = touch ? 44 : controlHeight;
+    assert.ok(touch ? controlHeight === 44 : controlHeight > 0 && controlHeight < 44, `--control-h is ${controlHeight}px on ${device}`);
     const buttons = await browser.evaluate(`[${q('[data-testid=agent-talk]')}, ${q('[data-testid=composer-voice-cancel]')}, ${q('[data-testid=voice-pause]')}].map(button => { const r = button.getBoundingClientRect(); return { height: r.height, width: r.width }; })`);
-    assert.ok(buttons.every(button => button.height >= 44 && button.width >= 44), '44px recording actions');
+    assert.ok(buttons.every(button => Math.abs(button.height - expected) <= 0.5 && button.width >= expected - 0.5), `${expected}px recording actions on ${device}: ${JSON.stringify(buttons)}`);
     assert.equal(await browser.evaluate(`(() => { const composer = ${q('[data-testid=composer]')}.getBoundingClientRect(); return [...${q('[data-testid=composer-controls]')}.querySelectorAll('button')].every(button => { const r = button.getBoundingClientRect(); return r.left >= composer.left && r.right <= composer.right; }); })()`), true, 'all composer actions stay inside the composer');
     const stable = await browser.evaluate(`${q('[data-testid=voice-recording-bar]')}.getBoundingClientRect().bottom`); await pause(1100);
     assert.ok(Math.abs(await browser.evaluate(`${q('[data-testid=voice-recording-bar]')}.getBoundingClientRect().bottom`) - stable) <= 1, 'recording bar geometry stable');
