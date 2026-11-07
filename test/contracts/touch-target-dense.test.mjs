@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 // --control-min to 0 (D-1741; it replaces `data-dense`). The published registry item's rule and the theme's token are applied by a real browser:
 // the default still applies, the opt-out works. The browser part is skipped where no Chromium is installed.
 const registry = JSON.parse(readFileSync(new URL('../../registry.json', import.meta.url), 'utf8'));
-const rules = registry.items.find(item => item.name === 'theme').css['@layer utilities']['@media (width < 768px), (pointer: coarse)'];
+const rules = registry.items.find(item => item.name === 'touch-floor').css['@layer utilities']['@media (width < 768px), (pointer: coarse)'];
 const [selector, declaration] = Object.entries(rules)[0];
 const tokens = registry.items.find(item => item.name === 'theme').css['@layer base'];
 const tokenCss = `:root { ${Object.entries(tokens[':root']).map(([k, v]) => `${k}: ${v}`).join('; ')} }

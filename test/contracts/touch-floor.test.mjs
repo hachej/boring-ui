@@ -21,7 +21,21 @@ const block = vars => Object.entries(vars).map(([key, value]) => `--${key}: ${va
 const floored = ['legacy-sm', 'legacy-icon-sm', 'legacy-xs', 'kit-sm', 'kit-icon-sm', 'toggle-sm', 'group-item'];
 const ids = [...floored, 'inline']; // inline (D-1767) is a link inside a line of text: data-size="inline" is excluded from the floor
 
-test('small controls are 44px on touch with no scope class, in a portaled popover too, and keep their sizes on a fine pointer and in compact', { skip: !process.env.CHROMIUM && !process.env.CI, timeout: 300000 }, async () => {
+// What `shadcn add <item>` writes into the app's CSS: the item's own css and that of every item in its registryDependencies, nothing else.
+const closure = (name, seen = new Set()) => { if (seen.has(name)) return seen; seen.add(name); for (const dependency of item(name).registryDependencies ?? []) closure(dependency.replace('@boring-ui/', ''), seen); return seen; };
+test('the touch floor is one fileless item that the theme and every block with floored controls depend on', () => {
+  const floor = item('touch-floor');
+  assert.equal(floor.files, undefined, 'no files: shadcn add and boring-ui-blocks update (which re-adds each installed block) both resolve it through registryDependencies');
+  assert.deepEqual(Object.keys(floor.css), ['@layer utilities']);
+  for (const name of ['theme', 'pi-chat', 'app-shell', 'viewer-frame', 'feedback']) assert.ok(item(name).registryDependencies.includes('@boring-ui/touch-floor'), `${name} installs the touch floor`);
+  assert.equal(JSON.stringify(item('theme').css).includes('min-height'), false, 'the theme item holds the tokens only; the rule has one owner');
+  for (const name of ['pi-chat', 'app-shell', 'viewer-frame', 'feedback']) assert.equal(closure(name).has('theme'), false, `${name} never installs the theme`);
+  for (const other of registry.items) if (other.name !== 'touch-floor') assert.equal(JSON.stringify(other.css ?? {}).includes('toggle-group-item'), false, `${other.name} carries no second copy of the floor`);
+});
+
+// The branded host: it never ran `add theme` (no tokens, so --control-min falls back to 44px) and installed only a block.
+const variants = [{ name: 'with the theme item', theme: true }, { name: 'a branded app with only pi-chat and its CSS, no theme item', theme: false }];
+for (const variant of variants) test(`small controls are 44px on touch with no scope class (${variant.name}), in a portaled popover too, and keep their sizes on a fine pointer and in compact`, { skip: !process.env.CHROMIUM && !process.env.CI, timeout: 300000 }, async () => {
   assert.ok(process.env.CHROMIUM, 'CHROMIUM must be set when CI is set');
   mkdirSync(join(root, '.cache'), { recursive: true });
   const work = mkdtempSync(join(root, '.cache/touch-floor-'));
@@ -34,7 +48,8 @@ test('small controls are 44px on touch with no scope class, in a portaled popove
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
   const vars = item('theme').cssVars;
   // Only the theme item's own CSS: the floor must not depend on a block that scopes it.
-  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${registryCss(item('theme'))}`;
+  const blockCss = [...closure('pi-chat')].map(name => registryCss(item(name))).join('\n');
+  const cssSource = !variant.theme ? `@import "tailwindcss";\n${blockCss}` : `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${registryCss(item('theme'))}\n${registryCss(item('touch-floor'))}`;
   const compiler = await compile(cssSource, { base: root, loadStylesheet: async id => {
     const path = require.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id);
     return { path, base: dirname(path), content: readFileSync(path, 'utf8') };
@@ -65,7 +80,9 @@ test('small controls are 44px on touch with no scope class, in a portaled popove
       assert.equal(await browser.evaluate(`document.querySelector('#root [data-testid="popover-content"]') === null && document.body.contains(document.querySelector('[data-testid="popover-content"]'))`), true, 'the popover is portaled out of #root');
       assert.equal(await browser.evaluate(`document.querySelector('.pi-chat, .app-shell, .boring-viewer')`), null, 'no scope class on the page');
       const sizes = await measure();
-      if (!mobile) {
+      if (!mobile && !variant.theme) { // no theme tokens: the desktop heights are the app's own; the floor must simply not apply at 1280
+        for (const id of floored) if (sizes.plain[id]?.[1] >= 44) violations.push(`1280 plain ${id}: floored on a fine pointer`);
+      } else if (!mobile) {
         fine = sizes;
         // The kit's sizes on a fine pointer: sm and icon-sm 24, xs 20, Toggle sm 32 high, nothing floored.
         assert.deepEqual([sizes.plain['legacy-sm'][1], sizes.plain['legacy-icon-sm'], sizes.plain['legacy-xs'][1], sizes.plain['kit-sm'][1], sizes.plain['kit-icon-sm'], sizes.plain['toggle-sm'][1]], [24, [24, 24], 20, 24, [24, 24], 32], '1280 fine sizes');
@@ -74,10 +91,10 @@ test('small controls are 44px on touch with no scope class, in a portaled popove
         for (const where of ['plain', 'popover']) for (const id of floored) if (!(sizes[where][id]?.[0] >= 44 && sizes[where][id]?.[1] >= 44)) violations.push(`${where} ${id}: ${JSON.stringify(sizes[where][id])} under 44x44`);
         for (const where of ['plain', 'popover']) if (!(sizes[where].inline?.[1] < 30)) violations.push(`${where} inline: ${JSON.stringify(sizes[where].inline)} should stay at text height`);
         // data-density="compact" on a phone is the desktop density: the same sizes as at 1280, no floor.
-        assert.deepEqual(sizes.compact, fine.compact, '390 compact frame keeps the desktop sizes');
+        if (variant.theme) assert.deepEqual(sizes.compact, fine.compact, '390 compact frame keeps the desktop sizes');
       }
-      if (shots) await browser.screenshot(`floor-${width}-page.png`);
-      if (shots) {
+      if (shots && variant.theme) await browser.screenshot(`floor-${width}-page.png`);
+      if (shots && variant.theme) {
         await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?only=dense` });
         await browser.until('dense row mounted', `document.querySelector('[data-case=dense] button') !== null && document.readyState === 'complete'`);
         await new Promise(done => setTimeout(done, 500));

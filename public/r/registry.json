@@ -285,7 +285,18 @@
             "--control-h": "2.25rem",
             "--control-min": "0rem"
           }
-        },
+        }
+      },
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/touch-floor.json"
+      ]
+    },
+    {
+      "name": "touch-floor",
+      "type": "registry:style",
+      "title": "Touch floor",
+      "description": "The 44px touch floor for small controls (Button, Toggle, ToggleGroupItem) on a phone or coarse pointer, with no scope class. It carries only this one CSS rule and no files, and every block whose controls need it lists it, so it installs with them whether or not the app took the theme. It reads --control-min (44px fallback) and skips data-density=\"compact\" and size=\"inline\".",
+      "css": {
         "@layer utilities": {
           "@media (width < 768px), (pointer: coarse)": {
             ":root :is([data-slot=\"button\"], [data-slot=\"toggle\"], [data-slot=\"toggle-group-item\"], [class~=\"group/button\"], [class~=\"group/toggle\"]):where(:not([data-size=\"inline\"], [data-density=\"compact\"], [data-density=\"compact\"] *))": {
@@ -609,6 +620,7 @@
         "zod@^4.6.5"
       ],
       "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/touch-floor.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/button.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/_shared.json"
@@ -2191,6 +2203,7 @@
         }
       },
       "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/touch-floor.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/pi-chat-voice.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/utils.json",
@@ -2210,6 +2223,7 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/touch-floor.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/pi-chat.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/pi-chat-plugins.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/pi-chat-voice.json",
@@ -2349,6 +2363,7 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/touch-floor.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/button.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/version-history.json",

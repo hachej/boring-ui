@@ -11,6 +11,7 @@
     "react-dom@^19.0.0"
   ],
   "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/touch-floor.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/pi-chat.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/pi-chat-voice.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/utils.json",

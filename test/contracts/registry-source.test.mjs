@@ -101,7 +101,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
       assert.equal(item.type, 'registry:theme');
       assert.equal(item.files, undefined); assert.deepEqual(item.dependencies, ['@fontsource-variable/geist-mono@5.3.0']); // The one css the theme carries is the control-size token (D-1741): only --control-h and --control-min, nothing visual.
       const layer = item.css['@layer base'];
-      assert.deepEqual(Object.keys(item.css), ['@layer base', '@layer utilities']); // base: the tokens; utilities: the one touch floor (D-1770), global, reading --control-min
+      assert.deepEqual(Object.keys(item.css), ['@layer base']);
       const declarations = Object.values(layer).flatMap(rule => Object.entries(Object.values(rule).every(v => typeof v === 'object') ? Object.values(rule).reduce((all, inner) => ({ ...all, ...inner }), {}) : rule));
       assert.ok(declarations.length > 0 && declarations.every(([name]) => /^--control-(?:h|min)$/.test(name)), 'theme css declares only --control-h and --control-min');
       const { theme, light, dark } = item.cssVars;
@@ -116,6 +116,10 @@ test('registry dependency pins and scoped styles preserve the declared source di
         assert.ok(used && used in light, `${name} binds a token of the theme`);
       }
       for (const token of ['background', 'foreground', 'muted', 'muted-foreground', 'border', 'ring', 'primary', 'primary-foreground', 'destructive', 'radius']) assert.ok(token in light, token);
+      continue;
+    }
+    if (item.name === 'touch-floor') { // D-1770: the one fileless item with the touch floor rule (global, not block-scoped), so it has no block prefix
+      assert.equal(item.files, undefined); assert.deepEqual(Object.keys(item.css), ['@layer utilities']); assert.equal(item.dependencies, undefined);
       continue;
     }
     // No item installs the theme: blocks use the app's shadcn tokens, and an app without them adds the theme once (registry/README.md).

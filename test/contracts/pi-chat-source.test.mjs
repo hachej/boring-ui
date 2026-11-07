@@ -42,7 +42,7 @@ test('settled reply actions are icon-only, named and sized for pointer and touch
   assert.match(html, /title="Copy response"/);
   assert.match(html, /class="sr-only">Copy response<\/span>/);
   assert.equal((html.match(/data-slot="button"/g) ?? []).length, 3, 'all three actions use consumer-owned Buttons');
-  const item = JSON.parse(readFileSync(`${root}registry.json`, 'utf8')).items.find(item => item.name === 'theme');
+  const item = JSON.parse(readFileSync(`${root}registry.json`, 'utf8')).items.find(item => item.name === 'touch-floor');
   assert.deepEqual(item.css['@layer utilities']['@media (width < 768px), (pointer: coarse)'][':root :is([data-slot="button"], [data-slot="toggle"], [data-slot="toggle-group-item"], [class~="group/button"], [class~="group/toggle"]):where(:not([data-size="inline"], [data-density="compact"], [data-density="compact"] *))'], { 'min-height': 'var(--control-min, 2.75rem)', 'min-width': 'var(--control-min, 2.75rem)' }, '44px touch targets while desktop uses the native icon size');
   assert.match(html, /aria-label="Quote this reply"/);
   assert.doesNotMatch(html, />Quote this reply<\/span>/);
