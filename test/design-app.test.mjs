@@ -27,14 +27,14 @@ const EXPECTED = {
   'design-link-token': ['link-token.tsx', 'error'],
   'design-mono-for-code': ['mono.tsx', 'error'],
   'design-tokens-only': ['tokens-only.tsx', 'warn'],
-  'design-color': ['color.tsx', 'warn'],
-  'design-font-tokens': ['font.css', 'warn'],
+  'design-color': ['color.tsx', 'error'],
+  'design-font-tokens': ['font.css', 'error'],
   'design-no-kit-restyle': ['restyle.css', 'warn'],
   'design-no-important': ['important.css', 'warn'],
   'design-hand-touch-size': ['hand-touch.tsx', 'warn'],
   'design-border-width': ['border-width.tsx', 'warn'],
-  'design-literal-value': ['literal-value.css', 'warn'],
-  'design-dark-variant': ['dark-variant.tsx', 'warn'],
+  'design-literal-value': ['literal-value.css', 'error'],
+  'design-dark-variant': ['dark-variant.tsx', 'error'],
   'design-no-x-scroll': ['x-scroll.tsx', 'warn'],
   'design-overlay-has-title': ['overlay.tsx', 'warn'],
 };
@@ -119,6 +119,24 @@ test('every block a kit-block hint names is an item of registry.json', () => {
 
 // ---- Round 2: theme rules, one finding per hit, the breaker's cases ---------------------------------------------------------------
 
+// The four rules at error (design-color, design-literal-value, design-dark-variant, design-font-tokens): what must not hit.
+test('false-positive guard: a code sample, user text, a test file, an svg asset, url(#id), aspect/grid/z/calc values, dark: in a comment, var() fonts and @font-face in theme.core.css do not hit', () => {
+  const report = json(join(root, 'test/fixtures/design-fp/web/src'));
+  const four = ['design-color', 'design-literal-value', 'design-dark-variant', 'design-font-tokens', 'design-tokens-only'];
+  assert.deepEqual(report.findings.filter(finding => four.includes(finding.rule)), []);
+});
+
+test('the four promoted rules are errors in LEVELS and a real hit of each fails the run', () => {
+  for (const rule of ['design-color', 'design-literal-value', 'design-dark-variant', 'design-font-tokens']) assert.equal(LEVELS[rule], 'error');
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+  try {
+    writeFileSync(join(dir, 'a.tsx'), 'export const A = () => <div className="bg-[#fff] dark:p-2" style={{ color: "#ff0000", borderRadius: "9px", fontFamily: "Georgia" }} />;\n');
+    const report = json(dir);
+    for (const rule of ['design-color', 'design-literal-value', 'design-dark-variant', 'design-font-tokens']) assert.ok(report.findings.some(finding => finding.rule === rule && finding.level === 'error'), rule);
+    assert.equal(report.status, 1);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 const themeBad = json(join(root, 'test/fixtures/design-theme/bad/web/src'));
 const themeFindings = (rule, file) => themeBad.findings.filter(finding => finding.rule === rule && finding.file.endsWith(`/${file}`)).map(finding => finding.line);
 
@@ -178,7 +196,7 @@ test('bg-[#fff], p-[13px] and text-[#123456] each give exactly one finding (desi
   const one = json(join(root, 'test/fixtures/design-one/web/src'));
   assert.deepEqual(one.findings.map(finding => [finding.line, finding.rule]), [[1, 'design-color'], [2, 'design-tokens-only'], [3, 'design-color']]);
   const result = run(join(root, 'test/fixtures/design-one/web/src'));
-  assert.match(result.stdout, /^warning test\/fixtures\/design-one\/web\/src\/one-finding\.tsx:1 design-color colour literal or palette class: .* \(#fff\)$/m);
+  assert.match(result.stdout, /^test\/fixtures\/design-one\/web\/src\/one-finding\.tsx:1 design-color colour literal or palette class: .* \(#fff\)$/m);
 });
 
 test('breaker 1: only <root>/components/ui is exempt; a nested components/ui folder is app code and a raw element there is an error', t => {

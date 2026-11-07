@@ -482,11 +482,11 @@ export const LEVELS = Object.freeze({
   'design-mono-for-code': 'error',
   // The kit's app profile and the tokens-only rule, new to apps.
   'design-tokens-only': 'warn', // flip to 'error' here
-  'design-color': 'warn', // flip to 'error' here
+  'design-color': 'error', // promoted from warn with zero hits in the 8 bundle apps (design-master)
   'design-border-width': 'warn', // flip to 'error' here
-  'design-font-tokens': 'warn', // flip to 'error' here
-  'design-literal-value': 'warn', // flip to 'error' here
-  'design-dark-variant': 'warn', // flip to 'error' here
+  'design-font-tokens': 'error', // promoted from warn with zero hits in the 8 bundle apps (design-master)
+  'design-literal-value': 'error', // promoted from warn with zero hits in the 8 bundle apps (design-master)
+  'design-dark-variant': 'error', // promoted from warn with zero hits in the 8 bundle apps (design-master)
   'design-no-x-scroll': 'warn', // flip to 'error' here
   // New rules.
   'design-no-kit-restyle': 'warn', // flip to 'error' here
@@ -861,7 +861,10 @@ export const APP_SENTENCE = 'An app writes theme tokens and its own components, 
 // An arbitrary value after a utility: `w-[340px]`, `md:p-[3px]`, `bg-[var(--x)]`. A variant (`data-[state=open]:`, followed by `:`) is not a value.
 const ARBITRARY_VALUE = /(?<![\w-])(?:[\w-]+:)*(-?[a-z][a-z0-9]*(?:-[a-z0-9]+)*)-\[([^\]\s]+)\](?!:)/g;
 const COLOR_LITERAL = /^(?:#|(?:rgb|rgba|hsl|hsla|oklch|oklab)\()/; // design-color owns these
-const HAND_TOUCH = /^(?:[\w-]+:)*(?:h|min-h|size|min-w)-11$/; // 44px by hand, with or without a pointer-coarse:/max-md: variant
+const TEST_FILE = /\.(?:test|spec|fixtures?)\.[cm]?[jt]sx?$|(?:^|\/)(?:__tests__|__fixtures__)\//;
+const COLOR_PROPERTY = /(?:color|background|fill|stroke|border|shadow|outline|stop-color|stopColor|flood-color|gradient)\w*["']?\s*[:=]\s*(?:\{\s*)?["'`]?[^"'`\n]{0,12}$/i;
+const lineStarts = (source) => { const out = [0]; for (let i = 0; i < source.length; i++) if (source[i] === '\n') out.push(i + 1); return out; };
+const HAND_TOUCH =/^(?:[\w-]+:)*(?:h|min-h|size|min-w)-11$/; // 44px by hand, with or without a pointer-coarse:/max-md: variant
 
 /** The source ranges that hold Tailwind classes: className=/class= values, the arguments of cn(), cva(), clsx(), cx(), twMerge(), tw() and tw`...`. Prose elsewhere is not classes. */
 function classRanges(source) {
@@ -1100,9 +1103,16 @@ export function checkSource(file, source, { legacy = false, ui = false, scan, ex
   if (SOURCE.test(file) && name !== 'theme.core.css') {
     found.push(...restyle(file, source), ...important(file, source), ...fontFace(file, source));
     const bare = mask(source, { strings: false });
+    const script = /\.[cm]?[jt]sx?$/.test(file), ranges = script ? classRanges(source) : [], starts = lineStarts(source);
     for (const f of scan(file, bare)) {
       const profile = PROFILE[f.rule];
       if (!profile) continue; // card rules (ported above), arbitrary values (design-tokens-only)
+      if (f.rule === 'color' && TEST_FILE.test(file)) continue; // a test or fixture file holds sample data
+      if (f.rule === 'color' && script && COLOR_LITERAL.test(String(f.value))) {
+        // A colour literal in script is a style only in a class, or as the value of a colour property or attribute; a code sample, user text and url(#id) are not.
+        const at = starts[f.line - 1] + f.column - 1;
+        if (!ranges.some(([from, to]) => at >= from && at < to) && !COLOR_PROPERTY.test(source.slice(Math.max(0, at - 40), at))) continue;
+      }
       if (name === 'theme.derived.css' && f.rule !== 'font') continue;
       if (f.rule === 'dark' && darkLines.has(f.line)) continue; // already design-no-dark-overrides
       if (f.rule === 'color' && darkLines.has(f.line) && !/^[#(]|\(/.test(f.value)) continue; // the palette class of that dark: override
