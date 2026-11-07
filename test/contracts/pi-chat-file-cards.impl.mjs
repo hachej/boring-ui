@@ -1040,3 +1040,41 @@ test('photos sent as links (data empty, url) are drawn from the link; a link the
   assert.deepEqual(sources(), [`data:image/png;base64,${pixel}`], 'the other photo stays');
   assert.match(container.textContent, /Fictional meal photos/, 'the message still renders');
 });
+
+// D-1759: tapping the microphone keeps the composer's box and its trailing slot. happy-dom has no layout, so this checks the structure
+// (one text-high field, one controls row, the stop in the microphone's slot); the real boxes are measured by test/contracts/composer-recording-geometry.test.mjs.
+for (const layout of ['card', 'pill']) test(`the ${layout} composer keeps its slots while recording: Starting… without 0:00 or dot, then dot and timer, the stop where the microphone was`, async t => {
+  const ui = await voiceHarness(t, { extra: { composerLayout: layout, voiceReplacesSend: true } });
+  let open; const permission = new Promise(resolve => { open = resolve; });
+  Object.defineProperty(ui.window.navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => { await permission; return { getTracks: () => [{ stop() {} }] }; } } });
+  const q = selector => ui.container.querySelector(selector);
+  const slot = () => q('[data-testid=composer-controls]');
+  const trailing = () => q('[data-testid=composer-when-empty] > [data-testid=voice-message-record]');
+  assert.equal(trailing()?.getAttribute('aria-label'), 'Record a message', 'idle: the microphone is the trailing control');
+  assert.equal(q('[data-testid=composer-recording]') === null, true);
+  await ui.click('voice-message-record');
+  assert.equal(ui.button().dataset.state, 'starting');
+  assert.equal(q('[data-testid=composer-input]') === null, true, 'the textarea gives way to the status field');
+  assert.equal(q('[data-testid=composer-recording]') !== null && slot() !== null, true, 'the field and the controls row both stay');
+  assert.equal(/Starting…/.test(q('[data-testid=composer-recording]').textContent), true, 'starting says so');
+  assert.equal(/0:00/.test(ui.container.textContent), false, 'no timer while starting');
+  assert.equal(q('[data-testid=voice-recording-dot]') === null, true, 'no dot while starting');
+  assert.equal(trailing() !== null && trailing().disabled === true, true, 'the stop holds the microphone slot, waiting');
+  open();
+  await ui.until(() => ui.button()?.dataset.state === 'recording');
+  assert.equal(/Starting…/.test(ui.container.textContent), false);
+  assert.equal(/0:00/.test(q('[data-testid=voice-recording]').textContent), true, 'the timer shows once recording');
+  assert.equal(q('[data-testid=voice-recording-dot]') !== null, true, 'the dot shows once recording');
+  assert.equal(trailing() !== null && trailing() === ui.button(), true, 'the same trailing slot');
+  assert.equal(trailing().getAttribute('aria-label'), 'Stop recording');
+  assert.equal(trailing().disabled, false);
+  assert.equal(q('[data-testid=composer-plus]') === null || q('[data-testid=composer-plus]').disabled === true, true, 'attach is disabled, not moved');
+});
+
+for (const layout of ['card', 'pill']) test(`an app's own recording node still renders in the ${layout} composer and the box keeps its field height`, async t => {
+  const { createElement } = await import('react');
+  const ui = await voiceHarness(t, { extra: { composerLayout: layout, composerRecording: createElement('button', { 'data-testid': 'app-recording', type: 'button' }, 'Stop') } });
+  assert.equal(ui.container.querySelector('[data-testid=app-recording]') !== null, true, 'the app node shows');
+  assert.equal(ui.container.querySelector('[data-testid=composer-input]') === null, true);
+  assert.equal(ui.container.querySelector('[data-slot=composer-recording]') !== null, layout === 'card', 'card: a field-high gap stands in for the text');
+});

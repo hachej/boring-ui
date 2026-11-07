@@ -100,6 +100,11 @@ export interface VoiceMessageConfig extends KitVoiceMessageConfig {
   readonly useRecorder?: VoiceRecorderHook | undefined;
   /** The hold-to-record button at the end of the composer bar (`VoiceMessageButton` of `pi-chat-voice`). */
   readonly Button?: ComponentType<VoiceMessageButtonProps> | undefined;
+  /** While recording, what takes the text's place in the composer: Starting…, then dot, timer, waveform, pause and trash (`RecordingStatus`
+   * of `pi-chat-voice`). With `RecordingStop`, the composer keeps its height and the stop sits where the microphone was. Without both, `Button` draws the whole recording row. */
+  readonly RecordingStatus?: ComponentType<{ readonly voice: VoiceMessageHandle }> | undefined;
+  /** The stop control in the microphone's place (`RecordingStop` of `pi-chat-voice`). */
+  readonly RecordingStop?: ComponentType<VoiceMessageButtonProps> | undefined;
   /** A voice message on its way: recording, transcribing, uploading (`PendingVoiceBubble` of `pi-chat-voice`). */
   readonly Bubble?: ComponentType<PendingVoiceBubbleProps> | undefined;
 }

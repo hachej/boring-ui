@@ -164,6 +164,7 @@ export const defaultChatLabels = {
   voiceBlocked: 'Not sent. Review the chat notice before trying again.',
   voiceUnconfirmed: 'Message admission is unconfirmed. Use the chat notice to reconcile.',
   voiceStop: 'Stop recording',
+  starting: 'Starting…',
   voiceCancel: 'Cancel recording',
   voiceTranscribing: 'Transcribing…',
   voiceNothingHeard: 'Nothing was heard. Try again.',

@@ -120,8 +120,14 @@ export interface ComposerProps {
   readonly start?: ReactNode;
   /** A control shown in place of Send while there is nothing to send (WhatsApp's microphone): Send comes back as soon as there is text or a file. */
   readonly whenEmpty?: ReactNode;
-  /** An active capture replaces the editable input and ordinary controls with this one recording row. */
+  /** An active capture replaces the editable input and ordinary controls with this one recording row. The box keeps its idle height
+   * (a field-high gap above the row); an app that wants the box laid out as when idle passes `recordingStatus` and `recordingStop` instead. */
   readonly recording?: ReactNode;
+  /** An active capture, laid out as when idle: this takes the text's place (a timer, a dot, "Starting…"; the textarea is not mounted) and the
+   * leading "+" is disabled. The box keeps its height and the trailing control does not move. Pair it with `recordingStop`. */
+  readonly recordingStatus?: ReactNode;
+  /** The stop control, in the microphone's place: the trailing slot where `whenEmpty` or `barEnd` sit when idle. */
+  readonly recordingStop?: ReactNode;
   /** The optional Feedback button and chip. */
   readonly feedback?: ComposerFeedback | undefined;
 }
@@ -257,7 +263,8 @@ export function Composer(props: ComposerProps) {
   const canPhoto = canAttach && coarse && acceptsPhotos(props.fileAccept) && Camera !== undefined;
   const slash = Slash ? props.slash : undefined, mentions = Mention ? props.mentions : undefined;
   const items = useMemo<SlashItem[]>(() => slash ? slashItems(slash) : [], [slash]);
-  const recording = Boolean(props.recording);
+  const slots = props.recordingStatus !== undefined || props.recordingStop !== undefined;
+  const recording = Boolean(props.recording) || slots;
   const setRef = (element: HTMLTextAreaElement | null) => {
     inner.current = element;
     assignRef(props.textareaRef, element);
@@ -313,7 +320,7 @@ export function Composer(props: ComposerProps) {
 
   const { feedback } = props;
   const hasContent = props.text.trim().length > 0 || attachments.length > 0 || props.hasFiles || (feedback?.count ?? 0) > 0;
-  const canSubmit = hasContent && !sendBlocked && !disabled && !props.recording;
+  const canSubmit = hasContent && !sendBlocked && !disabled && !recording;
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     props.onKeyDown?.(event);
     if (event.defaultPrevented) return;
@@ -380,25 +387,28 @@ export function Composer(props: ComposerProps) {
   const marked = props.markMentionQuery && mentionOpen && trigger ? <QueryBackdrop text={text} start={trigger.start} end={trigger.end} /> : null;
   // eslint-disable-next-line react-hooks/refs -- renderInput receives event callbacks, not ref values; an input calls them only on interaction
   const input = props.renderInput?.({ text, onText, onCaret: setCaret, onSend: () => { if (canSubmit && !menuOpen) props.onSend(); } }) ?? props.input ?? (props.placeholderContent || marked ? <div data-slot="composer-field" className="relative flex min-h-16 w-full min-w-0 flex-1">{marked}{textareaEl}{!text && props.placeholderContent && <span aria-hidden="true" data-slot="composer-placeholder" className="pointer-events-none absolute inset-x-3 top-2 text-xs text-muted-foreground">{props.placeholderContent}</span>}</div> : textareaEl);
-  const plus = (canAttach || items.length > 0) && <PlusActions disabled={disabled} textarea={inner} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
+  const plus = (canAttach || items.length > 0) && <PlusActions disabled={disabled || recording} textarea={inner} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
   // One child slot either way, so a composer without `start` keeps its exact markup (React ids included).
-  const startAndPlus = props.start ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
+  const startAndPlus = props.start && !recording ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
   const send = working
     ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={(disabled && !props.stopOpen) || stopRequested} onClick={props.onStop} className="shrink-0">
       {stopRequested ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop data-icon="inline-start" aria-hidden="true" />}</Button>
-    : props.whenEmpty && !hasContent ? <div data-testid="composer-when-empty" className="flex shrink-0 items-center">{props.whenEmpty}</div>
+    : props.whenEmpty && !hasContent ? <div data-testid="composer-when-empty" className="flex shrink-0 items-center">{slots && props.recordingStop !== undefined ? props.recordingStop : props.whenEmpty}</div>
     : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="shrink-0">
       <icons.send data-icon="inline-start" aria-hidden="true" /></Button>;
+  // While recording, the stop takes the microphone's place: Send's slot when the microphone stands in for Send, else the tools slot.
+  const stopInSend = slots && !working && props.whenEmpty !== undefined && !hasContent;
   const end = <>
-    {props.barStart}
-    {props.chips && <div className="flex min-w-0 items-center gap-2">{props.chips}</div>}
-    {props.barNote}
-    {uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
+    {!slots && props.barStart}
+    {!slots && props.chips && <div className="flex min-w-0 items-center gap-2">{props.chips}</div>}
+    {!slots && props.barNote}
+    {!slots && uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
     {!pill && <span className="min-w-0 flex-1" />}
-    {props.barEnd && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.barEnd}</div>}
-    {working && hasContent && <Button variant="ghost" size="icon" data-testid="composer-queue" aria-label={labels.queue} title={labels.queue} disabled={!canSubmit} onClick={props.onSend} className="shrink-0">
+    {slots ? !stopInSend && props.recordingStop !== undefined && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.recordingStop}</div>
+      : props.barEnd && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.barEnd}</div>}
+    {!slots && working && hasContent && <Button variant="ghost" size="icon" data-testid="composer-queue" aria-label={labels.queue} title={labels.queue} disabled={!canSubmit} onClick={props.onSend} className="shrink-0">
       <icons.queue data-icon="inline-start" aria-hidden="true" /></Button>}
     {send}
   </>;
@@ -411,8 +421,17 @@ export function Composer(props: ComposerProps) {
     {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
     {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} header={typeof mentions.pickerHeader === 'function' ? mentions.pickerHeader(trigger!.query) : mentions.pickerHeader} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {pill && !props.recording && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
-    {props.recording ? <InputGroup>
+    {slots ? pill ? <InputGroup className="h-auto">
+      <InputGroupAddon>{startAndPlus}</InputGroupAddon>
+      <div data-slot="composer-recording" data-testid="composer-recording" className="flex min-w-0 flex-1 items-center gap-2 self-stretch">{props.recordingStatus}</div>
+      <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>
+    </InputGroup> : <InputGroup>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
+      <div data-slot="composer-recording" data-testid="composer-recording" className="flex min-h-11 w-full min-w-0 items-center gap-2 px-2">{props.recordingStatus}</div>
+      <InputGroupAddon align="block-end" data-testid="composer-controls">{startAndPlus}{end}</InputGroupAddon>
+    </InputGroup> : props.recording ? <InputGroup>
+      {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
+      {!pill && <div data-slot="composer-recording" aria-hidden="true" className="min-h-11 w-full" />}
       <InputGroupAddon align="block-end" data-testid="composer-controls" className="w-full">{props.recording}</InputGroupAddon>
     </InputGroup> : pill ? <InputGroup>
       <InputGroupAddon>{startAndPlus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
