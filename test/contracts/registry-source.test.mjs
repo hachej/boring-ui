@@ -99,7 +99,11 @@ test('registry dependency pins and scoped styles preserve the declared source di
   for (const item of manifest.items) {
     if (item.name === 'theme') {
       assert.equal(item.type, 'registry:theme');
-      assert.equal(item.files, undefined); assert.deepEqual(item.dependencies, ['@fontsource-variable/geist-mono@5.3.0']); assert.equal(item.css, undefined);
+      assert.equal(item.files, undefined); assert.deepEqual(item.dependencies, ['@fontsource-variable/geist-mono@5.3.0']); // The one css the theme carries is the control-size token (D-1741): only --control-h and --control-min, nothing visual.
+      const layer = item.css['@layer base'];
+      assert.deepEqual(Object.keys(item.css), ['@layer base']);
+      const declarations = Object.values(layer).flatMap(rule => Object.entries(Object.values(rule).every(v => typeof v === 'object') ? Object.values(rule).reduce((all, inner) => ({ ...all, ...inner }), {}) : rule));
+      assert.ok(declarations.length > 0 && declarations.every(([name]) => /^--control-(?:h|min)$/.test(name)), 'theme css declares only --control-h and --control-min');
       const { theme, light, dark } = item.cssVars;
       assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).filter(name => name !== 'radius' && !/^(?:text-(?:body|title)|font-(?:sans|mono))$/.test(name)).sort(), 'dark redefines every mode-dependent role; shape, type and fonts live in light only');
       for (const [name, value] of Object.entries(theme)) {
