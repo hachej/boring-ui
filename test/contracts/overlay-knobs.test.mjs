@@ -74,7 +74,7 @@ test('overlays: no blur by default, blur with data-overlay-blur="on"; height aut
     // D-1800: three steps, at a phone and a desktop width.
     for (const [width, mobile] of [[390, true], [1280, false]]) {
       await device(width, mobile);
-      const shapes = [['sheet', 'bottom'], ['sheet', 'top'], ['sheet', 'right'], ['drawer', ''], ['dialog', '']];
+      const shapes = [['sheet', 'bottom'], ['sheet', 'top'], ['sheet', 'right'], ['sheet', 'left'], ['drawer', ''], ['dialog', '']];
       for (const [kind, side] of shapes) {
         const where = `${kind}${side ? ' ' + side : ''} at ${width}`;
         const q = height => `kind=${kind}${side ? `&side=${side}` : ''}&height=${height}`;
@@ -83,7 +83,10 @@ test('overlays: no blur by default, blur with data-overlay-blur="on"; height aut
         await open(`${q('auto')}`, POPUP[kind]);
         const auto = await box(POPUP[kind]);
         assert.equal(auto.attr, 'auto', `${where}: data-height defaults to auto`);
-        if (side !== 'right') assert.ok(auto.height < auto.view * 0.5, `${where}: auto with short content stays short (${auto.height})`);
+        if (!['left', 'right'].includes(side)) assert.ok(auto.height < auto.view * 0.5, `${where}: auto with short content stays short (${auto.height})`);
+        // no height prop at all is auto too, and short content is not stretched.
+        await open(`kind=${kind}${side ? `&side=${side}` : ''}`, POPUP[kind]);
+        assert.equal((await box(POPUP[kind])).attr, 'auto', `${where}: no height prop is data-height="auto"`);
         // tall: capped at 85dvh, the content scrolls inside.
         await open(`${q('tall')}&long=1`, POPUP[kind]);
         const tall = await box(POPUP[kind], scroller);
@@ -101,7 +104,7 @@ test('overlays: no blur by default, blur with data-overlay-blur="on"; height aut
         assert.ok(Math.abs(full.height - (kind === 'dialog' ? full.view - 32 : full.view)) <= 1, `${where}: full fills the screen (${full.height} of ${full.view})`);
         await open(`${q('full')}&tokens=1`, POPUP[kind]);
         const retuned = await box(POPUP[kind]);
-        if (side !== 'right') assert.ok(Math.abs(retuned.height - (kind === 'dialog' ? retuned.view * 0.7 - 32 : retuned.view * 0.7)) <= 1, `${where}: --overlay-height-full retunes full (${retuned.height})`);
+        if (!['left', 'right'].includes(side)) assert.ok(Math.abs(retuned.height - (kind === 'dialog' ? retuned.view * 0.7 - 32 : retuned.view * 0.7)) <= 1, `${where}: --overlay-height-full retunes full (${retuned.height})`);
       }
     }
     assert.deepEqual(browser.problems, []);

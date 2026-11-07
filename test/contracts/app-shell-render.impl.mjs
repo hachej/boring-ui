@@ -103,6 +103,33 @@ test('overlayBlur marks <html data-overlay-blur="on"> while the shell is mounted
   assert.equal(window.document.documentElement.dataset.overlayBlur, undefined, 'unmounting the shell takes the blur away');
 });
 
+test('two shells with overlayBlur share the attribute: unmounting one keeps the blur, unmounting both removes it, an app-set value is restored', async t => {
+  const window = dom(t);
+  const { AppShell } = await bundle('app-shell.tsx');
+  const { createElement: h, act } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const html = window.document.documentElement;
+  const mount = async () => {
+    const container = window.document.createElement('div');
+    window.document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => root.render(h(AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, overlayBlur: true })));
+    return () => act(async () => root.unmount());
+  };
+  const first = await mount();
+  const second = await mount();
+  assert.equal(html.dataset.overlayBlur, 'on');
+  await first();
+  assert.equal(html.dataset.overlayBlur, 'on', 'the shell still mounted keeps the blur');
+  await second();
+  assert.equal(html.dataset.overlayBlur, undefined, 'the last shell leaving removes it');
+  html.dataset.overlayBlur = 'off';
+  const third = await mount();
+  assert.equal(html.dataset.overlayBlur, 'on');
+  await third();
+  assert.equal(html.dataset.overlayBlur, 'off', 'a value the app set before any shell is restored');
+});
+
 test('the hover rail starts collapsed, reveals on pointer hover or focus within, and collapses on leave, blur or Escape', async t => {
   const items = ['Tableau de bord', 'Repas'].map(label => ({ id: label, label, icon: Icon, render: () => null }));
   const chosen = [];

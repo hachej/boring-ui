@@ -54,13 +54,25 @@ export interface AppShellProps {
   readonly overlayBlur?: boolean;
 }
 
-/** `<html data-overlay-blur="on">` while a shell asks for it. */
+/** The shells that ask for the blur now, and what `<html data-overlay-blur>` held before the first of them (the app's own HTML may set it). */
+const blurOwners = new Set<symbol>();
+let blurBefore: string | undefined;
+
+/** `<html data-overlay-blur="on">` while any shell asks for it: set by the first owner, restored when the last one leaves. */
 function useOverlayBlur(blur: boolean) {
   useEffect(() => {
     if (!blur || typeof document === 'undefined') return;
     const root = document.documentElement;
+    const owner = Symbol('overlay-blur');
+    if (blurOwners.size === 0) blurBefore = root.dataset.overlayBlur;
+    blurOwners.add(owner);
     root.dataset.overlayBlur = 'on';
-    return () => { delete root.dataset.overlayBlur; };
+    return () => {
+      blurOwners.delete(owner);
+      if (blurOwners.size > 0) return;
+      if (blurBefore === undefined) delete root.dataset.overlayBlur;
+      else root.dataset.overlayBlur = blurBefore;
+    };
   }, [blur]);
 }
 
