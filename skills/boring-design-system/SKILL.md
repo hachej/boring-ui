@@ -75,6 +75,7 @@ Build screens from these before writing anything by hand.
 | The need | Use |
 |---|---|
 | A button, input, select, textarea, label, table, collapsible | `@boring/ui/shadcn/*` (`button`, `input`, `select` or `native-select`, `textarea`, `label` or `field`, `table`, `collapsible` or `accordion`), never the raw element |
+| A toolbar row (search, filters, actions) | Every boxed control (`Input`, `SelectTrigger`, `Button` default/outline/secondary/destructive) at the default size, so all have the input's height (36 fine, 44 touch); a boxed icon button is `size="icon"`; only ghost or link text buttons may be `sm` (`pattern-toolbar-row`, D-1862) |
 | A one-line cell in a table | `<TableCell truncate title=…>` (the bound is `--table-cell-truncate-max`, 16rem), never `max-w-* truncate` on the cell |
 | Pick or drop one or more files | `FilePick` (`@boring/ui/blocks/file-pick/file-pick`): a button or a drop strip; refusals come back to `onRefused` as `{ file, reason: "type" \| "size" \| "count" }` and the app writes the words |
 | A list of files with upload | The `file-tree` block (`FileTreeView`) |
