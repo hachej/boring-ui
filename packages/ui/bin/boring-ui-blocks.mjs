@@ -969,8 +969,17 @@ function restyle(file, source) {
   return found;
 }
 
+/** `!important` in a stylesheet or a class string: one hit per line. A string literal in script (css injected into a framed document) is not the app's cascade. */
 function important(file, source) {
-  return [...mask(source, { strings: false }).matchAll(/!important\b/g)].map((m) => hit(file, source, m.index, 'design-no-important', '!important fights the kit cascade: fix the selector or set a theme token'));
+  const script = /\.[cm]?[jt]sx?$/.test(file), ranges = script ? classRanges(source) : [], lines = new Set(), found = [];
+  for (const m of mask(source, { strings: false }).matchAll(/!important\b/g)) {
+    if (script && !ranges.some(([from, to]) => m.index >= from && m.index < to)) continue;
+    const line = lineAt(source, m.index);
+    if (lines.has(line)) continue;
+    lines.add(line);
+    found.push(hit(file, source, m.index, 'design-no-important', '!important fights the kit cascade: fix the selector or set a theme token'));
+  }
+  return found;
 }
 
 /** `font-family` literals and `@font-face`: fonts are theme tokens, defined once in theme.core.css. */

@@ -241,6 +241,19 @@ test('round 8: a DrawerContent whose {body} is bound in the same file passes whe
   assert.equal(count(`${head}export function A({ body }) {\n  return <Drawer><DrawerContent>{body}</DrawerContent></Drawer>;\n}\n`), 1, 'a prop is not bound in this file');
 });
 
+test('round 9: design-no-important is one hit per line, and reads stylesheets and class strings, not script string literals', () => {
+  const count = (name, source) => {
+    const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+    try {
+      writeFileSync(join(dir, name), source);
+      return json(dir).findings.filter(finding => finding.rule === 'design-no-important').length;
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  };
+  assert.equal(count('a.css', '.a { color: red !important; margin: 0 !important; }\n.b { top: 0 !important; }\n'), 2, 'two on one line are one hit');
+  assert.equal(count('pick-frame.ts', "export const f = (el: HTMLElement) => { el.textContent = 'html * { cursor: x !important }'; };\n"), 0, 'css injected from script');
+  assert.equal(count('real.css', 'a { color: red !important; }\n'), 1, 'a stylesheet still fails');
+});
+
 test('a clean theme (both modes, core roles, app tokens, derived from var() and color-mix(), documented exceptions below the comment) reports nothing', () => {
   const report = json(join(root, 'test/fixtures/design-theme/clean/web/src'));
   assert.deepEqual(report.findings.filter(finding => finding.rule !== 'design-theme-local-derived'), []);
