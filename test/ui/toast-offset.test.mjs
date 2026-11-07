@@ -134,16 +134,21 @@ test('toasts clear the docked composer on a phone, are unchanged on a desktop, a
     assert.equal(token(), '', 'hidden again: the clearance is deleted');
   });
 
-  await t.test('fix 2: the keyboard moves the composer inside the visual viewport', async () => {
+  await t.test('fix 2: the keyboard lifts the composer; the toast clears keyboard and composer', async () => {
     await reset();
     await show(390, chat('a'));
-    // The keyboard shrinks the visual viewport to 500 and the taller composer sits 200px above its bottom; only visualViewport events fire.
-    viewport.height = 500; dock.top = 300; dock.height = 200;
+    // iOS: a 300px keyboard leaves innerHeight at 844, shrinks the visual viewport and lifts the composer; only visualViewport events fire.
+    // The toaster is fixed to the layout viewport, so it must clear keyboard and composer: 300 + 144.
+    viewport.height = 844 - 300; dock.height = 144; dock.top = 844 - 300 - 144;
     await act(async () => viewport.dispatchEvent(new window.Event('resize')));
-    assert.equal(toastBottom(), 200 + 8, 'measured against visualViewport.height + offsetTop');
-    viewport.offsetTop = 40; dock.top = 340;
+    assert.ok(toastBottom() >= 444, `the toast bottom (${toastBottom()}px) clears the keyboard and the composer`);
+    assert.equal(toastBottom(), 444 + 8, 'measured against innerHeight');
+    viewport.offsetTop = 40;
     await act(async () => viewport.dispatchEvent(new window.Event('scroll')));
-    assert.equal(toastBottom(), 200 + 8, 'a scrolled visual viewport is followed');
+    assert.equal(toastBottom(), 444 + 8, 'a scrolled visual viewport still measures against innerHeight');
+    dock.top = 844 - 144; viewport.height = 844; viewport.offsetTop = 0;
+    await act(async () => viewport.dispatchEvent(new window.Event('resize')));
+    assert.equal(toastBottom(), 144 + 8, 'keyboard closed: the composer height again');
   });
 
   await t.test('fix 4: a theme value of --toast-offset-bottom always wins over the chat', async () => {

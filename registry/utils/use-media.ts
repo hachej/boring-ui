@@ -92,13 +92,14 @@ export function useToastOffset(dock: RefObject<HTMLElement | null>, enabled: boo
       const box = element.getBoundingClientRect();
       // A dock with no box (display:none, detached) takes no room: it has no clearance, rather than one measured from top 0.
       if (!element.isConnected || box.height === 0) clearances.delete(id);
-      else clearances.set(id, Math.max(0, Math.round((visual ? visual.height + visual.offsetTop : view.innerHeight) - box.top)));
+      else clearances.set(id, Math.max(0, Math.round(view.innerHeight - box.top)));
       publishToastOffset();
     };
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
     observer?.observe(element);
     view.addEventListener('resize', measure);
-    // The on-screen keyboard resizes only the visual viewport; the composer moves without a window event.
+    // The toaster is fixed to the layout viewport, so its bottom is innerHeight: the clearance includes a keyboard that lifts the composer.
+    // The keyboard resizes only the visual viewport (iOS), so its events are the trigger, not the measure.
     visual?.addEventListener('resize', measure);
     visual?.addEventListener('scroll', measure);
     measure();
