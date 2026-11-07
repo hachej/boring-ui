@@ -28,3 +28,4 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Viewer utilities | shared phone breakpoint, media/keyboard viewport and local layout persistence | [viewer-utilities.md](viewer-utilities.md) |
 | Pattern blocks | KPI stat, list row, empty state, page header, data table | [patterns.md](patterns.md) |
 | Space overview blocks | SpaceCard and WiringChips | [space-overview.md](space-overview.md) |
+| Atlas | the screens-and-states manifest, its schema and `atlas --check` | [atlas.md](atlas.md) |

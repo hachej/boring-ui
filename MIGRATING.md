@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Atlas manifest and `boring-ui-blocks atlas <dir> --check` (new, additive; D-1831 slice 1).** An app may write `web/src/atlas.json` (states with `id`, `page`, `title`, `given: { fixture, steps }`, optional `flow` and `after`) and validate it with the new `atlas` command against the published `@hachej/boring-ui/atlas.schema.json`; `--fixtures <dir>` also requires each named fixture file to exist. Shooting and the viewer come in later slices. No consumer action. Test: `test/atlas.test.mjs`; see `features/atlas.md`.
+
 # Migrating to 0.4.68
 
 - **An inline Button in a table cell is underlined on hover and focus only (bundled `button` primitive, `size="inline"`; D-1814).** Inside a kit `TableCell` (`data-slot="table-cell"`), `<Button size="inline">` now has no underline at rest and shows it on `:hover` and `:focus-visible`, through `in-data-[slot=table-cell]:` variants in the inline size string (not a new prop or variant). Colour, the 44px touch hit area and the focus ring are unchanged; in prose it is still underlined at rest. Visual change for apps with inline buttons in tables: expert-comptable's Compta ledger (two per row) loses its resting underlines. Consumer action: re-sync `button` (`registry:build` refreshes `public/r`). Test: `test/ui/button-inline-table.test.mjs`.
