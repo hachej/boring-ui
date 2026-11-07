@@ -4,12 +4,12 @@
   "title": "Drawing viewer",
   "description": "DrawingViewer, drawingKind and describeDrawing: an Excalidraw (.excalidraw) or draw.io (.drawio) file, read-only, drawn by the tool's own renderer on a white page fitted to the shapes: Excalidraw's exportToSvg (its fonts served by the app, never its CDN) and the official diagrams.net viewer, vendored in the kit (@hachej/boring-ui-kit/drawio-viewer), in a sandboxed frame without network. Shown as an image, so nothing in the file runs; an unreadable file shows an inline error. onRead hands the shapes and arrows the renderer read (kind, place, size, label, colours, from and to). Each renderer loads the first time a drawing of its format opens; the kind is not in the pi-app-kinds default list, so apps without drawings install nothing.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.68",
+    "@hachej/boring-ui-kit@^0.4.69",
     "react@^19.0.0",
     "@excalidraw/excalidraw@0.18.1"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.68/r/_shared.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.69/r/_shared.json"
   ],
   "files": [
     {
