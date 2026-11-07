@@ -4,21 +4,21 @@
   "title": "Pi ambient agent",
   "description": "AmbientChat, a compact floating agent bar that grows into a chat window over an existing page, and AgentNotifications, toasts over the kit's shared chat-react run notifications (with the one guarded browser Notification helper). A block over the pi-chat item; its in-window artifact panel uses the pi-workspace layout.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.65",
+    "@hachej/boring-ui-kit@^0.4.66",
     "react@^19.0.0",
     "react-dom@^19.0.0",
     "@earendil-works/pi-durable@~1.4.0",
     "@earendil-works/pi-ai@~1.4.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/pi-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/pi-chat-plugins.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/pi-chat-question.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/pi-artifacts.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/pi-workspace.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/button.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/_shared.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.66/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.66/r/pi-chat-plugins.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.66/r/pi-chat-question.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.66/r/pi-artifacts.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.66/r/pi-workspace.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.66/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.66/r/button.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.66/r/_shared.json"
   ],
   "files": [
     {
