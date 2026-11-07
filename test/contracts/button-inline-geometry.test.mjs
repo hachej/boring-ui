@@ -12,7 +12,7 @@ import { registryCss } from '../../lab/studio/tailwind.mjs';
 // D-1767: Button size="inline" is a link-style label inside a table row or a sentence. Happy-dom has no layout, so a real Chromium mounts the real
 // Button (shadcn/ui/button.tsx) in a table row and measures it at 390 touch and 1280 fine: the rows are as tall as with plain text, the box is the
 // text height with no padding or border, the touch hit area is a 44px pseudo-element (elementFromPoint outside the box, inside the area), a fine
-// pointer has none, and a bare size="inline" is rendered with the link variant. Set EVIDENCE_DIR to also write the screenshots there.
+// pointer has none, and a bare size="inline" is rendered with the link variant and is always underlined (1px, offset 2px, link colour). Set EVIDENCE_DIR to also write the screenshots there.
 // In CI a missing browser fails the test; it never skips (D-1731).
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
@@ -32,7 +32,7 @@ test('Button size="inline" keeps a table row at text height and keeps a 44px tou
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
   const vars = item('theme').cssVars;
-  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${registryCss(item('theme'))}`;
+  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${['theme', 'app-shell', 'pi-chat', 'viewer-frame', 'feedback'].map(name => registryCss(item(name))).join('\n')}`;
   const compiler = await compile(cssSource, { base: root, loadStylesheet: async id => {
     const path = require.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id);
     return { path, base: dirname(path), content: readFileSync(path, 'utf8') };
@@ -59,15 +59,15 @@ test('Button size="inline" keeps a table row at text height and keeps a 44px tou
     const style = getComputedStyle(tag), after = getComputedStyle(tag, '::after'), r = tag.getBoundingClientRect();
     const who = (el, list) => { const i = list.indexOf(el); return i === -1 ? (el ? el.tagName.toLowerCase() : null) : 'button' + i; };
     const reach = (dy) => who(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2 + dy), buttons);
-    const dense = [...document.querySelectorAll('[data-case=dense] button')], d = dense.map(b => b.getBoundingClientRect());
+    const trs = [...document.querySelectorAll('[data-case=table] tr')].map(tr => tr.getBoundingClientRect());
     const sentence = document.querySelector('[data-case=sentence] button'), sr = sentence.getBoundingClientRect();
-    return { table: ${rows('table')}, dense: ${rows('dense')}, box: { w: r.width, h: r.height }, lineHeight: parseFloat(style.lineHeight),
+    return { table: ${rows('table')}, box: { w: r.width, h: r.height }, lineHeight: parseFloat(style.lineHeight),
       padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft], border: [style.borderTopWidth, style.borderBottomWidth],
-      minHeight: style.minHeight, minWidth: style.minWidth, link: tag.className.includes('text-primary') && !tag.className.includes('bg-primary'), decoration: style.textDecorationLine,
+      minHeight: style.minHeight, minWidth: style.minWidth, link: tag.className.includes('text-primary') && !tag.className.includes('bg-primary'), decoration: { line: style.textDecorationLine, thickness: style.textDecorationThickness, offset: style.textUnderlineOffset, colour: style.textDecorationColor, text: style.color },
       after: after.content === 'none' || after.content === 'normal' ? null : { w: parseFloat(after.width), h: parseFloat(after.height), position: after.position },
       reach: { above: reach(-20), below: reach(20), far: reach(-26) },
-      adjacent: { rowGap: d[1].top - d[0].bottom, between: who(document.elementFromPoint(d[0].x + d[0].width / 2, (d[0].bottom + d[1].top) / 2), dense),
-        justBelowFirst: who(document.elementFromPoint(d[0].x + d[0].width / 2, d[0].bottom + 1), dense), justAboveSecond: who(document.elementFromPoint(d[1].x + d[1].width / 2, d[1].top - 1), dense) },
+      adjacent: { firstBottom: who(document.elementFromPoint(r.x + r.width / 2, trs[0].bottom - 2), buttons), secondTop: who(document.elementFromPoint(r.x + r.width / 2, trs[1].top + 2), buttons) },
+      bare: (() => { const b = document.querySelector('[data-case=bare] button'); const st = getComputedStyle(b); return { bg: st.backgroundColor, line: st.textDecorationLine, size: b.getAttribute('data-size') }; })(),
       sentence: { h: sr.height, line: parseFloat(getComputedStyle(sentence).lineHeight), overflowX: document.documentElement.scrollWidth > innerWidth } };
   })()`);
   const report = [], problems = [];
@@ -75,21 +75,24 @@ test('Button size="inline" keeps a table row at text height and keeps a 44px tou
     for (const [width, mobile] of [[390, true], [1280, false]]) {
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile });
       await browser.send('Emulation.setTouchEmulationEnabled', { enabled: mobile, maxTouchPoints: 5 });
-      for (const theme of ['light', 'dark']) {
-        await open(`theme=${theme}&with=0`);
-        const plain = await browser.evaluate(`({ table: ${rows('table')}, dense: ${rows('dense')} })`);
-        await open(`theme=${theme}&with=1`);
+      // The unscoped page in both themes, then inside each root whose registry CSS floors every control at 44px on touch (the floor must not reach an inline Button).
+      for (const [theme, scope] of [['light', ''], ['dark', ''], ...['app-shell', 'pi-chat', 'boring-viewer', 'feedback'].map(name => ['light', name])]) {
+        await open(`theme=${theme}&with=0&scope=${scope}`);
+        const plain = await browser.evaluate(`({ table: ${rows('table')} })`);
+        await open(`theme=${theme}&with=1&scope=${scope}`);
         const m = await measure();
-        report.push({ width, theme, plain, ...m });
-        if (shots) await browser.screenshot(`button-inline-${width}-${theme}.png`);
-        const label = `${width} ${theme}`;
+        report.push({ width, theme, scope, plain, ...m });
+        if (shots && !scope) await browser.screenshot(`button-inline-${width}-${theme}.png`);
+        const label = `${width} ${theme}${scope ? ' in .' + scope : ''}`;
         const check = (ok, message) => { if (!ok) problems.push(`${label}: ${message}`); };
         check(JSON.stringify(m.table) === JSON.stringify(plain.table), `table rows with the button ${m.table} vs plain text ${plain.table}`);
-        check(JSON.stringify(m.dense) === JSON.stringify(plain.dense), `dense rows with the button ${m.dense} vs plain text ${plain.dense}`);
+        check(m.table.every(h => h >= 44), `rows are 44px or more: ${m.table}`);
+        check(!mobile || (m.adjacent.firstBottom === 'button0' && m.adjacent.secondTop === 'button1'), `in 44px rows each row's target stays in its row: ${JSON.stringify(m.adjacent)}`);
         check(Math.abs(m.box.h - m.lineHeight) <= 1, `the box is ${m.box.h}px, the text line is ${m.lineHeight}px`);
         check(m.padding.every(value => value === '0px') && m.border.every(value => value === '0px'), `padding ${m.padding} border ${m.border} must be zero`);
         check(m.minHeight === '0px' && m.minWidth === '0px', `min size ${m.minHeight} x ${m.minWidth} must be cancelled`);
-        check(m.link && m.decoration === 'none', `a bare size="inline" is the link variant (link ${m.link}, decoration ${m.decoration})`);
+        check(m.link, 'a bare size="inline" is the link variant');
+        check(m.decoration.line === 'underline' && m.decoration.thickness === '1px' && m.decoration.offset === '2px' && m.decoration.colour === m.decoration.text, `always underlined, 1px, offset 2px, in the text colour: ${JSON.stringify(m.decoration)}`);
         if (mobile) {
           check(m.after && m.after.h === 44 && m.after.w >= 44 && m.after.position === 'absolute', `touch hit area ${JSON.stringify(m.after)}`);
           check(m.reach.above === 'button0' && m.reach.below === 'button0', `a tap 20px above or below the box must reach the button, got ${JSON.stringify(m.reach)}`);
@@ -98,6 +101,7 @@ test('Button size="inline" keeps a table row at text height and keeps a 44px tou
           check(m.after === null, `a fine pointer has no pseudo-element, got ${JSON.stringify(m.after)}`);
           check(m.reach.above !== 'button0' && m.reach.below !== 'button0', `on a fine pointer the hit area is the box, got ${JSON.stringify(m.reach)}`);
         }
+        check(m.bare.bg === 'rgba(0, 0, 0, 0)' && m.bare.size === 'inline', `variant={null} adds no variant classes (no fill) and the Button carries data-size: ${JSON.stringify(m.bare)}`);
         check(m.sentence.h > m.sentence.line * 1.5 && !m.sentence.overflowX, `a long label wraps in a sentence: ${JSON.stringify(m.sentence)}`);
       }
     }
