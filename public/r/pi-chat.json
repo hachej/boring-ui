@@ -223,7 +223,7 @@
         "background-color": "var(--card)"
       },
       "@media (width < 768px), (pointer: coarse)": {
-        ".pi-chat :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"])": {
+        ".pi-chat :is([data-slot=\"button\"], [data-slot=\"toggle\"], [class~=\"group/button\"], [class~=\"group/toggle\"]):where(:not([data-size=\"inline\"]))": {
           "min-height": "var(--control-min, 2.75rem)",
           "min-width": "var(--control-min, 2.75rem)"
         },
