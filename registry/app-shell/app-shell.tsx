@@ -47,19 +47,19 @@ export interface AppShellProps {
   /** The app's router owns the URL; the shell only reports the choice. */
   readonly route: { readonly id: string; readonly onChange: (id: string) => void };
   /**
-   * `false`: no backdrop blur behind dialogs, sheets and drawers (blurring the page costs frames on slow phones), only their dim.
-   * Default `true`. Overlays live in a portal, so the shell marks `<html data-overlay-blur="off">` while it is mounted; the app's
-   * own CSS drops the blur there (the rule is in registry/README.md: an item's CSS stays inside `.app-shell`).
+   * `true`: a backdrop blur behind dialogs, alert dialogs, sheets and drawers (default `false`: only their dim; blurring the page costs
+   * frames on slow phones). Overlays live in a portal, so the shell marks `<html data-overlay-blur="on">` while it is mounted; the
+   * shadcn overlays carry the rule (`in-data-[overlay-blur=on]:backdrop-blur-[var(--overlay-blur,4px)]`: an item's CSS stays inside `.app-shell`).
    */
   readonly overlayBlur?: boolean;
 }
 
-/** `<html data-overlay-blur="off">` while a shell asks for it. */
+/** `<html data-overlay-blur="on">` while a shell asks for it. */
 function useOverlayBlur(blur: boolean) {
   useEffect(() => {
-    if (blur || typeof document === 'undefined') return;
+    if (!blur || typeof document === 'undefined') return;
     const root = document.documentElement;
-    root.dataset.overlayBlur = 'off';
+    root.dataset.overlayBlur = 'on';
     return () => { delete root.dataset.overlayBlur; };
   }, [blur]);
 }
@@ -123,7 +123,7 @@ export function AppShell(props: AppShellProps) {
   const { layout, rail = 'icon', compactNav = 'tabs', agent, panel, title, nav, account, route } = props;
   if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `panel` for the product manager)');
   const text = appShellText(agent?.chatProps?.locale ?? (panel?.locale as AppShellLocale | undefined) ?? props.locale);
-  useOverlayBlur(props.overlayBlur ?? true);
+  useOverlayBlur(props.overlayBlur ?? false);
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;
   return <AgentLayerProvider agent={agent} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title}>

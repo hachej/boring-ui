@@ -90,14 +90,17 @@ test('no agent: the nav and the header render at once, with the locale prop and 
   await unmount();
 });
 
-test('overlayBlur={false} marks <html data-overlay-blur="off"> while the shell is mounted; the default marks nothing', async t => {
+test('overlayBlur marks <html data-overlay-blur="on"> while the shell is mounted; the default (no blur) and false mark nothing', async t => {
   const plain = await render(t, {});
-  assert.equal(plain.window.document.documentElement.dataset.overlayBlur, undefined, 'blur stays on by default');
+  assert.equal(plain.window.document.documentElement.dataset.overlayBlur, undefined, 'no blur by default');
   await plain.unmount();
-  const { window, unmount } = await render(t, { overlayBlur: false });
-  assert.equal(window.document.documentElement.dataset.overlayBlur, 'off');
+  const off = await render(t, { overlayBlur: false });
+  assert.equal(off.window.document.documentElement.dataset.overlayBlur, undefined);
+  await off.unmount();
+  const { window, unmount } = await render(t, { overlayBlur: true });
+  assert.equal(window.document.documentElement.dataset.overlayBlur, 'on');
   await unmount();
-  assert.equal(window.document.documentElement.dataset.overlayBlur, undefined, 'unmounting the shell gives the blur back');
+  assert.equal(window.document.documentElement.dataset.overlayBlur, undefined, 'unmounting the shell takes the blur away');
 });
 
 test('the hover rail starts collapsed, reveals on pointer hover or focus within, and collapses on leave, blur or Escape', async t => {
