@@ -79,6 +79,30 @@ test('the composer keeps its box and its trailing control from idle to starting 
           if (shots && layout === 'card') await browser.screenshot(`composer-${width}-${theme}-${state}.png`);
           report.push({ width, theme, layout, state, replace: seen[state].replace, beside: seen[state].beside, hint: seen[state].hint });
         }
+        // The app's own `recording` node (no slots), as the page lays it out and as the agent layer's row host lays it out: the row fills the box,
+        // the same rect when the viewport shrinks; as the page lays it out, the box height is the idle height too.
+        for (const host of ['page', 'row']) {
+          const legacy = {};
+          for (const state of ['idle', 'recording']) {
+            await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 700, deviceScaleFactor: 1, mobile });
+            await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?only=legacy&host=${host}&layout=${layout}&state=${state}&theme=${theme}&w=${width}` });
+            await browser.until('legacy fixture mounted', `document.querySelectorAll('[data-slot=input-group]').length === 1 && document.readyState === 'complete'`);
+            await new Promise(done => setTimeout(done, 400));
+            legacy[state] = await browser.evaluate(`(() => { const rect = ${rect}; const scope = document.querySelector('[data-case=legacy]'); return { box: rect('[data-slot=input-group]', scope), bar: rect('[data-testid=voice-recording-bar]', scope) }; })()`);
+            if (state === 'recording') {
+              if (shots && host === 'page' && layout === 'card' && theme === 'light') await browser.screenshot(`composer-${width}-${theme}-legacy.png`);
+              await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 500, deviceScaleFactor: 1, mobile });
+              await new Promise(done => setTimeout(done, 400));
+              legacy.shrunk = await browser.evaluate(`(() => { const rect = ${rect}; return rect('[data-testid=voice-recording-bar]', document.querySelector('[data-case=legacy]')); })()`);
+            }
+          }
+          report.push({ width, theme, layout, host, legacy });
+          const label = `${width} ${theme} ${layout} legacy (${host})`;
+          if (host === 'page') same(`${label} box height`, legacy.idle.box.h, legacy.recording.box.h);
+          assert.equal(legacy.recording.bar !== null && legacy.recording.bar.w >= legacy.recording.box.w - 24, true, `${label}: the recording row fills the box, got ${JSON.stringify(legacy.recording)}`);
+          same(`${label} bar rect when the viewport shrinks`, legacy.recording.bar, legacy.shrunk);
+        }
+        await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 700, deviceScaleFactor: 1, mobile });
         for (const id of (layout === 'card' ? ['replace', 'beside', 'hint'] : ['replace', 'beside'])) for (const state of ['starting', 'recording']) {
           const label = `${width} ${theme} ${layout} ${id} ${state}`;
           same(`${label} box height`, seen.idle[id].box.h, seen[state][id].box.h);

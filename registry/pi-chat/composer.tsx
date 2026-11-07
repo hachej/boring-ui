@@ -434,8 +434,8 @@ export function Composer(props: ComposerProps) {
       <InputGroupAddon align="block-end" data-testid="composer-controls">{startAndPlus}{end}</InputGroupAddon>
     </InputGroup> : props.recording ? <InputGroup>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
-      {!pill && <div data-slot="composer-recording" aria-hidden="true" className="min-h-11 w-full" />}
-      <InputGroupAddon align="block-end" data-testid="composer-controls" className="w-full">{props.recording}</InputGroupAddon>
+      {!pill && <div data-slot="composer-recording" aria-hidden="true" className="min-h-11 w-0 shrink-0" />}
+      <InputGroupAddon align="block-end" data-testid="composer-controls" className={cn('w-full', pill && 'py-0')}>{props.recording}</InputGroupAddon>
     </InputGroup> : pill ? <InputGroup>
       <InputGroupAddon>{startAndPlus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
       {input}
