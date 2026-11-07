@@ -135,8 +135,10 @@ test('the schema and the validator accept and refuse the same values', () => {
   for (const value of ['a.synthetic.csv', 'a.csv', 'a.SYNTHETIC.csv', 'dir/a.synthetic.csv', 'a b.synthetic.csv', '.synthetic.', 'x.synthetic.y'])
     assert.equal(accepted(s => { s.given.fixture = value; return s; }), schemaAccepts(given.fixture, value), `fixture ${value}`);
   // Steps whose arity the schema can state (fill needs two arguments: the validator alone refuses `fill a`).
-  for (const step of ['open x', 'open  x', 'open', 'open ', 'upload', 'upload ', 'upload x', 'uploadx', 'click x', 'click', 'click  ', 'wait x', 'wait', 'hover x', 'drop x', 'fill a b', ' click x'])
+  for (const step of ['open x', 'open  x', 'open', 'open ', 'upload', 'upload ', 'upload x.synthetic.csv', 'uploadx', 'click x', 'click', 'click  ', 'wait x', 'wait', 'hover x', 'drop x', 'fill a b', ' click x'])
     assert.equal(accepted(s => { s.given.steps = [step]; return s; }), schemaAccepts(given.steps.items, step), `step ${JSON.stringify(step)}`);
+  // The schema cannot say "synthetic" for a step's argument; the validator does, as Factory's row check does for every named fixture.
+  assert.deepEqual(checkAtlas({ states: [{ ...base, given: { fixture: 'a.synthetic.csv', steps: ['upload clients.csv'] } }] }).map(f => f.path), ['states[0].given.steps[0]']);
   const { flow: _, ...noFlow } = { ...base, after: 'x' };
   assert.deepEqual(checkAtlas({ states: [noFlow] }).map(f => f.path), ['states[0].after']);
 });
