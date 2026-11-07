@@ -375,3 +375,69 @@ test('Revisions at 1280: switching the provider shows no history of the previous
   assert.equal(view.q('[data-testid=revision-item]'), null, 'no row of the previous workspace');
   assert.match(view.q('[data-testid=revisions]')?.textContent ?? '', /Loading revisions|Chargement/, 'the new history is awaited');
 });
+
+/** A change feed a test can drop: each `changes()` call is one connection (`since` recorded); `end()` is the browser closing the stream. A reconnection after `since` is answered with a `resnapshot`, as the real feed does. */
+function droppableFeed() {
+  const connections = [];
+  const changes = (request = {}) => {
+    const queue = [], waiting = [];
+    const connection = { since: request.since, ended: false, aborted: false, push(event) { queue.push(event); waiting.shift()?.(); }, end() { connection.ended = true; waiting.shift()?.(); }, fail() { connection.failed = true; waiting.shift()?.(); } };
+    connections.push(connection);
+    if (request.since !== undefined) queue.push({ kind: 'resnapshot', seq: request.since + 1, at: 0 });
+    request.signal?.addEventListener('abort', () => { connection.aborted = true; waiting.shift()?.(); }, { once: true });
+    return (async function* () {
+      while (queue.length || (!connection.ended && !connection.aborted && !connection.failed)) {
+        if (queue.length) { yield queue.shift(); continue; }
+        await new Promise(done => waiting.push(done));
+      }
+      if (connection.failed) throw new Error('refused');
+    })();
+  };
+  return { connections, changes };
+}
+
+test('Documents at 1280: an edit made while the page is hidden shows in the list when the page is shown again, with no feed connection while hidden', async t => {
+  const f = await fixture(t);
+  const feed = droppableFeed();
+  const provider = { ...f.provider, changes: feed.changes };
+  const { createElement: h } = await import('react');
+  const view = await mount(t, { width: 1280, screen: shell => () => h(shell.Documents, { provider }) });
+  const visibility = state => {
+    Object.defineProperty(view.window.document, 'visibilityState', { configurable: true, get: () => state });
+    view.window.document.dispatchEvent(new view.window.Event('visibilitychange'));
+  };
+  await view.settle(() => view.q('[role=treeitem][data-path="notes.md"] button') && feed.connections.length > 0);
+  assert.equal(feed.connections.length, 1, 'the list follows the workspace feed');
+  // The page is hidden and the browser closes the stream; a file is written meanwhile.
+  await view.act(async () => { visibility('hidden'); feed.connections[0].end(); });
+  const bytes = new TextEncoder().encode('# Ajoutée pendant la pause\n');
+  const written = await f.provider.publish({ operationId: 'late-file', atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: locate('late.md'), expected: { kind: 'absent' }, bytes, mediaType: 'text/markdown' }] });
+  assert.equal(written.kind, 'committed');
+  await view.act(async () => new Promise(done => setTimeout(done, 400)));
+  assert.equal(feed.connections.length, 1, 'no feed connection is opened while the page is hidden');
+  assert.equal(view.q('[role=treeitem][data-path="late.md"]'), null, 'nothing reloads while hidden');
+  await view.act(async () => { visibility('visible'); });
+  await view.settle(() => view.q('[role=treeitem][data-path="late.md"]'));
+  assert.ok(view.q('[role=treeitem][data-path="late.md"]'), 'back on the page, the list shows the file written while hidden, without a reload');
+  assert.equal(feed.connections.length, 2, 'the feed resumed once');
+  assert.equal(feed.connections[1].since, 0, 'it resumed with a since cursor');
+  assert.equal(view.q('[data-testid=documents]')?.dataset.live, 'true', 'Documents says it is live');
+  await view.act(async () => { visibility('hidden'); });
+  assert.equal(view.q('[data-testid=documents]')?.dataset.live, 'false', 'not live while hidden');
+});
+
+test('Documents at 1280: a change delivered just before the feed fails is not lost', async t => {
+  const f = await fixture(t);
+  const feed = droppableFeed();
+  const provider = { ...f.provider, changes: feed.changes };
+  const { createElement: h } = await import('react');
+  const view = await mount(t, { width: 1280, screen: shell => () => h(shell.Documents, { provider }) });
+  await view.settle(() => view.q('[role=treeitem][data-path="notes.md"] button') && feed.connections.length > 0);
+  const bytes = new TextEncoder().encode('# Juste avant la panne\n');
+  const written = await f.provider.publish({ operationId: 'before-failure', atomicity: 'all-or-nothing', changes: [{ kind: 'create', target: locate('early.md'), expected: { kind: 'absent' }, bytes, mediaType: 'text/markdown' }] });
+  assert.equal(written.kind, 'committed');
+  // The change arrives and the feed ends with an error inside the 150 ms settling window.
+  await view.act(async () => { feed.connections[0].push({ kind: 'change', path: 'early.md', revision: null, source: 'publish', seq: 1, at: 0 }); feed.connections[0].fail(); });
+  await view.settle(() => view.q('[role=treeitem][data-path="early.md"]'));
+  assert.ok(view.q('[role=treeitem][data-path="early.md"]'), 'the list shows the file of the change delivered before the failure');
+});

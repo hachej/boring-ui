@@ -18,6 +18,7 @@
 - `workspace-board-projection` board@1 frames own tldraw viewport geometry, not a Card surface; generated maquette app screens pair the host's canvas/foreground tokens over the native canvas, preserving their Card blocks. Native tldraw and authored HTML styling are unchanged. `registry/board-viewer/board-canvas.tsx`.
 - `workspace-task-list-layout` the consumer task-list recipe aligns each checkbox and label with a gap, uses a consistent Remove column and spaced add/recovery actions, with a 14px title and 12px body. Controller/edit/flush/recovery APIs are unchanged. `registry.json` (task-list-viewer CSS).
 - `workspace-documents` `documents`: the Library, a file and its revisions; `DocumentSheet`. `registry/documents/`.
+- `workspace-documents-live` Documents follows the provider's change feed like the workspace Library (`useWorkspaceChangeFeed` from `@hachej/boring-ui-kit/file-tree-view`: 150 ms settle, no connection while the page is hidden, resumes with `since` when shown, so an edit made while hidden shows on return without a reload); `[data-testid=documents]` carries `data-live`. `packages/ui/src/workspace-change-feed.ts`. Drive: `node --test test/contracts/documents-render.impl.mjs`.
 - `workspace-windows` floating utility windows and launcher. `registry/windows/`.
 - `workspace-bar-host` `barOptions={{ hidden, command }}` (embedded): the host draws the one bar; `command={{ kind: 'history' | 'library' | 'new', n }}` still opens History or the Library, or starts a conversation (a new `n` per request). `registry/pi-app/workspace-bar.tsx`.
 
@@ -40,7 +41,7 @@ Preconditions: `npm run build`, Chromium.
 - **Placed.** `workspace-placed`: `npm run app-shell:journey:placed` (wide: floats as ambient; phone: lent to the layer at peek).
 - **Viewers.** `workspace-viewers`: `npm run mockup:journey`, `npm run diagram:journey`, `npm run records:journey`.
 - **Document type, board projection, task rows.** `workspace-document-type`, `workspace-board-projection`, `workspace-task-list-layout`: no automated browser proof. Their former tests needed an external preview harness that CI never had (D-1747) and were deleted; check by hand in the examples app at 1440 and 390 in both modes.
-- **Documents.** `workspace-documents`: `npm run app-shell:journey:documents`.
+- **Documents.** `workspace-documents`, `workspace-documents-live` (`node --test test/contracts/documents-render.test.mjs`); `workspace-documents`: `npm run app-shell:journey:documents`.
 - **Windows.** `workspace-windows`: `npm run windows:journey`.
 - **Proof.** ARIA snapshot and screenshot; after a save, a second read of the file through the provider.
 
