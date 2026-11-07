@@ -9,7 +9,7 @@ import { build } from 'esbuild';
 import { compile } from 'tailwindcss';
 
 // D-1861: <TableCell truncate> is one line with an ellipsis (also in a table-auto table, and at 390 touch) and its row is as tall as a row of short text. Happy-dom has no layout, so a real Chromium mounts the real
-// Table, TableRow and TableCell (shadcn/ui) and measures at 1280 fine (light, dark): one line box, scrollWidth > clientWidth, equal row heights (0px), the label cell
+// Table, TableRow and TableCell (shadcn/ui) and measures (overflow: clip is not scrollable, so scrollWidth is clamped: the ellipsis is the text's Range width > clientWidth; row heights within 0.5px as in the badge test) at 1280 fine (light, dark): one line box, scrollWidth > clientWidth, equal row heights (0px), the label cell
 // still wrapping-capable, no sideways scroll. The Table has no stacked mode (DataTable's phone list is a separate render), so 390 touch checks the same one line and bound. A focused inline Button keeps its 3px ring (overflow: clip with a clip margin). Set EVIDENCE_DIR to also write the screenshots there. In CI a missing browser fails the test; it never skips (D-1731).
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
@@ -56,13 +56,15 @@ test('TableCell truncate is one line with an ellipsis, in a row as tall as short
     if (!inner) return { noInner: true };
     const cs = getComputedStyle(inner), cell = document.querySelector('[data-cell=long]');
     const line = parseFloat(cs.lineHeight);
+    const textW = el => { const r = document.createRange(); r.selectNodeContents(el); return r.getBoundingClientRect().width; };
+    const shortInner = document.querySelector('[data-cell=short] [data-slot=table-cell-truncate]');
     const btn = document.querySelector('[data-btn]'), bi = document.querySelector('[data-cell=button] [data-slot=table-cell-truncate]');
     btn.focus();
     const bcs = getComputedStyle(bi), br = btn.getBoundingClientRect(), ir = bi.getBoundingClientRect();
     const ring = { margin: parseFloat(bcs.overflowClipMargin) || 0, overflow: bcs.overflow, leftGap: br.left - ir.left, btnH: br.height, lineH: parseFloat(bcs.lineHeight) };
     const au = document.querySelector('[data-cell=auto] [data-slot=table-cell-truncate]'), acs = getComputedStyle(au);
-    const auto = { h: au.getBoundingClientRect().height, line: parseFloat(acs.lineHeight), w: au.getBoundingClientRect().width, max: parseFloat(getComputedStyle(document.documentElement).fontSize) * 16, sw: au.scrollWidth, cw: au.clientWidth, layout: getComputedStyle(au.closest('table')).tableLayout };
-    return { ring, auto, heights: trs.map(tr => tr.getBoundingClientRect().height), inner: { h: inner.getBoundingClientRect().height, line, scrollWidth: inner.scrollWidth, clientWidth: inner.clientWidth,
+    const auto = { h: au.getBoundingClientRect().height, line: parseFloat(acs.lineHeight), w: au.getBoundingClientRect().width, max: parseFloat(getComputedStyle(document.documentElement).fontSize) * 16, sw: textW(au), cw: au.clientWidth, layout: getComputedStyle(au.closest('table')).tableLayout };
+    return { ring, auto, heights: trs.map(tr => tr.getBoundingClientRect().height), inner: { h: inner.getBoundingClientRect().height, shortH: shortInner.getBoundingClientRect().height, line, scrollWidth: textW(inner), clientWidth: inner.clientWidth,
       overflow: cs.overflow, whiteSpace: cs.whiteSpace, textOverflow: cs.textOverflow }, truncateAttr: cell.hasAttribute('data-truncate'), title: cell.title,
       shortTitle: document.querySelector('[data-cell=short]').title, plainClass: document.querySelector('[data-cell=plain]').className, plainInner: !!document.querySelector('[data-cell=plain] [data-slot=table-cell-truncate]'),
       plainWhiteSpace: getComputedStyle(document.querySelector('[data-cell=plain]')).whiteSpace, scrollX: document.documentElement.scrollWidth - document.documentElement.clientWidth };
@@ -92,9 +94,10 @@ test('TableCell truncate is one line with an ellipsis, in a row as tall as short
         if (mobile) continue;
         if (!m.truncateAttr) problems.push(`${label}: the cell has no data-truncate`);
         if (Math.abs(m.inner.h - m.inner.line) > 0.5) problems.push(`${label}: the truncate cell is ${m.inner.h}px tall, one line is ${m.inner.line}px`);
-        if (m.inner.scrollWidth <= m.inner.clientWidth) problems.push(`${label}: no ellipsis, scrollWidth ${m.inner.scrollWidth} <= clientWidth ${m.inner.clientWidth}`);
+        if (m.inner.scrollWidth <= m.inner.clientWidth) problems.push(`${label}: no ellipsis, text width ${m.inner.scrollWidth} <= clientWidth ${m.inner.clientWidth}`);
         if (m.inner.overflow !== 'clip' || m.inner.whiteSpace !== 'nowrap' || m.inner.textOverflow !== 'ellipsis') problems.push(`${label}: inner styles ${JSON.stringify(m.inner)}`);
-        if (m.heights[0] !== m.heights[1]) problems.push(`${label}: the long row is ${m.heights[0]}px, the short row ${m.heights[1]}px`);
+        if (m.inner.h !== m.inner.shortH) problems.push(`${label}: the long cell block is ${m.inner.h}px, the short one ${m.inner.shortH}px`);
+        if (Math.abs(m.heights[0] - m.heights[1]) > 0.5) problems.push(`${label}: the long row is ${m.heights[0]}px, the short row ${m.heights[1]}px`);
         if (!m.title.startsWith('Camille Durand-Lefebvre') || m.shortTitle !== 'Camille') problems.push(`${label}: the full text is not in the title (${m.title} / ${m.shortTitle})`);
       }
     }
