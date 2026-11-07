@@ -47,6 +47,6 @@ test('an app index.css of imports + app.css + a theme file: theme wins, scale, m
   assert.match(css, /\.app-shell :where\(button/);
   assert.match(css, /\.pi-chat \[hidden\]/);
   assert.match(css, /\[data-boring="feedback"\] :where\(button/);
-  assert.match(css, /data-overlay-blur="off"/);
+  assert.match(css, /data-overlay-blur="on"/);
   assert.match(css, /--duration-normal:\s*150ms/);
 });
