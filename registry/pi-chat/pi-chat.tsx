@@ -1,6 +1,6 @@
 'use client';
 
-import { useKeyboardInset, usePhone, useToastOffset } from '../utils/use-media';
+import { useKeyboardInset, useBelowLg, useToastOffset } from '../utils/use-media';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
@@ -268,9 +268,9 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const [titleError, setTitleError] = useState(false);
   const page = useRef<HTMLElement>(null);
   useKeyboardInset(page, keyboardInset);
-  // Toasts sit above the composer while it is docked on a phone (D-1801); the token goes with the chat.
-  const dock = useRef<HTMLElement>(null), phone = usePhone();
-  useToastOffset(dock, phone && placement === 'docked');
+  // Toasts sit above the composer while it is docked below lg (D-1801); the token goes with the chat.
+  const dock = useRef<HTMLElement>(null), belowLg = useBelowLg();
+  useToastOffset(dock, belowLg && placement === 'docked');
 
   return <section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative box-border flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card text-card-foreground ', keyboardInset && 'max-md:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'md:justify-center', className)}>
     {header && <header className={cn(empty && emptyLayout === 'centered' && 'md:absolute md:inset-x-0 md:top-0', 'flex h-13 shrink-0 items-center gap-2 px-3 md:gap-3 md:px-4')}>

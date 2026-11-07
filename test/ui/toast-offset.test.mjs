@@ -33,8 +33,8 @@ const THEMES = 'export const useTheme = () => ({ theme: "light" });';
 
 /** A length from the toaster's CSS variable, resolving var(--x, fallback) against the document root's inline style. */
 function px(value, root) {
-  const resolved = value.replace(/var\((--[a-z-]+),\s*([^()]*)\)/g, (_, name, fallback) => root.style.getPropertyValue(name) || fallback);
-  const nested = resolved.replace(/var\((--[a-z-]+),\s*([^()]*)\)/g, (_, name, fallback) => root.style.getPropertyValue(name) || fallback);
+  let nested = value;
+  for (let pass = 0; pass < 6 && nested.includes('var('); pass += 1) nested = nested.replace(/var\((--[a-z-]+),\s*((?:[^()]|\([^()]*\))*)\)/g, (_, name, fallback) => root.style.getPropertyValue(name) || fallback);
   const sum = /^calc\(\s*([\d.]+)px\s*\+\s*([\d.]+)rem\s*\)$/.exec(nested);
   if (sum) return Number(sum[1]) + Number(sum[2]) * 16;
   const plain = /^([\d.]+)px$/.exec(nested.trim());
@@ -53,8 +53,11 @@ test('toasts clear the docked composer on a phone, are unchanged on a desktop, a
     Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: typeof given === 'function' && /^[a-z]/.test(name) ? given.bind(window) : given });
   }
   // The composer dock sits 144px above the bottom edge of an 844px window (its height plus the safe area under it).
-  const DOCK_TOP = 700;
-  window.HTMLElement.prototype.getBoundingClientRect = function rect() { const top = this.dataset?.testid === 'composer-dock' ? DOCK_TOP : 0; return { x: 0, y: top, top, left: 0, right: 0, bottom: top, width: 0, height: 0 }; };
+  const dock = { top: 700, height: 144 };
+  // A visual viewport the test drives: the keyboard changes `height`, and only its own events fire.
+  const viewport = new window.EventTarget(); viewport.height = 844; viewport.offsetTop = 0; viewport.scale = 1;
+  Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
+  window.HTMLElement.prototype.getBoundingClientRect = function rect() { const top = this.dataset?.testid === 'composer-dock' ? dock.top : 0; return { x: 0, y: top, top, left: 0, right: 0, bottom: top, width: 0, height: this.dataset?.testid === 'composer-dock' ? dock.height : 0 }; };
   const { createElement, act } = await import('react'); const { createRoot } = await import('react-dom/client');
   const out = new URL('../../.cache/toast-offset/', import.meta.url); mkdirSync(out, { recursive: true });
   const output = new URL('chat.mjs', out);
@@ -76,23 +79,83 @@ test('toasts clear the docked composer on a phone, are unchanged on a desktop, a
   const show = async (width, ...chats) => { window.happyDOM.setViewport({ width, height: 844 }); await act(async () => root.render(page(...chats))); };
   /** Where the bottom toast sits, in px from the window's bottom edge, as the toaster's own CSS variables say (sonner reads the mobile pair at 600px and below). */
   const toastBottom = () => { const toaster = element.querySelector('[data-sonner-toaster]'); return px(toaster.style.getPropertyValue(window.innerWidth <= 600 ? '--mobile-offset-bottom' : '--offset-bottom'), html); };
-  const token = () => html.style.getPropertyValue('--toast-offset-bottom');
+  // The chat's own token; the app's theme token (--toast-offset-bottom) is separate and wins.
+  const token = () => html.style.getPropertyValue('--toast-offset-composer');
+  const reset = async () => { await show(1280); dock.top = 700; dock.height = 144; viewport.height = 844; viewport.offsetTop = 0; html.style.removeProperty('--toast-offset-bottom'); };
 
-  await show(390, chat('a'));
-  assert.ok(element.querySelector('[data-testid=composer-dock]'), 'the composer dock is drawn');
-  assert.ok(toastBottom() >= 844 - DOCK_TOP, `at 390 with a docked composer the toast bottom (${toastBottom()}px) clears the 144px composer`);
+  await t.test('at 390 with a docked composer the toast clears it; on unmount the token is gone', async () => {
+    await reset();
+    await show(390, chat('a'));
+    assert.ok(element.querySelector('[data-testid=composer-dock]'), 'the composer dock is drawn');
+    assert.notEqual(token(), '', 'the chat set its own token');
+    assert.ok(toastBottom() >= 844 - dock.top,`the toast bottom (${toastBottom()}px) clears the 144px composer`);
+    await show(390);
+    assert.equal(token(), '', 'on unmount the token is gone');
+    assert.equal(toastBottom(), 16, 'with no chat the phone toast keeps sonner\'s own 16px');
+  });
 
-  await show(390);
-  assert.equal(token(), '', 'on unmount the token is gone');
-  assert.equal(toastBottom(), 16, 'with no chat the phone toast keeps sonner\'s own 16px');
+  await t.test('closing one of two chats keeps the room; a floating chat sets nothing', async () => {
+    await reset();
+    await show(390, chat('a'), chat('b'));
+    await show(390, chat('a'));
+    assert.notEqual(token(), '', 'closing one of two chats keeps the room the other needs (BORING-PI-6)');
+    await show(390, chat('a', { placement: 'floating' }));
+    assert.equal(token(), '', 'a floating chat is not docked: no token');
+  });
 
-  await show(390, chat('a'), chat('b'));
-  await show(390, chat('a'));
-  assert.notEqual(token(), '', 'closing one of two chats keeps the room the other needs (BORING-PI-6)');
-  await show(390, chat('a', { placement: 'floating' }));
-  assert.equal(token(), '', 'a floating chat is not docked: no token');
+  await t.test('at 1280 nothing changes', async () => {
+    await reset();
+    await show(1280, chat('c'));
+    assert.equal(token(), '', 'at 1280 the chat sets no token');
+    assert.equal(toastBottom(), 24, 'at 1280 the toast keeps sonner\'s own 24px');
+  });
 
-  await show(1280, chat('c'));
-  assert.equal(token(), '', 'at 1280 the chat sets no token');
-  assert.equal(toastBottom(), 24, 'at 1280 the toast keeps sonner\'s own 24px');
+  await t.test('fix 3: at 900 the composer is still docked at the bottom, so the toast clears it', async () => {
+    await reset();
+    await show(900, chat('a'));
+    assert.ok(toastBottom() >= 144, `at 900 the toast bottom (${toastBottom()}px) clears the composer`);
+    await show(1023, chat('a'));
+    assert.notEqual(token(), '', 'still set at 1023');
+    await show(1024, chat('a'));
+    assert.equal(token(), '', 'from 1024 (lg) nothing is set');
+  });
+
+  await t.test('fix 1: a hidden dock (no box) publishes nothing', async () => {
+    await reset();
+    dock.top = 0; dock.height = 0;
+    await show(390, chat('a'));
+    assert.equal(token(), '', 'a display:none dock has top 0 and no height: no clearance, not 844px');
+    assert.equal(toastBottom(), 16, 'the toast keeps its own offset');
+    dock.top = 700; dock.height = 144;
+    await act(async () => window.dispatchEvent(new window.Event('resize')));
+    assert.ok(toastBottom() >= 144, 'shown again: it clears the composer');
+    dock.top = 0; dock.height = 0;
+    await act(async () => window.dispatchEvent(new window.Event('resize')));
+    assert.equal(token(), '', 'hidden again: the clearance is deleted');
+  });
+
+  await t.test('fix 2: the keyboard moves the composer inside the visual viewport', async () => {
+    await reset();
+    await show(390, chat('a'));
+    // The keyboard shrinks the visual viewport to 500 and the taller composer sits 200px above its bottom; only visualViewport events fire.
+    viewport.height = 500; dock.top = 300; dock.height = 200;
+    await act(async () => viewport.dispatchEvent(new window.Event('resize')));
+    assert.equal(toastBottom(), 200 + 8, 'measured against visualViewport.height + offsetTop');
+    viewport.offsetTop = 40; dock.top = 340;
+    await act(async () => viewport.dispatchEvent(new window.Event('scroll')));
+    assert.equal(toastBottom(), 200 + 8, 'a scrolled visual viewport is followed');
+  });
+
+  await t.test('fix 4: a theme value of --toast-offset-bottom always wins over the chat', async () => {
+    await reset();
+    html.style.setProperty('--toast-offset-bottom', '200px');
+    await show(390, chat('a'));
+    assert.notEqual(token(), '', 'the chat still sets its own token');
+    assert.equal(toastBottom(), 200, 'the app\'s theme value wins on the phone');
+    await show(900, chat('a'));
+    assert.equal(toastBottom(), 200, 'and at 900');
+    await show(1280, chat('a'));
+    assert.equal(toastBottom(), 200, 'and at 1280 (the app asked for it)');
+    html.style.removeProperty('--toast-offset-bottom');
+  });
 });

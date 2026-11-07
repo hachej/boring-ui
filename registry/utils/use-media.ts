@@ -57,8 +57,15 @@ export function useKeyboardInset(ref: RefObject<HTMLElement | null>, enabled: bo
   }, [ref, enabled, viewport]);
 }
 
-/** The token the kit Toaster reads for its bottom offset (`var(--toast-offset-bottom, <sonner default>)`). */
-export const TOAST_OFFSET = '--toast-offset-bottom';
+/** Below the `lg` breakpoint (1024), where a chat's composer is still docked at the bottom of the screen. */
+export const BELOW_LG_QUERY = '(max-width: 1023px)';
+export const useBelowLg = (): boolean => useMedia(BELOW_LG_QUERY);
+
+/**
+ * The chat's own token. The kit Toaster reads `var(--toast-offset-bottom, var(--toast-offset-composer, <sonner default>)`, so a value
+ * the app sets for `--toast-offset-bottom` in its theme always wins over what the chat measures.
+ */
+export const TOAST_OFFSET = '--toast-offset-composer';
 
 // One page can show several chats (BORING-PI-6). Each docked composer registers its own clearance, the token is the largest, and it is
 // removed only when the last one leaves: closing one viewer never clears the room another still needs.
@@ -72,7 +79,7 @@ function publishToastOffset(): void {
 }
 
 /**
- * While `enabled` (a phone, composer docked at the bottom), keeps `--toast-offset-bottom` on the document root equal to the room the
+ * While `enabled` (below lg, composer docked at the bottom), keeps `--toast-offset-composer` on the document root equal to the room the
  * dock takes from the bottom of the window (its height, its safe-area padding and anything below it). Cleanup is synchronous.
  */
 export function useToastOffset(dock: RefObject<HTMLElement | null>, enabled: boolean): void {
@@ -80,11 +87,25 @@ export function useToastOffset(dock: RefObject<HTMLElement | null>, enabled: boo
     const element = dock.current, view = globalThis.window;
     if (!enabled || !element || !view) return;
     const id = Symbol('toast-offset');
-    const measure = () => { clearances.set(id, Math.max(0, Math.round(view.innerHeight - element.getBoundingClientRect().top))); publishToastOffset(); };
+    const visual = view.visualViewport ?? undefined;
+    const measure = () => {
+      const box = element.getBoundingClientRect();
+      // A dock with no box (display:none, detached) takes no room: it has no clearance, rather than one measured from top 0.
+      if (!element.isConnected || box.height === 0) clearances.delete(id);
+      else clearances.set(id, Math.max(0, Math.round((visual ? visual.height + visual.offsetTop : view.innerHeight) - box.top)));
+      publishToastOffset();
+    };
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
     observer?.observe(element);
     view.addEventListener('resize', measure);
+    // The on-screen keyboard resizes only the visual viewport; the composer moves without a window event.
+    visual?.addEventListener('resize', measure);
+    visual?.addEventListener('scroll', measure);
     measure();
-    return () => { observer?.disconnect(); view.removeEventListener('resize', measure); clearances.delete(id); publishToastOffset(); };
+    return () => {
+      observer?.disconnect(); view.removeEventListener('resize', measure);
+      visual?.removeEventListener('resize', measure); visual?.removeEventListener('scroll', measure);
+      clearances.delete(id); publishToastOffset();
+    };
   }, [dock, enabled]);
 }
