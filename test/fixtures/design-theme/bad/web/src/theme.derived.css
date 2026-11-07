@@ -1,0 +1,9 @@
+:root, .dark {
+    --card-foreground: var(--foreground);
+    --link: #3366ff;
+    --primary: var(--foreground);
+}
+
+:root {
+    --muted-foreground: color-mix(in oklab, var(--foreground) 57%, var(--background));
+}

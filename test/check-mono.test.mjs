@@ -36,6 +36,13 @@ test('a descendant target that reaches only code is allowed; any other target is
   assert.deepEqual(lines('const a = <div className="[&_code_span]:font-mono" />;'), [1]);
 });
 
+test('D-1782: the kit Textarea may carry font-mono for variant="code"; no other file or element may', () => {
+  const field = 'const a = <textarea className={cn(variant === "code" && "font-mono")} />;';
+  assert.deepEqual(monoViolations(field, 'shadcn/ui/textarea.tsx'), []);
+  assert.equal(monoViolations(field, 'registry/x/y.tsx').length, 1);
+  assert.equal(monoViolations('const a = <div className="font-mono" />;', 'shadcn/ui/textarea.tsx').length, 1);
+});
+
 test('the kit passes', () => {
   assert.deepEqual(checkMono(), []);
 });

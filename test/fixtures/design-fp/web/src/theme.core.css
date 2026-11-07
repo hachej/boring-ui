@@ -1,0 +1,13 @@
+@font-face {
+  font-family: 'Geist Variable';
+  src: url('./geist.woff2') format('woff2');
+}
+
+:root {
+  --background: oklch(0.97 0 0);
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+}
+
+.dark {
+  --background: oklch(0.18 0 0);
+}

@@ -1,0 +1,7 @@
+/* dark: and #fff in a comment; font-family: Georgia in a comment */
+.report-grid {
+  grid-template-columns: 1fr auto;
+  font-family: var(--font-sans);
+  width: calc(100% - var(--x));
+  background: url(#gradient);
+}

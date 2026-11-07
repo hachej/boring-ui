@@ -1,0 +1,20 @@
+:root {
+    --background: oklch(0.97 0 0);
+    --foreground: oklch(0.2 0 0);
+    --muted-foreground: oklch(0.5 0 0);
+    --pm-gold: oklch(0.8 0.15 90); --cta: oklch(0.6 0.2 30);
+    --shadow-halo: 0 0 0 1px oklch(0.5 0 0 / 0.2);
+    --accent: oklch(0.9 0 0);
+    --radius: 0.5rem;
+}
+
+.dark {
+    --background: oklch(0.18 0 0);
+    --foreground: oklch(0.96 0 0);
+    --muted-foreground: oklch(0.7 0 0);
+    --pm-gold: oklch(0.85 0.1 90);
+}
+
+/* === EXCEPTIONS === */
+:root { --brand-teal: oklch(0.7 0.1 190); }
+:root { --link: oklch(0.6 0.2 260); --input: oklch(0.9 0 0); }
