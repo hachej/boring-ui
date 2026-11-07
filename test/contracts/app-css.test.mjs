@@ -27,6 +27,19 @@ async function build(candidates) {
   return compiler.build(candidates);
 }
 
+test('an older overlay with an unconditional backdrop-blur-xs: no blur without the attribute, blur with "on"', async () => {
+  const css = await build(['backdrop-blur-xs']);
+  const flat = css.replace(/\s+/g, ' ');
+  const util = flat.indexOf('.backdrop-blur-xs');
+  const off = flat.indexOf(':root:not([data-overlay-blur="on"]) :is(');
+  const on = flat.indexOf(':root[data-overlay-blur="on"] :is(');
+  assert.ok(util >= 0, 'the utility is generated');
+  // Both rules are (0,3,0), above the single-class (0,1,0) utility, so they win whatever the order: the default is none, "on" is blur.
+  assert.ok(off >= 0 && on >= 0, 'both overlay rules are in the built CSS');
+  assert.match(flat.slice(off, flat.indexOf('}', off)), /backdrop-filter: none/);
+  assert.match(flat.slice(on, flat.indexOf('}', on)), /backdrop-filter: blur\(var\(--overlay-blur, 4px\)\)/);
+});
+
 test('app.css is exported by the kit and says apps import it', () => {
   assert.equal(JSON.parse(readFileSync(join(root, 'packages/ui/package.json'), 'utf8')).exports['./app.css'], './styles/app.css');
   assert.ok(existsSync(kitCss), 'packages/ui/styles/app.css exists');
@@ -47,6 +60,7 @@ test('an app index.css of imports + app.css + a theme file: theme wins, scale, m
   assert.match(css, /\.app-shell :where\(button/);
   assert.match(css, /\.pi-chat \[hidden\]/);
   assert.match(css, /\[data-boring="feedback"\] :where\(button/);
-  assert.match(css, /data-overlay-blur="on"/);
+  assert.match(css, /:root:not\(\[data-overlay-blur="on"\]\) :is\([^)]*\) \{\s*-webkit-backdrop-filter: none;\s*backdrop-filter: none;/, 'default: no overlay blur');
+  assert.match(css, /:root\[data-overlay-blur="on"\] :is\([^)]*\) \{\s*-webkit-backdrop-filter: blur\(var\(--overlay-blur, 4px\)\)/, 'opt-in: blur by --overlay-blur');
   assert.match(css, /--duration-normal:\s*150ms/);
 });

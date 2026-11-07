@@ -200,9 +200,13 @@
     }
     }
 
-/* The opt-in for AppShell overlayBlur (D-1799): the kit has no overlay blur by default; the shell marks <html data-overlay-blur="on">, and the
-   overlays, portalled outside .app-shell, blur by --overlay-blur (4px). The shadcn overlays carry the same rule as a class, so an app that
-   re-synced them needs nothing more; this one covers an older copy. A kit item's CSS never reaches outside its root, so it lives here. */
+/* Overlay blur (D-1799): no blur unless the shell opts in, including for an older copy of the overlays that still carries an unconditional
+   backdrop-blur class. Without <html data-overlay-blur="on"> the four overlay slots get none; with it (AppShell overlayBlur) they blur by
+   --overlay-blur (4px). The overlays are portalled outside .app-shell and a kit item's CSS never reaches outside its root, so both rules live here. */
+:root:not([data-overlay-blur="on"]) :is([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"], [data-slot="sheet-overlay"], [data-slot="drawer-overlay"]) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 :root[data-overlay-blur="on"] :is([data-slot="dialog-overlay"], [data-slot="alert-dialog-overlay"], [data-slot="sheet-overlay"], [data-slot="drawer-overlay"]) {
   -webkit-backdrop-filter: blur(var(--overlay-blur, 4px));
   backdrop-filter: blur(var(--overlay-blur, 4px));
