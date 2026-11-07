@@ -3284,6 +3284,11 @@
           "path": "registry/_shared/icons.ts",
           "type": "registry:lib",
           "target": "components/_shared/icons.ts"
+        },
+        {
+          "path": "registry/_shared/short-date.ts",
+          "type": "registry:lib",
+          "target": "components/_shared/short-date.ts"
         }
       ]
     },
