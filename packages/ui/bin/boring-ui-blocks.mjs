@@ -1080,6 +1080,19 @@ function themeRules(file, text, exceptions = new Set()) {
 }
 
 const OVERLAYS = ['AlertDialog', 'Dialog', 'Sheet', 'Drawer'];
+/** The text of the `const|let|var name = …` or `function name(…)` of this file, to the next statement at the same or a lower indent ('' when not bound here). */
+function binding(code, name) {
+  const at = code.search(new RegExp(String.raw`(?:\b(?:const|let|var)\s+${name.replace(/\$/g, '\\$')}\b|\bfunction\s+${name.replace(/\$/g, '\\$')}\b)`));
+  if (at < 0) return '';
+  const from = code.lastIndexOf('\n', at) + 1, indent = /^\s*/.exec(code.slice(from))[0].length;
+  const lines = code.slice(from).split('\n');
+  let text = lines[0];
+  for (const line of lines.slice(1)) {
+    if (line.trim() && /^\s*/.exec(line)[0].length <= indent && /^\s*(?:const|let|var|function|export|return|if|for|\}|async)\b/.test(line)) break;
+    text += `\n${line}`;
+  }
+  return text;
+}
 /** A kit overlay content (DialogContent, SheetContent, AlertDialogContent, DrawerContent) with no matching *Title inside it. */
 function overlayHasTitle(file, source, code) {
   const found = [];
@@ -1088,7 +1101,8 @@ function overlayHasTitle(file, source, code) {
       const end = tagEnd(code, match.index);
       if (code[end - 1] === '/') continue;
       const close = code.indexOf(`</${prefix}Content>`, end);
-      const body = code.slice(end, close < 0 ? undefined : close);
+      let body = code.slice(end, close < 0 ? undefined : close);
+      for (const ref of body.matchAll(/\{\s*([A-Za-z_$][\w$]*)\s*(?:\(\s*\))?\s*\}/g)) body += ` ${binding(code, ref[1])}`; // children bound in this file: look for the Title in the binding
       if (!new RegExp(String.raw`<${prefix}Title(?=[\s/>])`).test(body)) found.push(hit(file, source, match.index, 'design-overlay-has-title', `<${prefix}Content> has no <${prefix}Title> inside: add one (className="sr-only" when the design shows none), it is the overlay's accessible name`));
     }
   }

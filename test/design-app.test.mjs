@@ -226,6 +226,21 @@ test('round 8: a kit name pinned in one mode passes when every var() in its valu
   assert.equal(lines('--popover: var(--secondary); --secondary: var(--popover);'), 2, 'a cycle between two pins');
 });
 
+test('round 8: a DrawerContent whose {body} is bound in the same file passes when that binding holds the DrawerTitle, and fails when it holds none', () => {
+  const count = (source) => {
+    const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+    try {
+      writeFileSync(join(dir, 'versions.tsx'), source);
+      return json(dir).findings.filter(finding => finding.rule === 'design-overlay-has-title').length;
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  };
+  const head = "import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';\n";
+  assert.equal(count(`${head}export function A() {\n  const body = <>\n    <DrawerTitle>Versions</DrawerTitle>\n    <p>x</p>\n  </>;\n  return <Drawer><DrawerContent>{body}</DrawerContent></Drawer>;\n}\n`), 0, 'const binding');
+  assert.equal(count(`${head}export function A() {\n  const render = () => (\n    <div><DrawerTitle>V</DrawerTitle></div>\n  );\n  function body() {\n    return <DrawerTitle>V</DrawerTitle>;\n  }\n  return <Drawer><DrawerContent>{body()}</DrawerContent></Drawer>;\n}\n`), 0, 'function binding');
+  assert.equal(count(`${head}export function A() {\n  const body = <p>no title</p>;\n  return <Drawer><DrawerContent>{body}</DrawerContent></Drawer>;\n}\n`), 1, 'a binding without a Title');
+  assert.equal(count(`${head}export function A({ body }) {\n  return <Drawer><DrawerContent>{body}</DrawerContent></Drawer>;\n}\n`), 1, 'a prop is not bound in this file');
+});
+
 test('a clean theme (both modes, core roles, app tokens, derived from var() and color-mix(), documented exceptions below the comment) reports nothing', () => {
   const report = json(join(root, 'test/fixtures/design-theme/clean/web/src'));
   assert.deepEqual(report.findings.filter(finding => finding.rule !== 'design-theme-local-derived'), []);
