@@ -1,0 +1,2 @@
+:root { --background: #ffffff; --font-sans: "Inter", sans-serif; }
+@font-face { font-family: "Inter"; src: url(/inter.woff2); }

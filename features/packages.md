@@ -40,6 +40,7 @@ The npm side of the kit: Pi-based agent definitions and handlers, the workspace 
 - `pkg-testing-tools` keyless scripted model and headless browser/network helpers. `packages/testing/src/`; test tooling only.
 - `pkg-chat-react` opt-in view selectors, transcript windows/chunks, drafts, placement, remote and conversations hooks; per-selection adapter ownership preserves concrete APIs. `packages/ui/src/chat-react.ts`, `chat-react-*.ts`.
 - `pkg-blocks-cli` `boring-ui-blocks add | update | check | manifest`. `packages/ui/bin/boring-ui-blocks.mjs`. `add` and `update` refuse a symlinked `node_modules` or scope directory (a borrowed install); `check` still works there. Driven by `test/packages/ui-blocks-add.test.mjs`.
+- `pkg-blocks-design` `boring-ui-blocks design <dir> [--changed <file>...] [--json]`: the one design check of an app's `web/src`, run by every Boring app and by Factory's verify (D-1789). Needs no `components.json` and no copied shadcn files. Ports the Factory template's rules by id (`raw-element`, `kit-block`, `line-length`, `component-length`, `file-length`, `design-card-flat`, `design-icons-phosphor`, `design-touch-target`, `design-button-raw-height`, `design-no-dark-overrides`, `design-link-token`, `design-mono-for-code`), the kit's `check --design` app profile (`design-color`, `design-border-width`, `design-font-tokens`, `design-literal-value`, `design-dark-variant`, `design-no-x-scroll`) and the new `design-tokens-only` (arbitrary values; `var(--x)` and `grid-cols`, `grid-rows`, `auto-cols`, `auto-rows`, `aspect`, `z`, `order`, `col`, `row`, `columns`, `content`, `will-change` allowed), `design-no-kit-restyle`, `design-no-important`, `design-hand-touch-size`. One level table, `LEVELS`: what was an error in the template stays one, the new rules warn. `packages/ui/bin/boring-ui-blocks.mjs`, `test/design-app.test.mjs`.
 - `pkg-feedback` in-app feedback capture and delivery. `packages/feedback/src/`.
 
 ## How to get to it (user POV)
@@ -72,6 +73,7 @@ Preconditions: `npm ci`; run from the repository root.
 - **Browser worker.** `pkg-browser-worker`: `npm run browser-agent:journey` (fictional model only; no live credentials).
 - **Test utilities.** `pkg-testing-tools`: `npm run test:testing-consumer` for its installed public consumer.
 - **Chat hooks.** `pkg-chat-react`: `node --test test/packages/ui-chat-react-hooks.test.mjs` exercises public hooks under StrictMode; `npm run test:pi-chat-consumer` and `npm run test:shared-chat-consumer` repeat packed public hooks and strict declarations.
+- **Design check.** `pkg-blocks-design`: `node --test test/design-app.test.mjs` spawns the bin on `test/fixtures/design-app/web/src` (a bundle app with no `components.json`, one violation per rule and a clean file) and asserts each rule's file, line and level, `--json`, `--changed` and the exit code. By hand: `npx boring-ui-blocks design web/src`.
 - **CLI.** `pkg-blocks-cli`: `npm run test:app-registry-consumer` installs the blocks into a clean app and runs `boring-ui-blocks check`.
 - **Feedback.** `pkg-feedback`: `npm test`, files `test/packages/feedback-*.test.mjs`.
 - **Proof.** The command output and exit code.

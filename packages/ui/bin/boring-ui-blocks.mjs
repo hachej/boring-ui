@@ -3,6 +3,7 @@
 // is documented once, in registry/README.md, "Updating installed blocks".
 //
 //   npx boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <app web dir>] [--json]
+//   npx boring-ui-blocks design <dir> [--changed <file>...] [--json]   (the one design check of an app's web/src; needs no components.json)
 //   npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>]
 //   npx boring-ui-blocks add <shadcn add arguments...> [--overwrite] [--manifest <path>] [--cwd <dir>]
 //   npx boring-ui-blocks manifest [--manifest <path>] [--cwd <dir>]
@@ -10,8 +11,8 @@
 //
 // `check` writes nothing. `add`, `update` and `manifest` write the shadcn files they install and the manifest, nothing else.
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -272,7 +273,7 @@ export function check(app, design = [], manifest = MANIFEST) {
   return { version, blocks: blocks.map(block => block.name), violations };
 }
 
-const USAGE = `usage: boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--overwrite] [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
+const USAGE = `usage: boring-ui-blocks design <dir> [--changed <file>...] [--json] | check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--overwrite] [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
   'Blocks: pi-app is the whole agent app with every chat feature and viewer. pi-chat is the core chat only: add pi-chat-plugins for every ' +
   'feature, or one of pi-chat-markdown, pi-chat-slash, pi-chat-mentions, pi-chat-pickers, pi-chat-voice, pi-chat-attachments, ' +
   'pi-chat-question, pi-chat-approval, pi-chat-subagent and pi-artifacts. Viewers are viewer-frame plus viewer-markdown, viewer-html, ' +
@@ -388,6 +389,7 @@ const line = v => `${v.check} ${v.rule} ${v.file}${v.line ? `:${v.line}:${v.colu
 export function main(argv, cwd = process.cwd(), log = console.log, error = console.error) {
   const [command, ...rest] = argv;
   if (['help', '--help', '-h'].includes(command)) { log(USAGE); return 0; }
+  if (command === 'design') return designMain(rest, cwd, log, error);
   let flags;
   try {
     if (!['check', 'update', 'add', 'manifest'].includes(command)) throw new Error(command ? `unknown command ${command}` : 'missing command');
@@ -431,6 +433,594 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
     else error(`error: ${cause.message}\n${USAGE}`);
     return 2;
   }
+}
+
+// ---- `design`: the one design check of an app (D-1789) ---------------------------------------------------------------------------
+// The kit's one design check: `boring-ui-blocks design <dir>` (D-1789). Every Boring app runs it on its web/src; Factory's verify calls
+// it instead of a copy of the template script. Dependency-free and lexical: it reads text, it does not run the app. It needs no
+// components.json and no copied shadcn files: a bundle app imports @boring/ui/shadcn/* and @boring/ui/blocks/*.
+//
+//   boring-ui-blocks design <dir> [--changed <file>...] [--json]
+//
+// Output: one `[warning ]file:line rule message` per finding (paths relative to the working directory), exit 1 on any error. `--json`
+// prints { ok, errors, warnings, counts, findings } with each finding { file, line, rule, level, message }. `--changed` keeps only
+// the findings of the listed files. A path listed in platform.json `paths` (found in <dir> or up to three parents) is skipped.
+//
+// LEVELS below is the one place that sets a rule's level. The rules new to apps start as 'warn', so no app breaks today; to make a rule
+// block, change its entry to 'error' (and run the fleet baseline in the pull request that does it).
+//
+// Rules: raw-element, kit-block, line-length, component-length, file-length | design-card-flat, design-icons-phosphor,
+// design-touch-target, design-button-raw-height, design-no-dark-overrides, design-link-token, design-mono-for-code (the Factory
+// template's) | design-color, design-border-width, design-font-tokens, design-literal-value, design-dark-variant, design-no-x-scroll (the
+// kit's BORING-UI-1 app profile, `check --design`) | design-tokens-only, design-no-kit-restyle, design-no-important,
+// design-hand-touch-size (new).
+//
+// Tokens only: a hex, rgb, hsl or oklch literal and a Tailwind palette colour (`bg-red-500`) are design-color, except in theme.core.css
+// and theme.derived.css (and the token blocks of any css). An arbitrary value `utility-[...]` (colour, size, spacing, radius, text) is
+// design-tokens-only unless its brackets hold `var(--token)` or its utility is one of STRUCTURAL. Variants (`data-[state=open]:`,
+// `[&>svg]:`) are not values and pass.
+
+
+/**
+ * The level of each rule: 'error' fails the run (exit 1), 'warn' is listed. THE one place to flip a rule: change its entry.
+ * A rule becomes error once it has zero live hits across bundle apps and zero reviewed false positives (D-1415 bar); design-master
+ * reviews each promotion. What the Factory template made an error stays an error: never downgrade one.
+ */
+export const LEVELS = Object.freeze({
+  // The Factory template's rules, at the levels they have there.
+  'raw-element': 'error',
+  'line-length': 'error',
+  'component-length': 'error',
+  'file-length': 'error',
+  'kit-block': 'warn', // template: promote only after the fleet's hits and reviewed false positives are zero
+  'design-card-flat': 'error',
+  'design-icons-phosphor': 'warn',
+  'design-touch-target': 'warn',
+  'design-button-raw-height': 'warn', // template D-1753: an error once the live apps are migrated
+  'design-no-dark-overrides': 'error',
+  'design-link-token': 'error',
+  'design-mono-for-code': 'error',
+  // The kit's app profile and the tokens-only rule, new to apps.
+  'design-tokens-only': 'warn', // flip to 'error' here
+  'design-color': 'warn', // flip to 'error' here
+  'design-border-width': 'warn', // flip to 'error' here
+  'design-font-tokens': 'warn', // flip to 'error' here
+  'design-literal-value': 'warn', // flip to 'error' here
+  'design-dark-variant': 'warn', // flip to 'error' here
+  'design-no-x-scroll': 'warn', // flip to 'error' here
+  // New rules.
+  'design-no-kit-restyle': 'warn', // flip to 'error' here
+  'design-no-important': 'warn', // flip to 'error' here
+  'design-hand-touch-size': 'warn', // flip to 'error' here
+});
+
+/** The utilities whose arbitrary value is structure that composes tokens (tracks, a ratio, a stacking index), not a visual value. */
+export const STRUCTURAL = Object.freeze(['grid-cols', 'grid-rows', 'auto-cols', 'auto-rows', 'aspect', 'z', 'order', 'col', 'row', 'columns', 'content', 'will-change']);
+/** The kit controls whose height the kit floor sets (--control-h: 44px on touch, 36px on a fine pointer). */
+const CONTROLS = /^(?:Button|IconButton|Toggle|ToggleGroupItem|Input|Textarea|SelectTrigger|NativeSelect|Checkbox|Switch|InputGroupInput|InputGroupButton)$/;
+/** Files that define the theme: colour literals belong there. */
+const THEME_FILES = new Set(['theme.core.css', 'theme.derived.css']);
+
+
+export const LIMITS = Object.freeze({ line: 200, component: 150, file: 400 });
+export const ELEMENT_KIT = Object.freeze({
+  table: '@boring/ui/shadcn/table (Table, TableRow, TableCell...)',
+  select: '@boring/ui/shadcn/select or native-select',
+  input: '@boring/ui/shadcn/input',
+  details: '@boring/ui/shadcn/collapsible or accordion',
+  summary: '@boring/ui/shadcn/collapsible or accordion (CollapsibleTrigger)',
+  label: '@boring/ui/shadcn/label or field',
+  textarea: '@boring/ui/shadcn/textarea',
+  button: '@boring/ui/shadcn/button',
+});
+const UI_DIR = 'components/ui';
+export const LEGACY_NOTE = 'legacy components/ui path: factory D-1688 (Anciennes apps passent au kit) moves the app onto @boring/ui/shadcn/*';
+
+/** The source with comments and the inside of string literals blanked out (same length, same lines), so a rule never reads them; `strings: false` blanks the comments only. */
+export function mask(text, { strings = true } = {}) {
+  const out = [...text];
+  const blank = (from, to) => { for (let i = from; i < to; i++) if (out[i] !== '\n') out[i] = ' '; };
+  const resume = []; // brace depth at which each open `${` hands back to its template literal
+  let depth = 0, i = 0;
+  const template = (start) => { // the text of a template literal from `start`, to its closing backtick or a `${`
+    let j = start;
+    while (j < text.length) {
+      if (text[j] === '\\') { j += 2; continue; }
+      if (text[j] === '`') { if (strings) blank(start, j); return j + 1; }
+      if (text[j] === '$' && text[j + 1] === '{') { if (strings) blank(start, j); resume.push(depth++); return j + 2; }
+      j++;
+    }
+    if (strings) blank(start, text.length);
+    return text.length;
+  };
+  while (i < text.length) {
+    const c = text[i], n = text[i + 1];
+    if (c === '/' && n === '/') { const end = text.indexOf('\n', i); const to = end < 0 ? text.length : end; blank(i, to); i = to; }
+    else if (c === '/' && n === '*') { const end = text.indexOf('*/', i + 2); const to = end < 0 ? text.length : end + 2; blank(i, to); i = to; }
+    else if (c === '"' || c === "'") { // a string ends at its quote or at the line's end (an apostrophe in JSX text must not swallow the file)
+      let j = i + 1;
+      while (j < text.length && text[j] !== c && text[j] !== '\n') j += text[j] === '\\' ? 2 : 1;
+      if (strings) blank(i + 1, Math.min(j, text.length));
+      i = j + 1;
+    } else if (c === '`') i = template(i + 1);
+    else if (c === '{') { depth++; i++; }
+    else if (c === '}') {
+      depth--;
+      if (resume.length && resume[resume.length - 1] === depth) { resume.pop(); i = template(i + 1); } else i++;
+    } else i++;
+  }
+  return out.join('');
+}
+
+const lineAt = (text, index) => { let n = 1; for (let i = 0; i < index; i++) if (text.charCodeAt(i) === 10) n++; return n; };
+
+/** The index just after the bracket that closes the one at `open` (in masked text), or -1. */
+function closing(code, open) {
+  const close = { '{': '}', '(': ')' }[code[open]];
+  let depth = 0;
+  for (let i = open; i < code.length; i++) {
+    if (code[i] === code[open]) depth++;
+    else if (code[i] === close && --depth === 0) return i + 1;
+  }
+  return -1;
+}
+
+const ALLOWED_INPUT = /\btype\s*=\s*(?:["']|\{\s*["'])(?:file|hidden)\b/;
+
+function rawElements(file, source, tags) {
+  return tags.filter(({ name, text }) => Object.hasOwn(ELEMENT_KIT, name) && !(name === 'input' && ALLOWED_INPUT.test(text)))
+    .map(({ name, index }) => ({ file, line: lineAt(source, index), rule: 'raw-element', message: `raw <${name}>: use ${ELEMENT_KIT[name]}` }));
+}
+
+// The kit's blocks (the UI bundle's @boring/ui/blocks/<block>/...), by the hand-made UI they replace. The table of needs and blocks
+// is boring-factory's skills/boring-app-template/references/kit-blocks.md.
+/** The registry.json items each hint may name (a test checks they exist). */
+export const BLOCK_ITEMS = Object.freeze({ upload: ['file-pick', 'file-tree', 'pi-chat-attachments'], overlay: ['app-shell'], chat: ['pi-chat', 'app-shell'], voice: ['pi-chat-voice', 'app-shell'], camera: ['pi-chat-attachments'] });
+export const BLOCKS = Object.freeze({
+  upload: 'FilePick for a single pick or drop button (@boring/ui/blocks/file-pick/file-pick: a choose-a-file Button, optional drop strip, accept and size refusals), the file-tree block for a list of files (FileTreeView upload), pi-chat-attachments in the chat',
+  overlay: "app-shell's AppSheet (@boring/ui/blocks/app-shell/index)",
+  chat: "pi-chat, through the shell's agent layer (AppShell agent={useAgentChat(name)}): it draws the bubbles and the typing state",
+  voice: "pi-chat-voice (voice messages in the chat) or app-shell's useDictation (@boring/ui/blocks/app-shell/index)",
+  camera: 'pi-chat-attachments (CameraSheet)',
+});
+
+const OPEN_TAG = /(?<![\w$.)\]])<([A-Za-z][\w.]*)(?=[\s/>])/g;
+const word = (token) => new RegExp(`(?<![\\w:-])${token}(?![\\w-])`);
+const FILE_INPUT = /^type\s*=\s*(?:["']file["']|\{\s*["']file["']\s*\})/;
+const fileInput = (text) => [...mask(text).matchAll(/(?<![\w$-])type\s*=/g)]
+  .some((match) => FILE_INPUT.test(text.slice(match.index)));
+
+const POPUP = word('popup-sheet'), FIXED = word('fixed'), INSET = word('inset-0');
+const BUBBLE = word('(?:chat|message|msg)-bubble'), TYPING = word('typing-(?:indicator|dots)');
+
+/** The JSX opening tags of a file: name, start, end (after `>`), whether self-closing, and the tag's source text. */
+function openTags(source, code) {
+  return [...code.matchAll(OPEN_TAG)].map((match) => {
+    let end = match.index + match[0].length, braces = 0;
+    for (; end < code.length; end++) {
+      if (code[end] === '{') braces++;
+      else if (code[end] === '}') braces--;
+      else if (code[end] === '>' && braces <= 0 && code[end - 1] !== '=') break;
+    }
+    const text = mask(source.slice(match.index, end + 1), { strings: false });
+    return { name: match[1], index: match.index, end: end + 1, closed: text.endsWith('/>'), text };
+  });
+}
+
+/** The `{ index, need }` of each hand-made element in the file's JSX tags. */
+function tagFindings(tags) {
+  const found = [];
+  for (const tag of tags) {
+    const dom = /^[a-z]/.test(tag.name), own = ownClassName(tag.text, mask(tag.text));
+    const cls = classTokens(own).join(' '), at = (need) => found.push({ index: tag.index, need });
+    if (tag.name === 'input' && fileInput(tag.text)) at('upload');
+    if (dom && (POPUP.test(cls) || (!/[?&|]/.test(own) && FIXED.test(cls) && INSET.test(cls)))) at('overlay');
+    if (dom && (BUBBLE.test(cls) || TYPING.test(cls))) at('chat');
+  }
+  return found;
+}
+
+/** The `{ index, need }` of hand-made chat and capture, read from the file's code rather than one tag. */
+function codeFindings(code) {
+  const found = [];
+  for (const m of code.matchAll(/\bnew\s+(?:webkit)?SpeechRecognition\s*\(/g)) found.push({ index: m.index, need: 'voice' });
+  for (const m of code.matchAll(/\bgetUserMedia\s*\(/g)) {
+    const end = closing(code, m.index + m[0].length - 1), args = code.slice(m.index, end < 0 ? undefined : end);
+    if (/\baudio\s*:\s*(?:true\b|\{)/.test(args)) found.push({ index: m.index, need: 'voice' });
+    else if (/\bvideo\s*:\s*(?:true\b|\{)/.test(args)) found.push({ index: m.index, need: 'camera' });
+  }
+  return found;
+}
+
+const WHAT = Object.freeze({ upload: 'a hidden file input', overlay: 'a hand-made fixed overlay or .popup-sheet', chat: 'hand-made chat bubbles or typing indicator', voice: 'hand-made microphone capture', camera: 'hand-made camera capture' });
+
+function kitBlocks(file, source, code, tags) {
+  const seen = new Set();
+  return [...tagFindings(tags), ...codeFindings(code)].flatMap(({ index, need }) => {
+    const line = lineAt(source, index), key = `${line} ${need}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ file, line, rule: 'kit-block', message: `${WHAT[need]}: use ${BLOCKS[need]}` }];
+  });
+}
+
+const JSX_LINE = /<\/?[A-Za-z][\w.]*|\/>|<>|<\/>/;
+
+function longLines(file, source, code) {
+  const found = [];
+  const lines = source.split('\n'), coded = code.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].length > LIMITS.line && JSX_LINE.test(coded[i])) found.push({ file, line: i + 1, rule: 'line-length', message: `JSX line of ${lines[i].length} characters (max ${LIMITS.line}): break it into elements or components` });
+  }
+  return found;
+}
+
+// `function Name` or `const Name = [memo(|forwardRef(] (...) =>` / `function`: a capitalised function is a component.
+const DECLARATION = /(?<![\w$.])(?:function\s+([A-Z]\w*)|(?:const|let)\s+([A-Z]\w*)\s*(?::[^=\n]+)?=\s*(?:(?:React\.)?(?:memo|forwardRef)\s*(?:<[^()]*>)?\s*\(\s*)?(?=(?:async\s+)?(?:\(|function\b|[A-Za-z_$][\w$]*\s*=>)))/g;
+
+/** The index of the `{` or `(` that opens the body of the function declared at `from` (just after its name or `=`), or -1. */
+function bodyOf(code, from, expression) {
+  let i = from;
+  const skip = () => { while (/\s/.test(code[i] ?? '')) i++; };
+  skip();
+  if (expression) {
+    const head = /^(?:async\s+)?(?:function\b)?/.exec(code.slice(i))[0];
+    i += head.length;
+    skip();
+    if (/[\w$]/.test(code[i] ?? '') && !head.includes('function')) { while (/[\w$]/.test(code[i] ?? '')) i++; } // `props =>`
+  }
+  if (code[i] === '<') { const gt = code.indexOf('>', i); if (gt < 0) return -1; i = gt + 1; skip(); } // type parameters
+  if (code[i] === '(') { const close = closing(code, i); if (close < 0) return -1; i = close; }
+  if (expression && !/^[^=;{]*=>/.test(code.slice(i))) { // a function expression: its body is the next brace
+    const brace = code.indexOf('{', i);
+    return brace >= 0 && !/;/.test(code.slice(i, brace)) ? brace : -1;
+  }
+  if (expression) i += /^[^=;{]*=>\s*/.exec(code.slice(i))[0].length;
+  else { const brace = code.indexOf('{', i); if (brace < 0 || /;/.test(code.slice(i, brace))) return -1; i = brace; }
+  return code[i] === '{' || code[i] === '(' ? i : -1;
+}
+
+function components(file, source, code) {
+  const found = [], seen = new Set();
+  for (const match of code.matchAll(DECLARATION)) {
+    const name = match[1] ?? match[2];
+    const body = bodyOf(code, match.index + match[0].length, match[2] !== undefined);
+    if (body < 0 || seen.has(body)) continue; // `const A = memo(function A() {})` is one component
+    seen.add(body);
+    const end = closing(code, body);
+    if (end < 0) continue;
+    const start = lineAt(source, match.index), size = lineAt(source, end - 1) - start + 1;
+    if (size > LIMITS.component) found.push({ file, line: start, rule: 'component-length', message: `${name} is ${size} lines (max ${LIMITS.component}): split it into smaller components` });
+  }
+  return found;
+}
+
+const CARD_OPEN = /(?<![\w$.)\]])<(Card(?:Header|Title|Description|Action|Content|Footer)?)(?=[\s/>])|<\/Card>/g;
+const CONTROL_TAG = /(?<![\w$.)\]])<(Button|Input|Textarea|SelectTrigger|NativeSelect|Toggle)(?=[\s/>])/g;
+const EDGE_CLASS = /^(?:[\w-]+:)*(?:ring|border|shadow)(?:-(?!0$|none$).+)?$/;
+// A Button's height is the --control-h token (44px on touch or under md, 36px on a fine pointer, [data-density=compact] 36px). A raw height
+// (h-8, size-8, md:h-12, min-h-11, h-[30px]) bypasses it; the size prop (sm, xs, icon-sm, icon-xs) is the route to a smaller one.
+// Layout (w-, max-h-, h-auto/full/fit/screen, min-h-0/full) stays allowed (h-0 and size-0 are not), and so does a height that reads the token itself.
+const RAW_HEIGHT = /^(?:[\w-]+:)*(?:h-|size-|min-h-(?!0$))(?:\d+(?:\.\d+)?|px|\[(?![^\]]*--control-)[^\]]+\]|\((?!--control-)--[^)]+\))$/;
+const SMALL_SIZE = /^(?:[\w-]+:)*(?:h|size)-(?:\d+(?:\.\d+)?|px)$/;
+const REACHES_44 = /^(?:[\w-]+:)*(?:min-h-(?:1[1-9]|[2-9]\d|\[(?:4[4-9]|[5-9]\d)px\])|h-(?:1[1-9]|[2-9]\d)|size-(?:1[1-9]|[2-9]\d))$/;
+
+/** The index of the `>` that closes the opening tag starting at `from`. */
+function tagEnd(code, from) {
+  let braces = 0, end = from;
+  for (; end < code.length; end++) {
+    if (code[end] === '{') braces++;
+    else if (code[end] === '}') braces--;
+    else if (code[end] === '>' && braces <= 0 && code[end - 1] !== '=') break;
+  }
+  return end;
+}
+
+/** The class tokens written as string literals in a piece of source. */
+const classTokens = (text) => [...text.matchAll(/(["'`])((?:\\.|(?!\1)[^\\])*)\1/g)].flatMap((m) => m[2].split(/\s+/)).filter(Boolean);
+/** The text of the `className=`/`class=` props of a tag (their string, braces and cn()/clsx() arguments), not other props like id or data-testid. */
+function classProps(tag) {
+  let out = '';
+  for (const m of tag.matchAll(/(?<![\w$-])(?:className|class)\s*=\s*/g)) {
+    let i = m.index + m[0].length;
+    if (tag[i] === '"' || tag[i] === "'") { const close = tag.indexOf(tag[i], i + 1); out += tag.slice(i, close < 0 ? tag.length : close + 1) + ' '; }
+    else if (tag[i] === '{') { const close = closing(maskedBraces(tag), i); out += tag.slice(i, close < 0 ? tag.length : close) + ' '; }
+  }
+  return out;
+}
+const maskedBraces = (text) => mask(text);
+const hit = (file, source, index, rule, message) => ({ file, line: lineAt(source, index), rule, message });
+
+function cardClasses(file, source, code) {
+  const found = [];
+  let depth = 0;
+  for (const match of code.matchAll(CARD_OPEN)) {
+    if (!match[1]) { depth = Math.max(0, depth - 1); continue; }
+    const end = tagEnd(code, match.index);
+    const bad = classTokens(classProps(source.slice(match.index, end))).filter((t) => EDGE_CLASS.test(t));
+    if (bad.length) found.push(hit(file, source, match.index, 'design-card-flat', `<${match[1]}> carries ${bad.join(' ')}: a card is flat, its edge comes from the theme tokens, not classes`));
+    if (match[1] !== 'Card') continue;
+    if (depth > 0) found.push(hit(file, source, match.index, 'design-card-flat', 'a <Card> inside a <Card>: keep one card level (a plain div or a Separator groups the inside)'));
+    if (code[end - 1] !== '/') depth++;
+  }
+  return found;
+}
+
+function iconsPhosphor(file, source, code) {
+  const found = [];
+  for (const match of source.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)(['"])lucide-react(?:\/[^'"]*)?\1/g)) {
+    if (code[match.index] === ' ') continue; // inside a comment or a string
+    found.push(hit(file, source, match.index, 'design-icons-phosphor', 'lucide-react import: use @phosphor-icons/react'));
+  }
+  return found;
+}
+
+/** The Button's own className value: a className inside another prop (children={<Icon className=.../>}) belongs to that element, not to the Button. */
+function ownClassName(tag, masked) {
+  const depth = [];
+  let d = 0;
+  for (let i = 0; i < masked.length; i++) { depth[i] = d; if (masked[i] === '{') d++; else if (masked[i] === '}') d--; }
+  let out = '';
+  for (const m of tag.matchAll(/(?<![\w$-])(?:className|class)\s*=\s*/g)) {
+    if (depth[m.index] !== 0) continue;
+    const i = m.index + m[0].length;
+    if (tag[i] === '"' || tag[i] === "'") { const close = tag.indexOf(tag[i], i + 1); out += tag.slice(i, close < 0 ? tag.length : close + 1) + ' '; }
+    else if (tag[i] === '{') { const close = closing(maskedBraces(tag), i); out += tag.slice(i, close < 0 ? tag.length : close) + ' '; }
+  }
+  return out;
+}
+
+function buttonRawHeight(file, source, code) {
+  const found = [];
+  for (const match of code.matchAll(/(?<![\w$.)\]])<Button(?=[\s/>])/g)) {
+    const end = tagEnd(code, match.index), own = ownClassName(source.slice(match.index, end), code.slice(match.index, end));
+    const bad = classTokens(own).filter((t) => RAW_HEIGHT.test(t) && !HAND_TOUCH.test(t)); // 44px by hand is design-hand-touch-size
+    if (bad.length) found.push(hit(file, source, match.index, 'design-button-raw-height', `<Button> carries ${bad.join(' ')}: a raw height bypasses --control-h (44px on touch, 36px on a fine pointer); use the size prop (sm, xs, icon-sm, icon-xs) for a smaller one`));
+  }
+  return found;
+}
+
+function touchTarget(file, source, code) {
+  const found = [];
+  for (const match of code.matchAll(CONTROL_TAG)) {
+    const tokens = classTokens(source.slice(match.index, tagEnd(code, match.index)));
+    if (match[1] === 'Button') continue; // a Button is judged by buttonRawHeight
+    if (tokens.some((t) => SMALL_SIZE.test(t)) && !tokens.some((t) => REACHES_44.test(t))) found.push(hit(file, source, match.index, 'design-touch-target', `<${match[1]}> sized under 44px: drop the small height, the kit floor makes a control 44px on touch (--control-h); use the size prop for a smaller one`));
+  }
+  return found;
+}
+
+// A colour utility, not a size, width, style or position one (`dark:text-sm`, `dark:border-0`, `dark:shadow-none` are not colours).
+const NOT_COLOR = '(?:(?:[xytrblse]-)?\\d+(?:\\.\\d+)?(?:%|px)?|(?:[xytrblse]|xs|sm|md|lg|xl|\\dxl|base|none|auto|inner|inset|solid|dashed|dotted|double|hidden|wavy|reverse|collapse|separate|spacing|offset|left|right|center|justify|start|end|wrap|nowrap|balance|pretty|ellipsis|clip|cover|contain|repeat|no-repeat|fixed|local|scroll|top|bottom|origin|gradient|linear|radial|conic|from-font|thin|normal|italic|underline|overline|line-through|uppercase|lowercase|capitalize|truncate)(?![\\w-])|(?:x|y)-\\d+)';
+const DARK_COLOR = new RegExp(`(?<![\\w-])dark:(?:[a-z0-9-[\\]]+:)*(?:bg|text|border|ring|fill|stroke|from|via|to|outline|divide|shadow|accent|caret|decoration|placeholder)-(?!${NOT_COLOR})`, 'g');
+
+const LINK_EVENT = /(?<![\w$.)\]])<(\/)?([A-Za-z][\w.]*)(?=[\s/>])/g;
+const VOID_TAG = /^(?:img|br|hr|input|meta|link)$/;
+// Links that are not inline text and keep their own look: navigation chrome, button-wrapped links, menu/tab items, block cards.
+const isChrome = (name) => name === 'nav' || /^(?:Sidebar|NavigationMenu|Breadcrumb|Tabs)/.test(name);
+const BLOCK_CLASS = /^(?:[\w-]+:)*(?:block|flex|inline-flex|grid)$/;
+const OWN_LOOK = /(?<![\w$-])data-slot\s*=|(?<![\w$-])role\s*=\s*\{?\s*["'](?:tab|menuitem)["']/;
+const LINK_PROP = /(?<![\w$-])(?:href|to)\s*=/;
+const NOT_LINKS = /^(?:Navigate|Redirect|Route|Routes)$/; // redirects and route tables carry `to`/`href` but are not links
+const BUTTON_TAG = /^(?:Button|[A-Z]\w*Button)$/; // a kit Button or a button-variant component
+const RENDER_LINK = /(?<![\w$-])render\s*=\s*\{\s*(<(?:a|Link|NavLink)(?=[\s/>]))/; // base-ui: `render` is how a Button becomes a link
+const LINK_FIX = 'use text-link underline underline-offset-4 (the --link role)';
+
+function linkToken(file, source, code) {
+  const found = [], stack = [], renderLinks = new Map(), events = [...code.matchAll(LINK_EVENT)], bare = mask(source, { strings: false }); // comments are not classes
+  const classesOf = (open) => classTokens(classProps(open)).flatMap((t) => t.split(/[\s"'`{}$?()]+/)).filter(Boolean); // a template literal's ${..} parts too
+  events.forEach((match, k) => {
+    const tag = match[2];
+    if (match[1]) { const at = stack.map((s) => s.tag).lastIndexOf(tag); if (at >= 0) stack.length = at; return; }
+    const end = tagEnd(code, match.index), open = bare.slice(match.index, end);
+    const own = classesOf(open);
+    const asChild = /(?<![\w$-])asChild\b/.test(code.slice(match.index, end));
+    const render = BUTTON_TAG.test(tag) ? RENDER_LINK.exec(code.slice(match.index, end)) : null;
+    if (render) renderLinks.set(match.index + render.index + render[0].lastIndexOf('<'), own); // only the <a> in render= is exempt, not one in another prop
+    const wrapped = !!render || renderLinks.has(match.index) || stack.some((s) => isChrome(s.tag) || (s.tag === 'Button' && s.asChild));
+    if (code[end - 1] !== '/' && !VOID_TAG.test(tag)) stack.push({ tag, asChild, tokens: own });
+    const link = !render && !NOT_LINKS.test(tag) && (tag === 'a' || (/^[A-Z]/.test(tag) && LINK_PROP.test(code.slice(match.index, end))));
+    // a Button asChild hands its classes to the link it wraps (shadcn merges them): they count as the link's
+    const tokens = link ? [...own, ...stack.filter((s) => s.tag === 'Button' && s.asChild).flatMap((s) => s.tokens), ...(renderLinks.get(match.index) ?? [])] : own;
+    const primary = tokens.filter((t) => /^(?:[\w-]+:)*text-primary$/.test(t));
+    const underlined = tokens.some((t) => /^(?:[\w-]+:)*underline$/.test(t));
+    if (primary.length && (link || underlined)) { found.push(hit(file, source, match.index, 'design-link-token', `<${tag}> uses ${primary.join(' ')} as a link: ${LINK_FIX}`)); return; }
+    const next = events[k + 1];
+    const ownLook = isChrome(tag) || OWN_LOOK.test(open) || tokens.some((t) => BLOCK_CLASS.test(t)) || (next && !next[1] && /^Card/.test(next[2]));
+    if (link && !tokens.includes('text-link') && !ownLook && !wrapped) found.push(hit(file, source, match.index, 'design-link-token', `link <${tag}> without text-link: ${LINK_FIX}`));
+  });
+  return found;
+}
+
+const MONO_CLASS = /(?<![\w$-])(?:[\w-]+:)*(?:font-mono|font-\[family-name:var\(--font-mono\)\])(?![\w-])/;
+const MONO_TAG = /^(?:code|kbd|pre|samp)$/;
+const MONO_FIX = 'use the sans token; add tabular-nums for numbers';
+
+function monoForCode(file, source, code) {
+  const found = [], bare = mask(source, { strings: false });
+  for (const match of code.matchAll(/(?<![\w$.)\]])<([A-Za-z][\w.]*)(?=[\s/>])/g)) {
+    const end = tagEnd(code, match.index), open = bare.slice(match.index, end);
+    if (MONO_TAG.test(match[1]) || /(?<![\w$-])data-mono-id\b/.test(open)) continue;
+    if (classTokens(classProps(open)).flatMap((t) => t.split(/[\s"'`{}$?()]+/)).some((t) => MONO_CLASS.test(t)) || MONO_CLASS.test(classProps(open)))
+      found.push(hit(file, source, match.index, 'design-mono-for-code', `<${match[1]}> uses the mono font outside code, kbd, pre, samp or data-mono-id: ${MONO_FIX}`));
+  }
+  return found;
+}
+
+
+// ---- The kit's rules, new to the app check ------------------------------------------------------------------------------------------
+
+/** The one sentence every kit-part message ends on. */
+export const APP_SENTENCE = 'An app writes theme tokens and its own components, and its components are built from kit primitives and blocks; it never copies or restyles a kit part.';
+
+// An arbitrary value after a utility: `w-[340px]`, `md:p-[3px]`, `bg-[var(--x)]`. A variant (`data-[state=open]:`, followed by `:`) is not a value.
+const ARBITRARY_VALUE = /(?<![\w-])(?:[\w-]+:)*(-?[a-z][a-z0-9]*(?:-[a-z0-9]+)*)-\[([^\]\s]+)\](?!:)/g;
+const COLOR_LITERAL = /^(?:#|(?:rgb|rgba|hsl|hsla|oklch|oklab)\()/; // design-color owns these
+const HAND_TOUCH = /^(?:[\w-]+:)*(?:h|min-h|size|min-w)-11$/; // 44px by hand, with or without a pointer-coarse:/max-md: variant
+
+function classRules(file, source) {
+  const found = [], bare = mask(source, { strings: false });
+  const darkLines = new Set();
+  for (const m of bare.matchAll(DARK_COLOR)) { darkLines.add(lineAt(source, m.index)); found.push(hit(file, source, m.index, 'design-no-dark-overrides', 'a dark: colour class: set the dark value on the token in the theme, the tokens switch with .dark')); }
+  for (const m of bare.matchAll(ARBITRARY_VALUE)) {
+    const [whole, utility, value] = m;
+    if (value.includes('var(--') || value.startsWith('--') || COLOR_LITERAL.test(value) || STRUCTURAL.includes(utility)) continue;
+    found.push(hit(file, source, m.index, 'design-tokens-only', `arbitrary value ${whole}: use a scale step or a var(--token). ${APP_SENTENCE}`));
+  }
+  return { found, darkLines };
+}
+
+function handTouchSize(file, source, code) {
+  const found = [];
+  for (const match of code.matchAll(/(?<![\w$.)\]])<([A-Z]\w*)(?=[\s/>])/g)) {
+    if (!CONTROLS.test(match[1])) continue;
+    const end = tagEnd(code, match.index), own = ownClassName(source.slice(match.index, end), code.slice(match.index, end));
+    const bad = classTokens(own).filter((t) => HAND_TOUCH.test(t));
+    if (bad.length) found.push(hit(file, source, match.index, 'design-hand-touch-size', `<${match[1]}> carries ${bad.join(' ')}: the kit floor already makes a control 44px on touch (--control-h); remove it. ${APP_SENTENCE}`));
+  }
+  return found;
+}
+
+const RESTYLE_SELECTOR = /\[data-slot\b|\[data-boring\b|\.app-shell(?![\w-])|\.pi-chat(?![\w-])/;
+const RESTYLE_VARIANT = /\[&[^\s"'`]*(?:\[data-slot\b|\[data-boring\b|\.app-shell(?![\w-])|\.pi-chat(?![\w-]))/g;
+
+/** css selectors, and Tailwind arbitrary descendant variants, that reach into a kit part. */
+function restyle(file, source) {
+  const found = [], bare = mask(source, { strings: false });
+  if (file.endsWith('.css')) bare.split('\n').forEach((text, i) => {
+    const m = RESTYLE_SELECTOR.exec(text);
+    if (m) found.push({ file, line: i + 1, rule: 'design-no-kit-restyle', message: `selector ${m[0]} restyles a kit part from app css: set a theme token instead. ${APP_SENTENCE}` });
+  });
+  else for (const m of bare.matchAll(RESTYLE_VARIANT)) found.push(hit(file, source, m.index, 'design-no-kit-restyle', `variant ${m[0]} restyles a kit part: set a theme token instead. ${APP_SENTENCE}`));
+  return found;
+}
+
+function important(file, source) {
+  return [...mask(source, { strings: false }).matchAll(/!important\b/g)].map((m) => hit(file, source, m.index, 'design-no-important', '!important fights the kit cascade: fix the selector or set a theme token'));
+}
+
+/** `font-family` literals and `@font-face`: fonts are theme tokens, defined once in theme.core.css. */
+function fontFace(file, source) {
+  return [...mask(source, { strings: false }).matchAll(/@font-face\b/g)].map((m) => hit(file, source, m.index, 'design-font-tokens', '@font-face outside theme.core.css: fonts are tokens, declare the family there and use var(--font-sans)'));
+}
+
+// scanAppDesign rule (the kit's check --design) -> this check's id and fix.
+const PROFILE = Object.freeze({
+  color: ['design-color', 'colour literal or palette class: use a token (bg-primary, text-muted-foreground, var(--color-x))'],
+  'border-width': ['design-border-width', 'a literal border width: use the `border` utility (the theme sets the width)'],
+  font: ['design-font-tokens', 'a font-family literal: fonts are tokens, use var(--font-sans) or the font-sans class'],
+  'literal-value': ['design-literal-value', 'a literal radius, shadow, font-size or letter-spacing: use the theme utility (rounded-md, shadow-md, text-sm)'],
+  dark: ['design-dark-variant', 'a dark: variant: the tokens switch with .dark, set the dark value in the theme'],
+  'design-no-x-scroll': ['design-no-x-scroll', 'a table with a horizontal scroll container: truncate the cells and stack below the container width'],
+});
+
+const SOURCE = /\.(?:[cm]?[jt]sx?|css)$/;
+
+/**
+ * The findings of one file: `file` is its path in the report, `source` its text, `scan` the kit's `scanAppDesign`. `legacy`: the app
+ * keeps its own components/ui, its design findings are warnings everywhere and a file inside that folder only gets the design-* rules.
+ */
+export function checkSource(file, source, { legacy = false, scan } = {}) {
+  const name = basename(file), tsx = /\.[jt]sx$/.test(file);
+  const inUi = /(?:^|\/)components\/ui\//.test(file);
+  const found = [];
+  const darkLines = new Set();
+  if (tsx) {
+    const code = mask(source), tags = openTags(source, code);
+    const design = [...cardClasses(file, source, code), ...iconsPhosphor(file, source, code), ...touchTarget(file, source, code), ...buttonRawHeight(file, source, code), ...(inUi ? [] : linkToken(file, source, code)), ...(inUi ? [] : monoForCode(file, source, code))];
+    const classes = classRules(file, source);
+    classes.darkLines.forEach((line) => darkLines.add(line));
+    design.push(...classes.found, ...handTouchSize(file, source, code));
+    found.push(...design.map((f) => (inUi || legacy ? { ...f, soft: true } : f)));
+    if (!inUi) {
+      found.push(...kitBlocks(file, source, code, tags), ...rawElements(file, source, tags), ...longLines(file, source, code), ...components(file, source, code));
+      const lines = source.endsWith('\n') ? source.split('\n').length - 1 : source.split('\n').length;
+      if (lines > LIMITS.file) found.push({ file, line: 1, rule: 'file-length', message: `${lines} lines (max ${LIMITS.file}): split it into modules` });
+    }
+  }
+  if (SOURCE.test(file) && name !== 'theme.core.css') {
+    found.push(...restyle(file, source), ...important(file, source), ...fontFace(file, source));
+    const bare = mask(source, { strings: false });
+    for (const f of scan(file, bare)) {
+      const profile = PROFILE[f.rule];
+      if (!profile) continue; // card rules (ported above), arbitrary values (design-tokens-only)
+      if (name === 'theme.derived.css' && f.rule !== 'font') continue;
+      if (f.rule === 'dark' && darkLines.has(f.line)) continue; // already design-no-dark-overrides
+      if (f.rule === 'color' && darkLines.has(f.line) && !/^[#(]|\(/.test(f.value)) continue; // the palette class of that dark: override
+      found.push({ file, line: f.line, rule: profile[0], message: `${profile[1]} (${String(f.value).trim().slice(0, 60)})`, soft: inUi || legacy });
+    }
+  }
+  return found.map(({ soft, ...f }) => ({ ...f, level: soft ? 'warn' : LEVELS[f.rule] ?? 'error', ...(soft && inUi ? { message: `${f.message} (${LEGACY_NOTE})` } : {}) }))
+    .sort((a, b) => a.line - b.line || a.rule.localeCompare(b.rule));
+}
+
+// ---- Files, report and entry ------------------------------------------------------------------------------------------------------
+
+/** The paths (relative to the app root) listed in platform.json `paths`, with that root: platform-owned files are not the app's. */
+function platformPaths(dir) {
+  for (let root = dir, i = 0; i < 4; i++, root = dirname(root)) {
+    try { return { root, owned: JSON.parse(readFileSync(join(root, 'platform.json'), 'utf8')).paths ?? [] }; } catch { /* none here */ }
+  }
+  return { root: dir, owned: [] };
+}
+
+/** The scanned files under `dir` (absolute, sorted): code and css, without node_modules, dot folders, declarations and platform-owned paths. */
+export function designFiles(dir) {
+  const { root, owned } = platformPaths(dir);
+  const skipped = (path) => { const rel = relative(root, path).split(sep).join('/'); return owned.some((own) => rel === own || rel.startsWith(`${own}/`)); };
+  const files = [];
+  const walk = (current) => {
+    for (const name of readdirSync(current).sort()) {
+      const path = join(current, name);
+      if (name === 'node_modules' || name.startsWith('.') || skipped(path)) continue;
+      if (statSync(path).isDirectory()) walk(path);
+      else if (SOURCE.test(name) && !name.endsWith('.d.ts')) files.push(path);
+    }
+  };
+  walk(dir);
+  return files;
+}
+
+/** Every finding under `dir`; paths are relative to `cwd`. `changed`: absolute paths to keep (null: all). */
+export function designFindings(dir, { cwd = process.cwd(), changed = null, scan } = {}) {
+  const legacy = existsSync(join(dir, UI_DIR));
+  return designFiles(dir).filter((path) => !changed || changed.has(path))
+    .flatMap((path) => checkSource(relative(cwd, path).split(sep).join('/'), readFileSync(path, 'utf8'), { legacy, scan }));
+}
+
+export const formatFinding = ({ file, line, rule, message, level }) => `${level === 'warn' ? 'warning ' : ''}${file}:${line} ${rule} ${message}`;
+
+export const DESIGN_USAGE = 'usage: boring-ui-blocks design <dir> [--changed <file>...] [--json]';
+
+/** `boring-ui-blocks design`: exit 0 when no finding is an error, 1 when one is, 2 on bad arguments. `scan` is the kit's scanAppDesign. */
+export function designMain(args, cwd, log, error, scan = scanAppDesign) {
+  let dir, changed = null, json = false;
+  try {
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--json') json = true;
+      else if (args[i] === '--changed') {
+        changed ??= new Set();
+        while (args[i + 1] && !args[i + 1].startsWith('--')) changed.add(resolve(cwd, args[++i]));
+      } else if (args[i].startsWith('--')) throw new Error(`unknown argument ${args[i]}`);
+      else if (dir === undefined) dir = resolve(cwd, args[i]);
+      else throw new Error(`unexpected argument ${args[i]}`);
+    }
+    if (dir === undefined) throw new Error('design needs a directory (the app\'s web/src)');
+    if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new Error(`no such directory: ${dir}`);
+  } catch (cause) {
+    error(`error: ${cause.message}\n${DESIGN_USAGE}`);
+    return 2;
+  }
+  const findings = designFindings(dir, { cwd, changed, scan });
+  const errors = findings.filter((f) => f.level === 'error').length, warnings = findings.length - errors;
+  const counts = {};
+  for (const f of findings) counts[f.rule] = (counts[f.rule] ?? 0) + 1;
+  if (json) log(JSON.stringify({ ok: !errors, errors, warnings, counts, findings }, null, 2));
+  else {
+    for (const finding of findings) log(formatFinding(finding));
+    log(findings.length ? `design: ${errors} error(s), ${warnings} warning(s)` : 'design: clean');
+  }
+  return errors ? 1 : 0;
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) process.exitCode = main(process.argv.slice(2));

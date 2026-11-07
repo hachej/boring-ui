@@ -240,6 +240,7 @@ An app enforces every kit rule with this one command and copies no script; there
 Apps also run their own `lint` (oxlint with the app template's rules) over the blocks they install, except `app-shell`, `pi-chat`, `button` and `utils`. Every other block must pass those rules: `npm run check` runs `scripts/check-block-lint.mjs` with the same config (`scripts/app-oxlint.json`, kept in step with boring-factory's `templates/app/.oxlintrc.json`) over `registry/`, and fails on any error.
 
 ```sh
+npx boring-ui-blocks design <dir> [--changed <file>...] [--json]   # an app's one design check; no components.json needed (features/packages.md, pkg-blocks-design)
 npx boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <app web dir>] [--json]
 npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>]
 npx boring-ui-blocks add <shadcn add arguments...> [--overwrite] [--manifest <path>] [--cwd <dir>]
