@@ -77,6 +77,31 @@ test('without --check the command does not fake shooting', () => {
   assert.match(r.stdout + r.stderr, /next slice/);
 });
 
+test('a directory named like a fixture is not a fixture file', () => {
+  const { status, list } = findings('dir-fixture', '--fixtures', join(fixtures, 'dir-fixture/fixtures'));
+  assert.equal(status, 1);
+  assert.deepEqual(list.map(f => f.path), ['states[0].given.fixture']);
+});
+
+test('relative and absolute <dir> and --fixtures both work', () => {
+  const rel = spawnSync(process.execPath, [bin, 'atlas', 'test/fixtures/atlas/valid', '--check', '--fixtures', 'test/fixtures/atlas/fixtures'], { cwd: root, encoding: 'utf8' });
+  assert.equal(rel.status, 0, rel.stdout + rel.stderr);
+  const abs = spawnSync(process.execPath, [bin, 'atlas', join(fixtures, 'valid'), '--check', '--fixtures', fixtureDir], { cwd: fixtures, encoding: 'utf8' });
+  assert.equal(abs.status, 0, abs.stdout + abs.stderr);
+});
+
+// Same token and quote semantics as boring-factory templates/app/test/examples-core.ts (parseStep, token, phrase): " ' « » “ ” quote a
+// phrase, which is trimmed; a step with trailing text after the quoted phrase keeps the whole text as one phrase.
+test('parseStep follows the Factory examples grammar', () => {
+  assert.deepEqual(parseStep('click « Se connecter »'), { verb: 'click', args: ['Se connecter'] });
+  assert.deepEqual(parseStep("click 'Se connecter'"), { verb: 'click', args: ['Se connecter'] });
+  assert.deepEqual(parseStep('click “Se connecter”'), { verb: 'click', args: ['Se connecter'] });
+  assert.deepEqual(parseStep('click "A" suite'), { verb: 'click', args: ['"A" suite'] });
+  assert.deepEqual(parseStep('fill « Mot de passe » « un faux »'), { verb: 'fill', args: ['Mot de passe', 'un faux'] });
+  assert.deepEqual(parseStep('fill Courriel jeanne et marie'), { verb: 'fill', args: ['Courriel', 'jeanne et marie'] });
+  assert.deepEqual(parseStep('upload « a.synthetic.csv »'), { verb: 'upload', args: ['a.synthetic.csv'] });
+});
+
 test('parseStep reads bare, double-quoted and guillemet arguments', () => {
   assert.deepEqual(parseStep('open Écritures'), { verb: 'open', args: ['Écritures'] });
   assert.deepEqual(parseStep('click Se connecter'), { verb: 'click', args: ['Se connecter'] });
@@ -87,6 +112,43 @@ test('parseStep reads bare, double-quoted and guillemet arguments', () => {
   assert.deepEqual(parseStep('upload a.synthetic.csv'), { verb: 'upload', args: ['a.synthetic.csv'] });
   assert.ok(parseStep('fill Courriel').error);
   assert.ok(parseStep('drop a.csv').error);
+});
+
+// A tiny evaluator of the schema keywords the file uses (type string, minLength, pattern), so the two are compared on behaviour.
+const schemaAccepts = (prop, value) => typeof value === 'string' && value.length >= (prop.minLength ?? 0) && (!prop.pattern || new RegExp(prop.pattern).test(value));
+
+test('the schema and the validator accept and refuse the same values', () => {
+  const schema = JSON.parse(readFileSync(schemaFile, 'utf8'));
+  const state = schema.$defs.state.properties, given = schema.$defs.given.properties;
+  const base = { id: 'a.b', page: '/a', title: 'A', given: { fixture: 'a.synthetic.csv' }, flow: 'f' };
+  const accepted = (mutate) => checkAtlas({ states: [mutate(structuredClone(base))] }).length === 0;
+  const samples = {
+    title: ['A', '', ' ', '  \t'],
+    flow: ['f', '', ' '],
+    after: ['Mauvais mot de passe', '', '   '],
+    page: ['/a', 'a', '', '/'],
+    id: ['a.b', 'A', 'a b', 'a..b', '-a', 'a-b.c9', ''],
+  };
+  for (const [key, values] of Object.entries(samples)) {
+    for (const value of values) assert.equal(accepted(s => { s[key] = value; return s; }), schemaAccepts(state[key], value), `${key} ${JSON.stringify(value)}`);
+  }
+  for (const value of ['a.synthetic.csv', 'a.csv', 'a.SYNTHETIC.csv', 'dir/a.synthetic.csv', 'a b.synthetic.csv', '.synthetic.', 'x.synthetic.y'])
+    assert.equal(accepted(s => { s.given.fixture = value; return s; }), schemaAccepts(given.fixture, value), `fixture ${value}`);
+  // Steps whose arity the schema can state (fill needs two arguments: the validator alone refuses `fill a`).
+  for (const step of ['open x', 'open  x', 'open', 'open ', 'upload', 'upload ', 'upload x', 'uploadx', 'click x', 'click', 'click  ', 'wait x', 'wait', 'hover x', 'drop x', 'fill a b', ' click x'])
+    assert.equal(accepted(s => { s.given.steps = [step]; return s; }), schemaAccepts(given.steps.items, step), `step ${JSON.stringify(step)}`);
+  const { flow: _, ...noFlow } = { ...base, after: 'x' };
+  assert.deepEqual(checkAtlas({ states: [noFlow] }).map(f => f.path), ['states[0].after']);
+});
+
+test('the package name is the published one', () => {
+  const name = JSON.parse(readFileSync(join(root, 'packages/ui/package.json'), 'utf8')).name;
+  assert.equal(name, '@hachej/boring-ui-kit');
+  const schema = readFileSync(schemaFile, 'utf8');
+  const docs = readFileSync(join(root, 'features/atlas.md'), 'utf8') + readFileSync(join(root, 'MIGRATING.md'), 'utf8').split('# Migrating to')[0];
+  assert.ok(schema.includes(`${name}/atlas.schema.json`));
+  assert.ok(docs.includes(`${name}/atlas.schema.json`));
+  assert.ok(!/@hachej\/boring-ui\/atlas/.test(schema + docs));
 });
 
 test('the schema and the hand validator agree', () => {

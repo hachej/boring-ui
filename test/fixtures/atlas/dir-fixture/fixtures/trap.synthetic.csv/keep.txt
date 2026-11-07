@@ -1,0 +1,1 @@
+A directory named like a fixture is not a fixture file.
