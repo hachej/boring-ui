@@ -14,10 +14,13 @@ for (const name of readdirSync(join(root, 'packages'))) {
     const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
     for (const [subpath, entry] of Object.entries(manifest.exports)) {
       if (typeof entry === 'string') {
-        assert.equal(subpath, './file-tree.css');
+        assert.match(subpath, /^\.\/[\w.-]+\.css$/);
         assert.equal(manifest.name, '@hachej/boring-ui-kit');
+        assert.match(entry, /^\.\/styles\/[\w.-]+\.css$/);
         assert.ok(existsSync(join(dir, entry)), entry);
-        assert.match(readFileSync(join(dir, entry), 'utf8'), /file-tree-row-button/);
+        const marker = { './file-tree.css': /file-tree-row-button/, './app.css': /never copy it/, './theme.derived.css': /--muted-foreground/ }[subpath];
+        assert.ok(marker, `${subpath}: add a content marker for this stylesheet`);
+        assert.match(readFileSync(join(dir, entry), 'utf8'), marker);
         assert.ok(manifest.sideEffects.includes('**/*.css'));
         continue;
       }

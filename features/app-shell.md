@@ -14,6 +14,8 @@ The `app-shell` block gives an app its navigation, one header per screen, an acc
 - `shell-sidebar-width` the sidebar width is a theme token (app look): an app sets `--sidebar-width`, `--sidebar-width-icon` or `--sidebar-width-mobile` on `:root` in its `theme.core.css` with no `!important`. The primitive carries the defaults (16rem; control height + 1rem, following the wrapper's own `--control-h`) as `var()` fallbacks resolved on the wrapper, so a sidebar without the app-shell css still has a width and a `SidebarProvider` `style` still wins. The phone sheet is 75% of the screen up to the Sheet's 24rem cap unless `--sidebar-width-mobile` is set (the old inline 18rem never applied). The dock + PM column breakpoint (`TOGETHER_FROM`, 1360px) assumes the default 16rem and cannot read the token; a themed sidebar wider than 16.5rem needs it raised. `shadcn/ui/sidebar.tsx`.
 - `shell-back` one Back manager for point mode, sheets, the agent layer and list-detail stacks. `registry/utils/back.ts`.
 - `shell-dense-targets` touch targets follow the `--control-h` / `--control-min` tokens (44px under 768px or on a coarse pointer, 36px on a fine pointer from md), `data-density="compact"` on a container forces 36px. `registry/README.md` section Agent layer.
+- `shell-app-css` the app's base stylesheet is one kit file, `@hachej/boring-ui-kit/app.css`: type scale, colour map, defaults, base layer, shell/chat/feedback resets, overlay-blur rule; apps import it, never copy it, and the theme files imported after it win. `packages/ui/styles/app.css`, `registry/README.md` section "The app's index.css".
+- `shell-theme-derived` the derivation of component tokens from the app's core roles is one kit file, `@hachej/boring-ui-kit/theme.derived.css`, imported after `app.css` and before the app's `theme.core.css`, whose roles and EXCEPTIONS win. `packages/ui/styles/theme.derived.css`.
 
 ## How to get to it (user POV)
 
@@ -32,6 +34,8 @@ Preconditions: `npm ci`, Chromium available, a built kit (`npm run build`).
 - **Toggle and flat shell.** `shell-sidebar-toggle`, `shell-flat`: at 1280px press the icon at the top of the left bar (or Ctrl+B); the bar folds to its icon rail and the toggle stays at its top. At 390px with `compactNav="sheet"` the header's leading button opens the sheet. `test/contracts/app-shell-render.impl.mjs` asserts the places, the absence of edge classes and at most one separator.
 - **Targets.** `shell-dense-targets`: measure buttons at 390px coarse: none under 44px outside `data-density="compact"`; at 1440 fine and in a 400px compact frame the controls are 36px (`test/contracts/control-height.test.mjs`).
 - **Sidebar width.** `shell-sidebar-width`: `CHROMIUM=... node --test test/contracts/sidebar-width-token.test.mjs` (256px default, 248px from a theme `:root`, a provider `style` wins).
+- **Base stylesheet.** `shell-app-css`: `node --test test/contracts/app-css.test.mjs` compiles an app `index.css` (imports + `app.css` + a fixture `theme.core.css`) with Tailwind and checks the theme wins and the scale, map and resets are present.
+- **Derived theme.** `shell-theme-derived`: `node --test test/contracts/theme-derived.test.mjs` compiles app.css, the kit's derived file and a fixture core that pins `--muted-foreground` and `--destructive-soft` in `:root` and `.dark`: pinned values win, unpinned roles get the derived value, and reversing the order fails.
 - **Proof.** An ARIA snapshot and a screenshot per width under `.cache/evidence/<journey>/`, tagged with the ID.
 
 ## Gotchas

@@ -953,6 +953,25 @@ A consumer needs only Tailwind v4's standard build, nothing from this repository
 3. Sources: Tailwind's automatic detection scans the project, which includes the installed `src/components/` folders. When the components live outside the scanned base (a monorepo package, a folder in `.gitignore`), add `@source "../path/to/components";` after the import.
 4. Dark mode uses the CLI's `.dark` class variant. Set light and dark core tokens in the app's theme, not in a block stylesheet. The consumer's shadcn components own colours, type, shape, borders, shadows and motion. Blocks add layout only; they must not override those components. The app's derived theme maps core roles to component tokens. Remaining custom skins are migration debt reported by `check-design`, not another supported theming API.
 
+The kit owns the app's base stylesheet, `@hachej/boring-ui-kit/app.css` (`packages/ui/styles/app.css`): the type scale and spacing, the colour map, keyframes, `:root` defaults, the base layer, the `.app-shell` / `.pi-chat` / `[data-boring="feedback"]` resets and the overlay-blur rule. An app imports it and never copies it. The whole `src/index.css` of an app is:
+
+```css
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@boring/ui/blocks.css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+@import "@hachej/boring-ui-kit/app.css";
+/* Core last: its roles and its EXCEPTIONS block beat the derived values (same selectors, the later one wins). */
+@import "@hachej/boring-ui-kit/theme.derived.css";
+@import "./theme.core.css";
+@source "./";
+@source "../../.boring/ui/candidates.txt"; /* a bundle app: the bundled components live in the ignored .boring/ui */
+```
+
+`@custom-variant dark` lives in `app.css` (Tailwind v4 accepts it in an imported file). `@hachej/boring-ui-kit/theme.derived.css` is the kit's theme derivation (core roles to component tokens); the app keeps only `theme.core.css`. No `@layer` around it: its `@theme inline` block cannot sit in one. Only `@source` lines stay in the app. The Factory bundle maps `@hachej/boring-ui-kit/<file>` to `packages/ui/styles/<file>`.
+
 `lab/studio/tailwind.mjs` builds the examples with Tailwind's library API. It includes upstream preflight around Library and viewer fixtures, matching a consumer's standard Tailwind baseline. It is not part of an installation.
 
 ## Ambient agent (`pi-ambient`: `AmbientChat`, `AgentNotifications`)

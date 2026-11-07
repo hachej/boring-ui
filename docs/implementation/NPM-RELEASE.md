@@ -40,6 +40,9 @@ checks the retained artifact contains none of them. No published package depends
    `verify:release` again during local release prep: the full tests, release gate,
    isolated consumers and browser journeys run in CI. Preserve their logs and
    artifact identities. Do not delete deferrals or weaken proofs to pass CI.
+6. A change to the kit's `packages/ui/styles/theme.derived.css` is a visual change
+   for every app. Its PR carries before/after shots of one card screen in a stock
+   app and in coach-max, light and dark, and its `# Unreleased` bullet says so.
 
 Preparation targets about 10 minutes, excluding human review. Qualification of
 both the PR and the exact main merge SHA remains CI's responsibility.
