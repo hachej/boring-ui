@@ -4,7 +4,7 @@ Generic blocks for the "what is going on across my apps" surfaces: a card per ap
 
 ## Sub-features
 
-- `space-card` `SpaceCard` shows one app or space: its name, the working and waiting counts (semibold sans, tabular), and the "Last ship" line (sans, muted; the label is overridable) when known. Both counts at 0 read "Quiet". `activity: 'unknown'` reads "Status unreadable" and hides the last ship: an unreadable app is never shown as Quiet. It is a button when `onOpen` is given. Both forms sit on `--card` (white on the canvas); the initial chip is `--secondary`; the button form hovers to `--accent` (the chip flips to `--card`) and keeps the Button focus ring. `test/ui/surface-cards.test.mjs` renders both and asserts the surfaces (light and dark). `registry/space-card/space-card.tsx`.
+- `space-card` `SpaceCard` shows one app or space: its name, the working and waiting counts (semibold sans, tabular), and the "Last ship" line (sans, muted; the label is overridable) when known. `lastShip` is a `Date` (shown by the shared `pattern-short-date`, so it reads the same as `StatusNarrative`: "Nov 6", the year added when it is not this year, as a `<time>`) or a string shown as is (`@deprecated`; the host formats it); an invalid Date is treated as absent, never "Invalid Date". Both counts at 0 read "Quiet". `activity: 'unknown'` reads "Status unreadable" and hides the last ship: an unreadable app is never shown as Quiet. It is a button when `onOpen` is given. Both forms sit on `--card` (white on the canvas); the initial chip is `--secondary`; the button form hovers to `--accent` (the chip flips to `--card`) and keeps the Button focus ring. `test/ui/surface-cards.test.mjs` renders both and asserts the surfaces (light and dark). `registry/space-card/space-card.tsx`.
 - `wiring-chips` `WiringChips` lists what an app is wired to (domain, repository, channels, connections), one chip each with a state dot: `ok`, `warn` (needs attention, such as a sign-in) or `unknown` (could not be read). `state` is required, and a missing one reads as `unknown`, never ok. The dot is colour only for sighted people (assistive tech also hears the state), so put the state in the chip text when it matters: "Calendar needs sign-in". `registry/wiring-chips/wiring-chips.tsx`.
 
 ## How to get to it (user POV)
@@ -15,7 +15,7 @@ Generic blocks for the "what is going on across my apps" surfaces: a card per ap
 
 Preconditions: `node_modules` installed, so in CI on this VM.
 
-- **Cards.** `space-card`: `node --test test/ui/space-blocks.test.mjs` renders busy, quiet and unreadable cards, the optional last ship and the button/static split.
+- **Cards.** `space-card`: `node --test test/ui/space-blocks.test.mjs` renders busy, quiet and unreadable cards, the optional last ship (Date, string, invalid Date, and the same text as `StatusNarrative` for the same Date) and the button/static split.
 - **Chips.** `wiring-chips`: the same test renders the three states, the spoken state for non-ok chips and French labels.
 
 ## Gotchas

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '../utils/utils';
 import { MoonIcon, MessageCircleQuestionIcon } from '../_shared/icons';
+import { ShortDate } from '../_shared/short-date';
 
 /** What the space is doing. `'unknown'` means the status could not be read: never shown as quiet. */
 export type SpaceActivity = { working: number; waiting: number } | 'unknown';
@@ -17,8 +18,8 @@ export type SpaceCardProps = {
   /** A logo or avatar. Defaults to the first letter of the name. */
   leading?: ReactNode;
   activity: SpaceActivity;
-  /** When the space last shipped, already formatted ("2h ago"). Optional; hidden when unknown. */
-  lastShip?: string;
+  /** When the space last shipped. A `Date` is shown short in the browser's locale, the same as `StatusNarrative` ("Nov 6", with the year when it is not this year); an invalid Date is treated as absent. A string is shown as is, already formatted by the host ("2h ago"): @deprecated pass a `Date`. Optional; hidden when unknown. */
+  lastShip?: Date | string;
   /** Makes the card a button. */
   onOpen?: () => void;
   labels?: Partial<SpaceCardLabels>;
@@ -32,6 +33,7 @@ const hoverFill = 'hover:bg-accent';
 export function SpaceCard({ name, leading, activity, lastShip, onOpen, labels, className }: SpaceCardProps) {
   const t = { ...spaceCardLabels, ...labels };
   const unknown = activity === 'unknown';
+  const shipped = lastShip instanceof Date ? (Number.isNaN(lastShip.getTime()) ? null : <ShortDate date={lastShip} />) : lastShip;
   const quiet = !unknown && activity.working === 0 && activity.waiting === 0;
   const content = (
     <>
@@ -49,7 +51,7 @@ export function SpaceCard({ name, leading, activity, lastShip, onOpen, labels, c
           <Count value={activity.waiting} label={t.waiting} attention={activity.waiting > 0} />
         </span>
       )}
-      {lastShip && !unknown ? <span className="truncate text-xs text-muted-foreground">{t.lastShip} {lastShip}</span> : null}
+      {shipped && !unknown ? <span className="truncate text-xs text-muted-foreground">{t.lastShip} {shipped}</span> : null}
     </>
   );
   if (onOpen) return <Button variant="secondary" className={cn(box, hoverFill, className)} onClick={onOpen}>{content}</Button>;
