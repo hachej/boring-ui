@@ -1,5 +1,6 @@
 # Unreleased
 
+- **Registry README only (D-1747).** It no longer names three browser tests that never ran in CI and are deleted. Nothing changes for an app.
 - **A labelled row takes the whole tap (bundled primitives, `field.tsx`; D-1729).** No new component: wrap the control and its text in `<FieldLabel><Field orientation="horizontal">…</Field></FieldLabel>` (Checkbox, `RadioGroupItem` in a `RadioGroup`, Switch; text in `FieldContent` with `FieldTitle` and optional `FieldDescription`). `FieldLabel` is one `<label>`, and when it wraps a `Field` it now is at least 44px tall under `md` or on a coarse pointer (`min-h-11`, content centred; was about 40px with one line), so a tap anywhere on the row changes the control once. Checkbox, Radio and Switch are unchanged and their hit areas are not widened; use `gap-3` between rows. Rows that wrap a `Field` in a `FieldLabel` grow by a few pixels on a phone; apps that copied `field.tsx` can add `has-[>[data-slot=field]]:justify-center has-[>[data-slot=field]]:max-md:min-h-11 has-[>[data-slot=field]]:pointer-coarse:min-h-11` to `FieldLabel`. Test: `test/ui/labelled-row.test.mjs`.
 
 # Migrating to 0.4.64
