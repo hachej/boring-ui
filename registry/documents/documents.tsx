@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import type { FileTreeController } from '@hachej/boring-ui-kit/file-tree';
+import { useWorkspaceChangeFeed } from '@hachej/boring-ui-kit/file-tree-view';
 import { FileTreeView } from '../file-tree/file-tree';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
 import { mediaTypeOf, viewerKindOf } from '@hachej/boring-files/file-types';
@@ -45,20 +46,6 @@ export interface DocumentsProps {
 }
 
 const nameOf = (path: string) => path.split('/').pop() || path;
-
-/** The workspace's change feed as a counter: it moves on every change, so the listings and the revisions are read again. */
-function useWorkspaceVersion(provider: RevisionProvider): number {
-  const [version, setVersion] = useState(0);
-  useEffect(() => {
-    if (!provider.changes) return undefined;
-    const abort = new AbortController();
-    void (async () => {
-      try { for await (const change of provider.changes!({ signal: abort.signal })) { void change; setVersion(current => current + 1); } } catch { /* the binding ended the feed: the listings stay as they are */ }
-    })();
-    return () => abort.abort();
-  }, [provider]);
-  return version;
-}
 
 /** The Library's tree over the provider: created and disposed with the binding, read again when the workspace changes. */
 function useFileTree(provider: RevisionProvider, version: number, blobBase: string): FileTreeController | undefined {
@@ -190,7 +177,9 @@ export function Documents({ provider, locale, labels: given, viewers, share, blo
   const language: DocumentsLocale = locale === 'fr' ? 'fr' : 'en';
   // The viewers' kinds: the pi-app default list in the item's locale.
   const kinds = useMemo(() => defaultKinds({ locale: language }), [language]);
-  const version = useWorkspaceVersion(provider);
+  // The workspace's change feed (resumed after a hidden page, settled over 150 ms): the listings and the revisions read again when `seq` moves.
+  const feed = useWorkspaceChangeFeed(provider);
+  const version = feed.seq ?? 0;
   const blobBase = checkBlobBase(givenBase);
   const tree = useFileTree(provider, version, blobBase);
   const [path, setPath] = useState<string>();
@@ -219,6 +208,8 @@ export function Documents({ provider, locale, labels: given, viewers, share, blo
     : <DocumentDetail key={path} provider={provider} path={path} version={version} options={options} labels={labels} locale={language} older={older}
       onDirty={onDirty} onOpenRevision={revision => setPinned({ path, revision })} onBack={() => setPinned(undefined)} onClose={closeFile} />;
   return <DocumentsWords locale={locale}>
-    <ListDetail list={list} detail={detail} onBack={closeFile} />
+    <div data-testid="documents" data-live={feed.live} className="contents">
+      <ListDetail list={list} detail={detail} onBack={closeFile} />
+    </div>
   </DocumentsWords>;
 }
