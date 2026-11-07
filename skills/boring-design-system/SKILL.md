@@ -20,7 +20,7 @@ owns how parts look and behave. The app owns its values and its screens.
 | `web/src/index.css` | The imports, in this order, and nothing visual: `@import "tailwindcss"; @import "@hachej/boring-ui-kit/app.css"; @import "@hachej/boring-ui-kit/theme.derived.css"; @import "./theme.core.css";` Core comes last, so its roles and its EXCEPTIONS win. |
 | `web/src/theme.core.css` | The core roles (below), light in `:root`, dark in `.dark`; the app's own tokens; then an `=== EXCEPTIONS ===` block for the rare derived token that must differ. |
 | `DESIGN.md` (repo root) | The values as the designer states them, an `exceptions:` list (one reason per pinned token) and at most 5 lines of brand intent: the Do/Don't tokens cannot say ("lime only for the one primary action of a screen"). |
-| `design.exceptions.json` (repo root, optional) | The app's frozen check hits. It only shrinks; when empty, delete it. |
+| `web/src/design.exceptions.json` (optional; it lives in the directory the check scans) | The app's frozen check hits. It only shrinks; when empty, delete it. |
 
 An app never keeps its own `theme.derived.css` or a copy of `app.css`: the kit
 ships both, and a copy drifts.
@@ -54,16 +54,16 @@ Phosphor (`@phosphor-icons/react`), never Lucide.
 
 ## Knobs: kit values an app tunes without restyling
 
-| Need | Knob |
-|---|---|
-| Sidebar width | `--sidebar-width` in the theme |
-| Blur behind dialogs, sheets and drawers | Off by default; `AppShell overlayBlur` turns it on, `--overlay-blur` retunes it |
-| Overlay height | `height="auto" \| "tall" \| "full"` on `DialogContent`, `SheetContent`, `DrawerContent`; retune with `--overlay-height-tall` / `--overlay-height-full` |
-| Toasts above the chat composer | Automatic (pi-chat sets it); `--toast-offset-bottom` in the theme overrides |
-| Control height | Automatic: `--control-h` is 44px on touch, 36px with a fine pointer. Never set a height on a control |
-| A link-style action in a row | `Button size="inline"` (text height, 44px touch area; inside a table cell it underlines only on hover and focus) |
-| Underline tabs | `TabsList variant="line"` |
-| Pasted code or raw data | `Textarea variant="code"` |
+| Need | Knob | Feature id |
+|---|---|---|
+| Sidebar width | `--sidebar-width` (and `-icon`, `-mobile`) in the theme | `shell-sidebar-width` |
+| Blur behind dialogs, sheets and drawers | Off by default; `AppShell overlayBlur` turns it on, `--overlay-blur` retunes it | `shell-overlay-blur` (D-1799) |
+| Overlay height | `height="auto" \| "tall" \| "full"` on `DialogContent`, `SheetContent`, `DrawerContent`; retune with `--overlay-height-tall` / `--overlay-height-full` | `shell-overlay-height` (D-1800) |
+| Toasts above the chat composer | Automatic (pi-chat sets it); `--toast-offset-bottom` in the theme overrides | `toast-offset` (D-1801) |
+| Control height | Automatic: `--control-h` is 44px on touch, 36px with a fine pointer. Never set a height on a control | `control-height` (D-1741), `touch-floor` (D-1770) |
+| A link-style action in a row | `Button size="inline"` (text height, 44px touch area; inside a table cell it underlines only on hover and focus) | `pattern-button-inline` (D-1767, D-1814) |
+| Underline tabs | `TabsList variant="line"` | shadcn stock |
+| Pasted code or raw data | `Textarea variant="code"` | `pkg-ui-textarea-code` (D-1782) |
 
 A knob the kit lacks is a kit request (ask boring-ui-master), never app CSS.
 Once the same need shows up in 3 apps, it becomes a token, a prop or a block.
@@ -78,7 +78,7 @@ Build screens from these before writing anything by hand.
 | Pick or drop one or more files | `FilePick` (`@boring/ui/blocks/file-pick/file-pick`): a button or a drop strip; refusals come back to `onRefused` as `{ file, reason: "type" \| "size" \| "count" }` and the app writes the words |
 | A list of files with upload | The `file-tree` block (`FileTreeView`) |
 | A sheet, drawer or bottom panel | `AppSheet` (`@boring/ui/blocks/app-shell/index`) |
-| A chat with the agent | `pi-chat` through the shell's agent layer (`AppShell agent={useAgentChat(name)}`) |
+| A chat with the agent | `pi-chat` through the shell's agent layer (`AppShell agent={spec}`; placements in the `app-layout-and-agent` skill) |
 | Voice | `pi-chat-voice`, or `useDictation` from app-shell |
 | Camera or attachments in the chat | `pi-chat-attachments` (`CameraSheet`) |
 | Page layout, navigation, list and detail | `AppShell` (see the `app-layout-and-agent` skill) |
