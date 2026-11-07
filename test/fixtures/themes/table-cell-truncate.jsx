@@ -15,7 +15,7 @@ createRoot(document.getElementById('root')).render(<main data-case="table" class
     <TableRow><TableCell>06/11</TableCell><TableCell>Gaz</TableCell><TableCell truncate data-cell="button"><Button size="inline" data-btn="1">Voir la pièce jointe du dossier fictif de Camille Durand-Lefebvre</Button></TableCell><TableCell>12</TableCell></TableRow>
   </TableBody></Table>
   <Table className="table-auto" data-auto="1"><TableBody>
-    <TableRow><TableCell>1</TableCell><TableCell truncate data-cell="auto">FAC-2026-000000000000000000042</TableCell><TableCell>€</TableCell></TableRow>
+    <TableRow><TableCell>1</TableCell><TableCell truncate data-cell="auto">FAC-2026-0000000000000000000000000000000000000000000000000000000042</TableCell><TableCell>€</TableCell></TableRow>
     <TableRow><TableCell>2</TableCell><TableCell truncate>FAC-2026-1</TableCell><TableCell>€</TableCell></TableRow>
   </TableBody></Table>
 </main>);
