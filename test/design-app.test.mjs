@@ -5,7 +5,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, s
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BLOCK_ITEMS, KIT_SLOTS, LEVELS } from '../packages/ui/bin/boring-ui-blocks.mjs';
+import { BLOCK_ITEMS, CORE_ROLES, KIT_DERIVED, KIT_SLOTS, LEVELS } from '../packages/ui/bin/boring-ui-blocks.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const bin = join(root, 'packages/ui/bin/boring-ui-blocks.mjs');
@@ -122,21 +122,35 @@ test('every block a kit-block hint names is an item of registry.json', () => {
 const themeBad = json(join(root, 'test/fixtures/design-theme/bad/web/src'));
 const themeFindings = (rule, file) => themeBad.findings.filter(finding => finding.rule === rule && finding.file.endsWith(`/${file}`)).map(finding => finding.line);
 
-test('design-theme-core-only: theme.core.css sets only core roles (below the EXCEPTIONS comment is exempt); theme.derived.css holds no colour literal and no core role', () => {
-  assert.deepEqual(themeFindings('design-theme-core-only', 'theme.core.css'), [4]);
+test('design-theme-core-only: a kit-derived name above the EXCEPTIONS comment is a hit (line 4, and again in .dark at 14); an app token (--pm-gold, --shadow-halo) and a core role are not', () => {
+  const lines = themeFindings('design-theme-core-only', 'theme.core.css');
+  assert.ok(lines.includes(4) && lines.includes(14));
+  assert.ok(!lines.includes(5) && !lines.includes(6) && !lines.includes(2) && !lines.includes(3) && !lines.includes(7), `app tokens and core roles are never hits: ${lines}`);
   assert.deepEqual(themeFindings('design-theme-core-only', 'theme.derived.css'), [3, 4]);
   assert.ok(themeBad.findings.filter(finding => finding.rule.startsWith('design-theme')).every(finding => finding.level === 'warn' && LEVELS[finding.rule] === 'warn'));
 });
 
-test('design-theme-roles-both-modes: a colour role in :root and not in .dark is reported, and the reverse; non-colour roles and the exceptions are not', () => {
-  assert.deepEqual(themeFindings('design-theme-roles-both-modes', 'theme.core.css'), [4, 5, 12]);
-  const messages = themeBad.findings.filter(finding => finding.rule === 'design-theme-roles-both-modes').map(finding => finding.message);
-  assert.ok(messages.some(message => /--accent is set in \.dark but not in :root/.test(message)));
-  assert.ok(messages.some(message => /--primary is set in :root but not in \.dark/.test(message)));
-  assert.ok(!messages.some(message => /--radius|--brand-teal/.test(message)));
+test('design-theme-core-only: a token pinned below the comment with an entry in DESIGN.md exceptions is fine; two without an entry are ONE hit for the missing reason', () => {
+  const lines = themeFindings('design-theme-core-only', 'theme.core.css');
+  assert.deepEqual(lines, [4, 14, 20]);
+  const missing = themeBad.findings.filter(finding => finding.rule === 'design-theme-core-only' && finding.line === 20);
+  assert.equal(missing.length, 1);
+  assert.match(missing[0].message, /2 token\(s\).*--link, --input/);
+  assert.ok(!/--brand-teal/.test(missing[0].message));
 });
 
-test('a clean theme (both modes, core roles, derived from var() and color-mix(), an exception below the comment) reports nothing', () => {
+test('KIT_DERIVED and CORE_ROLES do not overlap', () => {
+  assert.deepEqual(KIT_DERIVED.filter(name => CORE_ROLES.includes(name)), []);
+});
+
+test('design-theme-roles-both-modes: a colour core role in :root and not in .dark is reported, and the reverse; app tokens set in both, non-colour roles and the exceptions are not', () => {
+  assert.deepEqual(themeFindings('design-theme-roles-both-modes', 'theme.core.css'), [7]);
+  const messages = themeBad.findings.filter(finding => finding.rule === 'design-theme-roles-both-modes').map(finding => finding.message);
+  assert.ok(messages.some(message => /--accent is set in :root but not in \.dark/.test(message)));
+  assert.ok(!messages.some(message => /--radius|--brand-teal|--shadow-halo|--pm-gold/.test(message)));
+});
+
+test('a clean theme (both modes, core roles, app tokens, derived from var() and color-mix(), documented exceptions below the comment) reports nothing', () => {
   assert.deepEqual(json(join(root, 'test/fixtures/design-theme/clean/web/src')).findings, []);
 });
 

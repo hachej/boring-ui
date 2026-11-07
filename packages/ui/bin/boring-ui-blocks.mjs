@@ -984,8 +984,20 @@ const PROFILE = Object.freeze({
 
 /** The core roles: what the Factory template's theme.core.css sets (its :root and .dark colour roles, and the radius, border width, font, text and shadow tokens). */
 export const CORE_ROLES = Object.freeze(['background', 'card', 'foreground', 'primary', 'primary-foreground', 'accent', 'muted', 'border', 'ring', 'destructive', 'success', 'warning', 'info', 'chart-series-1', 'chart-series-2', 'chart-series-3', 'chart-series-4', 'chart-series-5', 'radius', 'border-width', 'font-sans', 'font-display', 'font-mono', 'text-body', 'text-title', 'shadow-xs', 'shadow-sm', 'shadow-md', 'shadow-lg']);
-/** Core roles that are not colours: set once, with no dark value. */
-const NON_COLOR_ROLE = /^(?:radius|border-width|font-|text-|shadow-)/;
+/**
+ * What the Factory template's theme.derived.css computes (the names the kit derives from the core roles). An app sets the core roles; it
+ * does not set these above its EXCEPTIONS block. A name in neither list is the app's own token (--pm-*, --shadow-halo, --text-2xs).
+ */
+export const KIT_DERIVED = Object.freeze([
+  'card-foreground', 'popover', 'popover-foreground', 'secondary', 'secondary-foreground', 'accent-foreground', 'muted-foreground', 'input',
+  'primary-active', 'link', 'success-foreground', 'warning-foreground', 'info-foreground', 'destructive-soft', 'destructive-soft-foreground',
+  'success-soft', 'success-soft-foreground', 'warning-soft', 'warning-soft-foreground', 'info-soft', 'info-soft-foreground',
+  'sidebar', 'sidebar-foreground', 'sidebar-primary', 'sidebar-primary-foreground', 'sidebar-accent', 'sidebar-accent-foreground', 'sidebar-border', 'sidebar-ring',
+  'chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5', 'font-heading',
+  'radius-sm', 'radius-md', 'radius-lg', 'radius-xl', 'radius-2xl', 'radius-3xl', 'radius-4xl',
+]);
+/** Roles that are not colours: set once, with no dark value. */
+const NON_COLOR_ROLE = /^(?:radius|border-width|font-|text-|shadow-|color-)/;
 const COLOR_VALUE = /#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla|oklch|oklab|lab|lch)\(/;
 const EXCEPTIONS_MARK = '=== EXCEPTIONS ===';
 
@@ -1007,22 +1019,28 @@ function cssDeclarations(text) {
 }
 
 /**
- * design-theme-core-only: theme.core.css sets only core roles (a declaration after its "=== EXCEPTIONS ===" comment is the app's declared
- * exception, exempt from both theme rules). theme.derived.css is computed from the core roles and never edited by hand; it is edited by hand when a declaration holds a
+ * design-theme-core-only: theme.core.css does not set a name the kit derives (KIT_DERIVED) above its "=== EXCEPTIONS ===" comment. Core roles and
+ * the app's own tokens are fine. A token pinned below the comment needs an entry under `exceptions:` in the app's DESIGN.md (`--name` in
+ * backticks); the missing entries are one hit for the block. theme.derived.css is computed from the core roles and never edited by hand; it is edited by hand when a declaration holds a
  * colour literal (hex, rgb, hsl, oklch...) or sets a core role: its values are var() and color-mix() of core roles.
  * design-theme-roles-both-modes: every colour role set in theme.core.css :root is also set in .dark, and the reverse.
  */
-function themeRules(file, text) {
+function themeRules(file, text, exceptions = new Set()) {
   const found = [], name = basename(file), declarations = cssDeclarations(text);
   if (name === 'theme.core.css') {
     const exceptionsAt = text.indexOf(EXCEPTIONS_MARK);
-    const declared = exceptionsAt < 0 ? declarations : declarations.filter((d) => d.offset < exceptionsAt); // below the marker: the app's declared exceptions
+    const declared = exceptionsAt < 0 ? declarations : declarations.filter((d) => d.offset < exceptionsAt);
+    const pinned = exceptionsAt < 0 ? [] : declarations.filter((d) => d.offset > exceptionsAt); // below the marker: derived tokens pinned on purpose
+    // A kit-derived name set above the marker is a hit; a core role, and a name the kit does not define (an app token), never are.
     for (const d of declared) {
-      if (!CORE_ROLES.includes(d.name)) found.push({ file, line: d.line, rule: 'design-theme-core-only', message: `--${d.name} is not a core role: theme.core.css sets only the core roles, the rest is computed in theme.derived.css (an app exception goes below the "${EXCEPTIONS_MARK}" comment)` });
+      if (KIT_DERIVED.includes(d.name)) found.push({ file, line: d.line, rule: 'design-theme-core-only', message: `--${d.name} is derived by the kit (theme.derived.css): set the core roles it is computed from, or pin it below the "${EXCEPTIONS_MARK}" comment with an entry under "exceptions:" in DESIGN.md` });
     }
+    // The pinned block is documented in DESIGN.md `exceptions:`; the missing reason is one hit for the block, not one per token.
+    const undocumented = [...new Set(pinned.filter((d) => !exceptions.has(d.name)).map((d) => d.name))];
+    if (undocumented.length) found.push({ file, line: pinned.find((d) => !exceptions.has(d.name)).line, rule: 'design-theme-core-only', message: `${undocumented.length} token(s) pinned below the "${EXCEPTIONS_MARK}" comment have no entry under "exceptions:" in DESIGN.md (${undocumented.slice(0, 4).map((n) => `--${n}`).join(', ')}${undocumented.length > 4 ? ', ...' : ''}): add one with the reason` });
     const modes = { light: new Map(), dark: new Map() };
     for (const d of declared) {
-      if (NON_COLOR_ROLE.test(d.name)) continue;
+      if (NON_COLOR_ROLE.test(d.name) || !(COLOR_VALUE.test(d.value) || CORE_ROLES.includes(d.name) || KIT_DERIVED.includes(d.name))) continue;
       const selectors = d.selector.split(',').map((part) => part.trim());
       if (selectors.includes(':root')) modes.light.set(d.name, d.line);
       if (selectors.includes('.dark')) modes.dark.set(d.name, d.line);
@@ -1060,7 +1078,7 @@ const SOURCE = /\.(?:[cm]?[jt]sx?|css)$/;
  * The findings of one file: `file` is its path in the report, `source` its text, `scan` the kit's `scanAppDesign`. `legacy`: the app
  * keeps its own components/ui, its design findings are warnings everywhere and a file inside that folder only gets the design-* rules.
  */
-export function checkSource(file, source, { legacy = false, ui = false, scan } = {}) {
+export function checkSource(file, source, { legacy = false, ui = false, scan, exceptions } = {}) {
   const name = basename(file), tsx = /\.[jt]sx$/.test(file);
   const inUi = ui; // the app's own <root>/components/ui, decided by the caller from the path under the scanned root
   const found = [];
@@ -1078,7 +1096,7 @@ export function checkSource(file, source, { legacy = false, ui = false, scan } =
       if (lines > LIMITS.file) found.push({ file, line: 1, rule: 'file-length', message: `${lines} lines (max ${LIMITS.file}): split it into modules` });
     }
   }
-  if (THEME_FILES.has(name)) found.push(...themeRules(file, source));
+  if (THEME_FILES.has(name)) found.push(...themeRules(file, source, exceptions));
   if (SOURCE.test(file) && name !== 'theme.core.css') {
     found.push(...restyle(file, source), ...important(file, source), ...fontFace(file, source));
     const bare = mask(source, { strings: false });
@@ -1125,11 +1143,29 @@ export function designFiles(dir) {
   return files;
 }
 
+/** The `--name` entries (in backticks, or `--name:` keys) of the Exceptions section of the nearest DESIGN.md at or above `dir` (4 levels up). */
+export function designExceptions(dir) {
+  const names = new Set();
+  for (let at = dir, depth = 0; depth < 5; depth++, at = dirname(at)) {
+    const path = join(at, 'DESIGN.md');
+    if (!existsSync(path)) continue;
+    const text = readFileSync(path, 'utf8');
+    const start = text.search(/^(?:#{1,6}\s*exceptions\b|exceptions:)/im);
+    if (start >= 0) {
+      const rest = text.slice(start).split('\n').slice(1).join('\n');
+      const end = rest.search(/^#{1,6}\s|^---\s*$/m);
+      for (const m of (end < 0 ? rest : rest.slice(0, end)).matchAll(/`--([\w-]+)`|^\s*-?\s*--([\w-]+)\s*:/gm)) names.add(m[1] ?? m[2]);
+    }
+    break;
+  }
+  return names;
+}
+
 /** Every finding under `dir`; paths are relative to `cwd`. `changed`: absolute paths to keep (null: all). */
 export function designFindings(dir, { cwd = process.cwd(), changed = null, scan } = {}) {
-  const legacy = existsSync(join(dir, UI_DIR));
+  const legacy = existsSync(join(dir, UI_DIR)), exceptions = designExceptions(dir);
   return designFiles(dir).filter((path) => !changed || changed.has(path))
-    .flatMap((path) => checkSource(relative(cwd, path).split(sep).join('/'), readFileSync(path, 'utf8'), { legacy, ui: relative(dir, path).split(sep).join('/').startsWith(`${UI_DIR}/`), scan }));
+    .flatMap((path) => checkSource(relative(cwd, path).split(sep).join('/'), readFileSync(path, 'utf8'), { legacy, ui: relative(dir, path).split(sep).join('/').startsWith(`${UI_DIR}/`), scan, exceptions }));
 }
 
 export const formatFinding = ({ file, line, rule, message, level }) => `${level === 'warn' ? 'warning ' : ''}${file}:${line} ${rule} ${message}`;
