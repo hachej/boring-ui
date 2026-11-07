@@ -36,6 +36,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--border-radius": "var(--radius)",
         } as React.CSSProperties
       }
+      // Bottom toasts clear what the app docks there: pi-chat sets --toast-offset-bottom while its composer is docked on a phone; an app retunes it in its theme. The fallbacks are sonner's own offsets.
+      offset={{ bottom: "var(--toast-offset-bottom, 24px)" }}
+      mobileOffset={{ bottom: "var(--toast-offset-bottom, 16px)" }}
       toastOptions={{
         classNames: {
           toast: "cn-toast",

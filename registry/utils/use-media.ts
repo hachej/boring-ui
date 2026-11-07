@@ -56,3 +56,35 @@ export function useKeyboardInset(ref: RefObject<HTMLElement | null>, enabled: bo
     return () => { observer?.disconnect(); element.style.removeProperty('--composer-keyboard-inset'); };
   }, [ref, enabled, viewport]);
 }
+
+/** The token the kit Toaster reads for its bottom offset (`var(--toast-offset-bottom, <sonner default>)`). */
+export const TOAST_OFFSET = '--toast-offset-bottom';
+
+// One page can show several chats (BORING-PI-6). Each docked composer registers its own clearance, the token is the largest, and it is
+// removed only when the last one leaves: closing one viewer never clears the room another still needs.
+const clearances = new Map<symbol, number>();
+
+function publishToastOffset(): void {
+  const root = globalThis.document?.documentElement;
+  if (!root) return;
+  if (clearances.size === 0) { root.style.removeProperty(TOAST_OFFSET); return; }
+  root.style.setProperty(TOAST_OFFSET, `calc(${Math.max(...clearances.values())}px + var(--toast-offset-gap, 0.5rem))`);
+}
+
+/**
+ * While `enabled` (a phone, composer docked at the bottom), keeps `--toast-offset-bottom` on the document root equal to the room the
+ * dock takes from the bottom of the window (its height, its safe-area padding and anything below it). Cleanup is synchronous.
+ */
+export function useToastOffset(dock: RefObject<HTMLElement | null>, enabled: boolean): void {
+  useEffect(() => {
+    const element = dock.current, view = globalThis.window;
+    if (!enabled || !element || !view) return;
+    const id = Symbol('toast-offset');
+    const measure = () => { clearances.set(id, Math.max(0, Math.round(view.innerHeight - element.getBoundingClientRect().top))); publishToastOffset(); };
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    observer?.observe(element);
+    view.addEventListener('resize', measure);
+    measure();
+    return () => { observer?.disconnect(); view.removeEventListener('resize', measure); clearances.delete(id); publishToastOffset(); };
+  }, [dock, enabled]);
+}
