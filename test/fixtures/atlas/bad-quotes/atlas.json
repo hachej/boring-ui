@@ -1,1 +1,1 @@
-{"states":[{"id":"a.b","page":"/a","title":"A","fixture":"f","steps":["fill \"Mot de passe faux","click","drop"]}]}
+{"states":[{"id":"a.b","page":"/a","title":"A","given":{"fixture":"empty-books.synthetic.csv","steps":["fill \"Mot de passe faux","click","fill Courriel"]}}]}

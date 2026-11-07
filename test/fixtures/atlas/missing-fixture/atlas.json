@@ -1,1 +1,1 @@
-{"states":[{"id":"a.b","page":"/a","title":"A","fixture":"empty-books"},{"id":"a.c","page":"/a","title":"A2","fixture":"inconnu"}]}
+{"states":[{"id":"a.b","page":"/a","title":"A","given":{"fixture":"empty-books.synthetic.csv"}},{"id":"a.c","page":"/a","title":"A2","given":{"fixture":"inconnu.synthetic.csv","steps":["upload absent.synthetic.csv"]}}]}

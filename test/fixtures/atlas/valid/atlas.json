@@ -1,10 +1,12 @@
 {
   "$schema": "../../../../packages/ui/atlas.schema.json",
   "states": [
-    { "id": "ecritures.empty", "page": "/ecritures", "title": "Écritures, vide", "fixture": "empty-books" },
-    { "id": "ecritures.long-text", "page": "/ecritures", "title": "Écritures, libellé très long", "fixture": "long-labels", "steps": ["wait Écritures"] },
-    { "id": "connexion.form", "page": "/connexion", "title": "Connexion", "fixture": "signed-out", "flow": "connexion" },
-    { "id": "connexion.refused", "page": "/connexion", "title": "Connexion, refusée", "fixture": "signed-out", "flow": "connexion", "after": "Mauvais mot de passe",
-      "steps": ["fill Courriel jeanne@example.test", "fill \"Mot de passe\" \"faux\"", "click Se connecter", "wait Identifiants incorrects"] }
+    { "id": "ecritures.empty", "page": "/ecritures", "title": "Écritures, vide", "given": { "fixture": "empty-books.synthetic.csv" } },
+    { "id": "ecritures.long-text", "page": "/ecritures", "title": "Écritures, libellé très long",
+      "given": { "fixture": "long-labels.synthetic.csv", "steps": ["open Écritures", "upload", "wait Importé"] } },
+    { "id": "connexion.form", "page": "/connexion", "title": "Connexion", "given": { "fixture": "signed-out.synthetic.csv" }, "flow": "connexion" },
+    { "id": "connexion.refused", "page": "/connexion", "title": "Connexion, refusée", "given": { "fixture": "signed-out.synthetic.csv",
+      "steps": ["fill Courriel jeanne@example.test", "fill \"Mot de passe\" « faux »", "click « Se connecter »", "wait Identifiants incorrects"] },
+      "flow": "connexion", "after": "Mauvais mot de passe" }
   ]
 }
