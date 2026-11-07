@@ -111,14 +111,15 @@ test('a flat settings row has no border, 44px, a divider between rows only, and 
   for (const row of rows) {
     assert.equal(row.variant, 'flat', `${row.id}: variant is flat`);
     assert.deepEqual(row.widths.slice(0, 3), ['0px', '0px', '0px'], `${row.id}: no border on top, right or left`);
-    assert.ok(row.height >= 44 && (row.id === 'f2' || row.height <= 45), `${row.id}: row is ${row.height}px, 44 asked (f2 has a description line)`);
+    assert.ok(row.id === 'f2' ? row.height > 44 : row.height === 44, `${row.id}: row is ${row.height}px, 44 asked at 390 touch (f2 has a description line)`);
     assert.equal(row.radius, '0px', `${row.id}: no rounded box`);
   }
   for (const row of rows.slice(0, -1)) {
     assert.equal(row.widths[3], '1px', `${row.id}: a 1px divider under the row`);
     assert.equal(row.bottomColor, hairline, `${row.id}: the divider is --border`);
   }
-  assert.equal(rows[3].widths[3], '0px', 'no divider after the last row');
+  assert.equal(await browser.evaluate(`${q('[data-testid=row-f4]')}.nextElementSibling === ${q('[data-testid=after-flat]')}`), true, 'content follows the last flat row');
+  assert.equal(rows[3].widths[3], '0px', 'no divider after the last flat row, even with content after it');
   for (let i = 1; i < rows.length; i++) assert.equal(rows[i].top - rows[i - 1].bottom, 0, `${rows[i - 1].id} and ${rows[i].id}: no gap`);
 
   const click = async (id, where) => {
@@ -136,17 +137,35 @@ test('a flat settings row has no border, 44px, a divider between rows only, and 
   await click('f3', 'text');
   assert.equal((await browser.evaluate('window.counts')).f3, undefined, 'a disabled flat row changes nothing');
 
-  // Keyboard focus stays visible on a flat row, inside the row's box.
-  await browser.evaluate('document.activeElement?.blur(); window.scrollTo(0, 0); document.querySelector("[data-testid=control-f1]").focus()');
-  await browser.press('Tab'); await browser.press('Tab').catch(() => {});
-  await browser.evaluate('document.querySelector("[data-testid=control-f2]").focus({ focusVisible: true })');
-  await browser.press('Tab'); await browser.press('Tab');
-  const focus = await browser.evaluate(`(() => { document.querySelector('[data-testid=control-f4]').focus(); const row = document.querySelector('[data-testid=row-f4]'); return { on: document.activeElement === document.querySelector('[data-testid=control-f4]'), shadow: getComputedStyle(row).boxShadow }; })()`);
-  assert.equal(focus.on, true);
+  // Keyboard focus stays visible on a flat row: real Tab presses reach the first flat control, and its row shows an inset ring.
+  await browser.evaluate('document.activeElement?.blur(); window.scrollTo(0, 0)');
+  const onF1 = () => browser.evaluate(`document.activeElement === ${q('[data-testid=control-f1]')}`);
+  let tabs = 0;
+  while (tabs < 40 && !(await onF1())) { await browser.press('Tab'); tabs++; }
+  assert.ok(tabs > 0 && await onF1(), `Tab reaches the first flat control (after ${tabs} presses)`);
+  const focus = await browser.evaluate(`(() => ({ visible: document.activeElement.matches(':focus-visible'), shadow: getComputedStyle(${q('[data-testid=row-f1]')}).boxShadow }))()`);
+  assert.equal(focus.visible, true, 'the control is keyboard-focused');
+  assert.notEqual(focus.shadow, 'none', 'the focused flat row shows a ring');
+  assert.match(focus.shadow, /inset/, `the ring is drawn inside the row (${focus.shadow})`);
 
   // The default is unchanged: the rows of the first test are still bordered, rounded and apart.
   const dflt = await browser.evaluate(`(() => { const c = getComputedStyle(document.querySelector('[data-testid=row-a]')); return { variant: document.querySelector('[data-testid=row-a]').dataset.variant, widths: [c.borderTopWidth, c.borderRightWidth, c.borderBottomWidth, c.borderLeftWidth], radius: c.borderTopLeftRadius }; })()`);
   assert.equal(dflt.variant, 'bordered');
   assert.deepEqual(dflt.widths, ['1px', '1px', '1px', '1px'], 'the default row keeps its 1px border');
   assert.notEqual(dflt.radius, '0px', 'the default row keeps its radius');
+
+  // The height follows --control-h: 36 on a fine pointer at md+, 36 in compact, the description row taller.
+  const measure = () => browser.evaluate(`(() => ({ coarse: matchMedia('(pointer: coarse)').matches, h: ['f1', 'f2', 'f3', 'f4'].map(id => document.querySelector('[data-testid=row-' + id + ']').getBoundingClientRect().height) }))()`);
+  await browser.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+  await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  await wait(300);
+  const fine = await measure();
+  assert.equal(fine.coarse, false, 'a fine pointer at 1280');
+  assert.deepEqual([fine.h[0], fine.h[2], fine.h[3]], [36, 36, 36], 'single-line flat rows are 36px at 1280 fine');
+  assert.ok(fine.h[1] > 36, `the description row is taller (${fine.h[1]}px)`);
+  await browser.evaluate(`document.documentElement.setAttribute('data-density', 'compact')`);
+  await wait(200);
+  const compact = await measure();
+  assert.deepEqual([compact.h[0], compact.h[2], compact.h[3]], [36, 36, 36], 'single-line flat rows are 36px in compact');
+  assert.ok(compact.h[1] > 36, 'the description row is taller in compact');
 });

@@ -3,6 +3,7 @@
 import { createRoot } from "react-dom/client"
 import { useState } from "react"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Card, CardContent } from "@/components/ui/card"
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet, FieldTitle } from "@/components/ui/field"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Switch } from "@/components/ui/switch"
@@ -82,17 +83,20 @@ function Page() {
           <Toggle id="s4" title="Public page" disabled />
         </FieldGroup>
       </FieldSet>
-      <section data-testid="flat-card" className="rounded-xl border bg-card p-4 text-card-foreground">
-        <FieldSet>
-          <FieldLegend variant="label">Garden settings</FieldLegend>
-          <FieldGroup className="gap-0">
-            <Toggle variant="flat" id="f1" title="Share the journal" />
-            <Toggle variant="flat" id="f2" title="Let neighbours see the plot map" description="They can look, not edit." />
-            <Toggle variant="flat" id="f3" title="Public page" disabled />
-            <Check variant="flat" id="f4" title="Keep a backup" />
-          </FieldGroup>
-        </FieldSet>
-      </section>
+      <Card data-testid="flat-card">
+        <CardContent>
+          <FieldSet>
+            <FieldLegend variant="label">Garden settings</FieldLegend>
+            <FieldGroup className="gap-0">
+              <Toggle variant="flat" id="f1" title="Share the journal" />
+              <Toggle variant="flat" id="f2" title="Let neighbours see the plot map" description="They can look, not edit." />
+              <Toggle variant="flat" id="f3" title="Public page" disabled />
+              <Toggle variant="flat" id="f4" title="Keep a backup" />
+              <p data-testid="after-flat" className="pt-3 text-muted-foreground">Backups are kept for thirty days.</p>
+            </FieldGroup>
+          </FieldSet>
+        </CardContent>
+      </Card>
     </main>
   )
 }
