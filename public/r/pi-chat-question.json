@@ -4,14 +4,14 @@
   "title": "Pi chat question card",
   "description": "The human-in-the-loop question card for `ask_user` (choices, free text, answered state). Plug it in with `cards={{ question: QuestionCard }}`; without it pi-chat shows a \"waiting for your answer\" notice with no answer UI.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.64",
+    "@hachej/boring-ui-kit@^0.4.65",
     "react@^19.0.0",
     "@earendil-works/pi-ai@~1.4.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.64/r/pi-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.64/r/inline-question.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.64/r/_shared.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/inline-question.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.65/r/_shared.json"
   ],
   "files": [
     {
