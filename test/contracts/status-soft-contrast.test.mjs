@@ -102,6 +102,18 @@ test('every status soft fill, in every mode, is a color-mix over var(--card)', (
   }
 });
 
+// D-1722: in dark, destructive's soft fill reads as red, not as another amber/grey: its chroma is at least 1.5x
+// warning-soft's, on both cores. The share is capped by the 4.5:1 text contrast above (28% fails on the default core).
+test('registry theme: dark destructive-soft has at least 1.5x the chroma of warning-soft (both cores)', () => {
+  for (const core of Object.keys(cores)) {
+    const table = cores[core]('dark', theme.dark);
+    const chroma = status => Math.hypot(...resolve(table[`${status}-soft`], table).slice(1));
+    const [red, amber] = [chroma('destructive'), chroma('warning')];
+    if (process.env.SHOW_CONTRAST) console.log(`chroma ${core} destructive ${red.toFixed(4)} warning ${amber.toFixed(4)} x${(red / amber).toFixed(2)}`);
+    assert.ok(red >= 1.5 * amber, `${core}: destructive-soft chroma ${red.toFixed(4)} is under 1.5x warning-soft ${amber.toFixed(4)} (x${(red / amber).toFixed(2)})`);
+  }
+});
+
 // D-1723: the field edge (--input) reaches 3:1 (WCAG 1.4.11) against card and against canvas (--background),
 // light and dark, default and indigo cores. Dark --border carries alpha, so: color-mix in oklab is premultiplied,
 // then the result is composited over the surface in gamma-encoded sRGB, as browsers do.
