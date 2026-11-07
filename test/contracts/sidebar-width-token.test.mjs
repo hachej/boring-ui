@@ -77,14 +77,15 @@ test('--sidebar-width is a theme token: default 256px, a theme :root wins withou
       assert.equal(await width(`open=0${bare}`), 60, `coarse pointer${bare}: icon rail is max(control-h, 2.75rem) + 1rem`);
       assert.equal(await width(`open=0&ch=3rem${bare}`), 64, `coarse pointer${bare}: a larger ancestor --control-h still wins`);
     }
-    await device(390, true);
+    // The phone sheet is 75% of the screen up to the Sheet's 24rem cap, exactly as on main (its 18rem inline value never applied), unless the token is set.
     for (const bare of ['', '&bare=1']) {
-      assert.equal(await width(`sheet=1${bare}`, '[data-mobile=true]'), 288, `mobile sheet${bare}: default is 18rem`);
+      await device(390, true);
+      assert.equal(await width(`sheet=1${bare}`, '[data-mobile=true]'), 292.5, `mobile sheet${bare}: default is 75% of 390`);
+      await device(767, true);
+      assert.equal(await width(`sheet=1${bare}`, '[data-mobile=true]'), 384, `mobile sheet${bare}: default at 767 is the 24rem cap`);
+      await device(500, true);
+      assert.equal(await width(`sheet=1&tm=20rem${bare}`, '[data-mobile=true]'), 320, `mobile sheet${bare}: a theme :root --sidebar-width-mobile of 20rem gives 320px`);
     }
-    // The portaled sheet reads the theme token on :root (capped at 75vw, as the Sheet always was: 500px leaves room for 20rem).
-    await device(500, true);
-    assert.equal(await width('sheet=1&tm=20rem', '[data-mobile=true]'), 320, 'mobile sheet: a theme :root --sidebar-width-mobile of 20rem gives 320px');
-    assert.equal(await width('sheet=1&tm=20rem&bare=1', '[data-mobile=true]'), 320, 'mobile sheet alone: the same');
     assert.deepEqual(browser.problems, []);
   } finally { await browser.close(); await new Promise(done => server.close(done)); }
 });

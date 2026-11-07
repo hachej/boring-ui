@@ -27,7 +27,7 @@ import { PanelLeftIcon } from "../../../../registry/_shared/icons"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
-// Theme tokens: an app sets --sidebar-width, --sidebar-width-icon and --sidebar-width-mobile in its theme.core.css (:root); a SidebarProvider `style` on the wrapper wins. The wrapper resolves them with their defaults into the private --sidebar-w and --sidebar-w-icon, so the icon rail follows the wrapper's own --control-h.
+// Theme tokens: an app sets --sidebar-width, --sidebar-width-icon and --sidebar-width-mobile in its theme.core.css (:root); a SidebarProvider `style` on the wrapper wins. The phone sheet is 75% of the screen (the Sheet's own cap, 24rem, applies) unless --sidebar-width-mobile is set; the old inline 18rem never applied because the Sheet's side-qualified w-3/4 beat it. The wrapper resolves them with their defaults into the private --sidebar-w and --sidebar-w-icon, so the icon rail follows the wrapper's own --control-h.
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
 type SidebarContextProps = {
@@ -179,7 +179,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="data-[side=left]:w-[min(var(--sidebar-width-mobile,18rem),75vw)] data-[side=right]:w-[min(var(--sidebar-width-mobile,18rem),75vw)] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          className="data-[side=left]:w-[var(--sidebar-width-mobile,75%)] data-[side=right]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
           side={side}
         >
           <SheetHeader className="sr-only">
