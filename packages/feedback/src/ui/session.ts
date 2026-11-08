@@ -502,7 +502,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
   let tapEnd = false;
   const onSurfaceTouch = (event: Event): void => {
     const touch = event as PointerEvent;
-    if (touch.pointerType !== 'touch') return;
+    // Every pointer type is a contact (a pen and a finger down together are two), whatever it later does.
     const contact = contacts.get(touch.pointerId);
     const moved = contact !== undefined && Math.hypot(touch.clientX - contact.x, touch.clientY - contact.y) > TAP_SLOP;
     if (event.type === 'pointerdown') {
@@ -522,12 +522,13 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     const surface = surfaceElement();
     if (!surface || state.getSnapshot().phase !== 'active' || state.getSnapshot().using || !inside(event, surface)) return;
     const mouse = event as MouseEvent;
-    const touch = event.type === 'pointerup' ? (event as PointerEvent).pointerType === 'touch' : false;
+    const kind = (event as PointerEvent).pointerType;
+    const touch = event.type === 'pointerup' ? kind === 'touch' : false;
     // Mouse and keyboard clicks arrive as `click`; a finger as `pointerup` (the picker cancels the click that would follow).
     if ((event.type === 'click') === touch) return;
     // The click a finger synthesises after its release is the same gesture: only the pointerup above decides (tap, or drag and so none).
-    if (event.type === 'click' && (event as PointerEvent).pointerType === 'touch') return;
-    if (touch) {
+    if (event.type === 'click' && kind === 'touch') return;
+    if (touch || (event.type === 'click' && kind === 'pen')) {
       // A real tap only: a drag (past the picker's slop, even one that came back), a cancelled gesture or one with several fingers is the page's own.
       const tapped = tapEnd;
       tapEnd = false;
@@ -620,6 +621,8 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     pinsOverlay?.dispose();
     pinsOverlay = undefined;
     alt = false;
+    // Listeners off: a contact lifted from now on is never seen, so none may outlive the teardown.
+    contacts.clear(); spoiled = false; tapEnd = false;
   };
 
   let sessionGeneration = 0;
