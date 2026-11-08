@@ -66,7 +66,8 @@ export function setState(next, { announce = true } = {}) {
 
 /** The inner frame is this same file with the state in the hash: it needs no access to the parent (an opaque origin has none). */
 /** A cell (an iframe inside the frame) is the same file again, with the cell's id in its hash. */
-export const cellUrl = id => `${location.href.split('#')[0]}#${new URLSearchParams({ frame: '1', cell: id, mode: state.mode, theme: state.theme })}`;
+// The query makes the URL differ from the frame's and the shell's: the browser does not load a third nested frame of one and the same URL (the cell stayed about:blank).
+export const cellUrl = id => `${location.href.split('#')[0].split('?')[0]}?cell=${encodeURIComponent(id)}#${new URLSearchParams({ frame: '1', cell: id, mode: state.mode, theme: state.theme })}`;
 
 export const frameUrl = () => `${location.href.split('#')[0]}#${new URLSearchParams({ frame: '1', mode: state.mode, theme: state.theme })}`;
 
