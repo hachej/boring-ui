@@ -33,7 +33,7 @@ Colours (set in `:root` and in `.dark`): `--background` (canvas),
 `--destructive`, `--success`, `--warning`, `--info`, `--chart-series-1..5`.
 
 Shape and type (set once): `--radius`, `--border-width`, `--font-sans`,
-`--font-display`, `--font-mono`, `--text-body`, `--text-title`,
+`--font-display`, `--font-mono`, `--text-body`, `--text-title`, `--text-chat` (the assistant's reading size, 0.9375rem),
 `--shadow-xs`, `--shadow-sm`, `--shadow-md`, `--shadow-lg`.
 
 Everything else (`--popover`, `--secondary`, `--muted-foreground`,

@@ -54,7 +54,7 @@ export function ModelEffortPicker({ model, effort, currentModel, currentEffort, 
         <ChevronDownIcon data-icon="inline-end" aria-hidden="true" />
       </DropdownMenuTrigger>
     </div>
-    <DropdownMenuContent side="top" align="start" aria-label={labels.modelAndEffort} data-testid="composer-model-menu" className="w-56 max-w-[calc(100vw-1rem)]">
+    <DropdownMenuContent side="top" align="start" aria-label={labels.modelAndEffort} data-testid="composer-model-menu" className="pi-chat w-56 max-w-[calc(100vw-1rem)]">
       {model && section(labels.model, models, modelValue, pickModel)}
       {model && effort && models.length > 0 && levels.length > 0 && <DropdownMenuSeparator />}
       {effort && section(labels.effort, levels, currentEffort ?? '', value => { if (value !== currentEffort) onEffort(value); })}
