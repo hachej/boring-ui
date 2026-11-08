@@ -26,7 +26,7 @@ const views = {
   thought: { entries: [user(1), entry(2, assistant([{ type: 'thinking', thinking: 'Check the fictional notes first.' }, call])), entry(3, result), entry(4, assistant([{ type: 'text', text: 'Hi, what would you like me to work on?' }]))], docs: {} },
   question: { entries: [user(1), entry(2, assistant([{ type: 'toolCall', id: 'q', name: 'ask_user', arguments: { question: 'Which fictional ledger?', options: ['Ledger A', 'Ledger B'] } }]))], docs: { 'pi.live': { run: { taskId: 100 } } } },
   approval: { entries: [user(1), entry(2, assistant([{ type: 'toolCall', id: 'g', name: 'fictional_delete', arguments: { path: 'fictional/a.txt' } }])), entry(3, { ...result, toolCallId: 'g', toolName: 'fictional_delete', details: { 'boring.approval': { summary: 'Delete fictional file?' } } })], docs: { 'pi.live': { run: { taskId: 100 } } } },
-  streaming: { entries: [user(1)], docs: { 'pi.live': { run: { taskId: 100 }, generation: { message: { role: 'assistant', content: [{ type: 'text', text: 'The fictional notes say the visit was routine and that the' }] } } } },
+  streaming: { entries: [user(1)], docs: { 'pi.live': { run: { taskId: 100 }, generation: { message: { role: 'assistant', content: [{ type: 'text', text: 'The fictional notes say the visit was routine and that the' }] } } } } },
 };
 
 function controller() {
