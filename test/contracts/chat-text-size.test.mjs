@@ -86,7 +86,7 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
       for (const theme of ['light', 'dark']) for (const state of states) {
         await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?state=${state === 'plus' || state === 'model' ? 'reply' : state}&theme=${theme}&w=${width}` });
         await browser.until('chat mounted', `document.querySelector('.pi-chat') && document.readyState === 'complete'`);
-        if (state === 'plus' || state === 'model') { await browser.evaluate(`document.querySelector('[data-testid=composer-${state}]')?.click()`); await browser.until('menu open', `document.querySelector('[data-testid=composer-${state}-menu]')`); }
+        if (state === 'plus' || state === 'model') { const box = await browser.evaluate(`(() => { const r = document.querySelector('[data-testid=composer-${state}]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`); for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await browser.send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 }); await browser.until('menu open', `document.querySelector('[data-testid=composer-${state}-menu]')`); }
         if (state === 'thought') { await browser.evaluate(`document.querySelector('[data-testid=activity] button')?.click()`); await new Promise(done => setTimeout(done, 500)); await browser.evaluate(`document.querySelectorAll('[data-testid=tool-card] button, [data-testid=reasoning] button').forEach(button => button.click())`); }
         await new Promise(done => setTimeout(done, 500));
         const m = await measure(); report.push({ width, theme, state, m });
