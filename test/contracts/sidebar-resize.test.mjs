@@ -176,6 +176,9 @@ test('a stored width outside the bounds is clamped on read, and junk is ignored'
   await setStored('not a number');
   await mount('', { clear: false });
   assert.equal(await gap(), 256);
+  await setStored('20garbage');
+  await mount('', { clear: false });
+  assert.equal(await gap(), 256);
 });
 
 test('storage that throws does not break the shell or the resize', { skip, timeout: 120000 }, async () => {
@@ -203,6 +206,32 @@ test('the stored width is per app and per person: B does not inherit A, another 
   assert.equal(await gap(), 256, 'no person: a key of its own');
   assert.ok((await keys()).length >= 2, 'one key per app and person');
   assert.ok((await keys()).every(k => k.length > 'boring-ui:sidebar-width'.length), 'every key names its app');
+});
+
+test('two apps with the same title keep separate widths when they pass an appId, and a renamed title keeps its width', { skip, timeout: 120000 }, async () => {
+  await mount('appid=compta-a');
+  await dragBy(80);
+  assert.equal(await gap(), 336);
+  await mount('appid=compta-b', { clear: false });
+  assert.equal(await gap(), 256, 'same title, another appId');
+  await mount('appid=compta-a&app=Comptabilit%C3%A9', { clear: false });
+  assert.equal(await gap(), 336, 'the title changed, the appId did not');
+});
+
+test('a drag is cancelled when the person changes mid-drag: nothing is written under the other person', { skip, timeout: 120000 }, async () => {
+  await mount('user=a@example.test');
+  const held = await browser.drag(`document.querySelector('${RAIL}')`, (await centre()).x + 60, { release: false });
+  await browser.evaluate(`window.__setUser('b@example.test')`);
+  await wait(300);
+  assert.equal(await gap(), 256, 'person B starts at the theme width');
+  await held.moveTo((await centre()).x + 120);
+  await wait(200);
+  assert.equal(await gap(), 256, 'the cancelled drag no longer follows the pointer');
+  assert.deepEqual(await transitions(), ['', '']);
+  await held.release();
+  await wait(200);
+  assert.deepEqual(await keys(), [], 'neither person got a width written');
+  assert.equal(await gap(), 256);
 });
 
 test('SidebarProvider used directly: ResizableSidebarProvider and ResizableRail give the same handle, keys and persistence', { skip, timeout: 120000 }, async () => {

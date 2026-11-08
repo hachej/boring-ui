@@ -267,6 +267,10 @@ test('D-1898: design-no-script-tokens flags setProperty of the sidebar width tok
   assert.equal(count('h.ts', "export const help = 'el.style.setProperty(\"--sidebar-width\", x)';\n"), 0, 'a call written inside a string');
   assert.equal(count('i.ts', 'const help = `use ${name}`;\nel.style.setProperty("--sidebar-width", `${rem}rem`);\n'), 1, 'the real call after a template literal still fails');
   assert.equal(count('j.ts', 'el.style.setProperty(`--sidebar-width`, `${rem}rem`);\n'), 1, 'a template literal as the token name still fails');
+  assert.equal(count('k.ts', 'el.style.setProperty\n  ("--sidebar-width", x);\n'), 1, 'a newline between setProperty and the parenthesis');
+  assert.equal(count('l.ts', 'el.style.setProperty ("--sidebar-width", x);\n'), 1, 'a space before the parenthesis');
+  assert.equal(count('m.ts', 'const label = "\u{1F600}";\nel.style.setProperty("--sidebar-width", x);\n'), 1, 'after an emoji (UTF-16 offsets unchanged)');
+  assert.equal(count('n.ts', 'const label = "\u{1F600}\u{1F600}";\nconst help = `el.style.setProperty("--sidebar-width", x)`;\n'), 0, 'a help string after an emoji');
   const kit = readFileSync(join(root, 'shadcn/ui/sidebar.tsx'), 'utf8');
   assert.equal(count('sidebar.tsx', kit), 0, 'the kit\'s SidebarProvider sets the width through React style, never setProperty');
 });
