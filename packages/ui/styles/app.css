@@ -202,6 +202,32 @@
     }
     }
 
+/* Assistant reading size (D-1901). The chat is a reading surface: --text-chat (default 0.9375rem, line-height 1.6) sizes the prose, Markdown,
+   composer, empty state, cards and panel title; meta rows (thought, tool, time, actions) are 0.93 of it; code is 0.875 of it. On touch it is at
+   least 1rem. Unlayered on purpose: it beats the text-xs / text-sm utilities the copied pi-chat items carry, so a kit bump alone resizes the chat.
+   The menus, pickers and camera that portal outside the chat carry the .pi-chat class too, so they are sized the same. */
+.pi-chat {
+  --chat-text: var(--text-chat, 0.9375rem);
+  --chat-leading: var(--text-chat--line-height, 1.6);
+  --chat-meta: calc(var(--chat-text) * 0.93);
+  --chat-code: calc(var(--chat-text) * 0.875);
+  font-size: var(--chat-text);
+  line-height: var(--chat-leading);
+}
+@media (width < 768px), (pointer: coarse) {
+  .pi-chat { --chat-text: max(var(--text-chat, 0.9375rem), 1rem); }
+}
+.pi-chat :is([class*="text-xs"], [class*="text-sm"], [class*="text-[11px]"], [class*="text-[0.6875rem]"]):not(input, textarea, select) {
+  font-size: var(--chat-meta);
+}
+.pi-chat.pi-chat.pi-chat :is([data-slot="bubble-content"], [data-slot="empty-description"], [data-slot="empty-title"], [data-slot="composer-placeholder"], [data-testid="composer-input"], [data-testid="question-text"], [data-testid="question-input"], [data-slot="table-cell"], [data-slot="table-head"], header h2, header h2 [data-slot="button"], header input, [data-testid="approval-card"] [data-slot="item-title"], [data-testid="approval-card"] [data-slot="item-description"], [data-testid="question-card"] [data-slot="item-title"], [data-testid="question-card"] [data-slot="item-description"]) {
+  font-size: var(--chat-text);
+  line-height: var(--chat-leading);
+}
+.pi-chat.pi-chat.pi-chat :is(pre, code) {
+  font-size: var(--chat-code);
+}
+
 /* Overlay blur (D-1799): no blur unless the shell opts in, including for an older copy of the overlays that still carries an unconditional
    backdrop-blur class. Without <html data-overlay-blur="on"> the four overlay slots get none; with it (AppShell overlayBlur) they blur by
    --overlay-blur (4px). The overlays are portalled outside .app-shell and a kit item's CSS never reaches outside its root, so both rules live here. */

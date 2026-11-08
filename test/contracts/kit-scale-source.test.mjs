@@ -84,12 +84,6 @@ test('template extras remain optional to blocks; the opt-in theme supplies seman
     '--chat-composer-radius': '26px',
     '--chat-send-radius': '9999px',
     '--chat-sheet-duration': '200ms',
-    '--chat-text': 'var(--text-chat, 0.9375rem)',
-    '--chat-leading': 'var(--text-chat--line-height, 1.6)',
-    '--chat-meta': 'calc(var(--chat-text) * 0.93)',
-    '--chat-code': 'calc(var(--chat-text) * 0.875)',
-    'font-size': 'var(--chat-text)',
-    'line-height': 'var(--chat-leading)',
   });
   assert.deepEqual(dark, {
     '--chat-warning-soft': 'var(--warning-soft, color-mix(in oklab, var(--chat-warning) 26%, var(--background)))',

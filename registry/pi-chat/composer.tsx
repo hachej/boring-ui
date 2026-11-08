@@ -196,7 +196,7 @@ function PlusActions({ disabled, onAttach, onTakePhoto, onCommands, textarea }: 
   return <DropdownMenu open={open} onOpenChange={setOpen}>
     <DropdownMenuTrigger render={<Button variant="ghost" size="icon" />} data-testid="composer-plus" aria-label={labels.add} title={labels.add} disabled={disabled}>
       <icons.add data-icon="inline-start" aria-hidden="true" /></DropdownMenuTrigger>
-    <DropdownMenuContent side="top" align="start" aria-label={labels.add} data-testid="composer-plus-menu" className="w-52"
+    <DropdownMenuContent side="top" align="start" aria-label={labels.add} data-testid="composer-plus-menu" className="pi-chat w-52"
       finalFocus={() => { const text = toText.current; toText.current = false; return text ? textarea.current : true; }}>
       {onAttach && <DropdownMenuItem data-testid="composer-attach" onClick={onAttach} className="max-md:min-h-11 pointer-coarse:min-h-11">
         <icons.attach aria-hidden="true" />{labels.attachFiles}</DropdownMenuItem>}

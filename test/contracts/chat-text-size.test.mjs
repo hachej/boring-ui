@@ -19,6 +19,8 @@ const require = createRequire(import.meta.url);
 const registry = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8'));
 const item = name => registry.items.find(entry => entry.name === name);
 const block = vars => Object.entries(vars).map(([key, value]) => `--${key}: ${value};`).join('\n');
+const appCss = readFileSync(join(root, 'packages/ui/styles/app.css'), 'utf8');
+const chatRules = appCss.slice(appCss.indexOf('/* Assistant reading size'), appCss.indexOf('/* Overlay blur'));
 const CSS_ITEMS = ['theme', 'touch-floor', 'button', 'pi-chat', 'pi-chat-markdown', 'pi-chat-question', 'pi-chat-approval', 'inline-question', 'pi-chat-slash', 'pi-chat-mentions', 'pi-chat-pickers', 'pi-chat-voice', 'pi-chat-attachments', 'pi-chat-subagent', 'pi-artifacts'];
 
 test('the assistant reads at --text-chat: prose, Markdown, composer and empty state at the token, meta rows at 0.93 of it, nothing under 13px (390 touch, 1280; light, dark)', { skip: !process.env.CHROMIUM && !process.env.CI, timeout: 300000 }, async () => {
@@ -39,7 +41,7 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
   const vars = item('theme').cssVars;
-  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${CSS_ITEMS.map(name => registryCss(item(name))).join('\n')}`;
+  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${CSS_ITEMS.map(name => registryCss(item(name))).join('\n')}\n${chatRules}`;
   const compiler = await compile(cssSource, { base: root, loadStylesheet: async id => {
     const path = require.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id);
     return { path, base: dirname(path), content: readFileSync(path, 'utf8') };
@@ -62,9 +64,8 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
     const probe = document.createElement('div'); probe.style.cssText = 'position:absolute;font-size:var(--text-chat);color:var(--muted-foreground)'; document.body.append(probe);
     const token = { defined: getComputedStyle(document.documentElement).getPropertyValue('--text-chat').trim(), px: px(getComputedStyle(probe).fontSize), muted: getComputedStyle(probe).color }; probe.remove();
     const size = (selector, scope = document) => { const node = scope.querySelector(selector); if (!node) return null; const s = getComputedStyle(node); return { size: px(s.fontSize), line: px(s.lineHeight), weight: s.fontWeight, color: s.color }; };
-    const chat = document.querySelector('.pi-chat');
     const small = [];
-    for (const node of chat.querySelectorAll('*')) {
+    for (const node of document.querySelectorAll('.pi-chat *, [data-slot$=-content][class*=pi-chat] *')) {
       if (node.closest('.sr-only, [hidden], svg')) continue;
       const own = [...node.childNodes].some(child => child.nodeType === 3 && child.textContent.trim());
       if (!own && !(node.matches('textarea, input') && !node.closest('.sr-only'))) continue;
@@ -73,18 +74,19 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
     }
     return { token, small, title: size('header h2'), userProse: size('[data-role=user] [data-slot=bubble-content]'), prose: size('[data-role=assistant] [data-slot=bubble-content]'),
       li: size('[data-role=assistant] li'), cell: size('[data-role=assistant] td'), codespan: size('[data-role=assistant] p code'), codeblock: size('[data-testid=code-block] pre'),
-      composer: size('[data-testid=composer-input]'), empty: size('[data-slot=empty-description]'), line: size('[data-slot=trace-line]'), time: size('[data-testid=message-time]'), answered: size('[data-testid=answered-by]') };
+      composer: size('[data-testid=composer-input]'), empty: size('[data-slot=empty-description]'), line: size('[data-slot=trace-line]'), time: size('[data-testid=message-time]'), answered: size('[data-testid=answered-by]'), question: size('[data-testid=question-text]'), questionInput: size('[data-testid=question-input]'), approval: size('[data-testid=approval-card] [data-slot=item-title]'), titleButton: size('header h2 button'), plusItem: size('[data-testid=composer-plus-menu] [role=menuitem]'), modelItem: size('[data-testid=composer-model-menu] [role=menuitemradio], [data-testid=composer-model-menu] [role=menuitem]') };
   })()`);
   const near = (actual, expected, label) => assert.ok(actual !== null && Math.abs(actual - expected) < 0.2, `${label}: ${actual}px, expected ${expected}px`);
-  const states = ['empty', 'reply', 'thought', 'streaming'];
+  const states = ['empty', 'reply', 'thought', 'streaming', 'question', 'approval', 'plus', 'model'];
   const report = [];
   try {
     for (const [width, mobile] of [[390, true], [1280, false]]) {
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile });
       await browser.send('Emulation.setTouchEmulationEnabled', { enabled: mobile, maxTouchPoints: 5 });
       for (const theme of ['light', 'dark']) for (const state of states) {
-        await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?state=${state}&theme=${theme}&w=${width}` });
+        await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?state=${state === 'plus' || state === 'model' ? 'reply' : state}&theme=${theme}&w=${width}` });
         await browser.until('chat mounted', `document.querySelector('.pi-chat') && document.readyState === 'complete'`);
+        if (state === 'plus' || state === 'model') { await browser.evaluate(`document.querySelector('[data-testid=composer-${state}]')?.click()`); await browser.until('menu open', `document.querySelector('[data-testid=composer-${state}-menu]')`); }
         if (state === 'thought') { await browser.evaluate(`document.querySelector('[data-testid=activity] button')?.click()`); await new Promise(done => setTimeout(done, 500)); await browser.evaluate(`document.querySelectorAll('[data-testid=tool-card] button, [data-testid=reasoning] button').forEach(button => button.click())`); }
         await new Promise(done => setTimeout(done, 500));
         const m = await measure(); report.push({ width, theme, state, m });
@@ -107,6 +109,11 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
           near(m.time?.size ?? m.answered?.size ?? null, prose * 0.93, `${label}: meta row`);
         }
         if (state === 'thought') { near(m.line?.size ?? null, prose * 0.93, `${label}: thought and tool rows`); assert.equal(m.line.color, m.token.muted, `${label}: meta rows are muted-foreground`); }
+        if (state === 'question') { near(m.question?.size ?? null, prose, `${label}: question text`); near(m.questionInput?.size ?? null, prose, `${label}: question input`); }
+        if (state === 'approval') near(m.approval?.size ?? null, prose, `${label}: approval card title`);
+        if (state === 'plus') assert.ok(m.plusItem && m.plusItem.size >= 13, `${label}: the + menu is sized by the chat (${m.plusItem?.size}px)`);
+        if (state === 'model') assert.ok(m.modelItem && m.modelItem.size >= 13, `${label}: the model menu is sized by the chat (${m.modelItem?.size}px)`);
+        near(m.titleButton?.size ?? null, prose, `${label}: the rename title button`);
         near(m.title?.size ?? null, prose, `${label}: panel title`); assert.equal(m.title.weight, '500', `${label}: panel title is medium`);
       }
       // An app sets --text-chat in its theme.core.css like any type token: the prose follows it.

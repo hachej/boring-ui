@@ -1,6 +1,6 @@
 # Unreleased
 
-- **The assistant reads larger: new core token `--text-chat` (D-1901).** pi-chat's message prose, Markdown, composer, empty state and cards now compute to `--text-chat` (default 0.9375rem, line-height 1.6, at least 1rem on touch); meta rows are 0.93 of it and code 0.875. Visual change for every app; no action beyond the kit bump. An app may set `--text-chat` (and `--text-chat--line-height`) in its `theme.core.css`. Test: `test/contracts/chat-text-size.test.mjs`; see `features/chat.md`.
+- **The assistant reads larger: new core token `--text-chat` (D-1901).** pi-chat's message prose, Markdown, composer, empty state and cards now compute to `--text-chat` (default 0.9375rem, line-height 1.6, at least 1rem on touch); meta rows are 0.93 of it and code 0.875. The rules ship in the kit's `app.css`, so a kit bump resizes the chat itself. Visual change for every app. To size the composer menus, the model picker, the queue menu and the camera too, re-sync the `pi-chat`, `pi-chat-pickers` and `pi-chat-attachments` items (they now carry the `pi-chat` class on those portalled roots). An app may set `--text-chat` (and `--text-chat--line-height`) in its `theme.core.css`. Test: `test/contracts/chat-text-size.test.mjs`; see `features/chat.md`.
 
 # Migrating to 0.4.71
 

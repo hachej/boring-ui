@@ -24,6 +24,8 @@ const views = {
   empty: { entries: [], docs: {} },
   reply: { entries: [user(1), entry(2, assistant([{ type: 'text', text: markdown }]))], docs: {} },
   thought: { entries: [user(1), entry(2, assistant([{ type: 'thinking', thinking: 'Check the fictional notes first.' }, call])), entry(3, result), entry(4, assistant([{ type: 'text', text: 'Hi, what would you like me to work on?' }]))], docs: {} },
+  question: { entries: [user(1), entry(2, assistant([{ type: 'toolCall', id: 'q', name: 'ask_user', arguments: { question: 'Which fictional ledger?', options: ['Ledger A', 'Ledger B'] } }]))], docs: { 'pi.live': { run: { taskId: 100 } } } },
+  approval: { entries: [user(1), entry(2, assistant([{ type: 'toolCall', id: 'g', name: 'fictional_delete', arguments: { path: 'fictional/a.txt' } }])), entry(3, { ...result, toolCallId: 'g', toolName: 'fictional_delete', details: { 'boring.approval': { summary: 'Delete fictional file?' } } })], docs: { 'pi.live': { run: { taskId: 100 } } } },
   streaming: { entries: [user(1)], docs: { 'pi.live': { run: { taskId: 100 }, generation: { message: { role: 'assistant', content: [{ type: 'text', text: 'The fictional notes say the visit was routine and that the' }] } } } },
 };
 
@@ -32,4 +34,4 @@ function controller() {
   return { getSnapshot: () => snapshot, subscribe: () => () => {}, setText() {}, setAttachments() {}, connect: async () => {}, send: async () => {}, stop: async () => {}, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {} };
 }
 
-createRoot(document.getElementById('root')).render(<div className="h-dvh"><PiChat {...withChatPlugins({ controller: controller(), mode: 'developer', title: 'Assistant' })} /></div>);
+createRoot(document.getElementById('root')).render(<div className="h-dvh"><PiChat {...withChatPlugins({ controller: controller(), mode: 'developer', title: 'Assistant', onRenameTitle: () => {}, answer: async () => ({ kind: 'answered' }), attachments: { upload: async () => [] }, model: { options: [{ provider: 'fictional', modelId: 'fictional-1' }], change: async () => {} } })} /></div>);
