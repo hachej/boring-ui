@@ -146,6 +146,59 @@ test('a click on a surface pins a note at that point; pins "host" draws no box; 
     await browser.until('after every finger lifted, a single tap pins again', `window.fixture.session.getSnapshot().bubble`);
     assert.equal(await browser.evaluate('window.fixture.points.length'), 1);
 
+    // Round 3. Each group runs on its own and the failures are reported together, so a red run names every broken rule.
+    const broken = [];
+    const group = async (name, run) => { try { await run(); } catch (error) { broken.push(`${name}: ${error.message}`); } };
+    const notesCount = () => browser.evaluate('window.fixture.session.getSnapshot().notes.length');
+
+    // A finger down while the session is torn down (discard, or done then resume) and lifted while the listeners are off must not
+    // count as down for ever: the next single tap pins.
+    await group('discard with a finger down', async () => {
+      await open('host');
+      await fingers('touchStart', [[1, B]]);
+      await browser.evaluate('window.fixture.session.discard()');
+      await fingers('touchEnd', []);
+      await browser.evaluate('window.fixture.session.start()');
+      await browser.until('comment mode is on again', `window.fixture.session.getSnapshot().phase === 'active'`);
+      await fingers('touchStart', [[2, B]]);
+      await fingers('touchEnd', []);
+      await browser.until('a tap after the restart pins a note', `window.fixture.session.getSnapshot().bubble`, 4000);
+    });
+    await group('done then resume with a finger down', async () => {
+      await open('host');
+      await clickAt(0.25, 0.75);
+      await browser.until('the bubble opens', `window.fixture.session.getSnapshot().bubble`);
+      await browser.evaluate(`window.fixture.session.setBubbleText('Rim'); window.fixture.session.saveBubble()`);
+      await fingers('touchStart', [[1, B]]);
+      await browser.evaluate('window.fixture.session.done()');
+      await browser.until('the review is open', `window.fixture.session.getSnapshot().phase === 'review'`);
+      await fingers('touchEnd', []);
+      await browser.evaluate('window.fixture.session.resume()');
+      await browser.until('comment mode is on again', `window.fixture.session.getSnapshot().phase === 'active'`);
+      await fingers('touchStart', [[2, B]]);
+      await fingers('touchEnd', []);
+      await browser.until('a tap after the resume pins a second note', `window.fixture.session.getSnapshot().notes.length === 2`, 4000);
+    });
+
+    // A pen is a contact like a finger: pen down, finger down, pen up, finger up without moving is a two-contact gesture, no tap.
+    const pen = (type, at) => browser.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: 1, pointerType: 'pen' });
+    await group('pen and finger overlap', async () => {
+      await open('host');
+      await pen('mousePressed', A);
+      await fingers('touchStart', [[2, B]]);
+      await pen('mouseReleased', A);
+      await fingers('touchEnd', []);
+      await frames();
+      assert.equal(await notesCount(), 0, 'a finger that overlapped a pen pinned a note');
+    });
+    await group('a pen alone still pins', async () => {
+      await open('host');
+      await pen('mousePressed', B);
+      await pen('mouseReleased', B);
+      await browser.until('a pen tap pins a note', `window.fixture.session.getSnapshot().bubble`, 4000);
+    });
+    assert.deepEqual(broken, [], 'round-3 rules');
+
     // Individual transform properties and ancestors: `scale: -1 1` leaves `transform: none`, an ancestor's transform is not the element's.
     for (const [query, why] of [['&scale=1', 'the individual scale property'], ['&ancestor=1', 'a mirrored ancestor'], ['&ancestor=1&mirror=1', 'a mirrored ancestor and a mirrored element (the identity)'], ['&rotate=1', 'a quarter turn from the individual rotate property']]) {
       await open('host', query);
