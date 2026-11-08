@@ -215,6 +215,8 @@ test('The design-system page renders every section, measures contrast, switches 
         for (const mode of ['light', 'dark']) {
           await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile });
           await browser.send('Emulation.setTouchEmulationEnabled', { enabled: mobile, maxTouchPoints: 5 });
+          // A hash-only change from /site/index.html is a same-document navigation, so leave the page first.
+          await browser.send('Page.navigate', { url: 'about:blank' });
           await browser.send('Page.navigate', { url: `${origin}/site/index.html#frame=1&mode=${mode}&theme=default` });
           await browser.until('frame page', `document.querySelectorAll('[data-ds-bounded] [data-ds-overlay]').length === 6 && [...document.querySelectorAll('[data-ds-contrast]')].every(node => node.dataset.ratio)`);
           await pause(400);

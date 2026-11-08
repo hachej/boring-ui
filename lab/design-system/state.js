@@ -1,4 +1,4 @@
-// The page's state lives in memory and in the URL hash. It never touches localStorage or sessionStorage: Factory shows the page in a sandboxed
+// The page's state lives in memory and in the URL hash. It never touches web storage: Factory shows the page in a sandboxed
 // iframe (sandbox="allow-scripts", an opaque origin) where storage throws. The theme stylesheet comes from data.js, so nothing is fetched.
 import { useSyncExternalStore } from 'react';
 
