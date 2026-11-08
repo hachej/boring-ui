@@ -39,7 +39,7 @@ function QueueEditAction({ disabled, onEdit }: { readonly disabled: boolean; rea
     <DropdownMenuTrigger render={<Button variant="ghost" size="icon" />} data-testid="queue-more" aria-label={labels.moreActions} title={labels.more} disabled={disabled}>
       <EllipsisIcon data-icon="inline-start" aria-hidden="true" />
     </DropdownMenuTrigger>
-    <DropdownMenuContent side="top" align="end" data-testid="queue-menu">
+    <DropdownMenuContent side="top" align="end" data-testid="queue-menu" className="pi-chat">
       <DropdownMenuGroup><DropdownMenuItem data-testid="queue-edit" onClick={onEdit}><PencilIcon aria-hidden="true" />{labels.edit}</DropdownMenuItem></DropdownMenuGroup>
     </DropdownMenuContent>
   </DropdownMenu>;
