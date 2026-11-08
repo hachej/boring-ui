@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.71
+
 - **`boring-ui-blocks atlas <dir> --url <base url> --out <dir>` shoots every Atlas state (package `@hachej/boring-ui-kit`, new and additive; D-1831 slice 2).** After the check, it drives a headless Chromium (`--chromium <path>` or the `CHROMIUM` env) through each state's `given.steps` and writes `<id>.<390|1280>.<light|dark>.png` plus `index.json`; `--since <old index.json>` marks each shot `new`, `changed` or `same`. `--check` alone is unchanged; without `--check` the command used to exit 2 and now needs `--url` and `--out`. No consumer action. Test: `test/atlas-shoot.test.mjs`; see `features/atlas.md`.
 
 # Migrating to 0.4.70
