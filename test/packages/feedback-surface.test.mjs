@@ -164,7 +164,7 @@ test('a click on a surface pins a note at that point; pins "host" draws no box; 
     await clickAt(0.75, 0.75);
     await browser.until('the bubble opens', `window.fixture.session.getSnapshot().bubble`);
     assert.deepEqual(await browser.evaluate('window.fixture.points'), [{ x: 0.25, y: 0.75 }], 'a mirrored surface: the point is local to the element, not to the viewport');
-    await browser.until('NoteBubble is drawn', `document.querySelector('[data-testid="feedback-bubble"]')`);
+    await browser.until('NoteBubble is drawn', `!!document.querySelector('[data-testid="feedback-bubble"]')`);
     const placed = await browser.evaluate(`(() => {
       const plate = document.getElementById('plate').getBoundingClientRect(), bubble = document.querySelector('[data-testid="feedback-bubble"]').getBoundingClientRect();
       // Drawn position of local (0.25, 0.75) under scaleX(-1): from the right edge.
