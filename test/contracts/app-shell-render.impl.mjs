@@ -198,7 +198,7 @@ test('hover rail on a phone keeps the same tab bar and no sidebar', async t => {
   await ui.unmount();
 });
 
-test('the layer\'s own words follow the shell locale when the agent sets none; the agent\'s own locale wins', async t => {
+test('the layer\'s own words follow the shell locale, which wins over the agent\'s own locale; the agent\'s applies when the shell sets none', async t => {
   const trigger = async (agentChatProps, locale) => {
     const { container, unmount } = await render(t, { agent: agentWith(agentChatProps), locale });
     const label = container.querySelector('[data-testid=agent-trigger]')?.getAttribute('aria-label');
@@ -206,7 +206,8 @@ test('the layer\'s own words follow the shell locale when the agent sets none; t
     return label;
   };
   assert.equal(await trigger(undefined, 'fr'), 'Ouvrir l’assistant', 'no agent locale: the shell\'s French');
-  assert.equal(await trigger({ locale: 'en' }, 'fr'), 'Open the assistant', 'the agent\'s own locale wins');
+  assert.equal(await trigger({ locale: 'en' }, 'fr'), 'Ouvrir l’assistant', 'the shell\'s locale wins over the agent\'s');
+  assert.equal(await trigger({ locale: 'fr' }, undefined), 'Ouvrir l’assistant', 'the shell sets none: the agent\'s own locale applies');
   assert.equal(await trigger(undefined, undefined), 'Open the assistant', 'neither set: English');
 });
 
@@ -385,7 +386,7 @@ async function openedLayer(t, width, specs, { search = '', state = null, strict 
   window.document.body.append(container);
   const reactRoot = createRoot(container);
   const nav = [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }];
-  const app = h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...(typeof specs === 'function' ? specs(window) : specs), locale: 'fr' });
+  const app = h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, locale: 'fr', ...(typeof specs === 'function' ? specs(window) : specs) });
   await act(async () => reactRoot.render(strict ? h(StrictMode, null, app) : app));
   t.after(() => act(async () => reactRoot.unmount()));
   return { window, replaced, latest: () => latest, act, unmount: () => act(async () => reactRoot.unmount()) };
@@ -1120,4 +1121,194 @@ test('ListDetail: `empty` fills the detail pane while nothing is chosen; the pan
   assert.equal(container.querySelector('[data-testid=empty]') === null, true, 'a chosen detail replaces the empty state');
   assert.equal(container.querySelector('[data-testid=chosen]')?.textContent, 'Dossier');
   await act(async () => root.unmount());
+});
+
+// D-1900: AppShell's `locale` reaches every kit part it mounts. The words come from the kit's own label tables (not a hand list): the strings
+// that belong to one language only are the ones the other language must never show.
+const tables = await bundle('locale-tables-entry.tsx', `export { defaultChatLabels } from '${root}registry/pi-chat/labels.ts';\nexport { frenchChatLabels } from '${root}registry/pi-chat/labels-fr.ts';\nexport { feedbackLabels, feedbackLabelsFr } from '${root}registry/feedback/feedback-labels.ts';\nexport { appShellText } from '${root}registry/app-shell/text.ts';\n`);
+// The tables hold strings and functions (« Retirer clip.png »). A function is called with sample arguments: numbers give exact strings (« 1 note »),
+// a sample file name gives a pattern (« Retirer .+? ») that matches the same words around any name.
+const SAMPLE = 'clip.png';
+const escapeRegExp = text => text.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+function collect(value, found) {
+  if (typeof value === 'string') found.exact.add(value.trim());
+  else if (typeof value === 'function') {
+    for (const args of [[1, 1], [2, 1], [SAMPLE, SAMPLE]]) {
+      let out; try { out = value(...args); } catch { continue; }
+      if (typeof out !== 'string') continue;
+      if (args[0] !== SAMPLE) found.exact.add(out.trim());
+      else found.patterns.add(out.trim().split(SAMPLE).map(escapeRegExp).join('.+?'));
+    }
+  } else if (value && typeof value === 'object') for (const entry of Object.values(value)) collect(entry, found);
+  return found;
+}
+function wordsOf(locale) {
+  const found = { exact: new Set(), patterns: new Set() };
+  for (const table of [tables[locale === 'fr' ? 'frenchChatLabels' : 'defaultChatLabels'], tables[locale === 'fr' ? 'feedbackLabelsFr' : 'feedbackLabels'], tables.appShellText(locale)]) collect(table, found);
+  found.exact.delete('');
+  return found;
+}
+/** The strings and patterns of one language that the other does not also use. */
+function onlyIn(locale) {
+  const mine = wordsOf(locale), theirs = wordsOf(locale === 'fr' ? 'en' : 'fr');
+  // A pattern with hardly any words of its own (« .+? ») would match anything.
+  const wordsIn = source => source.split('.+?').join('').replace(/\\/g, '').trim();
+  return { exact: new Set([...mine.exact].filter(word => !theirs.exact.has(word))), patterns: [...mine.patterns].filter(source => !theirs.patterns.has(source) && wordsIn(source).length >= 4).map(source => new RegExp(`^${source}$`)) };
+}
+/** Every visible string: text nodes and the words in aria-label, title, placeholder and alt, outside hidden subtrees. */
+function visibleStrings(document) {
+  const found = [];
+  const walk = node => {
+    if (node.nodeType === 3) { const text = node.textContent.trim(); if (text) found.push(text); return; }
+    if (node.nodeType !== 1 || node.hasAttribute('hidden') || /^(SCRIPT|STYLE)$/.test(node.tagName)) return;
+    for (const name of ['aria-label', 'title', 'placeholder', 'alt']) { const value = node.getAttribute(name)?.trim(); if (value) found.push(value); }
+    for (const child of node.childNodes) walk(child);
+  };
+  walk(document.body);
+  return found;
+}
+const foreign = (document, locale) => { const other = onlyIn(locale === 'fr' ? 'en' : 'fr'); return [...new Set(visibleStrings(document).filter(word => other.exact.has(word) || other.patterns.some(pattern => pattern.test(word))))]; };
+// A connected chat with nothing said yet: its empty state shows (an idle one shows « loading »).
+const connectedSnapshot = { ...IDLE, connection: { kind: 'connected' } };
+const connectedController = new Proxy({ getSnapshot: () => connectedSnapshot, subscribe: () => () => {} }, { get: (target, key) => key in target ? target[key] : () => Promise.resolve() });
+const emptyAgent = chatProps => ({ controller: connectedController, ...(chatProps ? { chatProps } : {}) });
+const chatWords = locale => tables[locale === 'fr' ? 'frenchChatLabels' : 'defaultChatLabels'];
+const settle = async (opened, done) => { for (let tries = 0; tries < 60 && !done(); tries++) await opened.act(async () => new Promise(next => setTimeout(next, 25))); };
+
+for (const locale of ['en', 'fr']) {
+  const other = locale === 'fr' ? 'en' : 'fr';
+  for (const [width, panel] of [[390, undefined], [390, { ...stubSlot, locale: other }], [1280, { ...stubSlot, locale: other }]]) {
+    test(`D-1900: locale="${locale}" at ${width}${panel ? `, panel in ${other}` : ''}: the agent layer, the empty chat and the account speak only ${locale}`, async t => {
+      const account = { name: 'Camille Martin', menu: [], signOut() {} };
+      const opened = await openedLayer(t, width, { locale, agent: emptyAgent(), account, ...(panel ? { panel } : {}) });
+      const document = opened.window.document;
+      await opened.act(async () => opened.latest().open('agent', width === 390 ? 'half' : 'open'));
+      await settle(opened, () => document.querySelector('[data-spec=agent] [data-testid=composer-input]'));
+      const input = document.querySelector('[data-spec=agent] [data-testid=composer-input]');
+      assert.ok(input, 'the agent chat is open');
+      assert.ok(visibleStrings(document).includes(chatWords(locale).emptyDescription), `the empty state reads « ${chatWords(locale).emptyDescription} »`);
+      assert.deepEqual(foreign(document, locale), [], `the agent layer shows no ${other} string`);
+      await opened.act(async () => opened.latest().close());
+      await settle(opened, () => !document.querySelector('[data-spec=agent] [data-testid=composer-input]'));
+      if (width === 390) {
+        await opened.act(async () => document.querySelector('[data-testid=account-button]').dispatchEvent(new opened.window.MouseEvent('click', { bubbles: true, cancelable: true })));
+        await settle(opened, () => document.querySelector('[data-testid=app-sheet]'));
+        const sheet = document.querySelector('[data-testid=app-sheet]');
+        assert.ok(sheet, 'the account sheet opens');
+        assert.equal(sheet.querySelector('[data-testid=account-sign-out]')?.textContent?.trim(), tables.appShellText(locale).signOut, 'sign out reads the shell locale');
+      }
+      assert.deepEqual(foreign(document, locale), [], `the shell, its sidebar or sheet and NavUser show no ${other} string`);
+      await opened.unmount();
+    });
+  }
+}
+
+// The order is the shell's locale, then chatProps.locale, then the panel's, then English: an app that sets `locale` on AppShell is in that language
+// whatever an agent spec or panel says; a part's own locale applies only when the shell sets none.
+for (const [shell, own] of [['en', 'fr'], ['fr', 'en']]) {
+  test(`D-1900: AppShell locale="${shell}" beats chatProps.locale="${own}", for the chat and the shell's words`, async t => {
+    const opened = await openedLayer(t, 390, { locale: shell, agent: emptyAgent({ locale: own }), panel: { ...stubSlot, locale: own }, account: { name: 'Camille Martin', menu: [], signOut() {} } });
+    const document = opened.window.document;
+    await opened.act(async () => opened.latest().open('agent', 'half'));
+    await settle(opened, () => document.querySelector('[data-spec=agent] [data-testid=composer-input]'));
+    assert.ok(visibleStrings(document).includes(chatWords(shell).emptyDescription), `the empty state is ${shell}`);
+    assert.deepEqual(foreign(document, shell), [], `no ${own} string anywhere`);
+    await opened.unmount();
+  });
+}
+
+test('D-1900: without an AppShell locale, chatProps.locale applies to the chat and the layer', async t => {
+  const opened = await openedLayer(t, 390, { locale: undefined, agent: emptyAgent({ locale: 'fr' }), account: { name: 'Camille Martin', menu: [], signOut() {} } });
+  const document = opened.window.document;
+  await opened.act(async () => opened.latest().open('agent', 'half'));
+  await settle(opened, () => document.querySelector('[data-spec=agent] [data-testid=composer-input]'));
+  assert.ok(visibleStrings(document).includes(chatWords('fr').emptyDescription), 'the empty state is French');
+  assert.deepEqual(foreign(document, 'fr'), []);
+  await opened.unmount();
+});
+
+// With a panel showing, the layer's header follows the shell, then that panel's own locale, then chatProps, then English: a French assistant spec
+// must not turn the header of an English panel French. Fails on 9dfb5d2, where chatProps.locale came before the panel's.
+test('D-1900: no shell locale, chatProps fr, panel en: the opened improve header is English (the wide dock keeps its header mounted, hidden)', async t => {
+  const opened = await openedLayer(t, 1280, { locale: undefined, agent: emptyAgent({ locale: 'fr' }), panel: { ...stubSlot, locale: 'en' } });
+  const document = opened.window.document;
+  await opened.act(async () => opened.latest().open('improve', 'open'));
+  await settle(opened, () => document.querySelector('[data-dock=agent] [data-testid=agent-layer-close]'));
+  const english = tables.appShellText('en');
+  assert.equal(opened.latest().showing, 'improve');
+  assert.equal(document.querySelector('[data-dock=agent]')?.getAttribute('aria-label'), english.improve, 'the dock region is named in English');
+  assert.equal(document.querySelector('[data-dock=agent] [data-testid=agent-layer-title]')?.textContent, english.improve, 'the title is English');
+  assert.equal(document.querySelector('[data-dock=agent] [data-testid=agent-layer-close]')?.getAttribute('aria-label'), english.close, 'Close is English');
+  assert.equal(document.querySelector('[data-dock=agent] [data-testid=agent-layer-back]')?.getAttribute('aria-label'), english.back, 'Back is English');
+  await opened.unmount();
+});
+
+test('D-1900: no shell locale, chatProps fr, panel en: the assistant header stays French (no panel showing)', async t => {
+  const opened = await openedLayer(t, 390, { locale: undefined, agent: emptyAgent({ locale: 'fr' }), panel: { ...stubSlot, locale: 'en' } });
+  const document = opened.window.document;
+  await opened.act(async () => opened.latest().open('agent', 'half'));
+  await settle(opened, () => document.querySelector('[data-testid=agent-layer-close]'));
+  assert.equal(document.querySelector('[data-testid=agent-layer-close]')?.getAttribute('aria-label'), tables.appShellText('fr').close, 'Close is French');
+  await opened.unmount();
+});
+
+// The conversation list (History) and the desktop account menu open on user action, so they are driven open here.
+const conversationsOf = () => ({ items: [{ id: 'c1', title: 'Fictional week plan', updatedAt: '2026-01-02T10:00:00Z', lastMessage: 'Fictional last message' }], activeId: 'c1', onSelect() {}, onNew() {} });
+for (const locale of ['en', 'fr']) {
+  const other = locale === 'fr' ? 'en' : 'fr';
+  for (const width of [390, 1280]) {
+    test(`D-1900: locale="${locale}" at ${width}: the open History list speaks only ${locale}`, async t => {
+      const opened = await openedLayer(t, width, { locale, agent: emptyAgent({ conversations: conversationsOf() }), panel: { ...stubSlot, locale: other } });
+      const document = opened.window.document;
+      await opened.act(async () => opened.latest().open('agent', width === 390 ? 'half' : 'open'));
+      await settle(opened, () => document.querySelector('[data-spec=agent] [data-testid=history-open]'));
+      const history = document.querySelector('[data-spec=agent] [data-testid=history-open]');
+      assert.ok(history, 'the chat offers History');
+      await opened.act(async () => history.dispatchEvent(new opened.window.MouseEvent('click', { bubbles: true, cancelable: true })));
+      await settle(opened, () => document.querySelector('[data-testid=conversations]'));
+      assert.ok(document.querySelector('[data-testid=conversations]'), 'the list is open');
+      assert.ok(visibleStrings(document).includes('Fictional week plan'), 'the list shows the conversation');
+      assert.ok(visibleStrings(document).includes(chatWords(locale).newConversation), `New reads « ${chatWords(locale).newConversation} »`);
+      assert.deepEqual(foreign(document, locale), [], `the History list shows no ${other} string`);
+      await opened.unmount();
+    });
+  }
+  test(`D-1900: locale="${locale}" at 1280: the open desktop account menu (NavUser) speaks only ${locale}`, async t => {
+    const account = { name: 'Camille Martin', menu: [{ label: 'Fictional settings', onSelect() {} }], signOut() {}, theme: { value: 'light', onChange() {} } };
+    const opened = await openedLayer(t, 1280, { locale, agent: emptyAgent(), account, panel: { ...stubSlot, locale: other } });
+    const document = opened.window.document;
+    const trigger = document.querySelector('[data-testid=nav-user]');
+    assert.ok(trigger, 'the sidebar has NavUser');
+    await opened.act(async () => trigger.dispatchEvent(new opened.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })));
+    await settle(opened, () => document.querySelector('[role=menu]'));
+    assert.ok(document.querySelector('[role=menu]'), 'the account menu is open');
+    assert.equal(document.querySelector('[data-testid=account-sign-out]')?.textContent?.trim(), tables.appShellText(locale).signOut, 'sign out reads the shell locale');
+    assert.equal(document.querySelector('[data-testid=account-theme]')?.textContent?.trim(), tables.appShellText(locale).darkMode, 'dark mode reads the shell locale');
+    assert.deepEqual(foreign(document, locale), [], `the account menu shows no ${other} string`);
+    await opened.unmount();
+  });
+}
+
+test('D-1900: the label checker sees function labels (a French remove(name) is foreign in an English shell)', () => {
+  const frenchOnly = onlyIn('fr');
+  assert.ok(frenchOnly.patterns.some(pattern => pattern.test('Retirer photo.png')), 'the French remove label is checked around any file name');
+  assert.ok(![...onlyIn('en').patterns].some(pattern => pattern.test('Retirer photo.png')));
+});
+
+test('D-1900: the feedback banner follows the shell locale', async t => {
+  const { createFeedbackSession } = await import('@hachej/boring-feedback/ui');
+  const { createPrivacyPolicy } = await import('@hachej/boring-feedback/page');
+  for (const locale of ['en', 'fr']) {
+    let session;
+    const opened = await openedLayer(t, 390, window => {
+      session = createFeedbackSession({ app: 'fictional-app', build: 'dev-fixture', root: window.document.body, policy: createPrivacyPolicy(), hitTest: () => [] });
+      t.after(() => session.dispose());
+      return { locale, agent: { ...agentWith(), feedback: session } };
+    });
+    await opened.act(async () => opened.latest().open('agent', 'half'));
+    await opened.act(async () => session.start({ mode: 'point' }));
+    await settle(opened, () => false);
+    assert.deepEqual(foreign(opened.window.document, locale), [], `the feedback parts show no ${locale === 'fr' ? 'en' : 'fr'} string`);
+    await opened.unmount();
+  }
 });
