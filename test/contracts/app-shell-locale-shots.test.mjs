@@ -71,14 +71,14 @@ for (const locale of ['en', 'fr']) {
       await browser.until('shell mounted', `window.__layer && document.querySelector('[data-testid=app-shell]') && document.readyState === 'complete'`);
       await wait(300);
       await browser.evaluate(`window.__layer.open('agent', '${touch ? 'half' : 'open'}')`);
-      await browser.until('chat open', `document.querySelector('[data-boring=pi-chat]')`);
+      await browser.until('chat open', `!!document.querySelector('[data-boring=pi-chat]')`);
       await wait(900);
       await browser.screenshot(`app-shell-${locale}-${width}-chat.png`);
       if (touch) {
         await browser.evaluate(`window.__layer.close()`);
         await wait(900);
         await browser.evaluate(`document.querySelector('[data-testid=account-button]').click()`);
-        await browser.until('account sheet', `document.querySelector('[data-testid=app-sheet]')`);
+        await browser.until('account sheet', `!!document.querySelector('[data-testid=app-sheet]')`);
         await wait(900);
         await browser.screenshot(`app-shell-${locale}-${width}-account.png`);
       }
