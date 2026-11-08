@@ -1145,6 +1145,11 @@ function visibleStrings(document) {
   return found;
 }
 const foreign = (document, locale) => { const other = onlyIn(locale === 'fr' ? 'en' : 'fr'); return [...new Set(visibleStrings(document).filter(word => other.has(word)))]; };
+// A connected chat with nothing said yet: its empty state shows (an idle one shows « loading »).
+const connectedSnapshot = { ...IDLE, connection: { kind: 'connected' } };
+const connectedController = new Proxy({ getSnapshot: () => connectedSnapshot, subscribe: () => () => {} }, { get: (target, key) => key in target ? target[key] : () => Promise.resolve() });
+const emptyAgent = chatProps => ({ controller: connectedController, ...(chatProps ? { chatProps } : {}) });
+const chatWords = locale => tables[locale === 'fr' ? 'frenchChatLabels' : 'defaultChatLabels'];
 const settle = async (opened, done) => { for (let tries = 0; tries < 60 && !done(); tries++) await opened.act(async () => new Promise(next => setTimeout(next, 25))); };
 
 for (const locale of ['en', 'fr']) {
@@ -1152,13 +1157,13 @@ for (const locale of ['en', 'fr']) {
   for (const [width, panel] of [[390, undefined], [390, { ...stubSlot, locale: other }], [1280, { ...stubSlot, locale: other }]]) {
     test(`D-1900: locale="${locale}" at ${width}${panel ? `, panel in ${other}` : ''}: the agent layer, the empty chat and the account speak only ${locale}`, async t => {
       const account = { name: 'Camille Martin', menu: [], signOut() {} };
-      const opened = await openedLayer(t, width, { locale, agent: agentWith(), account, ...(panel ? { panel } : {}) });
+      const opened = await openedLayer(t, width, { locale, agent: emptyAgent(), account, ...(panel ? { panel } : {}) });
       const document = opened.window.document;
       await opened.act(async () => opened.latest().open('agent', width === 390 ? 'half' : 'open'));
       await settle(opened, () => document.querySelector('[data-spec=agent] [data-testid=composer-input]'));
       const input = document.querySelector('[data-spec=agent] [data-testid=composer-input]');
       assert.ok(input, 'the agent chat is open');
-      assert.ok(wordsOf(locale).has(input.getAttribute('placeholder')?.trim()), `the composer placeholder ${JSON.stringify(input.getAttribute('placeholder'))} is in the ${locale} table`);
+      assert.ok(visibleStrings(document).includes(chatWords(locale).emptyDescription), `the empty state reads « ${chatWords(locale).emptyDescription} »`);
       assert.deepEqual(foreign(document, locale), [], `the agent layer shows no ${other} string`);
       await opened.act(async () => opened.latest().close());
       await settle(opened, () => !document.querySelector('[data-spec=agent] [data-testid=composer-input]'));
@@ -1176,11 +1181,11 @@ for (const locale of ['en', 'fr']) {
 }
 
 test('D-1900: an explicit chatProps.locale still wins over the shell locale, for the chat and the shell\'s words', async t => {
-  const opened = await openedLayer(t, 390, { locale: 'en', agent: agentWith({ locale: 'fr' }), account: { name: 'Camille Martin', menu: [], signOut() {} } });
+  const opened = await openedLayer(t, 390, { locale: 'en', agent: emptyAgent({ locale: 'fr' }), account: { name: 'Camille Martin', menu: [], signOut() {} } });
   const document = opened.window.document;
   await opened.act(async () => opened.latest().open('agent', 'half'));
   await settle(opened, () => document.querySelector('[data-spec=agent] [data-testid=composer-input]'));
-  assert.ok(wordsOf('fr').has(document.querySelector('[data-spec=agent] [data-testid=composer-input]').getAttribute('placeholder').trim()));
+  assert.ok(visibleStrings(document).includes(chatWords('fr').emptyDescription), 'the empty state is French');
   assert.deepEqual(foreign(document, 'fr'), []);
   await opened.unmount();
 });
