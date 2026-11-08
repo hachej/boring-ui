@@ -1,5 +1,7 @@
 # Unreleased
 
+- **The assistant reads larger: new core token `--text-chat` (D-1901).** pi-chat's message prose, Markdown, composer, empty state and cards now compute to `--text-chat` (default 0.9375rem, line-height 1.6, at least 1rem on touch); meta rows are 0.93 of it and code 0.875. Visual change for every app; no action beyond the kit bump. An app may set `--text-chat` (and `--text-chat--line-height`) in its `theme.core.css`. Test: `test/contracts/chat-text-size.test.mjs`; see `features/chat.md`.
+
 # Migrating to 0.4.71
 
 - **`boring-ui-blocks atlas <dir> --url <base url> --out <dir>` shoots every Atlas state (package `@hachej/boring-ui-kit`, new and additive; D-1831 slice 2).** After the check, it drives a headless Chromium (`--chromium <path>` or the `CHROMIUM` env) through each state's `given.steps` and writes `<id>.<390|1280>.<light|dark>.png` plus `index.json`; `--since <old index.json>` marks each shot `new`, `changed` or `same`. `--check` alone is unchanged; without `--check` the command used to exit 2 and now needs `--url` and `--out`. No consumer action. Test: `test/atlas-shoot.test.mjs`; see `features/atlas.md`.

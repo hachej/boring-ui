@@ -129,6 +129,8 @@
     --duration-slow: 300ms;
     --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
     --shell: var(--background);
+    --text-chat: 0.9375rem;
+    --text-chat--line-height: 1.6;
 }
 
 @layer base {
