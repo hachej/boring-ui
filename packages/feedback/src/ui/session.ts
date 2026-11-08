@@ -59,7 +59,26 @@ function readTranscription(answer: unknown): { readonly segments: readonly Speec
   return typeof text === 'string' ? { text } : null;
 }
 
+/** A point on a surface, as fractions (0 to 1) of the surface element's box: `x` from its left edge, `y` from its top edge. */
+export interface SurfacePoint { readonly x: number; readonly y: number }
+
+/**
+ * An element whose content the page cannot name by element (an image, a video frame, a canvas): in comment mode a click inside it pins a
+ * note at that point instead of picking an element, and Enter on the focused surface pins one at its centre. The note carries the point
+ * (`SessionNote.point`), so the host can map it to its own model.
+ */
+export interface FeedbackSurface {
+  /** The surface element (or a React ref to it), inside the session's `root`. */
+  readonly element: Element | { readonly current: Element | null };
+  /** A note was pinned at this point. */
+  readonly onPoint?: (point: SurfacePoint) => void;
+  /** `kit` (default): the session draws its pinned box on the surface. `host`: it draws nothing on the surface; the host draws its own marks. */
+  readonly pins?: 'kit' | 'host';
+}
+
 export interface FeedbackSessionOptions extends AnnotateHost {
+  /** Comment on one surface by point (see `FeedbackSurface`); element picking elsewhere is unchanged. */
+  readonly surface?: FeedbackSurface;
   /** Optional voice: both a capture (`createVoiceCapture()`) and the host's `transcribe` are needed for the 🎙 toggle; without
    * `transcribe` the Record button is simply not offered. */
   readonly voice?: VoiceCapture;
@@ -94,6 +113,8 @@ export interface SessionNote {
   readonly text: string;
   /** The privacy-policy label of its element ("SettingsPage · button «Save profile»"), or "the page" for a general note. */
   readonly label: string;
+  /** Pinned on a surface (`FeedbackSessionOptions.surface`): where, as fractions of the surface. */
+  readonly point?: SurfacePoint;
   /** The anchor's fallback, when it has an anchor. */
   readonly fallback?: string;
   /** The anchor's development source location (`src/settings/SaveBar.tsx:42`), when it has one. */
@@ -119,6 +140,8 @@ export interface SessionBubble {
   readonly number: number;
   readonly element: Element;
   readonly label: string;
+  /** Pinned on a surface: the bubble opens next to this point of `element` (the surface). */
+  readonly point?: SurfacePoint;
   readonly text: string;
   /** A new pin (Esc removes it) or an existing note being edited (Esc keeps it as it was). */
   readonly fresh: boolean;
@@ -221,7 +244,7 @@ const MAX_ELEMENTS = 500;
 const MAX_TRAIL = 5000;
 
 /** `label` is the element's privacy-policy label when it was pinned (or spoken about), kept for when it leaves the page. */
-interface NoteRecord { id: number; element?: Element; target?: number; label?: string; text: string; t: number; from?: 'voice'; recorded?: true }
+interface NoteRecord { id: number; element?: Element; target?: number; point?: SurfacePoint; label?: string; text: string; t: number; from?: 'voice'; recorded?: true }
 type TimedStep = { readonly t: number; readonly step: FeedbackStep } | { readonly t: number; readonly noteId: number };
 
 /** The anchor's own `data-feedback-id`, or the one its path starts from (`[data-feedback-id="…"]`: its nearest marked ancestor). */
@@ -317,7 +340,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
       const source = typeof found === 'string' ? found : undefined;
       const feedbackId = markedId(signals);
       return Object.freeze({ id: note.id, number: index + 1, text: note.text, label: labelOf(note), ...(anchor ? { fallback: String(anchor['fallback']) } : {}),
-        ...(source !== undefined ? { source } : {}), ...(feedbackId !== undefined ? { feedbackId } : {}), ...(note.from ? { from: note.from } : {}), ...(note.recorded ? { recorded: true as const } : {}) });
+        ...(source !== undefined ? { source } : {}), ...(note.point ? { point: note.point } : {}), ...(feedbackId !== undefined ? { feedbackId } : {}), ...(note.from ? { from: note.from } : {}), ...(note.recorded ? { recorded: true as const } : {}) });
     });
     const open = bubble ? list.find(note => note.id === bubble!.noteId) : undefined;
     const { bubble: _bubble, problem: _problem, hover: _hover, ...base } = { ...state.getSnapshot(), ...change };
@@ -326,17 +349,29 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
       ...base,
       notes: Object.freeze(views),
       stepCount: timeline.filter(entry => 'step' in entry).length,
-      ...(open && bubble && open.element ? { bubble: Object.freeze({ noteId: open.id, number: list.indexOf(open) + 1, element: open.element, label: labelOf(open), text: bubble.text, fresh: bubble.fresh }) } : {}),
+      ...(open && bubble && open.element ? { bubble: Object.freeze({ noteId: open.id, number: list.indexOf(open) + 1, element: open.element, label: labelOf(open), text: bubble.text, fresh: bubble.fresh, ...(open.point ? { point: open.point } : {}) }) } : {}),
       ...(problem !== undefined ? { problem } : {}),
       ...(showHover ? { hover: hoverLabel! } : {}),
     });
     drawPins();
   };
 
+  const surfaceElement = (): Element | undefined => {
+    const given = options.surface?.element;
+    const element = given && 'current' in given ? given.current : given;
+    return element && element.isConnected ? element : undefined;
+  };
+  const inside = (event: Event, surface: Element): boolean => {
+    const path = event.composedPath();
+    return path.includes(surface) && !path.some(item => (item as Element).hasAttribute?.('data-feedback-ignore'));
+  };
+
   const drawPins = (): void => {
     if (!pinsOverlay) return;
     if (state.getSnapshot().phase !== 'active') { pinsOverlay.clear(); return; }
-    pinsOverlay.draw(ordered().flatMap((note, index) => note.element ? [{ element: note.element, label: pinMark(index + 1), tone: 'pinned' as const }] : []));
+    const surface = surfaceElement();
+    const hostPins = options.surface?.pins === 'host';
+    pinsOverlay.draw(ordered().flatMap((note, index) => note.element && !(hostPins && surface !== undefined && surface.contains(note.element)) ? [{ element: note.element, label: pinMark(index + 1), tone: 'pinned' as const }] : []));
   };
 
   const clip = (text: string): string => [...text].slice(0, FEEDBACK_LIMITS.stepCharacters).join('');
@@ -431,6 +466,51 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     publish();
   };
 
+  /** A note pinned at `point` of the surface: always a new note (several can share the surface); no element is picked. */
+  const onSurfacePoint = (surface: Element, point: SurfacePoint): void => {
+    if (state.getSnapshot().phase !== 'active') return;
+    problem = undefined;
+    stash = '';
+    if (state.getSnapshot().generalOpen) state.set({ generalOpen: false });
+    closeBubble(true);
+    const recording = state.getSnapshot().voice.kind === 'recording';
+    const refused = pickRefusal(surface, root);
+    const target = refused === undefined ? indexOf(surface) : null;
+    if (target === null) { problem = `This element cannot be pointed at: ${refused ?? 'too many elements in one session'}.`; publish(); return; }
+    if (!anchors.has(target) && new Set(notes.flatMap(note => note.target !== undefined ? [note.target] : [])).size >= FEEDBACK_LIMITS.anchors) {
+      problem = `At most ${FEEDBACK_LIMITS.anchors} pinned elements per feedback.`; publish(); return;
+    }
+    const captured = capture(target);
+    if (!captured.anchor) { problem = `This element cannot be pointed at: ${captured.reason ?? 'unknown reason'}.`; publish(); return; }
+    const t = now();
+    pins.push({ t, target });
+    const note: NoteRecord = { id: nextId++, element: surface, target, point, label: pickerLabel(surface, policy), text: '', t, ...(recording ? { recorded: true as const } : {}) };
+    notes.push(note);
+    if (recording) timeline.push({ t, noteId: note.id });
+    else bubble = { noteId: note.id, text: '', fresh: true, before: '' };
+    checkRoute();
+    publish();
+    options.surface?.onPoint?.(point);
+  };
+  const fractions = (surface: Element, x: number, y: number): SurfacePoint => {
+    const box = surface.getBoundingClientRect();
+    const unit = (value: number): number => Math.round(Math.min(1, Math.max(0, value)) * 1000) / 1000;
+    return { x: box.width > 0 ? unit((x - box.left) / box.width) : 0.5, y: box.height > 0 ? unit((y - box.top) / box.height) : 0.5 };
+  };
+  /** A click or tap inside the surface pins a note there, ahead of the picker (which never sees it). */
+  const onSurfaceClick = (event: Event): void => {
+    const surface = surfaceElement();
+    if (!surface || state.getSnapshot().phase !== 'active' || state.getSnapshot().using || !inside(event, surface)) return;
+    const mouse = event as MouseEvent;
+    const touch = event.type === 'pointerup' ? (event as PointerEvent).pointerType === 'touch' : false;
+    // Mouse and keyboard clicks arrive as `click`; a finger as `pointerup` (the picker cancels the click that would follow).
+    if ((event.type === 'click') === touch) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    // A click from the keyboard (Enter or Space on a focused control) has no position: the centre.
+    const keyboard = event.type === 'click' && mouse.detail === 0 && mouse.clientX === 0 && mouse.clientY === 0;
+    onSurfacePoint(surface, keyboard ? { x: 0.5, y: 0.5 } : fractions(surface, mouse.clientX, mouse.clientY));
+  };
+
   const onHover = (element: Element | undefined): void => {
     const target = element ? indexOf(element) : null;
     if (target === lastHover) return;
@@ -471,6 +551,13 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
         later(checkRoute);
         publish();
       }
+      return;
+    }
+    // Enter on the focused surface pins a note at its centre.
+    const surface = surfaceElement();
+    if (key.key === 'Enter' && !key.shiftKey && !key.altKey && !key.ctrlKey && !key.metaKey && !key.isComposing && current.phase === 'active' && surface && event.target === surface && inside(event, surface)) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      onSurfacePoint(surface, { x: 0.5, y: 0.5 });
       return;
     }
     // Esc on the page closes the bubble and never ends feedback mode by accident; in the bubble, the bubble handles it.
@@ -521,11 +608,11 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     const focused = document.activeElement;
     if (focused && focused !== document.body && isExcluded(focused) && typeof (focused as HTMLElement).blur === 'function') (focused as HTMLElement).blur();
     // Listeners first, so they see Alt and Esc before the picker takes them.
-    for (const [type, handler] of [['keydown', onKeyDown], ['keyup', onKeyUp], ['click', onClick], ['popstate', onRoute], ['hashchange', onRoute]] as const) listen(type, handler);
+    for (const [type, handler] of [['keydown', onKeyDown], ['keyup', onKeyUp], ['click', onSurfaceClick], ['pointerup', onSurfaceClick], ['click', onClick], ['popstate', onRoute], ['hashchange', onRoute]] as const) listen(type, handler);
     if (view) { view.addEventListener('blur', onBlur); removers.push(() => view.removeEventListener('blur', onBlur)); }
     pinsOverlay = createOverlay({ document, ...(options.styles !== undefined ? { styles: options.styles } : {}) });
     picker = createPicker({
-      root, policy, onPick, wheel: false, keys: 'outside-ignored', ...(mode === 'point' ? { tap: 'pick' as const } : {}),
+      root, policy, onPick: element => { const surface = surfaceElement(); if (!surface || !surface.contains(element)) onPick(element); }, wheel: false, keys: 'outside-ignored', ...(mode === 'point' ? { tap: 'pick' as const } : {}),
       ...(options.styles !== undefined ? { styles: options.styles } : {}),
       ...(options.hitTest ? { hitTest: options.hitTest } : {}),
       onChange: next => { if (next.mode === 'picking' && !next.suspended) onHover(next.current); },

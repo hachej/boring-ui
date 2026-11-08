@@ -16,6 +16,6 @@ export {
 } from './report.js';
 export {
   createFeedbackSession, isPointing, pinMark,
-  type FeedbackSession, type SessionMode, type SessionStartOptions, type FeedbackSessionOptions, type FeedbackSessionSnapshot, type FeedbackAttachment, type SessionPhase, type SessionNote,
+  type FeedbackSession, type FeedbackSurface, type SurfacePoint, type SessionMode, type SessionStartOptions, type FeedbackSessionOptions, type FeedbackSessionSnapshot, type FeedbackAttachment, type SessionPhase, type SessionNote,
   type SessionBubble, type SendState, type VoiceState, type Transcribe, type TranscribeResult,
 } from './session.js';
