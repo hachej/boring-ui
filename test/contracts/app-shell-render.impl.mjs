@@ -1228,16 +1228,17 @@ test('D-1900: without an AppShell locale, chatProps.locale applies to the chat a
 
 // With a panel showing, the layer's header follows the shell, then that panel's own locale, then chatProps, then English: a French assistant spec
 // must not turn the header of an English panel French. Fails on 9dfb5d2, where chatProps.locale came before the panel's.
-test('D-1900: no shell locale, chatProps fr, panel en: the opened improve header is English', async t => {
-  const opened = await openedLayer(t, 390, { locale: undefined, agent: emptyAgent({ locale: 'fr' }), panel: { ...stubSlot, locale: 'en' } });
+test('D-1900: no shell locale, chatProps fr, panel en: the opened improve header is English (the wide dock keeps its header mounted, hidden)', async t => {
+  const opened = await openedLayer(t, 1280, { locale: undefined, agent: emptyAgent({ locale: 'fr' }), panel: { ...stubSlot, locale: 'en' } });
   const document = opened.window.document;
-  await opened.act(async () => opened.latest().open('improve', 'half'));
-  await settle(opened, () => document.querySelector('[data-testid=agent-layer-close]'));
+  await opened.act(async () => opened.latest().open('improve', 'open'));
+  await settle(opened, () => document.querySelector('[data-dock=agent] [data-testid=agent-layer-close]'));
   const english = tables.appShellText('en');
   assert.equal(opened.latest().showing, 'improve');
-  assert.equal(document.querySelector('[data-testid=agent-layer-title]')?.textContent, english.improve, 'the title is English');
-  assert.equal(document.querySelector('[data-testid=agent-layer-close]')?.getAttribute('aria-label'), english.close, 'Close is English');
-  assert.equal(document.querySelector('[data-testid=agent-layer-back]')?.getAttribute('aria-label'), english.back, 'Back is English');
+  assert.equal(document.querySelector('[data-dock=agent]')?.getAttribute('aria-label'), english.improve, 'the dock region is named in English');
+  assert.equal(document.querySelector('[data-dock=agent] [data-testid=agent-layer-title]')?.textContent, english.improve, 'the title is English');
+  assert.equal(document.querySelector('[data-dock=agent] [data-testid=agent-layer-close]')?.getAttribute('aria-label'), english.close, 'Close is English');
+  assert.equal(document.querySelector('[data-dock=agent] [data-testid=agent-layer-back]')?.getAttribute('aria-label'), english.back, 'Back is English');
   await opened.unmount();
 });
 
