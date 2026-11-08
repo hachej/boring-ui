@@ -126,6 +126,12 @@ test('a click on a surface pins a note at that point; pins "host" draws no box; 
     await open('host');
     const fingers = (type, points) => browser.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([id, at]) => ({ id, x: at.x, y: at.y })) });
     const B = await plateAt(0.75, 0.5), A = { x: B.x - 30, y: B.y }, nearB = { x: B.x + 3, y: B.y };
+    // Finger A rests beside B, B taps: with two fingers down, B's release is no tap.
+    await fingers('touchStart', [[1, nearB]]);
+    await fingers('touchStart', [[1, nearB], [2, B]]);
+    await fingers('touchEnd', [[1, nearB]]);
+    await fingers('touchEnd', []);
+    await noNote('finger A rests while finger B taps: B\'s release is no tap');
     await fingers('touchStart', [[1, A]]);
     await fingers('touchStart', [[1, A], [2, B]]);
     await fingers('touchMove', [[1, nearB], [2, B]]);
