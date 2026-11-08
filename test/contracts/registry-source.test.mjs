@@ -105,7 +105,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
       const declarations = Object.values(layer).flatMap(rule => Object.entries(Object.values(rule).every(v => typeof v === 'object') ? Object.values(rule).reduce((all, inner) => ({ ...all, ...inner }), {}) : rule));
       assert.ok(declarations.length > 0 && declarations.every(([name]) => /^--control-(?:h|min)$/.test(name)), 'theme css declares only --control-h and --control-min');
       const { theme, light, dark } = item.cssVars;
-      assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).filter(name => name !== 'radius' && !/^(?:text-(?:body|title)|font-(?:sans|mono))$/.test(name)).sort(), 'dark redefines every mode-dependent role; shape, type and fonts live in light only');
+      assert.deepEqual(Object.keys(dark).sort(), Object.keys(light).filter(name => name !== 'radius' && !/^(?:text-(?:body|title|chat(?:--line-height)?)|font-(?:sans|mono))$/.test(name)).sort(), 'dark redefines every mode-dependent role; shape, type and fonts live in light only');
       for (const [name, value] of Object.entries(theme)) {
         if (name === 'default-border-width') {
           assert.equal(value, 'var(--border-width, 1px)', 'optional host border width keeps the stock Tailwind fallback');

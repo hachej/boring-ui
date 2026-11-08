@@ -64,6 +64,7 @@ jobs:
     env:
       CHROMIUM: ${{ github.workspace }}/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+      CHAT_TEXT_EVIDENCE: ${{ github.workspace }}/.cache/evidence/chat-text
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -90,6 +91,14 @@ jobs:
           path: ${{ runner.temp }}/evidence/sidebar-resize
           retention-days: 7
           if-no-files-found: warn
+      - name: Chat text shots (390 and 1280, light and dark)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: chat-text-shots
+          path: .cache/evidence/chat-text
+          retention-days: 14
+          if-no-files-found: ignore
   release-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 20

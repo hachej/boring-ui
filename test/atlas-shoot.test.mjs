@@ -201,7 +201,8 @@ test('a page stuck in a loop fails its state within the deadline and leaves no C
   assert.equal(status, 1, stderr);
   assert.ok(Date.now() - started < 120000, 'the run ended by its deadline');
   assert.match(stderr, /state bloquee\.page/);
-  assert.match(stderr, /did not (answer|finish loading) within/);
+  // The loop can start before the load is ready ("did not finish loading"), during the step's own 10 s wait ("did not appear", when the fragment arrives late) or past the whole-shot deadline ("did not answer"): which deadline fires first is a race, and each is a failure by deadline.
+  assert.match(stderr, /did not (answer|finish loading|appear) within/);
   let left = true;
   for (let i = 0; i < 30 && left; i++) {
     left = spawnSync('pgrep', ['-f', 'atlas-chromium-']).status === 0;
