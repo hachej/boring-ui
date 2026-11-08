@@ -38,8 +38,8 @@ test('the item compiles strictly against the pinned shadcn fixtures', () => {
 
 test('the shell root carries the app-shell class in every layout, so the scoped reset reaches its own header and nav buttons', () => {
   // One root for the three layouts (Shell renders it); the `.app-shell` reset is scoped to this class, so a host never wraps the shell to get it.
-  const root = /<SidebarProvider\b[^>]*\bclassName="([^"]*)"/.exec(source('app-shell.tsx'));
-  assert.ok(root, 'the root is the SidebarProvider');
+  const root = /<(?:Resizable)?SidebarProvider\b[^>]*\bclassName="([^"]*)"/.exec(source('app-shell.tsx'));
+  assert.ok(root, 'the root is the SidebarProvider (the kit\'s ResizableSidebarProvider wraps it)');
   assert.match(root[1], /(?:^|\s)app-shell(?:\s|$)/, 'the root className names app-shell');
 });
 
