@@ -198,7 +198,7 @@ test('hover rail on a phone keeps the same tab bar and no sidebar', async t => {
   await ui.unmount();
 });
 
-test('the layer\'s own words follow the shell locale when the agent sets none; the agent\'s own locale wins', async t => {
+test('the layer\'s own words follow the shell locale, which wins over the agent\'s own locale; the agent\'s applies when the shell sets none', async t => {
   const trigger = async (agentChatProps, locale) => {
     const { container, unmount } = await render(t, { agent: agentWith(agentChatProps), locale });
     const label = container.querySelector('[data-testid=agent-trigger]')?.getAttribute('aria-label');
@@ -206,7 +206,8 @@ test('the layer\'s own words follow the shell locale when the agent sets none; t
     return label;
   };
   assert.equal(await trigger(undefined, 'fr'), 'Ouvrir l’assistant', 'no agent locale: the shell\'s French');
-  assert.equal(await trigger({ locale: 'en' }, 'fr'), 'Open the assistant', 'the agent\'s own locale wins');
+  assert.equal(await trigger({ locale: 'en' }, 'fr'), 'Ouvrir l’assistant', 'the shell\'s locale wins over the agent\'s');
+  assert.equal(await trigger({ locale: 'fr' }, undefined), 'Ouvrir l’assistant', 'the shell sets none: the agent\'s own locale applies');
   assert.equal(await trigger(undefined, undefined), 'Open the assistant', 'neither set: English');
 });
 
