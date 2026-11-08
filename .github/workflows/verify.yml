@@ -80,6 +80,14 @@ jobs:
       - name: Allow the Chromium sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: npm test -- --exclude-registered
+      - name: AppShell locale shots (390 and 1280, en and fr)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-shell-locale-shots
+          path: .cache/evidence/app-shell-locale
+          retention-days: 7
+          if-no-files-found: ignore
   release-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 20

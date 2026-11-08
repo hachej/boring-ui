@@ -385,7 +385,7 @@ async function openedLayer(t, width, specs, { search = '', state = null, strict 
   window.document.body.append(container);
   const reactRoot = createRoot(container);
   const nav = [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Probe) }];
-  const app = h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...(typeof specs === 'function' ? specs(window) : specs), locale: 'fr' });
+  const app = h(shell.AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, locale: 'fr', ...(typeof specs === 'function' ? specs(window) : specs) });
   await act(async () => reactRoot.render(strict ? h(StrictMode, null, app) : app));
   t.after(() => act(async () => reactRoot.unmount()));
   return { window, replaced, latest: () => latest, act, unmount: () => act(async () => reactRoot.unmount()) };
@@ -1120,4 +1120,85 @@ test('ListDetail: `empty` fills the detail pane while nothing is chosen; the pan
   assert.equal(container.querySelector('[data-testid=empty]') === null, true, 'a chosen detail replaces the empty state');
   assert.equal(container.querySelector('[data-testid=chosen]')?.textContent, 'Dossier');
   await act(async () => root.unmount());
+});
+
+// D-1900: AppShell's `locale` reaches every kit part it mounts. The words come from the kit's own label tables (not a hand list): the strings
+// that belong to one language only are the ones the other language must never show.
+const tables = await bundle('locale-tables-entry.tsx', `export { defaultChatLabels } from '${root}registry/pi-chat/labels.ts';\nexport { frenchChatLabels } from '${root}registry/pi-chat/labels-fr.ts';\nexport { feedbackLabels, feedbackLabelsFr } from '${root}registry/feedback/feedback-labels.ts';\nexport { appShellText } from '${root}registry/app-shell/text.ts';\n`);
+const leaves = value => typeof value === 'string' ? [value] : value && typeof value === 'object' ? Object.values(value).flatMap(leaves) : [];
+const wordsOf = locale => new Set([tables[locale === 'fr' ? 'frenchChatLabels' : 'defaultChatLabels'], tables[locale === 'fr' ? 'feedbackLabelsFr' : 'feedbackLabels'], tables.appShellText(locale)].flatMap(leaves).map(word => word.trim()).filter(Boolean));
+/** The strings of one language that the other does not also use. */
+function onlyIn(locale) {
+  const mine = wordsOf(locale), theirs = wordsOf(locale === 'fr' ? 'en' : 'fr');
+  return new Set([...mine].filter(word => !theirs.has(word)));
+}
+/** Every visible string: text nodes and the words in aria-label, title, placeholder and alt, outside hidden subtrees. */
+function visibleStrings(document) {
+  const found = [];
+  const walk = node => {
+    if (node.nodeType === 3) { const text = node.textContent.trim(); if (text) found.push(text); return; }
+    if (node.nodeType !== 1 || node.hasAttribute('hidden') || /^(SCRIPT|STYLE)$/.test(node.tagName)) return;
+    for (const name of ['aria-label', 'title', 'placeholder', 'alt']) { const value = node.getAttribute(name)?.trim(); if (value) found.push(value); }
+    for (const child of node.childNodes) walk(child);
+  };
+  walk(document.body);
+  return found;
+}
+const foreign = (document, locale) => { const other = onlyIn(locale === 'fr' ? 'en' : 'fr'); return [...new Set(visibleStrings(document).filter(word => other.has(word)))]; };
+const settle = async (opened, done) => { for (let tries = 0; tries < 60 && !done(); tries++) await opened.act(async () => new Promise(next => setTimeout(next, 25))); };
+
+for (const locale of ['en', 'fr']) {
+  const other = locale === 'fr' ? 'en' : 'fr';
+  for (const [width, panel] of [[390, undefined], [390, { ...stubSlot, locale: other }], [1280, { ...stubSlot, locale: other }]]) {
+    test(`D-1900: locale="${locale}" at ${width}${panel ? `, panel in ${other}` : ''}: the agent layer, the empty chat and the account speak only ${locale}`, async t => {
+      const account = { name: 'Camille Martin', menu: [], signOut() {} };
+      const opened = await openedLayer(t, width, { locale, agent: agentWith(), account, ...(panel ? { panel } : {}) });
+      const document = opened.window.document;
+      await opened.act(async () => opened.latest().open('agent', width === 390 ? 'half' : 'open'));
+      await settle(opened, () => document.querySelector('[data-spec=agent] [data-testid=composer-input]'));
+      const input = document.querySelector('[data-spec=agent] [data-testid=composer-input]');
+      assert.ok(input, 'the agent chat is open');
+      assert.ok(wordsOf(locale).has(input.getAttribute('placeholder')?.trim()), `the composer placeholder ${JSON.stringify(input.getAttribute('placeholder'))} is in the ${locale} table`);
+      assert.deepEqual(foreign(document, locale), [], `the agent layer shows no ${other} string`);
+      await opened.act(async () => opened.latest().close());
+      await settle(opened, () => !document.querySelector('[data-spec=agent] [data-testid=composer-input]'));
+      if (width === 390) {
+        await opened.act(async () => document.querySelector('[data-testid=account-button]').dispatchEvent(new opened.window.MouseEvent('click', { bubbles: true, cancelable: true })));
+        await settle(opened, () => document.querySelector('[data-testid=app-sheet]'));
+        const sheet = document.querySelector('[data-testid=app-sheet]');
+        assert.ok(sheet, 'the account sheet opens');
+        assert.equal(sheet.querySelector('[data-testid=account-sign-out]')?.textContent?.trim(), tables.appShellText(locale).signOut, 'sign out reads the shell locale');
+      }
+      assert.deepEqual(foreign(document, locale), [], `the shell, its sidebar or sheet and NavUser show no ${other} string`);
+      await opened.unmount();
+    });
+  }
+}
+
+test('D-1900: an explicit chatProps.locale still wins over the shell locale, for the chat and the shell\'s words', async t => {
+  const opened = await openedLayer(t, 390, { locale: 'en', agent: agentWith({ locale: 'fr' }), account: { name: 'Camille Martin', menu: [], signOut() {} } });
+  const document = opened.window.document;
+  await opened.act(async () => opened.latest().open('agent', 'half'));
+  await settle(opened, () => document.querySelector('[data-spec=agent] [data-testid=composer-input]'));
+  assert.ok(wordsOf('fr').has(document.querySelector('[data-spec=agent] [data-testid=composer-input]').getAttribute('placeholder').trim()));
+  assert.deepEqual(foreign(document, 'fr'), []);
+  await opened.unmount();
+});
+
+test('D-1900: the feedback banner follows the shell locale', async t => {
+  const { createFeedbackSession } = await import('@hachej/boring-feedback/ui');
+  const { createPrivacyPolicy } = await import('@hachej/boring-feedback/page');
+  for (const locale of ['en', 'fr']) {
+    let session;
+    const opened = await openedLayer(t, 390, window => {
+      session = createFeedbackSession({ app: 'fictional-app', build: 'dev-fixture', root: window.document.body, policy: createPrivacyPolicy(), hitTest: () => [] });
+      t.after(() => session.dispose());
+      return { locale, agent: { ...agentWith(), feedback: session } };
+    });
+    await opened.act(async () => opened.latest().open('agent', 'half'));
+    await opened.act(async () => session.start({ mode: 'point' }));
+    await settle(opened, () => false);
+    assert.deepEqual(foreign(opened.window.document, locale), [], `the feedback parts show no ${locale === 'fr' ? 'en' : 'fr'} string`);
+    await opened.unmount();
+  }
 });
