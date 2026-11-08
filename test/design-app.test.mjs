@@ -31,6 +31,7 @@ const EXPECTED = {
   'design-font-tokens': ['font.css', 'error'],
   'design-no-kit-restyle': ['restyle.css', 'error'],
   'design-no-important': ['important.css', 'error'],
+  'design-no-script-tokens': ['script-tokens.ts', 'error'],
   'design-hand-touch-size': ['hand-touch.tsx', 'error'],
   'design-border-width': ['border-width.tsx', 'error'],
   'design-literal-value': ['literal-value.css', 'error'],
@@ -252,6 +253,18 @@ test('round 9: design-no-important is one hit per line, and reads stylesheets an
   assert.equal(count('a.css', '.a { color: red !important; margin: 0 !important; }\n.b { top: 0 !important; }\n'), 2, 'two on one line are one hit');
   assert.equal(count('pick-frame.ts', "export const f = (el: HTMLElement) => { el.textContent = 'html * { cursor: x !important }'; };\n"), 0, 'css injected from script');
   assert.equal(count('real.css', 'a { color: red !important; }\n'), 1, 'a stylesheet still fails');
+});
+
+test('D-1898: design-no-script-tokens flags setProperty of the sidebar width tokens in app script, not other tokens, css, prose or the kit\'s own sidebar', () => {
+  const count = (name, source) => appFindings(name, source, 'design-no-script-tokens').count;
+  assert.equal(count('a.ts', 'el.style.setProperty("--sidebar-width", "20rem");\n'), 1, 'double quotes');
+  assert.equal(count('b.tsx', "export const f = (el: HTMLElement) => el.style.setProperty('--sidebar-width', '20rem');\n"), 1, 'single quotes');
+  assert.equal(count('c.js', 'wrapper.style.setProperty( `--sidebar-width-icon`, x );\n'), 1, 'a sibling token and a template literal');
+  assert.equal(count('d.ts', 'el.style.setProperty("--accent", "red");\nel.style.setProperty("--sidebar-width-x", "1");\n'), 0, 'another token');
+  assert.equal(count('e.css', '.a { --sidebar-width: 20rem; }\n'), 0, 'css custom property');
+  assert.equal(count('f.ts', '// setProperty("--sidebar-width", x) is forbidden\nexport const note = 1;\n'), 0, 'a comment');
+  const kit = readFileSync(join(root, 'shadcn/ui/sidebar.tsx'), 'utf8');
+  assert.equal(count('sidebar.tsx', kit), 0, 'the kit\'s SidebarProvider sets the width through React style, never setProperty');
 });
 
 const appFindings = (name, source, rule) => {
