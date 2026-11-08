@@ -83,7 +83,12 @@ async function mount(query = '', { width = 1280, touch = false, clear = true } =
 }
 const gap = () => browser.evaluate(`document.querySelector('[data-slot=sidebar-gap]').getBoundingClientRect().width`);
 const aria = name => browser.evaluate(`document.querySelector('${RAIL}').getAttribute('${name}')`);
-const stored = () => browser.evaluate(`localStorage.getItem('${KEY}')`);
+// The key carries the app and the person (the prefix is the kit's): these read and write whatever keys start with it.
+const keys = () => browser.evaluate(`Object.keys(localStorage).filter(k => k.startsWith('${KEY}')).sort()`);
+const stored = () => browser.evaluate(`(() => { const k = Object.keys(localStorage).find(k => k.startsWith('${KEY}')); return k ? localStorage.getItem(k) : null; })()`);
+const setStored = value => browser.evaluate(`(() => { for (const k of Object.keys(localStorage)) if (k.startsWith('${KEY}')) localStorage.setItem(k, ${JSON.stringify(value)}); })()`);
+const transitions = () => browser.evaluate(`[...document.querySelectorAll('[data-slot=sidebar-gap], [data-slot=sidebar-container]')].map(e => e.style.transition)`);
+const ctrlB = async () => { for (const type of ['rawKeyDown', 'keyUp']) await browser.send('Input.dispatchKeyEvent', { type, key: 'b', code: 'KeyB', windowsVirtualKeyCode: 66, modifiers: 2 }); await wait(400); };
 const centre = () => browser.evaluate(`(() => { const r = document.querySelector('${RAIL}').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
 const dragBy = async delta => { const box = await centre(); await browser.drag(`document.querySelector('${RAIL}')`, box.x + delta); await wait(300); };
 const key = async name => { await browser.evaluate(`document.querySelector('${RAIL}').focus()`); await browser.press(name); await wait(300); };
@@ -164,10 +169,11 @@ test('the width survives a reload, and a double-click returns to the theme width
 
 test('a stored width outside the bounds is clamped on read, and junk is ignored', { skip, timeout: 120000 }, async () => {
   await mount();
-  await browser.evaluate(`localStorage.setItem('${KEY}', '99')`);
+  await key('ArrowRight');
+  await setStored('99');
   await mount('', { clear: false });
   assert.equal(await gap(), 448);
-  await browser.evaluate(`localStorage.setItem('${KEY}', 'not a number')`);
+  await setStored('not a number');
   await mount('', { clear: false });
   assert.equal(await gap(), 256);
 });
@@ -179,6 +185,55 @@ test('storage that throws does not break the shell or the resize', { skip, timeo
   assert.equal(await gap(), 320);
   await key('ArrowLeft');
   assert.equal(await gap(), 304);
+});
+
+test('the stored width is per app and per person: B does not inherit A, another app does not inherit either', { skip, timeout: 120000 }, async () => {
+  await mount('user=a@example.test');
+  await dragBy(80);
+  assert.equal(await gap(), 336);
+  await mount('user=b@example.test', { clear: false });
+  assert.equal(await gap(), 256, 'person B starts at the theme width');
+  await dragBy(-32);
+  assert.equal(await gap(), 224);
+  await mount('user=a@example.test', { clear: false });
+  assert.equal(await gap(), 336, 'person A still has the width A chose');
+  await mount('user=a@example.test&app=Autre', { clear: false });
+  assert.equal(await gap(), 256, 'the same person in another app');
+  await mount('', { clear: false });
+  assert.equal(await gap(), 256, 'no person: a key of its own');
+  assert.ok((await keys()).length >= 2, 'one key per app and person');
+  assert.ok((await keys()).every(k => k.length > 'boring-ui:sidebar-width'.length), 'every key names its app');
+});
+
+test('SidebarProvider used directly: ResizableSidebarProvider and ResizableRail give the same handle, keys and persistence', { skip, timeout: 120000 }, async () => {
+  await mount('standalone=1');
+  assert.equal(await aria('role'), 'separator');
+  assert.equal(await aria('aria-valuenow'), '16');
+  assert.equal(await gap(), 256);
+  await key('End');
+  assert.equal(await gap(), 448);
+  await dragBy(-100);
+  assert.equal(await gap(), 348);
+  await mount('standalone=1', { clear: false });
+  assert.equal(await gap(), 348, 'after a reload');
+});
+
+test('a drag cut short leaves no inline transition behind: Ctrl+B mid-drag, and a lost pointer capture', { skip, timeout: 120000 }, async () => {
+  await mount();
+  let held = await browser.drag(`document.querySelector('${RAIL}')`, (await centre()).x + 60, { release: false });
+  assert.deepEqual(await transitions(), ['none', 'none'], 'following the pointer');
+  await ctrlB();
+  assert.equal(await browser.evaluate(`document.querySelector('[data-slot=sidebar]').getAttribute('data-state')`), 'collapsed');
+  assert.deepEqual(await transitions(), ['', ''], 'the handle unmounted mid-drag');
+  await held.release();
+  await ctrlB();
+  assert.equal(await browser.evaluate(`document.querySelector('${RAIL}').getAttribute('role')`), 'separator', 'the handle is back');
+  held = await browser.drag(`document.querySelector('${RAIL}')`, (await centre()).x + 60, { release: false });
+  assert.deepEqual(await transitions(), ['none', 'none']);
+  await browser.evaluate(`(() => { const rail = document.querySelector('${RAIL}'); for (let id = 0; id < 12; id++) { try { rail.releasePointerCapture(id); } catch {} } })()`);
+  await wait(200);
+  assert.deepEqual(await transitions(), ['', ''], 'pointer capture lost');
+  await held.release();
 });
 
 test('on a touch device there is no resize handle', { skip, timeout: 120000 }, async () => {

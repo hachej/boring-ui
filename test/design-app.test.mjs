@@ -263,6 +263,10 @@ test('D-1898: design-no-script-tokens flags setProperty of the sidebar width tok
   assert.equal(count('d.ts', 'el.style.setProperty("--accent", "red");\nel.style.setProperty("--sidebar-width-x", "1");\n'), 0, 'another token');
   assert.equal(count('e.css', '.a { --sidebar-width: 20rem; }\n'), 0, 'css custom property');
   assert.equal(count('f.ts', '// setProperty("--sidebar-width", x) is forbidden\nexport const note = 1;\n'), 0, 'a comment');
+  assert.equal(count('g.ts', 'export const help = `Do not call el.style.setProperty("--sidebar-width", x) yourself.`;\n'), 0, 'a call written inside a template literal');
+  assert.equal(count('h.ts', "export const help = 'el.style.setProperty(\"--sidebar-width\", x)';\n"), 0, 'a call written inside a string');
+  assert.equal(count('i.ts', 'const help = `use ${name}`;\nel.style.setProperty("--sidebar-width", `${rem}rem`);\n'), 1, 'the real call after a template literal still fails');
+  assert.equal(count('j.ts', 'el.style.setProperty(`--sidebar-width`, `${rem}rem`);\n'), 1, 'a template literal as the token name still fails');
   const kit = readFileSync(join(root, 'shadcn/ui/sidebar.tsx'), 'utf8');
   assert.equal(count('sidebar.tsx', kit), 0, 'the kit\'s SidebarProvider sets the width through React style, never setProperty');
 });
