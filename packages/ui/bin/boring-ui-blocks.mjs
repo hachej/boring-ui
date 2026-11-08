@@ -571,8 +571,10 @@ function pageFind(kind, label, value, clickable) {
   if (kind === 'click') {
     // One accessible name per element, in the spec's order: aria-labelledby, aria-label, a label, then the content.
     const nameOf = el => labelledBy(el) || norm(el.getAttribute('aria-label')) || labels(el).find(Boolean) || norm(el.innerText ?? el.textContent) || (el.tagName === 'INPUT' ? norm(el.value) : '');
-    const disabled = el => el.disabled === true || !!el.closest('fieldset[disabled], [aria-disabled="true"]');
-    const found = [...document.querySelectorAll('*')].filter(el => visible(el) && nameOf(el) === label);
+    // A click lands on the closest actionable ancestor, so its name and its disabled state decide, never a descendant's.
+    const actionable = 'button, a[href], summary, label, select, textarea, input:not([type="hidden"]), [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"]';
+    const disabled = el => el.matches(':disabled') || !!el.closest('[aria-disabled="true"]');
+    const found = [...new Set([...document.querySelectorAll('*')].map(el => el.closest(actionable) ?? el))].filter(el => visible(el) && nameOf(el) === label);
     const pick = list => list.find(e => clickable.includes(roleOf(e))) ?? list.find(e => !list.some(o => o !== e && e.contains(o)));
     const el = pick(found.filter(e => !disabled(e)));
     if (el) return aim(el);
@@ -597,7 +599,7 @@ function pageFind(kind, label, value, clickable) {
 }
 
 /** Launches a headless Chromium on a fresh profile; resolves `{ url, close }` where `url` is the DevTools WebSocket. */
-async function launchChromium(path) {
+function launchChromium(path) {
   const profile = mkdtempSync(join(tmpdir(), 'atlas-chromium-'));
   const args = ['--headless', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--hide-scrollbars', '--force-color-profile=srgb', 'about:blank'];
   if (process.getuid?.() === 0) args.unshift('--no-sandbox');
@@ -613,8 +615,9 @@ async function launchChromium(path) {
   };
   const onExit = killGroup;
   process.on('exit', onExit);
-  try {
-    const url = await new Promise((resolveUrl, reject) => {
+  const url = (async () => {
+    try {
+      return await new Promise((resolveUrl, reject) => {
       let log = '', ready = false;
       const timer = setTimeout(() => reject(new Error('Chromium printed no DevTools address within 20 s')), 20000);
       child.stderr.on('data', chunk => {
@@ -625,9 +628,11 @@ async function launchChromium(path) {
       });
       child.once('error', e => { clearTimeout(timer); reject(e); });
       child.once('exit', code => { clearTimeout(timer); reject(new Error(`Chromium exited (${code}) before it was ready: ${log.slice(-400).trim()}`)); });
-    });
-    return { url, close };
-  } catch (e) { await close(); throw e; }
+      });
+    } catch (e) { await close(); throw e; }
+  })();
+  url.catch(() => {});
+  return { url, close };
 }
 
 /** A CDP connection: `send(method, params, sessionId)` and `on(listener)` (returns the off function). */
@@ -665,11 +670,14 @@ function connectCdp(url) {
 async function openPage(cdp, { width, height, touch }, mode) {
   // A fresh browser context per shot: no storage, cookies or cache from another state or mode.
   const { browserContextId } = await cdp.send('Target.createBrowserContext');
-  const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank', browserContextId });
+  let targetId, off = () => {};
+  const close = async () => { off(); if (targetId) await cdp.send('Target.closeTarget', { targetId }, undefined, CLEANUP_TIMEOUT).catch(() => {}); await cdp.send('Target.disposeBrowserContext', { browserContextId }, undefined, CLEANUP_TIMEOUT).catch(() => {}); };
+  try {
+  ({ targetId } = await cdp.send('Target.createTarget', { url: 'about:blank', browserContextId }));
   const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
   const send = (method, params) => cdp.send(method, params, sessionId);
   const errors = [];
-  const off = cdp.on(message => {
+  off = cdp.on(message => {
     if (message.sessionId !== sessionId) return;
     if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') errors.push(message.params.args.map(a => a.value ?? a.description ?? a.type).join(' '));
     if (message.method === 'Runtime.exceptionThrown') errors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
@@ -680,7 +688,8 @@ async function openPage(cdp, { width, height, touch }, mode) {
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }] });
   const apply = `document.documentElement.classList.${mode === 'dark' ? 'add' : 'remove'}('dark')`;
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { const apply = () => ${apply}; if (document.documentElement) apply(); else new MutationObserver((_, o) => { if (document.documentElement) { o.disconnect(); apply(); } }).observe(document, { childList: true }); document.addEventListener('DOMContentLoaded', apply); })()` });
-  return { send, errors, apply, close: async () => { off(); await cdp.send('Target.closeTarget', { targetId }, undefined, CLEANUP_TIMEOUT).catch(() => {}); await cdp.send('Target.disposeBrowserContext', { browserContextId }, undefined, CLEANUP_TIMEOUT).catch(() => {}); } };
+  return { send, errors, apply, close };
+  } catch (e) { await close(); throw e; }
 }
 
 async function evaluate(page, expression) {
@@ -832,14 +841,18 @@ async function shootAtlas({ manifest, flags, cwd, fixtures, log, error }) {
   mkdirSync(out, { recursive: true });
   const states = [];
   let failed = 0;
-  const browser = await launchChromium(chromium);
-  let cdp;
+  const browser = launchChromium(chromium);
+  let cdp, cleaning;
   // Ctrl-C or a kill still closes the socket, kills Chromium and removes its profile before the process ends.
-  const onSignal = signal => { cdp?.close(); browser.close().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143)); };
-  process.once('SIGINT', onSignal);
-  process.once('SIGTERM', onSignal);
+  // Installed before the launch and kept: a second signal while the cleanup runs is ignored, the exit follows the cleanup.
+  const onSignal = signal => {
+    if (cleaning) return;
+    cleaning = (async () => { cdp?.close(); await browser.close(); })().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
+  };
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
   try {
-    cdp = await connectCdp(browser.url);
+    cdp = await connectCdp(await browser.url);
     for (const state of manifest.states) {
       const entry = { id: state.id, page: state.page, title: state.title, ...(state.flow ? { flow: state.flow } : {}), ...(state.after ? { after: state.after } : {}), shots: [] };
       states.push(entry);

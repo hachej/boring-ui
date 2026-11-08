@@ -3,7 +3,7 @@ import test, { after, before } from 'node:test';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -157,6 +157,42 @@ test('a disabled target fails the step: exit 1, never a silent click', { skip, t
   const { status, stderr } = await shoot(manifestDir('disabled', [state('desactive.valider', '/disabled', ['click Valider'])]), join(work, 'out-disabled'));
   assert.equal(status, 1);
   assert.match(stderr, /state desactive\.valider step 1 "click Valider": element named "Valider" is disabled/);
+});
+
+test('a click on text inside an actionable ancestor goes by the ancestor name: a span in aria-label Delete is not "Save"', { skip, timeout: 240000 }, async () => {
+  const { status, stderr } = await shoot(manifestDir('nested', [state('imbrique.save', '/nested', ['click Save'])]), join(work, 'out-nested'));
+  assert.equal(status, 1);
+  assert.match(stderr, /state imbrique\.save step 1 "click Save": no element named "Save"/);
+});
+
+test('a disabled or aria-disabled ancestor makes the click fail', { skip, timeout: 240000 }, async () => {
+  for (const label of ['Valider', 'Envoyer']) {
+    const { status, stderr } = await shoot(manifestDir('disabled-nested', [state('ancetre.desactive', '/disabled-nested', [`click ${label}`])]), join(work, 'out-disabled-nested'));
+    assert.equal(status, 1, stderr);
+    assert.match(stderr, new RegExp(`step 1 "click ${label}": element named "${label}" is disabled`));
+  }
+});
+
+test('a control in the first legend of a disabled fieldset stays enabled', { skip, timeout: 240000 }, async () => {
+  const run = await shoot(manifestDir('legend', [state('legende.enable', '/legend', ['click Enable', 'wait Enabled'])]), join(work, 'out-legend'));
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+});
+
+test('Ctrl-C twice during startup still removes the profile, kills Chromium and exits 130', { skip, timeout: 120000 }, async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'atlas-sig-'));
+  try {
+    const child = spawn(process.execPath, [bin, 'atlas', app(), '--url', base, '--out', join(work, 'out-sig'), '--fixtures', fixtures(), '--commit', 'abc1234'], { cwd: root, env: { ...process.env, TMPDIR: tmp } });
+    const closed = new Promise(resolve => child.on('close', (status, signal) => resolve({ status, signal })));
+    for (let i = 0; i < 400 && !readdirSync(tmp).some(f => f.startsWith('atlas-chromium-')); i++) await new Promise(done => setTimeout(done, 25));
+    assert.ok(readdirSync(tmp).some(f => f.startsWith('atlas-chromium-')), 'the profile exists once the browser is launching');
+    child.kill('SIGINT');
+    await new Promise(done => setTimeout(done, 30));
+    child.kill('SIGINT');
+    const { status, signal } = await closed;
+    assert.deepEqual({ status, signal }, { status: 130, signal: null });
+    assert.deepEqual(readdirSync(tmp).filter(f => f.startsWith('atlas-chromium-')), [], 'the profile is removed');
+    assert.notEqual(spawnSync('pgrep', ['-f', tmp]).status, 0, 'no Chromium of the run is left');
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
 });
 
 test('a page stuck in a loop fails its state within the deadline and leaves no Chromium behind', { skip, timeout: 240000 }, async () => {
