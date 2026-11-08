@@ -42,6 +42,7 @@ Preconditions: `npm ci`, Chromium available, a built kit (`npm run build`).
 - **Base stylesheet.** `shell-app-css`: `node --test test/contracts/app-css.test.mjs` compiles an app `index.css` (imports + `app.css` + a fixture `theme.core.css`) with Tailwind and checks the theme wins and the scale, map and resets are present.
 - **Derived theme.** `shell-theme-derived`: `node --test test/contracts/theme-derived.test.mjs` compiles app.css, the kit's derived file and a fixture core that pins `--muted-foreground` and `--destructive-soft` in `:root` and `.dark`: pinned values win, unpinned roles get the derived value, and reversing the order fails.
 - **Overlay blur and height.** `shell-overlay-blur`, `shell-overlay-height`: `CHROMIUM=... node --test test/contracts/overlay-knobs.test.mjs` (no `backdrop-filter` by default, `blur(4px)` under `data-overlay-blur="on"`, tall/full at 390 and 1280, tokens retune them); `test/contracts/app-shell-render.impl.mjs` for the `overlayBlur` attribute.
+- **Locale.** `shell-locale`: `node --test test/contracts/app-shell-render.impl.mjs` mounts `AppShell` with `locale="en"` and `"fr"` (a panel in the other language too), opens the empty chat and, at 390, the account sheet, and fails on any visible string that only the other language's label tables hold. `CHROMIUM=... node --test test/contracts/app-shell-locale-shots.test.mjs` shoots 390 and 1280 in both languages into `.cache/evidence/app-shell-locale`.
 - **Proof.** An ARIA snapshot and a screenshot per width under `.cache/evidence/<journey>/`, tagged with the ID.
 
 ## Gotchas

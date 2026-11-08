@@ -62,6 +62,8 @@
 
 ## Driving it with the example journeys
 
+- **Locale.** `chat-locale`: mount `AppShell locale="fr"` (or `PiChat locale="fr"`) with a connected, empty controller: the empty state reads « Commencez une conversation. » and the composer French; `locale="en"` reads « Start a conversation. ». `node --test test/contracts/app-shell-render.impl.mjs` (D-1900).
+
 Preconditions: `npm run build`, Chromium; journeys use a scripted fake model unless stated.
 
 - **Developer switch.** `chat-developer-switch`: `node --test test/ui/pi-chat-developer-switch.test.mjs` (a natural chat shows the model line after `?chatMode=developer`, keeps it on the next page, loses it after `?chatMode=expert`).
