@@ -7,6 +7,41 @@ export interface SurfacePoint { readonly x: number; readonly y: number }
 
 interface Frame { readonly width: number; readonly height: number; readonly centre: { readonly x: number; readonly y: number }; readonly a: number; readonly b: number; readonly c: number; readonly d: number }
 
+const ANGLE = /^(-?\d*\.?\d+(?:e[+-]?\d+)?)(deg|grad|rad|turn)?$/i;
+const degrees = (text: string): number | undefined => {
+  const match = ANGLE.exec(text);
+  if (!match) return undefined;
+  const value = Number(match[1]);
+  const unit = (match[2] ?? 'deg').toLowerCase();
+  return unit === 'rad' ? value * 180 / Math.PI : unit === 'grad' ? value * 0.9 : unit === 'turn' ? value * 360 : value;
+};
+
+/**
+ * One node's own map, in the order CSS applies it: `translate` (no linear part), then `rotate`, then `scale`, then `transform`. The
+ * individual properties leave `transform` at `none`, so reading `transform` alone misses `scale: -1 1`. Rotation about the z axis only
+ * (the 2D case); a 3D axis is left out, as is perspective.
+ */
+function nodeMatrix(view: Window, Matrix: typeof DOMMatrix, node: Element): DOMMatrix | undefined {
+  const style = view.getComputedStyle(node);
+  const rotate = style.getPropertyValue('rotate').trim(), scale = style.getPropertyValue('scale').trim(), transform = style.transform;
+  let matrix = new Matrix();
+  let any = false;
+  if (rotate && rotate !== 'none') {
+    const words = rotate.split(/\s+/);
+    const angle = degrees(words[words.length - 1]!);
+    const axis = words.length === 1 || words[0] === 'z' || (words.length === 4 && words[0] === '0' && words[1] === '0' && Number(words[2]) > 0);
+    if (angle !== undefined && axis) { matrix = matrix.rotate(angle); any = true; }
+  }
+  if (scale && scale !== 'none') {
+    const factors = scale.split(/\s+/).map(Number);
+    if (factors.length >= 1 && factors.every(Number.isFinite)) { matrix = matrix.scale(factors[0]!, factors[1] ?? factors[0]!); any = true; }
+  }
+  if (transform && transform !== 'none') {
+    try { matrix = matrix.multiply(new Matrix(transform)); any = true; } catch { /* an unparsable transform leaves the node's map as it was */ }
+  }
+  return any ? matrix : undefined;
+}
+
 /** The element's untransformed size, its drawn centre and the linear part of every transform on it and its ancestors. */
 function frameOf(element: Element): Frame | undefined {
   const view = element.ownerDocument.defaultView;
@@ -18,10 +53,8 @@ function frameOf(element: Element): Frame | undefined {
   const Matrix = (view as (Window & typeof globalThis) | null)?.DOMMatrix;
   if (view && typeof Matrix === 'function') {
     for (let node: Element | null = element; node; node = node.parentElement) {
-      const css = view.getComputedStyle(node).transform;
-      if (!css || css === 'none') continue;
-      let matrix: DOMMatrix;
-      try { matrix = new Matrix(css); } catch { continue; }
+      const matrix = nodeMatrix(view, Matrix, node);
+      if (!matrix) continue;
       // The ancestor's map is applied after what we have so far.
       [a, b, c, d] = [matrix.a * a + matrix.c * b, matrix.b * a + matrix.d * b, matrix.a * c + matrix.c * d, matrix.b * c + matrix.d * d];
     }

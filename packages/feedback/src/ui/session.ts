@@ -492,14 +492,30 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     publish();
     options.surface?.onPoint?.(point);
   };
-  /** The finger's gesture: where it went down, and whether it dragged or was cancelled (then its release is no tap). */
-  let finger: { x: number; y: number; dragged: boolean } | undefined;
+  /**
+   * The fingers on the page, by pointer id: where each went down and whether it dragged past the picker's slop. A second finger spoils
+   * the gesture (a pinch, or one finger scrolling while another rests) until every finger is up, and a cancel spoils it too. Only the
+   * release of the one finger of an undisturbed gesture is a tap (`tapEnd`, read by the pointerup handler right after).
+   */
+  const contacts = new Map<number, { x: number; y: number; dragged: boolean }>();
+  let spoiled = false;
+  let tapEnd = false;
   const onSurfaceTouch = (event: Event): void => {
-    const pointerEvent = event as PointerEvent;
-    if (pointerEvent.pointerType !== 'touch') return;
-    if (event.type === 'pointerdown') finger = { x: pointerEvent.clientX, y: pointerEvent.clientY, dragged: false };
-    else if (event.type === 'pointercancel' && finger) finger.dragged = true;
-    else if (event.type === 'pointermove' && finger && Math.hypot(pointerEvent.clientX - finger.x, pointerEvent.clientY - finger.y) > TAP_SLOP) finger.dragged = true;
+    const touch = event as PointerEvent;
+    if (touch.pointerType !== 'touch') return;
+    const contact = contacts.get(touch.pointerId);
+    const moved = contact !== undefined && Math.hypot(touch.clientX - contact.x, touch.clientY - contact.y) > TAP_SLOP;
+    if (event.type === 'pointerdown') {
+      contacts.set(touch.pointerId, { x: touch.clientX, y: touch.clientY, dragged: false });
+      if (contacts.size > 1) spoiled = true;
+    } else if (event.type === 'pointermove') {
+      if (contact && moved) contact.dragged = true;
+    } else {
+      tapEnd = event.type === 'pointerup' && !spoiled && contact !== undefined && !contact.dragged && !moved;
+      contacts.delete(touch.pointerId);
+      if (event.type === 'pointercancel') spoiled = true;
+      if (contacts.size === 0) spoiled = false;
+    }
   };
   /** A click or tap inside the surface pins a note there, ahead of the picker (which never sees it). */
   const onSurfaceClick = (event: Event): void => {
@@ -512,10 +528,10 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     // The click a finger synthesises after its release is the same gesture: only the pointerup above decides (tap, or drag and so none).
     if (event.type === 'click' && (event as PointerEvent).pointerType === 'touch') return;
     if (touch) {
-      // A real tap only: a drag (past the picker's slop, even one that came back) or a cancelled gesture is the page's own.
-      const gesture = finger;
-      finger = undefined;
-      if (!gesture || gesture.dragged || Math.hypot(mouse.clientX - gesture.x, mouse.clientY - gesture.y) > TAP_SLOP) return;
+      // A real tap only: a drag (past the picker's slop, even one that came back), a cancelled gesture or one with several fingers is the page's own.
+      const tapped = tapEnd;
+      tapEnd = false;
+      if (!tapped) return;
     }
     event.preventDefault(); event.stopImmediatePropagation();
     // A click from the keyboard (Enter or Space on a focused control) has no position: the centre.
@@ -620,7 +636,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     const focused = document.activeElement;
     if (focused && focused !== document.body && isExcluded(focused) && typeof (focused as HTMLElement).blur === 'function') (focused as HTMLElement).blur();
     // Listeners first, so they see Alt and Esc before the picker takes them.
-    for (const [type, handler] of [['keydown', onKeyDown], ['keyup', onKeyUp], ['pointerdown', onSurfaceTouch], ['pointermove', onSurfaceTouch], ['pointercancel', onSurfaceTouch], ['click', onSurfaceClick], ['pointerup', onSurfaceClick], ['click', onClick], ['popstate', onRoute], ['hashchange', onRoute]] as const) listen(type, handler);
+    for (const [type, handler] of [['keydown', onKeyDown], ['keyup', onKeyUp], ['pointerdown', onSurfaceTouch], ['pointermove', onSurfaceTouch], ['pointercancel', onSurfaceTouch], ['pointerup', onSurfaceTouch], ['click', onSurfaceClick], ['pointerup', onSurfaceClick], ['click', onClick], ['popstate', onRoute], ['hashchange', onRoute]] as const) listen(type, handler);
     if (view) { view.addEventListener('blur', onBlur); removers.push(() => view.removeEventListener('blur', onBlur)); }
     pinsOverlay = createOverlay({ document, ...(options.styles !== undefined ? { styles: options.styles } : {}) });
     picker = createPicker({
