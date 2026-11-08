@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { gitIgnored, walkProject } from './project-files.mjs';
 import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
 import { registryCss } from '../lab/studio/tailwind.mjs';
-import { scanDesign } from '../packages/ui/bin/boring-ui-blocks.mjs';
+import { scanAppDesign, scanDesign } from '../packages/ui/bin/boring-ui-blocks.mjs';
 
 // The rule engine ships in the kit's bin (`boring-ui-blocks check --design`); this script applies it to the registry and the kit.
 export { scanDesign };
@@ -85,6 +85,13 @@ export function checkDesign(root = designRoot, { config = readDesignConfig(root)
       if (!split || !/data-slot|role=|(?<![A-Za-z0-9-])(?:button|input|textarea|select|checkbox|switch|toggle)(?![A-Za-z0-9-])/.test(split[1]) || !appearance.test(split[3].replace(touch, ''))) continue;
       add({ file, line: lineOf(match.index), column: 1, rule: 'shadcn-restyle', value: `descendant variant restyles a host control: ${token}`, ...(/button|toggle|switch/.test(split[1]) ? { group: '1' } : {}) });
     }
+  }, ignored);
+  // The design-system page (lab/design-system) is an app built from kit parts: it gets the app rules, so a palette colour or a restyled kit part fails here.
+  if (existsSync(resolve(root, 'lab/design-system'))) walkProject(root, 'lab/design-system', (entry, file) => {
+    if (entry.isSymbolicLink()) { errors.push(`Design source symlink: ${file}`); return false; }
+    if (entry.isDirectory() || !/\.(?:tsx?|jsx?|mjs|css)$/.test(file)) return;
+    files++;
+    for (const finding of scanAppDesign(file, readFileSync(resolve(root, file), 'utf8'))) add({ column: 1, ...finding, value: finding.value ?? finding.message });
   }, ignored);
   for (const entry of config.primitives ?? []) if (existsSync(resolve(root, entry.file))) add({ file: entry.file, line: 1, column: 1, rule: 'primitive-file', value: `delete owned primitive; compose ${entry.replacement}` });
   // Registry css is shipped even when there is no adjacent .css file. Include it without scanning generated public/r twice.

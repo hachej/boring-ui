@@ -51,7 +51,9 @@ function Pair({ pair, scope }) {
   const [ratio, setRatio] = useState(null);
   useLayoutEffect(() => {
     const style = getComputedStyle(ref.current);
-    setRatio(contrastRatio(style.color, style.backgroundColor));
+    // A surface other than the page background lies over the page background of its own scope, and that over white.
+    const behind = pair.bg === 'background' ? [] : [style.getPropertyValue('--background').trim()];
+    setRatio(contrastRatio(style.color, style.backgroundColor, behind));
   }, [version]);
   const low = ratio !== null && ratio < MIN_RATIO;
   return (

@@ -8,21 +8,19 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build as bundle } from 'esbuild';
+import ts from 'typescript';
+import { LIGHT_SCOPE, scopeLight } from '../lab/design-system/layers.mjs';
 import { compile } from 'tailwindcss';
 import { CORE_ROLES, NON_COLOR_ROLE, cssDeclarations } from '../packages/ui/bin/boring-ui-blocks.mjs';
 import { registryCss } from '../lab/studio/tailwind.mjs';
 
+export { LIGHT_SCOPE, scopeLight };
 const require = createRequire(import.meta.url);
 export const SOURCE_DIR = 'lab/design-system';
 export const OUTPUT_DIR = 'packages/ui/design-system';
 export const DATA_PREFIX = 'globalThis.BORING_DS = ';
-/** Where the light column of the page gets its tokens: a class that re-declares the :root tokens, so light renders inside a dark page. */
-export const LIGHT_SCOPE = '.ds-light';
 const CHART_ALIAS = { 'chart-series-1': 'chart-1', 'chart-series-2': 'chart-2', 'chart-series-3': 'chart-3', 'chart-series-4': 'chart-4', 'chart-series-5': 'chart-5' };
 const DEFAULT_FALLBACK = { 'border-width': '1px', 'font-display': 'var(--font-sans)' };
-
-/** `:root` rules also apply to the light and dark scopes (derived tokens resolve where they are declared, so each scope re-declares them). */
-export const scopeLight = css => css.replace(/(^|[}\s,])(:root)(?=[\s,{])/g, `$1$2, ${LIGHT_SCOPE}, .ds-dark`);
 
 /** The default style as a theme.core.css: the core roles with the values of the registry `theme` item (light on :root, dark on .dark). */
 export function defaultThemeCss(registry) {
@@ -73,51 +71,41 @@ export function contrastPairs(names) {
 
 // ---- component data: exports and cva variants, read from the source -----------------------------------------------------------------
 
-/** Splits `text` at top-level commas, skipping strings and comments. */
-function topLevel(text) {
-  const parts = []; let depth = 0, start = 0, quote = '';
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (quote) { if (c === '\\') i++; else if (c === quote) quote = ''; continue; }
-    if (c === '"' || c === "'" || c === '`') quote = c;
-    else if (c === '/' && text[i + 1] === '/') { while (i < text.length && text[i] !== '\n') i++; }
-    else if ('{[('.includes(c)) depth++;
-    else if ('}])'.includes(c)) depth--;
-    else if (c === ',' && depth === 0) { parts.push(text.slice(start, i)); start = i + 1; }
+const keyName = (member, file) => {
+  const key = member.name;
+  if (ts.isIdentifier(key) || ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key) || ts.isNumericLiteral(key)) return key.text;
+  if (ts.isComputedPropertyName(key)) {
+    const inner = key.expression;
+    if (ts.isStringLiteral(inner) || ts.isNoSubstitutionTemplateLiteral(inner)) return inner.text;
   }
-  parts.push(text.slice(start));
-  return parts;
-}
-/** The text between the `{` at `open` and its matching `}`. */
-function braceBody(text, open) {
-  let depth = 0, quote = '';
-  for (let i = open; i < text.length; i++) {
-    const c = text[i];
-    if (quote) { if (c === '\\') i++; else if (c === quote) quote = ''; continue; }
-    if (c === '"' || c === "'" || c === '`') quote = c;
-    else if (c === '/' && text[i + 1] === '/') { while (i < text.length && text[i] !== '\n') i++; }
-    else if (c === '{') depth++;
-    else if (c === '}' && --depth === 0) return text.slice(open + 1, i);
-  }
-  return '';
-}
-const keyOf = entry => { const m = /^\s*(?:\/\/[^\n]*\n\s*)*(?:"([^"]+)"|([\w-]+))\s*:/.exec(entry); return m ? (m[1] ?? m[2]) : undefined; };
+  throw new Error(`${file}: a cva key is not a plain string (${key.getText()}); the design-system page cannot list it`);
+};
+const objectOf = node => (node && ts.isObjectLiteralExpression(node) ? node : undefined);
+const propertyOf = (object, name, file) => object.properties.find(member => ts.isPropertyAssignment(member) && keyName(member, file) === name);
 
-/** `{ name, groups: { variant: [keys], size: [keys] } }` for each `const name = cva(...)` of a source file. */
-export function cvaVariants(source) {
+/** `{ name, groups: { variant: [keys], size: [keys] } }` for each `const name = cva(...)` of a source file, read from the TypeScript syntax tree (every key form). */
+export function cvaVariants(source, file = 'source') {
+  const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const found = [];
-  for (const match of source.matchAll(/const\s+(\w+)\s*=\s*cva\(/g)) {
-    const at = source.indexOf('variants:', match.index);
-    const next = source.indexOf('cva(', match.index + match[0].length);
-    if (at < 0 || (next >= 0 && next < at)) continue;
-    const body = braceBody(source, source.indexOf('{', at));
-    const groups = {};
-    for (const entry of topLevel(body)) {
-      const group = keyOf(entry), open = entry.indexOf('{');
-      if (group && open >= 0) groups[group] = topLevel(braceBody(entry, open)).map(keyOf).filter(Boolean);
+  const visit = node => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && ts.isCallExpression(node.initializer)
+      && ts.isIdentifier(node.initializer.expression) && node.initializer.expression.text === 'cva') {
+      const config = objectOf(node.initializer.arguments[1]);
+      const variants = config && propertyOf(config, 'variants', file);
+      const groupsObject = variants && objectOf(variants.initializer);
+      if (groupsObject) {
+        const groups = {};
+        for (const group of groupsObject.properties) {
+          if (!ts.isPropertyAssignment(group)) continue;
+          const keys = objectOf(group.initializer);
+          if (keys) groups[keyName(group, file)] = keys.properties.filter(ts.isPropertyAssignment).map(member => keyName(member, file));
+        }
+        found.push({ name: node.name.text, groups });
+      }
     }
-    found.push({ name: match[1], groups });
-  }
+    ts.forEachChild(node, visit);
+  };
+  visit(tree);
   return found;
 }
 
@@ -139,7 +127,7 @@ export function componentData(root) {
   for (const name of readdirSync(dir).filter(file => file.endsWith('.tsx')).sort()) {
     const source = readFileSync(join(dir, name), 'utf8');
     const exports = exportedComponents(source);
-    if (exports.length) files[name.slice(0, -4)] = { exports, variants: cvaVariants(source) };
+    if (exports.length) files[name.slice(0, -4)] = { exports, variants: cvaVariants(source, name) };
   }
   return files;
 }
@@ -162,6 +150,10 @@ export async function buildDesignSystem(root, { outDir = join(root, OUTPUT_DIR),
   // The page's JavaScript: the real shadcn components (`@/components/ui/*` is shadcn/ui, as in the geometry tests).
   const kit = { name: 'kit-sources', setup(builder) {
     builder.onResolve({ filter: /^@\/components\/ui\// }, args => ({ path: join(root, 'shadcn/ui', `${args.path.split('/').at(-1)}.tsx`) }));
+    // sonner and next-themes are app dependencies, not the kit's: the page draws toasts with a small stand-in renderer (lab/design-system/standins).
+    builder.onResolve({ filter: /^sonner$/ }, () => ({ path: join(root, SOURCE_DIR, 'standins/sonner.jsx') }));
+    builder.onResolve({ filter: /^next-themes$/ }, () => ({ path: join(root, SOURCE_DIR, 'standins/next-themes.js') }));
+    builder.onResolve({ filter: /^@\/hooks\/use-mobile$/ }, () => ({ path: join(root, 'shadcn/ui/use-mobile.ts') }));
   } };
   const result = await bundle({ entryPoints: [join(root, SOURCE_DIR, 'main.jsx')], bundle: true, write: false, metafile: true, format: 'iife', platform: 'browser', jsx: 'automatic', minify: true, define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty' }, plugins: [kit], logLevel: 'silent' });
   const js = result.outputFiles[0].text;

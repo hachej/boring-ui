@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
+import { CellRoot } from './cell.jsx';
 import { Frame } from './frame.jsx';
 import { Shell } from './shell.jsx';
-import { isFrame } from './state.js';
+import { cellId, isFrame } from './state.js';
 
-createRoot(document.getElementById('root')).render(isFrame() ? <Frame /> : <Shell />);
+createRoot(document.getElementById('root')).render(isFrame() ? (cellId() ? <CellRoot /> : <Frame />) : <Shell />);

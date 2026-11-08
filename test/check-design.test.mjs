@@ -204,3 +204,16 @@ test('Button size="inline" passes the host-control rule and the h-auto p-0 min-h
   assert.equal(restyled(f, `${button} const a = <Button variant="link" size="inline" className="whitespace-nowrap">Compte 706</Button>;`).length, 0, 'layout stays allowed');
   assert.equal(restyled(f, `${button} const a = <Button variant="link" className="h-auto p-0 min-h-0">Compte 706</Button>;`).length, 1);
 });
+
+test('the design-system page (lab/design-system) is under the design gate: a palette colour there fails, a clean file does not', t => {
+  const f = fixture(t, '<div className="flex" />');
+  f.config.groups[0].folders.push('lab/design-system/');
+  f.config.groups[0].mode = 'FAIL';
+  f.write('lab/design-system/clean.jsx', 'export const A = () => <div className="flex gap-2 bg-background text-foreground" />;');
+  assert.deepEqual(checkDesign(f.root, f).findings.filter(finding => finding.file.startsWith('lab/')), []);
+  f.write('lab/design-system/dirty.jsx', 'export const B = () => <div className="bg-red-500" />;');
+  const found = checkDesign(f.root, f).findings.filter(finding => finding.file === 'lab/design-system/dirty.jsx');
+  assert.deepEqual(found.map(finding => [finding.rule, finding.mode]), [['color', 'FAIL']]);
+  // The real repository: the page's own sources have no finding.
+  assert.deepEqual(checkDesign(designRoot).findings.filter(finding => finding.file.startsWith('lab/design-system/')), []);
+});

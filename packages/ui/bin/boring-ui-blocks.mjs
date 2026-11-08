@@ -526,14 +526,42 @@ export function atlasMain(args, cwd, log, error) {
 export const DESIGN_SYSTEM_USAGE = 'usage: boring-ui-blocks design-system --out <dir> [--theme <name>=<theme.core.css> ...]';
 const DATA_PREFIX = 'globalThis.BORING_DS = ';
 
-/** Why a theme file cannot be added, or undefined: it must be plain CSS whose job is to set custom properties (the core roles), nothing that loads or escapes. */
+/** The only selectors a theme file may use: the light roles on :root, the dark roles on .dark. */
+const THEME_SELECTORS = new Set([':root', '.dark', ':root.dark', '.dark:root']);
+const NO_ROLE = 'no custom property (--name: value) is set on :root or .dark';
+
+/** Why a theme file cannot be added, or undefined: it sets custom properties (the core roles) on `:root` and `.dark`, nothing else. A problem names its line. */
 export function themeFileProblem(text) {
-  let depth = 0;
-  for (const char of text.replace(/\/\*[\s\S]*?\*\//g, '')) { if (char === '{') depth++; else if (char === '}' && --depth < 0) break; }
-  if (depth !== 0) return 'braces do not balance';
-  if (/@import\b|<\/|<!--/i.test(text)) return 'it holds an @import or markup; a theme file only sets custom properties';
-  if (!cssDeclarations(text).some(d => /^(?::root|\.dark)\b/.test(d.selector))) return 'no custom property (--name: value) is set on :root or .dark';
-  return undefined;
+  const bare = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+  const lineAt = (offset) => bare.slice(0, offset).split('\n').length;
+  const markup = bare.search(/<\/|<!--/);
+  if (markup >= 0) return `line ${lineAt(markup)}: markup; a theme file only sets custom properties`;
+  const at = bare.indexOf('@');
+  if (at >= 0) return `line ${lineAt(at)}: an @ rule (${/@[\w-]*/.exec(bare.slice(at))[0]}); a theme file only sets custom properties on :root and .dark`;
+  let sets = 0, i = 0;
+  while (i < bare.length) {
+    const open = bare.indexOf('{', i);
+    const prelude = bare.slice(i, open < 0 ? bare.length : open);
+    const first = i + Math.max(0, prelude.search(/\S/));
+    if (open < 0) return /\S/.test(prelude) ? `line ${lineAt(first)}: text outside a rule` : (sets ? undefined : NO_ROLE);
+    const bad = prelude.split(',').map((item) => item.trim()).find((item) => !THEME_SELECTORS.has(item));
+    if (bad !== undefined) return `line ${lineAt(first)}: selector "${bad || prelude.trim()}"; only :root, .dark, :root.dark and .dark:root are allowed`;
+    const close = bare.indexOf('}', open);
+    if (close < 0) return `line ${lineAt(open)}: braces do not balance`;
+    const body = bare.slice(open + 1, close);
+    if (body.includes('{')) return `line ${lineAt(open + 1 + body.indexOf('{'))}: a nested rule; a theme file only sets custom properties`;
+    let cursor = open + 1;
+    for (const part of body.split(';')) {
+      const spot = cursor + Math.max(0, part.search(/\S/));
+      cursor += part.length + 1;
+      if (!part.trim()) continue;
+      if (!/^\s*--[\w-]+\s*:\s*\S/.test(part)) return `line ${lineAt(spot)}: "${part.trim().slice(0, 40)}" is not a custom property declaration (--name: value)`;
+      if (/\burl\s*\(|\bexpression\s*\(/i.test(part)) return `line ${lineAt(spot)}: a custom property that loads ("${part.trim().slice(0, 40)}")`;
+      sets++;
+    }
+    i = close + 1;
+  }
+  return sets ? undefined : NO_ROLE;
 }
 
 export function designSystemMain(args, cwd, log, error) {

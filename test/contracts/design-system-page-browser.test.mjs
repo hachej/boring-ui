@@ -1,42 +1,58 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { CORE_ROLES } from '../../packages/ui/bin/boring-ui-blocks.mjs';
 import { DATA_PREFIX, buildDesignSystem } from '../../scripts/build-design-system.mjs';
+import { RENDERED_SLOTS, slotExpectations, uncovered } from './design-system-slots.mjs';
 
 // D-1888: a real Chromium opens the built design-system page over file:// and over http, in a sandboxed iframe with an opaque origin (how Factory shows it) and
 // drives the three toggles. Every section renders, the contrast figures are numbers measured from the painted colours, dark switching changes --background, and a
-// changed token in a copy of theme.derived.css changes the page with no page edit. Set EVIDENCE_DIR to also write the shots (390 and 1280, light and dark).
+// changed token in a copy of theme.derived.css changes the page with no page edit. Every shadcn/ui export is rendered by its real component (its data-slot is
+// inside the demo that names it, the overlays open and inside their boxes, the toasts real), and the shell text reads at 4.5:1 in every theme and mode, also for a
+// theme that sets two roles. Set EVIDENCE_DIR to also write the shots (390 and 1280, light and dark; the header in two themes).
 // In CI a missing browser fails the test; it never skips (D-1731).
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const REQUIRED = ['Button', 'Badge', 'Input', 'Select', 'Textarea', 'Checkbox', 'Switch', 'Tabs', 'Table', 'Card', 'Field', 'Dialog', 'Sheet', 'Toaster'];
 const FRAME = 'document.querySelector("iframe[data-ds-frame]")';
 const dataOf = dir => JSON.parse(readFileSync(join(dir, 'data.js'), 'utf8').slice(DATA_PREFIX.length).replace(/;\s*$/, ''));
 const pause = ms => new Promise(done => setTimeout(done, ms));
 
-function sourceExports() {
-  const found = new Set();
-  for (const name of readdirSync(join(root, 'shadcn/ui')).filter(file => file.endsWith('.tsx'))) {
-    for (const block of readFileSync(join(root, 'shadcn/ui', name), 'utf8').matchAll(/^export \{([^}]*)\}/gm)) {
-      for (const item of block[1].split(',').map(text => text.trim().split(/\s+as\s+/).at(-1)).filter(Boolean)) if (/^[A-Z]/.test(item)) found.add(item);
-    }
-  }
-  return found;
-}
+/**
+ * Measures the text of the shell (the header title and the note under it) against the colours painted behind it: every ancestor background is laid over white on a
+ * canvas, which also resolves oklch and color-mix values. Returns the lowest contrast ratio.
+ */
+const SHELL_CONTRAST = `(() => {
+  const context = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+  const paint = (color, base) => {
+    context.clearRect(0, 0, 1, 1); context.fillStyle = 'rgb(' + base.join(',') + ')'; context.fillRect(0, 0, 1, 1);
+    context.fillStyle = color; context.fillRect(0, 0, 1, 1);
+    const [r, g, b] = context.getImageData(0, 0, 1, 1).data; return [r, g, b];
+  };
+  const luminance = rgb => { const [r, g, b] = rgb.map(value => { const unit = value / 255; return unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const ratios = [document.querySelector('[data-ds-section=header] h1'), document.querySelector('[data-ds-applied]')].map(node => {
+    const chain = []; for (let at = node; at; at = at.parentElement) chain.unshift(at);
+    const behind = chain.reduce((base, at) => paint(getComputedStyle(at).backgroundColor, base), [255, 255, 255]);
+    const text = paint(getComputedStyle(node).color, behind);
+    const [high, low] = [luminance(text), luminance(behind)].sort((a, b) => b - a);
+    return (high + 0.05) / (low + 0.05);
+  });
+  return Math.min(...ratios);
+})()`;
 
 /** Reads what the frame shows. It runs inside the frame, so it works from an opaque origin too. */
 const INSPECT = `(() => {
   const all = selector => [...document.querySelectorAll(selector)];
   const overlays = all('[data-ds-bounded]').map(box => {
-    const id = box.dataset.dsBounded, popup = document.querySelector('[data-ds-overlay="' + id + '"]');
-    const outer = box.getBoundingClientRect(), inner = popup && popup.getBoundingClientRect();
-    return { id, inside: !!inner && inner.top >= outer.top - 1 && inner.bottom <= outer.bottom + 1 && inner.left >= outer.left - 1 && inner.right <= outer.right + 1, popup: inner && inner.height, box: outer.height };
+    const id = box.dataset.dsBounded, outer = box.getBoundingClientRect();
+    const popups = [...box.querySelectorAll('[data-ds-overlay]')].map(node => node.getBoundingClientRect());
+    const inside = popups.length > 0 && popups.every(inner => inner.top >= outer.top - 1 && inner.bottom <= outer.bottom + 1 && inner.left >= outer.left - 1 && inner.right <= outer.right + 1);
+    return { id, inside, count: popups.length, popup: popups.length ? popups[0].height : 0, box: outer.height };
   });
+  const card = name => { const node = document.querySelector(name); return node ? getComputedStyle(node).getPropertyValue('--card').trim() : ''; };
   return {
     sections: all('[data-ds-section]').map(node => node.dataset.dsSection),
     roles: all('[data-ds-role]').map(node => node.dataset.dsRole),
@@ -44,7 +60,11 @@ const INSPECT = `(() => {
     ratios: all('[data-ds-contrast]').map(node => node.dataset.ratio),
     pairs: all('[data-ds-pair]').length,
     rendered: [...new Set(all('[data-ds-component]').flatMap(node => node.dataset.dsComponent.split(/\\s+/)))],
-    listed: all('[data-ds-listed]').map(node => node.dataset.dsListed),
+    errors: all('[data-ds-error]').map(node => node.textContent),
+    toasts: all('[data-sonner-toast]').length,
+    cells: all('iframe[data-ds-cell]').length,
+    cards: { light: card('.ds-light'), dark: card('.ds-dark') },
+    slots: ${RENDERED_SLOTS},
     steps: all('[data-ds-step-size]').map(node => node.textContent),
     heights: Object.fromEntries(all('[data-ds-density]').map(node => [node.dataset.dsDensity, node.querySelector('[data-ds-control-height]').textContent])),
     radii: all('[data-ds-radius]').length,
@@ -72,7 +92,10 @@ test('The design-system page renders every section, measures contrast, switches 
   const harborCss = join(work, 'harbor.css');
   writeFileSync(harborCss, ':root {\n  --background: oklch(0.93 0.05 230);\n  --foreground: oklch(0.2 0.02 230);\n}\n.dark {\n  --background: oklch(0.2 0.05 230);\n}\n');
   const harbor = join(work, 'harbor');
-  const added = spawnSync(process.execPath, [join(kit, 'bin/boring-ui-blocks.mjs'), 'design-system', '--out', harbor, '--theme', `harbor=${harborCss}`], { encoding: 'utf8' });
+  // A theme that sets two roles only: every other role, and the whole dark column, must come from the default.
+  const partialCss = join(work, 'partial.css');
+  writeFileSync(partialCss, ':root {\n  --background: oklch(0.95 0.04 40);\n  --foreground: oklch(0.25 0.04 40);\n}\n');
+  const added = spawnSync(process.execPath, [join(kit, 'bin/boring-ui-blocks.mjs'), 'design-system', '--out', harbor, '--theme', `harbor=${harborCss}`, '--theme', `partial=${partialCss}`], { encoding: 'utf8' });
   assert.equal(added.status, 0, added.stderr);
   const derivedCss = readFileSync(join(root, 'packages/ui/styles/theme.derived.css'), 'utf8');
   const changed = derivedCss.replace('--muted-foreground: color-mix(in oklab, var(--foreground) 57%, var(--background));', '--muted-foreground: var(--background);');
@@ -114,8 +137,8 @@ test('The design-system page renders every section, measures contrast, switches 
       await pause(200);
     }
   };
-  const READY = `document.querySelectorAll('[data-ds-listed-block]').length === 1 && document.querySelectorAll('[data-ds-bounded] [data-ds-overlay]').length === 6 && document.querySelectorAll('[data-ds-contrast]').length > 0 && [...document.querySelectorAll('[data-ds-contrast]')].every(node => node.dataset.ratio)`;
-  const exports = sourceExports();
+  const READY = `document.querySelectorAll('[data-ds-bounded]').length > 0 && [...document.querySelectorAll('[data-ds-bounded]')].every(box => box.querySelector('[data-ds-overlay]')) && document.querySelectorAll('[data-sonner-toast]').length > 0 && document.querySelectorAll('iframe[data-ds-cell]').length === 2 && document.querySelectorAll('[data-ds-contrast]').length > 0 && [...document.querySelectorAll('[data-ds-contrast]')].every(node => node.dataset.ratio)`;
+  const expected = slotExpectations(root);
 
   const checkSections = (label, seen) => {
     for (const name of ['colors', 'type', 'shape', 'density', 'components']) if (!seen.sections.includes(name)) problems.push(`${label}: section ${name} is missing`);
@@ -125,9 +148,9 @@ test('The design-system page renders every section, measures contrast, switches 
     if (seen.pairs !== data.pairs.length || seen.ratios.length !== 2 * data.pairs.length) problems.push(`${label}: ${seen.ratios.length} contrast figures for ${data.pairs.length} pairs`);
     if (!seen.ratios.every(ratio => /^\d+\.\d\d$/.test(ratio))) problems.push(`${label}: a contrast figure is not a number: ${seen.ratios.filter(ratio => !/^\d+\.\d\d$/.test(ratio))}`);
     if (!(Number(seen.foregroundLight) > 7 && Number(seen.foregroundDark) > 7)) problems.push(`${label}: foreground on background measures ${seen.foregroundLight} light and ${seen.foregroundDark} dark`);
-    const rendered = new Set(seen.rendered), listed = new Set(seen.listed);
-    for (const name of REQUIRED) if (!rendered.has(name)) problems.push(`${label}: ${name} is not rendered`);
-    for (const name of exports) if (!rendered.has(name) && !listed.has(name)) problems.push(`${label}: export ${name} is neither rendered nor listed`);
+    for (const message of seen.errors) problems.push(`${label}: a demo failed to render: ${message}`);
+    if (seen.toasts < 2) problems.push(`${label}: ${seen.toasts} toasts`);
+    for (const scope of ['light', 'dark']) if (!seen.cards[scope] || /^(transparent|rgba?\(0, 0, 0, 0\))$/.test(seen.cards[scope])) problems.push(`${label}: --card is "${seen.cards[scope]}" in the ${scope} column`);
     if (seen.steps.length !== data.textSteps.length || !seen.steps.every(text => /^\d+(\.\d+)?px \/ \S+/.test(text))) problems.push(`${label}: text steps ${JSON.stringify(seen.steps)}`);
     if (seen.heights.fine !== '36px' || seen.heights.touch !== '44px') problems.push(`${label}: control heights ${JSON.stringify(seen.heights)}`);
     if (seen.radii !== data.radii.length || seen.shadows !== 4) problems.push(`${label}: ${seen.radii} radii, ${seen.shadows} shadows`);
@@ -171,9 +194,31 @@ test('The design-system page renders every section, measures contrast, switches 
     const light = await waitState('light harbor', value => value.dark === false && value.theme === 'harbor');
     assert.notEqual(light.background, themed.background);
     assert.notEqual(light.background, first.background, `${label}: harbor light differs from default light`);
+    // The shell reads in every theme and mode (4.5:1), including a theme that sets only two roles.
+    for (const theme of ['default', 'harbor', 'partial']) {
+      for (const mode of ['light', 'dark']) {
+        await click(`[data-ds-theme=${theme}]`);
+        await click(`[data-ds-mode=${mode}]`);
+        await waitState(`${theme} ${mode}`, value => value.theme === theme && value.dark === (mode === 'dark'));
+        const ratio = await shell(SHELL_CONTRAST);
+        assert.ok(ratio >= 4.5, `${label}: shell text in ${theme} ${mode} measures ${Number(ratio).toFixed(2)}:1`);
+      }
+    }
+    await click('[data-ds-mode=light]');
     await click('[data-ds-theme=default]');
     const back = await waitState('theme default', value => value.theme === 'default' && value.dark === false);
     assert.equal(back.background, first.background, `${label}: switching back restores the default`);
+  };
+
+  /** Every shadcn/ui export is rendered by its real component: the slots found in the frame and in each cell frame, merged, leave nothing uncovered. Needs a same-origin frame. */
+  const checkCoverage = async (label, seen) => {
+    const slots = { ...seen.slots };
+    for (let index = 0; index < seen.cells; index++) {
+      const cell = `document.querySelector("iframe[data-ds-frame]").contentDocument.querySelectorAll("iframe[data-ds-cell]")[${index}]`;
+      await browser.until(`${label} cell ${index}`, `!!${cell}.contentDocument.querySelector('[data-slot=alert-dialog-content]')`);
+      Object.assign(slots, await browser.evaluate(`(() => { const win = ${cell}.contentWindow; return win.eval(${JSON.stringify(RENDERED_SLOTS)}); })()`));
+    }
+    problems.push(...uncovered(expected, slots).map(line => `${label}: ${line}`));
   };
 
   try {
@@ -182,7 +227,9 @@ test('The design-system page renders every section, measures contrast, switches 
       await browser.send('Page.navigate', { url });
       await browser.until(`${label} shell`, `document.querySelector('iframe[data-ds-frame]') !== null`);
       await untilIn(`${label} sections`, READY);
-      checkSections(label, await inFrame(INSPECT));
+      const seen = await inFrame(INSPECT);
+      checkSections(label, seen);
+      if (label === 'http') await checkCoverage(label, seen);
       await drive(label, { shell: expression => browser.evaluate(expression) });
     }
 
@@ -208,6 +255,9 @@ test('The design-system page renders every section, measures contrast, switches 
     await untilIn('site sections', READY);
     const original = await inFrame(INSPECT);
     assert.ok(Number(original.mutedLight) >= 4.5, `muted-foreground on background measures ${original.mutedLight} unchanged`);
+    // A surface with an alpha is composited over what lies under it: black text on 50% white over black is about 5.3:1 (over white it would be 21:1).
+    const alpha = await inFrame(`globalThis.boringDsContrast('black', 'rgb(255 255 255 / 50%)', ['black'])`);
+    assert.ok(alpha > 5 && alpha < 5.6, `alpha contrast composites over the surface behind: ${alpha}`);
 
     // 4. Shots: the sections at 390 (touch) and 1280, light and dark, the whole frame page tall; and the header with its frame.
     if (shots) {
@@ -218,7 +268,7 @@ test('The design-system page renders every section, measures contrast, switches 
           // A hash-only change from /site/index.html is a same-document navigation, so leave the page first.
           await browser.send('Page.navigate', { url: 'about:blank' });
           await browser.send('Page.navigate', { url: `${origin}/site/index.html#frame=1&mode=${mode}&theme=default` });
-          await browser.until('frame page', `document.querySelectorAll('[data-ds-bounded] [data-ds-overlay]').length === 6 && [...document.querySelectorAll('[data-ds-contrast]')].every(node => node.dataset.ratio)`);
+          await browser.until('frame page', READY);
           await pause(400);
           const height = await browser.evaluate('Math.min(document.documentElement.scrollHeight, 14000)');
           await browser.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
@@ -227,9 +277,12 @@ test('The design-system page renders every section, measures contrast, switches 
         }
       }
       await browser.send('Emulation.clearDeviceMetricsOverride');
-      await browser.send('Page.navigate', { url: `${origin}/harbor/index.html#mode=dark&theme=harbor` });
-      await untilIn('header shot', READY);
-      await browser.screenshot('design-system-header-harbor-dark.png');
+      for (const [theme, mode] of [['harbor', 'dark'], ['partial', 'dark'], ['partial', 'light']]) {
+        await browser.send('Page.navigate', { url: 'about:blank' });
+        await browser.send('Page.navigate', { url: `${origin}/harbor/index.html#mode=${mode}&theme=${theme}` });
+        await untilIn(`header shot ${theme} ${mode}`, READY);
+        await browser.screenshot(`design-system-header-${theme}-${mode}.png`);
+      }
       writeFileSync(join(shots, 'design-system-measurements.json'), JSON.stringify({ original: { muted: original.mutedLight, foreground: original.foregroundLight }, changedToken: { muted: moved.mutedLight }, steps: original.steps, heights: original.heights }, null, 1));
     }
     assert.deepEqual(problems, []);

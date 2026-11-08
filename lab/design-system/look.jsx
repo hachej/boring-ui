@@ -108,7 +108,7 @@ export function Density() {
       <div className="flex flex-col gap-1">
         {[1, 2, 3, 4, 6, 8, 12, 16].map(unit => (
           <div key={unit} data-ds-space={unit} className="flex items-center gap-3">
-            <code className="w-16">spacing {unit}</code>
+            <code className="w-24 shrink-0 whitespace-nowrap">spacing {unit}</code>
             <span className="h-3 rounded-sm bg-primary" style={{ width: `calc(var(--spacing) * ${unit})` }} />
           </div>
         ))}

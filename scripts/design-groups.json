@@ -84,7 +84,8 @@
       "folders": [
         "registry/",
         "packages/ui/src/",
-        "packages/ui/styles/"
+        "packages/ui/styles/",
+        "lab/design-system/"
       ],
       "selector": "[data-boring], [data-slot], .boring-viewer, .app-shell"
     }
