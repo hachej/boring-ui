@@ -1226,6 +1226,30 @@ test('D-1900: without an AppShell locale, chatProps.locale applies to the chat a
   await opened.unmount();
 });
 
+// With a panel showing, the layer's header follows the shell, then that panel's own locale, then chatProps, then English: a French assistant spec
+// must not turn the header of an English panel French. Fails on 9dfb5d2, where chatProps.locale came before the panel's.
+test('D-1900: no shell locale, chatProps fr, panel en: the opened improve header is English', async t => {
+  const opened = await openedLayer(t, 390, { locale: undefined, agent: emptyAgent({ locale: 'fr' }), panel: { ...stubSlot, locale: 'en' } });
+  const document = opened.window.document;
+  await opened.act(async () => opened.latest().open('improve', 'half'));
+  await settle(opened, () => document.querySelector('[data-testid=agent-layer-close]'));
+  const english = tables.appShellText('en');
+  assert.equal(opened.latest().showing, 'improve');
+  assert.equal(document.querySelector('[data-testid=agent-layer-title]')?.textContent, english.improve, 'the title is English');
+  assert.equal(document.querySelector('[data-testid=agent-layer-close]')?.getAttribute('aria-label'), english.close, 'Close is English');
+  assert.equal(document.querySelector('[data-testid=agent-layer-back]')?.getAttribute('aria-label'), english.back, 'Back is English');
+  await opened.unmount();
+});
+
+test('D-1900: no shell locale, chatProps fr, panel en: the assistant header stays French (no panel showing)', async t => {
+  const opened = await openedLayer(t, 390, { locale: undefined, agent: emptyAgent({ locale: 'fr' }), panel: { ...stubSlot, locale: 'en' } });
+  const document = opened.window.document;
+  await opened.act(async () => opened.latest().open('agent', 'half'));
+  await settle(opened, () => document.querySelector('[data-testid=agent-layer-close]'));
+  assert.equal(document.querySelector('[data-testid=agent-layer-close]')?.getAttribute('aria-label'), tables.appShellText('fr').close, 'Close is French');
+  await opened.unmount();
+});
+
 // The conversation list (History) and the desktop account menu open on user action, so they are driven open here.
 const conversationsOf = () => ({ items: [{ id: 'c1', title: 'Fictional week plan', updatedAt: '2026-01-02T10:00:00Z', lastMessage: 'Fictional last message' }], activeId: 'c1', onSelect() {}, onNew() {} });
 for (const locale of ['en', 'fr']) {
