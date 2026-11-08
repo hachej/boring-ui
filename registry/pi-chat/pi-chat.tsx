@@ -281,7 +281,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
       </form> : <h2 className="m-0 min-w-0 flex-1 truncate font-(family-name:--chat-display) text-sm font-medium tracking-tight max-md:text-center">{onRenameTitle ? <Button variant="ghost" className="max-w-full" onClick={() => setRenamingTitle(true)}><span className="truncate">{conversationTitle ?? title}</span></Button> : conversationTitle ?? title}</h2>}
       {showHistory && conversations && historyList && <Button variant="ghost" size="sm" data-testid="history-open" aria-haspopup="dialog" aria-expanded={pickingConversation} disabled={state.disposed}
         onClick={() => setPickingConversation(open => !open)}><icons.history data-icon="inline-start" aria-hidden="true" />{labels.history}</Button>}
-      <BlockActions actions={headerActions} testId="chat-action" menuLabel={labels.moreActions} />
+      <BlockActions actions={headerActions} testId="chat-action" menuLabel={labels.moreActions} menuClassName="pi-chat" />
       {showConnectionStatus && <ConnectionBadge kind={connectionKind} />}
       {controls}
     </header>}

@@ -1534,7 +1534,7 @@ const PROFILE = Object.freeze({
 // ---- Theme files and overlays ---------------------------------------------------------------------------------------------------------
 
 /** The core roles: what the Factory template's theme.core.css sets (its :root and .dark colour roles, and the radius, border width, font, text and shadow tokens). */
-export const CORE_ROLES = Object.freeze(['background', 'card', 'foreground', 'primary', 'primary-foreground', 'accent', 'muted', 'border', 'ring', 'destructive', 'success', 'warning', 'info', 'chart-series-1', 'chart-series-2', 'chart-series-3', 'chart-series-4', 'chart-series-5', 'radius', 'border-width', 'font-sans', 'font-display', 'font-mono', 'text-body', 'text-title', 'shadow-xs', 'shadow-sm', 'shadow-md', 'shadow-lg']);
+export const CORE_ROLES = Object.freeze(['background', 'card', 'foreground', 'primary', 'primary-foreground', 'accent', 'muted', 'border', 'ring', 'destructive', 'success', 'warning', 'info', 'chart-series-1', 'chart-series-2', 'chart-series-3', 'chart-series-4', 'chart-series-5', 'radius', 'border-width', 'font-sans', 'font-display', 'font-mono', 'text-body', 'text-title', 'text-chat', 'shadow-xs', 'shadow-sm', 'shadow-md', 'shadow-lg']);
 /**
  * What the Factory template's theme.derived.css computes (the names the kit derives from the core roles). An app sets the core roles; it
  * does not set these above its EXCEPTIONS block. A name in neither list is the app's own token (--pm-*, --shadow-halo, --text-2xs).

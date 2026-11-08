@@ -1,6 +1,7 @@
 # Unreleased
 
 - **`AppShell locale` wins over a panel's own locale, so one screen speaks one language (`app-shell`; D-1900).** The shell's words (account sheet « Compte » / « Se déconnecter », NavUser, tabs) and the layer's title now follow `agent.chatProps.locale`, then `AppShell locale`, then the panel's `locale` (it was the panel's first, so a panel that defaulted to French made an English app show French). Nothing to change in an app that already passes `locale`. Consumer action: re-sync `app-shell` (`registry:build` refreshes `public/r`). Test: `test/contracts/app-shell-render.impl.mjs`; shots: `test/contracts/app-shell-locale-shots.test.mjs`.
+- **The assistant reads larger: new core token `--text-chat` (D-1901).** pi-chat's message prose, Markdown, composer, empty state and cards now compute to `--text-chat` (default 0.9375rem, line-height 1.6, at least 1rem on touch); meta rows are 0.93 of it and code 0.875. The rules ship in the kit's `app.css`, so a kit bump resizes the chat itself. Visual change for every app. To size the composer menus, the model picker, the queue menu, the header and reply overflow menus and the camera too, re-sync the `button`, `pi-chat`, `pi-chat-pickers` and `pi-chat-attachments` items (they now carry the `pi-chat` class on those portalled roots). An app may set `--text-chat` (and `--text-chat--line-height`) in its `theme.core.css`. Test: `test/contracts/chat-text-size.test.mjs`; see `features/chat.md`.
 
 # Migrating to 0.4.71
 
