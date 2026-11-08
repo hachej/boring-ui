@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`boring-ui-blocks atlas <dir> --url <base url> --out <dir>` shoots every Atlas state (package `@hachej/boring-ui-kit`, new and additive; D-1831 slice 2).** After the check, it drives a headless Chromium (`--chromium <path>` or the `CHROMIUM` env) through each state's `given.steps` and writes `<id>.<390|1280>.<light|dark>.png` plus `index.json`; `--since <old index.json>` marks each shot `new`, `changed` or `same`. `--check` alone is unchanged; without `--check` the command used to exit 2 and now needs `--url` and `--out`. No consumer action. Test: `test/atlas-shoot.test.mjs`; see `features/atlas.md`.
+
 # Migrating to 0.4.70
 
 - **Atlas manifest and `boring-ui-blocks atlas <dir> --check` (new, additive; D-1831 slice 1).** An app may write `web/src/atlas.json` (states with `id`, `page`, `title`, `given: { fixture, steps }`, optional `flow` and `after`) and validate it with the new `atlas` command against the published `@hachej/boring-ui-kit/atlas.schema.json`; `--fixtures <dir>` also requires each named fixture file to exist. Shooting and the viewer come in later slices. No consumer action. Test: `test/atlas.test.mjs`; see `features/atlas.md`.

@@ -1,23 +1,28 @@
 # Atlas
 
-The Atlas is one catalogue of every screen and state of an app, shot the same way. This is its first slice: the manifest an app writes (`web/src/atlas.json`), its published JSON schema and the command that checks it. Shooting and the viewer land in later slices of D-1831.
+The Atlas is one catalogue of every screen and state of an app, shot the same way. It starts with the manifest an app writes (`web/src/atlas.json`), its published JSON schema and the command that checks it, then shoots it. Slice 2 shoots the states; the viewer lands in a later slice of D-1831.
 
 ## Sub-features
 
 - `atlas-schema` the manifest format and `boring-ui-blocks atlas <dir> --check [--fixtures <dir>] [--json]`. A state is `id`, `page`, `title`, `given: { fixture, steps? }`, and optionally `flow` and `after` (the label of the arrow that leads to it, only with `flow`); no other field, at either level. `given` is the grammar of an app's `features/examples.json`: `fixture` is a `*.synthetic.*` file of the app's `features/fixtures/` (invented data only), `steps` run in order from `open <screen>`, `upload [<fixture>]` (default `given.fixture`), `click <label>`, `fill <label> <value>` and the atlas-only `wait <text>`; a multi-word label or value is quoted "like this" or « like this ». The schema is `packages/ui/atlas.schema.json` (export `./atlas.schema.json`); the hand-written validator is `packages/ui/bin/boring-ui-blocks.mjs`, dispatched from `packages/ui/bin/boring-ui-blocks.mjs`.
+- `atlas-shoot` `boring-ui-blocks atlas <dir> --url <base url> --out <dir> [--fixtures <dir>] [--chromium <path>] [--commit <sha>] [--json]`: runs the check first (same findings, exit 1), then drives a headless Chromium over CDP (Chromium path from `--chromium`, else the `CHROMIUM` env, else exit 2) and shoots every state at 390 (touch, coarse pointer, mobile) and 1280, light and dark, as `<out>/<id>.<390|1280>.<light|dark>.png` (full page), with `<out>/index.json`: `{ version: 1, commit, url, createdAt, states: [{ id, page, title, flow?, after?, shots: [{ viewport, mode, file, sha256, consoleErrors, status }] }] }`. Each state opens `<url><page>`, then runs its `given.steps` in order on the real page with real input; a step waits up to 10 s for its target, and a step that fails stops that state, exits 1 and prints `state <id> step <n> "<step>": <reason>` (n counts from 1; the state keeps `shots: []`). Dark is `prefers-color-scheme: dark` plus the `dark` class on `<html>`; light is the opposite. `consoleErrors` are the console errors and uncaught exceptions of that shot.
+- `atlas-since` `--since <old index.json>` sets each shot's `status`: `same` when the sha256 matches or fewer than 0.1% of pixels differ by more than 8 in any channel, `changed` otherwise or when the size differs, `new` when the old index lacks that state or shot. Without `--since` every shot is `new`.
 
 ## How to get to it (user POV)
 
 - An app writes `web/src/atlas.json` (point `$schema` at `@hachej/boring-ui-kit/atlas.schema.json` for editor help) and runs `npx boring-ui-blocks atlas web/src --check --fixtures features/fixtures`. Each finding prints with its path, such as `states[2].given.steps[0]`; the exit code is 1 on any finding, 0 otherwise.
+- To shoot, start the app's preview and run `CHROMIUM=<path> npx boring-ui-blocks atlas web/src --url http://127.0.0.1:4173 --out .cache/atlas --fixtures features/fixtures` (add `--since <previous>/index.json` to mark what changed).
 
 ## Driving it with the kit's node tests
 
-Preconditions: none (Node only, fictional manifests under `test/fixtures/atlas/`).
+Preconditions: Node only for the check (fictional manifests under `test/fixtures/atlas/`); shooting also needs `CHROMIUM` set to a Chromium or chrome-headless-shell binary (CI has it and the test fails, never skips, without it).
 
 - **Schema and check.** `atlas-schema`: `node --test test/atlas.test.mjs` spawns the real bin on a valid manifest (4 states, one flow of 2 with `after`), an unknown verb, a duplicate id, a fixture file the directory lacks, a non-synthetic fixture name, `after` without `flow`, an unbalanced quote and a missing `atlas.json`; it also reads the schema file and requires the validator to agree with it. By hand: `node packages/ui/bin/boring-ui-blocks.mjs atlas test/fixtures/atlas/valid --check --fixtures test/fixtures/atlas/fixtures`.
+
+- **Shoot.** `atlas-shoot` and `atlas-since`: `node --test test/atlas-shoot.test.mjs` serves the fictional app `test/fixtures/atlas/app/` over http and spawns the real bin: 3 states (a form flow of 2 with `fill`, `click` and `wait`, and an `upload` of a synthetic CSV) give 12 PNGs and an `index.json` with every field; a manifest whose step `click Valider` has no target exits 1 naming the state, the step number and the step text; a second run with `--since`, after one page changed, marks only that state `changed`, the others `same` and an added state `new`. `pngChanged` is covered on generated PNGs without a browser.
 
 ## Gotchas
 
 - A state is reached by its `given.steps` on the preview's standard fictional seed. A later `--fixture-url` fallback, for data that steps cannot make, will be honoured only on previews and dev identity and refused on live apps; it must never be wired into production. It is not part of this slice.
-- Without `--check` the command exits 2 and says shooting lands in the next slice; it never fakes a shot.
+- Without `--check`, the command needs `--url` and `--out` (else exit 2) and a browser (else exit 2); it never fakes a shot. The bin stays one file with only `node:` imports, so the PNG comparison is inlined (`decodePng` handles 8-bit RGB/RGBA, not interlaced, which is what Chromium writes).
 - `--fixtures` is optional: without it, only the `*.synthetic.*` name is checked, not that the file exists.

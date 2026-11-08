@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../../packages/ui/atlas.schema.json",
+  "states": [
+    { "id": "connexion.form", "page": "/connexion", "title": "Connexion", "given": { "fixture": "ledger.synthetic.csv" }, "flow": "connexion" },
+    { "id": "connexion.merci", "page": "/connexion", "title": "Connexion, merci", "given": { "fixture": "ledger.synthetic.csv",
+      "steps": ["fill Courriel jeanne@example.test", "click Envoyer", "wait Merci"] }, "flow": "connexion", "after": "Envoyer" },
+    { "id": "ecritures.import", "page": "/ecritures", "title": "Écritures, importées", "given": { "fixture": "ledger.synthetic.csv", "steps": ["upload", "wait Importé : 3 lignes"] } }
+  ]
+}

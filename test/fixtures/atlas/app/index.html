@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atelier fictif</title>
+<link rel="icon" href="data:,">
+<style>
+  body { margin: 0; font: 16px/1.4 sans-serif; background: #fff; color: #111; }
+  .dark body { background: #14161a; color: #eee; }
+  nav { display: flex; gap: 16px; padding: 12px 16px; border-bottom: 1px solid #888; }
+  nav a { color: inherit; min-height: 44px; display: inline-flex; align-items: center; }
+  main { padding: 16px; }
+  label { display: block; margin: 12px 0 4px; }
+  input { font: inherit; padding: 8px; width: 100%; box-sizing: border-box; }
+  button { font: inherit; min-height: 44px; padding: 0 16px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<nav><a href="/connexion">Connexion</a><a href="/ecritures">Écritures</a><a href="/apropos">À propos</a></nav>
+<main id="main"></main>
+<script>
+  // A tiny router: the route names a fragment under /pages, loaded into <main>. Fictional app, no data.
+  const route = { '/connexion': 'connexion', '/ecritures': 'ecritures', '/apropos': 'apropos' }[location.pathname] ?? 'apropos';
+  fetch(`/pages/${route}.html`).then(r => r.text()).then(html => {
+    document.getElementById('main').innerHTML = html;
+    if (route === 'connexion') document.getElementById('login').addEventListener('submit', event => {
+      event.preventDefault();
+      document.getElementById('main').innerHTML = '<h1>Merci</h1><p>Message envoyé à ' + document.getElementById('mail').value + '.</p>';
+    });
+    if (route === 'ecritures') document.getElementById('csv').addEventListener('change', event => {
+      const file = event.target.files[0];
+      file.text().then(text => { document.getElementById('result').textContent = 'Importé : ' + text.trim().split('\n').length + ' lignes'; });
+    });
+  });
+</script>
+</body>
+</html>
