@@ -586,7 +586,7 @@ function useTitle(): { text: AppShellText; title: string } {
   const layer = useInternal();
   const improve = layer.showing === 'improve' ? layer.improve : undefined;
   const spec = improve ? undefined : layer.agent;
-  const text = appShellText((improve?.locale as AppShellLocale | undefined) ?? spec?.chatProps?.locale ?? layer.locale);
+  const text = appShellText(layer.agent?.chatProps?.locale ?? layer.locale ?? (improve?.locale as AppShellLocale | undefined));
   const title = improve ? improve.label ?? text.improve : (spec?.chatProps?.labels?.title ?? text.assistant);
   return { text, title };
 }

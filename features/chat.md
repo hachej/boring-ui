@@ -9,6 +9,7 @@
 - `chat-connection-status` reusable `ChatConnectionNotice` / `ChatStatusLine` in `registry/pi-chat/notice.tsx`; PiChat and Ambient retain host connection recovery and identical developer/natural status choices. Compact Ambient keeps `loadFailedShort`/`disconnectedShort` overrides unless the host error renderer is supplied.
 - `chat-jump-latest` scrolled up, the down arrow sits in its own row under the messages; at the latest message the row is gone, so no empty band sits above the composer (D-1403). `registry/pi-chat/pi-chat.tsx`.
 - `chat-composer` multi-line composer, including sizing/width observation after recording trash, queue (steer, edit, remove), draft kept per conversation (`useChatDraft`, `packages/ui/src/chat-react-draft.ts`). `registry/pi-chat/composer.tsx`, `queue.tsx`.
+- `chat-locale` (D-1900) `PiChat locale` (`en` | `fr`) picks the base words of the placeholder, empty state, composer and history; inside `AppShell` the shell's `locale` is passed to the chat, so the app sets it once (see `shell-locale` in `features/app-shell.md`). An explicit `chatProps.locale` wins.
 - `chat-slash` the `/` menu: commands and skills. `registry/pi-chat-slash/slash-menu.tsx`.
 - `chat-mentions` the `@` menu for files and, through `MentionsConfig`, any catalog of ids. `registry/pi-chat-mentions/mention-menu.tsx`, `registry/pi-chat/config.ts`.
 - `chat-attachments` attach, paste, drop, paste-to-file, phone camera sheet. `registry/pi-chat-attachments/camera-sheet.tsx`.

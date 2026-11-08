@@ -71,7 +71,7 @@ for (const locale of ['en', 'fr']) {
       await browser.until('shell mounted', `window.__layer && document.querySelector('[data-testid=app-shell]') && document.readyState === 'complete'`);
       await wait(300);
       await browser.evaluate(`window.__layer.open('agent', '${touch ? 'half' : 'open'}')`);
-      await browser.until('chat open', `document.querySelector('[data-spec=agent] [data-testid=composer-input]')`);
+      await browser.until('chat open', `document.querySelector('[data-spec=agent] [data-boring=pi-chat]')`);
       await wait(900);
       await browser.screenshot(`app-shell-${locale}-${width}-chat.png`);
       if (touch) {

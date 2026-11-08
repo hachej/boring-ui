@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`AppShell locale` wins over a panel's own locale, so one screen speaks one language (`app-shell`; D-1900).** The shell's words (account sheet « Compte » / « Se déconnecter », NavUser, tabs) and the layer's title now follow `agent.chatProps.locale`, then `AppShell locale`, then the panel's `locale` (it was the panel's first, so a panel that defaulted to French made an English app show French). Nothing to change in an app that already passes `locale`. Consumer action: re-sync `app-shell` (`registry:build` refreshes `public/r`). Test: `test/contracts/app-shell-render.impl.mjs`; shots: `test/contracts/app-shell-locale-shots.test.mjs`.
+
 # Migrating to 0.4.71
 
 - **`boring-ui-blocks atlas <dir> --url <base url> --out <dir>` shoots every Atlas state (package `@hachej/boring-ui-kit`, new and additive; D-1831 slice 2).** After the check, it drives a headless Chromium (`--chromium <path>` or the `CHROMIUM` env) through each state's `given.steps` and writes `<id>.<390|1280>.<light|dark>.png` plus `index.json`; `--since <old index.json>` marks each shot `new`, `changed` or `same`. `--check` alone is unchanged; without `--check` the command used to exit 2 and now needs `--url` and `--out`. No consumer action. Test: `test/atlas-shoot.test.mjs`; see `features/atlas.md`.
