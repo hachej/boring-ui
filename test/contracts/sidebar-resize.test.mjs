@@ -65,11 +65,15 @@ before(async () => {
 after(async () => { await browser?.close(); await new Promise(done => server ? server.close(done) : done()); });
 
 const wait = ms => new Promise(done => setTimeout(done, ms));
+let pointerScript = null;
+const pointerShim = (pointer, hover) => `(() => { const real = window.matchMedia.bind(window); window.matchMedia = query => { const list = real(query); const m = /^\\(\\s*(any-)?(pointer|hover)\\s*:\\s*(\\w+)\\s*\\)$/.exec(String(query).trim()); if (m) Object.defineProperty(list, 'matches', { get: () => m[3] === (m[2] === 'pointer' ? '${pointer}' : '${hover}') }); return list; }; })()`;
 async function mount(query = '', { width = 1280, touch = false, clear = true } = {}) {
   await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: touch });
   await browser.send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: 5 });
-  // Headless Chromium does not promise a fine pointer: say which pointer this person has.
-  await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: touch ? 'coarse' : 'fine' }, { name: 'hover', value: touch ? 'none' : 'hover' }] });
+  // Headless Chromium does not promise a fine pointer (the CDP media emulation has no pointer feature), so the page is told which pointer this person has:
+  // every `(pointer: x)` / `(hover: x)` query answers for a mouse, or for a finger when `touch`.
+  if (pointerScript) await browser.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: pointerScript });
+  pointerScript = (await browser.send('Page.addScriptToEvaluateOnNewDocument', { source: pointerShim(touch ? 'coarse' : 'fine', touch ? 'none' : 'hover') })).identifier;
   if (clear) { await browser.send('Page.navigate', { url: `http://127.0.0.1:${port}/?clear=1` }); await browser.until('origin ready', `document.readyState === 'complete'`); await browser.evaluate(`localStorage.clear()`); }
   await browser.send('Page.navigate', { url: `http://127.0.0.1:${port}/?${query}` });
   await browser.until('shell mounted', `document.querySelector('[data-slot=sidebar-gap]') !== null && document.readyState === 'complete'`);
