@@ -102,7 +102,7 @@ function ResizeHandle({ resize }: { readonly resize: SidebarResize }) {
   // The theme's width, until one is chosen: read from the gap in an observer callback (a subscription), not in an effect body.
   useEffect(() => {
     const element = ref.current?.closest('[data-slot=sidebar-wrapper]')?.querySelector<HTMLElement>('[data-slot=sidebar-gap]');
-    if (!element) return undefined;
+    if (!element || typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(() => setMeasured(element.getBoundingClientRect().width / rootRem()));
     observer.observe(element);
     return () => observer.disconnect();

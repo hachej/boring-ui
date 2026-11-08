@@ -78,14 +78,14 @@ async function mount(query = '', { width = 1280, touch = false, clear = true } =
   pointerScript = (await browser.send('Page.addScriptToEvaluateOnNewDocument', { source: pointerShim(touch ? 'coarse' : 'fine', touch ? 'none' : 'hover') })).identifier;
   if (clear) { await browser.send('Page.navigate', { url: `http://127.0.0.1:${port}/?clear=1` }); await browser.until('origin ready', `document.readyState === 'complete'`); await browser.evaluate(`localStorage.clear()`); }
   await browser.send('Page.navigate', { url: `http://127.0.0.1:${port}/?${query}` });
-  await browser.until('shell mounted', `document.querySelector('[data-slot=sidebar-gap]') !== null && document.readyState === 'complete'`);
+  await browser.until('shell mounted', `document.querySelector('[data-testid=app-shell]') !== null && document.readyState === 'complete'`);
   await wait(500);
 }
 const gap = () => browser.evaluate(`document.querySelector('[data-slot=sidebar-gap]').getBoundingClientRect().width`);
 const aria = name => browser.evaluate(`document.querySelector('${RAIL}').getAttribute('${name}')`);
 const stored = () => browser.evaluate(`localStorage.getItem('${KEY}')`);
 const centre = () => browser.evaluate(`(() => { const r = document.querySelector('${RAIL}').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-const dragBy = async delta => { const box = await centre(); await browser.drag(RAIL, box.x + delta); await wait(300); };
+const dragBy = async delta => { const box = await centre(); await browser.drag(`document.querySelector('${RAIL}')`, box.x + delta); await wait(300); };
 const key = async name => { await browser.evaluate(`document.querySelector('${RAIL}').focus()`); await browser.press(name); await wait(300); };
 
 test('without `resizable` the rail is the same toggle button: no separator, no storage', { skip, timeout: 120000 }, async () => {
