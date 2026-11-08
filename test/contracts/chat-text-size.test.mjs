@@ -74,19 +74,19 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
     }
     return { token, small, title: size('header h2'), userProse: size('[data-role=user] [data-slot=bubble-content]'), prose: size('[data-role=assistant] [data-slot=bubble-content]'),
       li: size('[data-role=assistant] li'), cell: size('[data-role=assistant] td'), codespan: size('[data-role=assistant] p code'), codeblock: size('[data-testid=code-block] pre'),
-      composer: size('[data-testid=composer-input]'), empty: size('[data-slot=empty-description]'), line: size('[data-slot=trace-line]'), time: size('[data-testid=message-time]'), answered: size('[data-testid=answered-by]'), question: size('[data-testid=question-text]'), questionInput: size('[data-testid=question-input]'), approval: size('[data-testid=approval-card] [data-slot=item-title]'), titleButton: size('header h2 button'), plusItem: size('[data-testid=composer-plus-menu] [role=menuitem]'), modelItem: size('[data-testid=composer-model-menu] [role=menuitemradio], [data-testid=composer-model-menu] [role=menuitem]') };
+      composer: size('[data-testid=composer-input]'), empty: size('[data-slot=empty-description]'), line: size('[data-slot=trace-line]'), time: size('[data-testid=message-time]'), answered: size('[data-testid=answered-by]'), question: size('[data-testid=question-text]'), questionInput: size('[data-testid=question-input]'), approval: size('[data-testid=approval-card] [data-slot=item-title]'), titleButton: size('header h2 button'), plusItem: size('[data-testid=composer-plus-menu] [role=menuitem]'), headerItem: size('[data-testid=chat-action-more-list] [role=menuitem]'), replyItem: size('[data-testid=reply-action-more-list] [role=menuitem]'), modelItem: size('[data-testid=composer-model-menu] [role=menuitemradio], [data-testid=composer-model-menu] [role=menuitem]') };
   })()`);
   const near = (actual, expected, label) => assert.ok(actual !== null && Math.abs(actual - expected) < 0.2, `${label}: ${actual}px, expected ${expected}px`);
-  const states = ['empty', 'reply', 'thought', 'streaming', 'question', 'approval', 'plus', 'model'];
+  const states = ['empty', 'reply', 'thought', 'streaming', 'question', 'approval', 'plus', 'model', 'header-menu', 'reply-menu'];
   const report = [];
   try {
     for (const [width, mobile] of [[390, true], [1280, false]]) {
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile });
       await browser.send('Emulation.setTouchEmulationEnabled', { enabled: mobile, maxTouchPoints: 5 });
       for (const theme of ['light', 'dark']) for (const state of states) {
-        await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?state=${state === 'plus' || state === 'model' ? 'reply' : state}&theme=${theme}&w=${width}` });
+        await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?state=${['plus', 'model', 'header-menu', 'reply-menu'].includes(state) ? 'reply' : state}&theme=${theme}&w=${width}` });
         await browser.until('chat mounted', `document.querySelector('.pi-chat') && document.readyState === 'complete'`);
-        if (state === 'plus' || state === 'model') { const box = await browser.evaluate(`(() => { const r = document.querySelector('[data-testid=composer-${state}]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`); for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await browser.send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 }); await browser.until('menu open', `document.querySelector('[data-testid=composer-${state}-menu]')`); }
+        const trigger = { plus: 'composer-plus', model: 'composer-model', 'header-menu': 'chat-action-more', 'reply-menu': 'reply-action-more' }[state]; if (trigger) { const box = await browser.evaluate(`(() => { const r = document.querySelector('[data-testid=${trigger}]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`); for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await browser.send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 }); await browser.until('menu open', `document.querySelector('[data-testid=${trigger}-list], [data-testid=${trigger}-menu]')`); }
         if (state === 'thought') { await browser.evaluate(`document.querySelector('[data-testid=activity] button')?.click()`); await new Promise(done => setTimeout(done, 500)); await browser.evaluate(`document.querySelectorAll('[data-testid=tool-card] button, [data-testid=reasoning] button').forEach(button => button.click())`); }
         await new Promise(done => setTimeout(done, 500));
         const m = await measure(); report.push({ width, theme, state, m });
@@ -113,6 +113,8 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
         if (state === 'approval') near(m.approval?.size ?? null, prose, `${label}: approval card title`);
         if (state === 'plus') assert.ok(m.plusItem && m.plusItem.size >= 13, `${label}: the + menu is sized by the chat (${m.plusItem?.size}px)`);
         if (state === 'model') assert.ok(m.modelItem && m.modelItem.size >= 13, `${label}: the model menu is sized by the chat (${m.modelItem?.size}px)`);
+        if (state === 'header-menu') assert.ok(m.headerItem && m.headerItem.size >= 13, `${label}: the header overflow menu is sized by the chat (${m.headerItem?.size}px)`);
+        if (state === 'reply-menu') assert.ok(m.replyItem && m.replyItem.size >= 13, `${label}: the reply overflow menu is sized by the chat (${m.replyItem?.size}px)`);
         near(m.titleButton?.size ?? null, prose, `${label}: the rename title button`);
         near(m.title?.size ?? null, prose, `${label}: panel title`); assert.equal(m.title.weight, '500', `${label}: panel title is medium`);
       }
