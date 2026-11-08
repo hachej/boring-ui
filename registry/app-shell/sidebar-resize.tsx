@@ -93,13 +93,20 @@ export function ResizableRail({ resize }: { readonly resize: SidebarResize | und
 }
 
 function ResizeHandle({ resize }: { readonly resize: SidebarResize }) {
-  const drag = useRef<{ x: number; rem: number; sign: number; moved: boolean; frozen: HTMLElement[] } | null>(null);
-  const [now, setNow] = useState<number | null>(null);
+  const drag = useRef<{ x: number; rem: number; sign: number; moved: boolean } | null>(null);
+  const [measured, setMeasured] = useState<number | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const gap = () => ref.current?.closest('[data-slot=sidebar-wrapper]')?.querySelector<HTMLElement>('[data-slot=sidebar-gap]') ?? null;
   // The width in rem: the chosen one, else what the theme gives (the gap's own width).
   const current = () => resize.widthRem ?? (gap()?.getBoundingClientRect().width ?? 0) / rootRem();
-  useEffect(() => { setNow(roundRem(current())); });
+  // The theme's width, until one is chosen: read from the gap in an observer callback (a subscription), not in an effect body.
+  useEffect(() => {
+    const element = ref.current?.closest('[data-slot=sidebar-wrapper]')?.querySelector<HTMLElement>('[data-slot=sidebar-gap]');
+    if (!element) return undefined;
+    const observer = new ResizeObserver(() => setMeasured(element.getBoundingClientRect().width / rootRem()));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const direction = () => (ref.current?.closest('[data-side]')?.getAttribute('data-side') === 'right' ? -1 : 1);
   const to = (start: { x: number; rem: number; sign: number }, clientX: number) => start.rem + ((clientX - start.x) * start.sign) / rootRem();
   // The sidebar animates its width; following the pointer must not lag behind it.
@@ -116,7 +123,7 @@ function ResizeHandle({ resize }: { readonly resize: SidebarResize }) {
     aria-label="Resize sidebar"
     aria-valuemin={resize.minRem}
     aria-valuemax={resize.maxRem}
-    aria-valuenow={now ?? undefined}
+    aria-valuenow={roundRem(resize.widthRem ?? measured ?? 0) || undefined}
     tabIndex={0}
     title="Resize sidebar (double-click to reset)"
     className={RAIL}
