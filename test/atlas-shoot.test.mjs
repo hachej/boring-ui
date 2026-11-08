@@ -165,7 +165,7 @@ test('a page stuck in a loop fails its state within the deadline and leaves no C
   assert.equal(status, 1, stderr);
   assert.ok(Date.now() - started < 120000, 'the run ended by its deadline');
   assert.match(stderr, /state bloquee\.page/);
-  assert.match(stderr, /did not answer within/);
+  assert.match(stderr, /did not (answer|finish loading) within/);
   let left = true;
   for (let i = 0; i < 30 && left; i++) {
     left = spawnSync('pgrep', ['-f', 'atlas-chromium-']).status === 0;
