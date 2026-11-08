@@ -22,7 +22,7 @@ Preconditions: `npm run build`, Chromium.
 - **Composer.** `feedback-voice`: `npm run feedback:journey`.
 - **Point.** `feedback-comment-mode`: `npm run feedback:journey:point`, switch on, click an element, a pin appears.
 - **Picker and reports.** `feedback-reports`: `npm run feedback:journey:picker`, `feedback:journey:ticket`.
-- **Surface.** `feedback-surface`: `node --test test/packages/feedback-surface.test.mjs` (needs `CHROMIUM`): in comment mode click an image at (0.25, 0.75), the note and `onPoint` carry that point; with `pins: "host"` no pinned box; Enter on the focused image drops one at (0.5, 0.5).
+- **Surface.** `feedback-surface`: `node --test test/packages/feedback-surface.test.mjs` (needs `CHROMIUM`): in comment mode click an image at (0.25, 0.75), the note and `onPoint` carry that point; with `pins: "host"` no pinned box; Enter on the focused image drops one at (0.5, 0.5). Send, Done, then the sent report holds `[point 0.25,0.75]` and the save route accepts it; on touch a tap pins and a drag, a drag that comes back or a cancelled gesture pins nothing; a `scaleX(-1)` image reports local fractions and `NoteBubble` opens beside the drawn point.
 - **Preview.** `feedback-preview`: `npm run feedback:journey:preview`.
 - **Store.** `feedback-store`: `npm run test` covers `packages/feedback`.
 - **Proof.** Screenshot of the pin and the saved report read back.

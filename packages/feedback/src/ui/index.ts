@@ -9,6 +9,7 @@ export {
   fetchSaveEndpoint, saveResultOf, parseSaveRequest, saveResponseOf,
   type SaveRequest, type SaveResult, type SaveEndpoint, type StoreCreateResult,
 } from './save.js';
+export { viewportToSurfacePoint, surfacePointToViewport } from './surface.js';
 export { showAnchor, type ShowOutcome, type ShowCandidate, type ShowOptions } from './show.js';
 export {
   protectionNotice, ageOf, subjectLabel, listRows, reportView,

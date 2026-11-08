@@ -13,7 +13,7 @@ import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { readableElement } from '@hachej/boring-feedback/format';
 import { createVoiceCapture, type VoiceCapture } from '@hachej/boring-feedback/page';
-import { pinMark, type FeedbackSession, type FeedbackSessionSnapshot, type SessionNote } from '@hachej/boring-feedback/ui';
+import { pinMark, surfacePointToViewport, type FeedbackSession, type FeedbackSessionSnapshot, type SessionNote } from '@hachej/boring-feedback/ui';
 import { useHoldToRecord } from '../pi-chat-voice/use-hold-to-record';
 import { useExternal } from './use-external';
 import { plainElement, withLabels, type FeedbackLabels } from './feedback-labels';
@@ -116,7 +116,9 @@ function bubblePlace(element: Element, size = 120, point?: { readonly x: number;
   const width = view?.innerWidth ?? 1024, height = (view?.innerHeight ?? 768) - pointBarInset(element.ownerDocument);
   const box = element.getBoundingClientRect();
   // A note pinned at a point of a surface: the bubble sits beside that point, not beside the whole surface.
-  const rect = point ? { left: box.left + point.x * box.width, right: box.left + point.x * box.width, top: box.top + point.y * box.height, bottom: box.top + point.y * box.height } : box;
+  // The forward transform places it, so a mirrored or rotated surface puts the bubble where the point is drawn.
+  const at = point ? surfacePointToViewport(element, point) : undefined;
+  const rect = at ? { left: at.x, right: at.x, top: at.y, bottom: at.y } : box;
   const left = Math.min(Math.max(8, rect.left), Math.max(8, width - BUBBLE_WIDTH - 8));
   const below = rect.bottom + 8;
   const above = rect.top - size - 8;

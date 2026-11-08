@@ -16,11 +16,12 @@ import {
   type FeedbackAnchor, type FeedbackDraft, type FeedbackNote, type FeedbackStep, type HostObserved,
 } from '../format/index.js';
 import {
-  alignSpeech, anchorOf, createOverlay, createPicker, isExcluded, pickRefusal, pickerLabel, routeFor, serializePage,
+  alignSpeech, anchorOf, createOverlay, createPicker, isExcluded, pickRefusal, pickerLabel, routeFor, serializePage, TAP_SLOP,
   type Picker, type PickerOverlay, type PinMark, type PointerSample, type SpeechSegment, type VoiceCapture, type VoiceRecording, type VoiceRefusal,
 } from '../page/index.js';
 import { copyToClipboard } from '@hachej/boring-files/platform';
 import { draftId, observePage, operationId, type AnnotateHost, type CopyState } from './annotate.js';
+import { viewportToSurfacePoint, type SurfacePoint } from './surface.js';
 import type { SaveEndpoint, SaveResult } from './save.js';
 import { createState, type ExternalState } from './state.js';
 
@@ -59,8 +60,7 @@ function readTranscription(answer: unknown): { readonly segments: readonly Speec
   return typeof text === 'string' ? { text } : null;
 }
 
-/** A point on a surface, as fractions (0 to 1) of the surface element's box: `x` from its left edge, `y` from its top edge. */
-export interface SurfacePoint { readonly x: number; readonly y: number }
+export type { SurfacePoint } from './surface.js';
 
 /**
  * An element whose content the page cannot name by element (an image, a video frame, a canvas): in comment mode a click inside it pins a
@@ -492,10 +492,14 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     publish();
     options.surface?.onPoint?.(point);
   };
-  const fractions = (surface: Element, x: number, y: number): SurfacePoint => {
-    const box = surface.getBoundingClientRect();
-    const unit = (value: number): number => Math.round(Math.min(1, Math.max(0, value)) * 1000) / 1000;
-    return { x: box.width > 0 ? unit((x - box.left) / box.width) : 0.5, y: box.height > 0 ? unit((y - box.top) / box.height) : 0.5 };
+  /** The finger's gesture: where it went down, and whether it dragged or was cancelled (then its release is no tap). */
+  let finger: { x: number; y: number; dragged: boolean } | undefined;
+  const onSurfaceTouch = (event: Event): void => {
+    const pointerEvent = event as PointerEvent;
+    if (pointerEvent.pointerType !== 'touch') return;
+    if (event.type === 'pointerdown') finger = { x: pointerEvent.clientX, y: pointerEvent.clientY, dragged: false };
+    else if (event.type === 'pointercancel' && finger) finger.dragged = true;
+    else if (event.type === 'pointermove' && finger && Math.hypot(pointerEvent.clientX - finger.x, pointerEvent.clientY - finger.y) > TAP_SLOP) finger.dragged = true;
   };
   /** A click or tap inside the surface pins a note there, ahead of the picker (which never sees it). */
   const onSurfaceClick = (event: Event): void => {
@@ -505,10 +509,18 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     const touch = event.type === 'pointerup' ? (event as PointerEvent).pointerType === 'touch' : false;
     // Mouse and keyboard clicks arrive as `click`; a finger as `pointerup` (the picker cancels the click that would follow).
     if ((event.type === 'click') === touch) return;
+    // The click a finger synthesises after its release is the same gesture: only the pointerup above decides (tap, or drag and so none).
+    if (event.type === 'click' && (event as PointerEvent).pointerType === 'touch') return;
+    if (touch) {
+      // A real tap only: a drag (past the picker's slop, even one that came back) or a cancelled gesture is the page's own.
+      const gesture = finger;
+      finger = undefined;
+      if (!gesture || gesture.dragged || Math.hypot(mouse.clientX - gesture.x, mouse.clientY - gesture.y) > TAP_SLOP) return;
+    }
     event.preventDefault(); event.stopImmediatePropagation();
     // A click from the keyboard (Enter or Space on a focused control) has no position: the centre.
     const keyboard = event.type === 'click' && mouse.detail === 0 && mouse.clientX === 0 && mouse.clientY === 0;
-    onSurfacePoint(surface, keyboard ? { x: 0.5, y: 0.5 } : fractions(surface, mouse.clientX, mouse.clientY));
+    onSurfacePoint(surface, keyboard ? { x: 0.5, y: 0.5 } : viewportToSurfacePoint(surface, mouse.clientX, mouse.clientY));
   };
 
   const onHover = (element: Element | undefined): void => {
@@ -608,7 +620,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     const focused = document.activeElement;
     if (focused && focused !== document.body && isExcluded(focused) && typeof (focused as HTMLElement).blur === 'function') (focused as HTMLElement).blur();
     // Listeners first, so they see Alt and Esc before the picker takes them.
-    for (const [type, handler] of [['keydown', onKeyDown], ['keyup', onKeyUp], ['click', onSurfaceClick], ['pointerup', onSurfaceClick], ['click', onClick], ['popstate', onRoute], ['hashchange', onRoute]] as const) listen(type, handler);
+    for (const [type, handler] of [['keydown', onKeyDown], ['keyup', onKeyUp], ['pointerdown', onSurfaceTouch], ['pointermove', onSurfaceTouch], ['pointercancel', onSurfaceTouch], ['click', onSurfaceClick], ['pointerup', onSurfaceClick], ['click', onClick], ['popstate', onRoute], ['hashchange', onRoute]] as const) listen(type, handler);
     if (view) { view.addEventListener('blur', onBlur); removers.push(() => view.removeEventListener('blur', onBlur)); }
     pinsOverlay = createOverlay({ document, ...(options.styles !== undefined ? { styles: options.styles } : {}) });
     picker = createPicker({
@@ -779,7 +791,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     const draftNotes: FeedbackNote[] = list.map(note => {
       const anchored = note.target !== undefined && anchors.has(note.target);
       if (anchored && !targets.includes(note.target!)) targets.push(note.target!);
-      return { text: note.text, ...(anchored ? { anchor: targets.indexOf(note.target!) } : {}), ...(note.from ? { from: note.from } : {}) };
+      return { text: note.text, ...(anchored ? { anchor: targets.indexOf(note.target!) } : {}), ...(note.point ? { point: note.point } : {}), ...(note.from ? { from: note.from } : {}) };
     });
     const noteIndex = new Map(list.map((note, index) => [note.id, index]));
     const steps: FeedbackStep[] = [...timeline].sort((a, b) => a.t - b.t).flatMap((entry): FeedbackStep[] => {
