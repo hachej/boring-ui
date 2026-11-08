@@ -86,7 +86,21 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
       for (const theme of ['light', 'dark']) for (const state of states) {
         await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?state=${['plus', 'model', 'header-menu', 'reply-menu'].includes(state) ? 'reply' : state}&theme=${theme}&w=${width}` });
         await browser.until('chat mounted', `document.querySelector('.pi-chat') && document.readyState === 'complete'`);
-        const trigger = { plus: 'composer-plus', model: 'composer-model', 'header-menu': 'chat-action-more', 'reply-menu': 'reply-action-more' }[state]; if (trigger) { const box = await browser.evaluate(`(() => { const r = document.querySelector('[data-testid=${trigger}]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`); for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await browser.send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 }); await browser.until('menu open', `document.querySelector('[data-testid=${trigger}-list], [data-testid=${trigger}-menu]')`); }
+        const trigger = { plus: 'composer-plus', model: 'composer-model', 'header-menu': 'chat-action-more', 'reply-menu': 'reply-action-more' }[state];
+        if (trigger) {
+          const menuOpen = `!!document.querySelector('[data-testid=${trigger}-list], [data-testid=${trigger}-menu]')`;
+          const box = await browser.evaluate(`(() => { const node = document.querySelector('[data-testid=${trigger}]'); if (!node) return null; node.scrollIntoView({ block: 'center' }); const r = node.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+          assert.ok(box, `${width} ${theme} ${state}: the trigger ${trigger} is rendered`);
+          for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await browser.send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1 });
+          await new Promise(done => setTimeout(done, 400));
+          if (!(await browser.evaluate(menuOpen))) { // fall back to the keyboard, as a person using one would
+            await browser.evaluate(`document.querySelector('[data-testid=${trigger}]').focus()`);
+            for (const type of ['keyDown', 'keyUp']) await browser.send('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+            await new Promise(done => setTimeout(done, 400));
+          }
+          assert.ok(await browser.evaluate(menuOpen), `${width} ${theme} ${state}: the menu opens; trigger is ${await browser.evaluate(`document.querySelector('[data-testid=${trigger}]')?.outerHTML.slice(0, 300)`)}; menus in page: ${await browser.evaluate(`[...document.querySelectorAll('[role=menu]')].map(node => node.getAttribute('data-testid')).join(',')`)}`);
+        }
+        
         if (state === 'thought') { await browser.evaluate(`document.querySelector('[data-testid=activity] button')?.click()`); await new Promise(done => setTimeout(done, 500)); await browser.evaluate(`document.querySelectorAll('[data-testid=tool-card] button, [data-testid=reasoning] button').forEach(button => button.click())`); }
         await new Promise(done => setTimeout(done, 500));
         const m = await measure(); report.push({ width, theme, state, m });
