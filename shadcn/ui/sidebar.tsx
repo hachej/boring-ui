@@ -122,8 +122,8 @@ function SidebarProvider({
   const active = Boolean(resizable) && fine
   useIsoLayoutEffect(() => {
     if (!resizable) return
-    const query = window.matchMedia("(pointer: fine)")
-    const sync = () => setFine(query.matches)
+    const query = window.matchMedia("(pointer: coarse)")
+    const sync = () => setFine(!query.matches)
     sync()
     query.addEventListener("change", sync)
     return () => query.removeEventListener("change", sync)
