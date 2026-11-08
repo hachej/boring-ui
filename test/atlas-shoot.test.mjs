@@ -161,7 +161,7 @@ test('a disabled target fails the step: exit 1, never a silent click', { skip, t
 
 test('a page stuck in a loop fails its state within the deadline and leaves no Chromium behind', { skip, timeout: 240000 }, async () => {
   const started = Date.now();
-  const { status, stderr } = await shoot(manifestDir('hang', [state('bloquee.page', '/hang'), state('apropos.after', '/apropos')]), join(work, 'out-hang'));
+  const { status, stderr } = await shoot(manifestDir('hang', [state('bloquee.page', '/hang', ['wait Bloquée']), state('apropos.after', '/apropos')]), join(work, 'out-hang'));
   assert.equal(status, 1, stderr);
   assert.ok(Date.now() - started < 120000, 'the run ended by its deadline');
   assert.match(stderr, /state bloquee\.page/);
