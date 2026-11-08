@@ -1,0 +1,7 @@
+<h1>Stockage</h1>
+<p>Une page qui écrit dans le stockage local et signale une fuite si elle y trouve déjà une valeur.</p>
+<script>
+  if (localStorage.getItem('seen') || document.cookie.includes('seen=')) console.error('leak: storage from an earlier shot');
+  localStorage.setItem('seen', '1');
+  document.cookie = 'seen=1; path=/';
+</script>

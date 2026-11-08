@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { after, before } from 'node:test';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -125,6 +125,53 @@ test('--since marks only the changed state changed, the others same, and a new s
   assert.deepEqual(statuses('connexion.form'), ['same', 'same', 'same', 'same']);
   assert.deepEqual(statuses('connexion.merci'), ['same', 'same', 'same', 'same']);
   assert.deepEqual(statuses('apropos.page'), ['new', 'new', 'new', 'new']);
+});
+
+const state = (id, page, steps) => ({ id, page, title: id, given: { fixture: 'ledger.synthetic.csv', ...(steps ? { steps } : {}) } });
+function manifestDir(name, states) {
+  const dir = join(work, name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'atlas.json'), JSON.stringify({ states }));
+  return dir;
+}
+
+test('every shot gets a fresh browser context: storage and cookies never leak into the next state or mode', { skip, timeout: 240000 }, async () => {
+  const out = join(work, 'out-storage');
+  const run = await shoot(manifestDir('storage', [state('stockage.a', '/storage'), state('stockage.b', '/storage')]), out);
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const idx = index(out);
+  for (const id of ['stockage.a', 'stockage.b']) {
+    assert.equal(shotsOf(idx, id).length, 4);
+    for (const shot of shotsOf(idx, id)) assert.deepEqual(shot.consoleErrors, [], `${id} ${shot.viewport} ${shot.mode} saw storage from an earlier shot`);
+  }
+});
+
+test('a click goes to the element whose one accessible name is the label, not to a button whose aria-label hides it', { skip, timeout: 240000 }, async () => {
+  const out = join(work, 'out-labels');
+  const run = await shoot(manifestDir('labels', [state('libelles.save', '/labels', ['click Save', 'wait Saved'])]), out);
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  for (const shot of shotsOf(index(out), 'libelles.save')) assert.deepEqual(shot.consoleErrors, [], 'the Delete button was not clicked');
+});
+
+test('a disabled target fails the step: exit 1, never a silent click', { skip, timeout: 240000 }, async () => {
+  const { status, stderr } = await shoot(manifestDir('disabled', [state('desactive.valider', '/disabled', ['click Valider'])]), join(work, 'out-disabled'));
+  assert.equal(status, 1);
+  assert.match(stderr, /state desactive\.valider step 1 "click Valider": element named "Valider" is disabled/);
+});
+
+test('a page stuck in a loop fails its state within the deadline and leaves no Chromium behind', { skip, timeout: 240000 }, async () => {
+  const started = Date.now();
+  const { status, stderr } = await shoot(manifestDir('hang', [state('bloquee.page', '/hang'), state('apropos.after', '/apropos')]), join(work, 'out-hang'));
+  assert.equal(status, 1, stderr);
+  assert.ok(Date.now() - started < 120000, 'the run ended by its deadline');
+  assert.match(stderr, /state bloquee\.page/);
+  assert.match(stderr, /did not answer within/);
+  let left = true;
+  for (let i = 0; i < 30 && left; i++) {
+    left = spawnSync('pgrep', ['-f', 'atlas-chromium-']).status === 0;
+    if (left) await new Promise(done => setTimeout(done, 200));
+  }
+  assert.equal(left, false, 'no Chromium process of the run is left');
 });
 
 test('without a browser, the command is a use error, not a fake shot', () => {

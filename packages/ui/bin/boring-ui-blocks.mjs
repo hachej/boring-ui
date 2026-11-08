@@ -534,6 +534,10 @@ export function atlasMain(args, cwd, log, error) {
 const VIEWPORTS = [{ width: 390, height: 844, touch: true }, { width: 1280, height: 800, touch: false }];
 const MODES = ['light', 'dark'];
 const STEP_TIMEOUT = 10000;
+const CDP_TIMEOUT = 15000;
+const CLEANUP_TIMEOUT = 5000;
+const SHOT_TIMEOUT = 30000;
+const MAX_HEIGHT = 16000;
 const CLICKABLE = ['button', 'link', 'tab', 'menuitem', 'checkbox', 'radio'];
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 
@@ -565,10 +569,14 @@ function pageFind(kind, label, value, clickable) {
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   };
   if (kind === 'click') {
-    const names = el => [norm(el.getAttribute('aria-label')), labelledBy(el), ...labels(el), norm(el.innerText ?? el.textContent), el.tagName === 'INPUT' ? norm(el.value) : ''].filter(Boolean);
-    const found = [...document.querySelectorAll('*')].filter(el => visible(el) && names(el).includes(label));
-    const el = found.find(e => clickable.includes(roleOf(e))) ?? found.find(e => !found.some(o => o !== e && e.contains(o)));
-    return el ? aim(el) : null;
+    // One accessible name per element, in the spec's order: aria-labelledby, aria-label, a label, then the content.
+    const nameOf = el => labelledBy(el) || norm(el.getAttribute('aria-label')) || labels(el).find(Boolean) || norm(el.innerText ?? el.textContent) || (el.tagName === 'INPUT' ? norm(el.value) : '');
+    const disabled = el => el.disabled === true || !!el.closest('fieldset[disabled], [aria-disabled="true"]');
+    const found = [...document.querySelectorAll('*')].filter(el => visible(el) && nameOf(el) === label);
+    const pick = list => list.find(e => clickable.includes(roleOf(e))) ?? list.find(e => !list.some(o => o !== e && e.contains(o)));
+    const el = pick(found.filter(e => !disabled(e)));
+    if (el) return aim(el);
+    return found.length ? { disabled: true } : null;
   }
   const fields = [...document.querySelectorAll('input, textarea, select')].filter(el => el.type !== 'hidden' && el.type !== 'file' && visible(el)
     && [norm(el.getAttribute('aria-label')), labelledBy(el), ...labels(el), norm(el.getAttribute('placeholder'))].includes(label));
@@ -593,14 +601,17 @@ async function launchChromium(path) {
   const profile = mkdtempSync(join(tmpdir(), 'atlas-chromium-'));
   const args = ['--headless', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--hide-scrollbars', '--force-color-profile=srgb', 'about:blank'];
   if (process.getuid?.() === 0) args.unshift('--no-sandbox');
-  const child = spawn(path, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  // Its own process group: killing the group takes the renderers and helpers with the browser.
+  const child = spawn(path, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+  const killGroup = () => { try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch { /* already gone */ } } };
   const exited = new Promise(done => child.once('exit', done));
   const close = async () => {
     process.off('exit', onExit);
-    if (child.exitCode === null) { child.kill('SIGKILL'); await Promise.race([exited, sleep(5000)]); }
+    killGroup();
+    if (child.exitCode === null) await Promise.race([exited, sleep(5000)]);
     try { rmSync(profile, { recursive: true, force: true, maxRetries: 3 }); } catch { /* a temp profile left behind is not a failure */ }
   };
-  const onExit = () => { try { child.kill('SIGKILL'); } catch { /* already gone */ } };
+  const onExit = killGroup;
   process.on('exit', onExit);
   try {
     const url = await new Promise((resolveUrl, reject) => {
@@ -637,7 +648,13 @@ function connectCdp(url) {
       if (message.error) p.reject(new Error(`${p.method}: ${message.error.message}`)); else p.resolve(message.result ?? {});
     };
     ws.onopen = () => resolveCdp({
-      send: (method, params = {}, sessionId) => new Promise((resolve, rej) => { const n = ++id; pending.set(n, { method, resolve, reject: rej }); ws.send(JSON.stringify({ id: n, method, params, sessionId })); }),
+      // Every request is bounded: a page stuck in a loop never answers, and the run must not wait for it.
+      send: (method, params = {}, sessionId, timeout = CDP_TIMEOUT) => new Promise((resolve, rej) => {
+        const n = ++id;
+        const timer = setTimeout(() => { pending.delete(n); rej(new Error(`${method}: no answer from the browser within ${timeout / 1000} s`)); }, timeout);
+        pending.set(n, { method, resolve: v => { clearTimeout(timer); resolve(v); }, reject: e => { clearTimeout(timer); rej(e); } });
+        ws.send(JSON.stringify({ id: n, method, params, sessionId }));
+      }),
       on: listener => { listeners.add(listener); return () => listeners.delete(listener); },
       close: () => ws.close(),
     });
@@ -646,7 +663,9 @@ function connectCdp(url) {
 
 /** A new page at `viewport` in `mode`; `errors` collects console errors and uncaught exceptions. */
 async function openPage(cdp, { width, height, touch }, mode) {
-  const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+  // A fresh browser context per shot: no storage, cookies or cache from another state or mode.
+  const { browserContextId } = await cdp.send('Target.createBrowserContext');
+  const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank', browserContextId });
   const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
   const send = (method, params) => cdp.send(method, params, sessionId);
   const errors = [];
@@ -661,11 +680,11 @@ async function openPage(cdp, { width, height, touch }, mode) {
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }] });
   const apply = `document.documentElement.classList.${mode === 'dark' ? 'add' : 'remove'}('dark')`;
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { const apply = () => ${apply}; if (document.documentElement) apply(); else new MutationObserver((_, o) => { if (document.documentElement) { o.disconnect(); apply(); } }).observe(document, { childList: true }); document.addEventListener('DOMContentLoaded', apply); })()` });
-  return { send, errors, apply, close: async () => { off(); await cdp.send('Target.closeTarget', { targetId }).catch(() => {}); } };
+  return { send, errors, apply, close: async () => { off(); await cdp.send('Target.closeTarget', { targetId }, undefined, CLEANUP_TIMEOUT).catch(() => {}); await cdp.send('Target.disposeBrowserContext', { browserContextId }, undefined, CLEANUP_TIMEOUT).catch(() => {}); } };
 }
 
 async function evaluate(page, expression) {
-  const r = await page.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+  const r = await page.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, timeout: 8000 });
   if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
   return r.result.value;
 }
@@ -674,7 +693,9 @@ async function evaluate(page, expression) {
 async function poll(probe) {
   const end = Date.now() + STEP_TIMEOUT;
   for (;;) {
-    try { const value = await probe(); if (value) return value; } catch { /* the document is changing */ }
+    const left = end - Date.now();
+    if (left <= 0) return null;
+    try { const value = await Promise.race([probe(), new Promise(done => setTimeout(done, left, null).unref())]); if (value) return value; } catch { /* the document is changing */ }
     if (Date.now() > end) return null;
     await sleep(100);
   }
@@ -703,8 +724,9 @@ const finder = (kind, label, value) => `(${pageFind})(${JSON.stringify(kind)}, $
 async function runStep(page, { verb, args }, ctx) {
   if (verb === 'open' && args[0].startsWith('/')) return navigate(page, ctx.base + args[0]);
   if (verb === 'open' || verb === 'click') {
-    const point = await poll(() => evaluate(page, finder('click', args[0])));
-    if (!point) throw new Error(`no element named "${args[0]}"`);
+    let seen = null;
+    const point = await poll(async () => { seen = await evaluate(page, finder('click', args[0])); return seen && !seen.disabled ? seen : null; });
+    if (!point) throw new Error(seen?.disabled ? `element named "${args[0]}" is disabled (still disabled after ${STEP_TIMEOUT / 1000} s)` : `no element named "${args[0]}"`);
     return tap(page, ctx.touch, point);
   }
   if (verb === 'fill') {
@@ -734,9 +756,10 @@ async function capture(page, height) {
   await evaluate(page, `${page.apply}; document.fonts.ready.then(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))))`);
   const metrics = await page.send('Page.getLayoutMetrics');
   const size = metrics.cssContentSize ?? metrics.contentSize;
-  const clip = { x: 0, y: 0, width: Math.max(1, Math.ceil(size.width)), height: Math.min(16000, Math.max(height, Math.ceil(size.height))), scale: 1 };
+  const full = Math.max(height, Math.ceil(size.height));
+  const clip = { x: 0, y: 0, width: Math.max(1, Math.ceil(size.width)), height: Math.min(MAX_HEIGHT, full), scale: 1 };
   const shot = await page.send('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: true, clip });
-  return Buffer.from(shot.data, 'base64');
+  return { png: Buffer.from(shot.data, 'base64'), truncated: full > MAX_HEIGHT, height: full };
 }
 
 /** 8-bit RGB/RGBA non-interlaced PNG (what Chromium writes) to `{ width, height, channels, data }`. */
@@ -811,6 +834,10 @@ async function shootAtlas({ manifest, flags, cwd, fixtures, log, error }) {
   let failed = 0;
   const browser = await launchChromium(chromium);
   let cdp;
+  // Ctrl-C or a kill still closes the socket, kills Chromium and removes its profile before the process ends.
+  const onSignal = signal => { cdp?.close(); browser.close().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143)); };
+  process.once('SIGINT', onSignal);
+  process.once('SIGTERM', onSignal);
   try {
     cdp = await connectCdp(browser.url);
     for (const state of manifest.states) {
@@ -819,9 +846,13 @@ async function shootAtlas({ manifest, flags, cwd, fixtures, log, error }) {
       const before = since?.states?.find(s => s.id === state.id);
       const steps = (state.given.steps ?? []).map(parseStep);
       shots: for (const viewport of VIEWPORTS) for (const mode of MODES) {
-        const page = await openPage(cdp, viewport, mode);
-        let at = 'open';
+        let page, at = 'open';
+        const control = { over: false };
+        const deadline = SHOT_TIMEOUT + steps.length * STEP_TIMEOUT;
         try {
+          page = await openPage(cdp, viewport, mode);
+          let timer;
+          await Promise.race([(async () => {
           const ctx = { base, touch: viewport.touch, fixtures, fixture: state.given.fixture };
           await navigate(page, base + state.page);
           for (let n = 0; n < steps.length; n++) {
@@ -829,7 +860,8 @@ async function shootAtlas({ manifest, flags, cwd, fixtures, log, error }) {
             await runStep(page, steps[n], ctx);
           }
           at = 'shoot';
-          const png = await capture(page, viewport.height);
+          const { png, truncated, height } = await capture(page, viewport.height);
+          if (control.over) return;
           const file = `${state.id}.${viewport.width}.${mode}.png`;
           const sha256 = createHash('sha256').update(png).digest('hex');
           const old = before?.shots?.find(s => s.viewport === viewport.width && s.mode === mode);
@@ -841,15 +873,17 @@ async function shootAtlas({ manifest, flags, cwd, fixtures, log, error }) {
             }
           }
           writeFileSync(join(out, file), png);
-          entry.shots.push({ viewport: viewport.width, mode, file, sha256, consoleErrors: [...page.errors], status });
+          entry.shots.push({ viewport: viewport.width, mode, file, sha256, consoleErrors: [...page.errors], status, ...(truncated ? { truncated: true, height } : {}) });
+          if (truncated) error(`warning: state ${state.id} (${viewport.width} ${mode}): the page is ${height} px tall, the shot is cut at ${MAX_HEIGHT} px (truncated: true in index.json)`);
+          })(), new Promise((_, reject) => { timer = setTimeout(() => { control.over = true; reject(new Error(`the page did not answer within ${deadline / 1000} s (is it stuck in a loop?)`)); }, deadline); })]).finally(() => clearTimeout(timer));
         } catch (e) {
           failed++;
           error(`state ${state.id} ${at === 'open' || at === 'shoot' ? `${at} (${viewport.width} ${mode})` : at}: ${e.message}`);
           break shots;
-        } finally { await page.close(); }
+        } finally { await page?.close(); }
       }
     }
-  } finally { cdp?.close(); await browser.close(); }
+  } finally { process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal); cdp?.close(); await browser.close(); }
   const index = { version: 1, commit: commitOf(flags.commit, cwd), url: flags.url, createdAt: new Date().toISOString(), states };
   writeFileSync(join(out, 'index.json'), `${JSON.stringify(index, null, 2)}\n`);
   const shots = states.reduce((n, s) => n + s.shots.length, 0);

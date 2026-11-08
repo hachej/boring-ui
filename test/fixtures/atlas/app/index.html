@@ -21,9 +21,11 @@
 <main id="main"></main>
 <script>
   // A tiny router: the route names a fragment under /pages, loaded into <main>. Fictional app, no data.
-  const route = { '/connexion': 'connexion', '/ecritures': 'ecritures', '/apropos': 'apropos' }[location.pathname] ?? 'apropos';
+  const route = location.pathname.slice(1) || 'apropos';
   fetch(`/pages/${route}.html`).then(r => r.text()).then(html => {
     document.getElementById('main').innerHTML = html;
+    // Scripts set through innerHTML do not run: replace each with a fresh element.
+    for (const old of document.querySelectorAll('#main script')) { const fresh = document.createElement('script'); fresh.textContent = old.textContent; old.replaceWith(fresh); }
     if (route === 'connexion') document.getElementById('login').addEventListener('submit', event => {
       event.preventDefault();
       document.getElementById('main').innerHTML = '<h1>Merci</h1><p>Message envoyé à ' + document.getElementById('mail').value + '.</p>';
