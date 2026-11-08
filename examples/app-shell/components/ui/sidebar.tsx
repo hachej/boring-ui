@@ -111,7 +111,7 @@ function SidebarProvider({
   open?: boolean
   onOpenChange?: (open: boolean) => void
   /** Off by default. On, the rail is a drag handle (fine pointer only) between `min` and `max` rem (12 and 28). */
-  resizable?: SidebarResizable
+  resizable?: SidebarResizable | undefined
 }) {
   const isMobile = useIsMobile()
   const wrapper = React.useRef<HTMLDivElement>(null)
