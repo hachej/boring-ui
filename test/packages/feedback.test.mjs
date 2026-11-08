@@ -500,3 +500,19 @@ test('feedback/source: the development plugin is an esbuild plugin and refuses p
   assert.equal(feedbackSourcePlugin({ root, mode: 'development' }).name, 'feedback-source');
   assert.throws(() => feedbackSourcePlugin({ root, mode: 'production' }), /production/);
 });
+
+test('a note point (D-1899) is emitted only when a note has one: reports without a surface are byte-identical to before', () => {
+  const plain = textOf(report({ said: '', notes: [{ text: 'A plain note.', anchor: 0 }, { text: 'Another.' }] }));
+  assert.equal(plain.includes('point'), false, 'no point key and no [point] mark without a point');
+  assert.match(plain, /\n1\. \[anchor 1\] A plain note\.\n2\. Another\./);
+  const round = parseFeedback(serializeFeedback(report({ said: '', notes: [{ text: 'A plain note.', anchor: 0 }] })));
+  assert.equal('point' in round.report.notes[0], false, 'a parsed note without a point has no point key');
+  const pinned = textOf(report({ said: '', notes: [{ text: 'On the rim.', anchor: 0, point: { x: 0.25, y: 0.75 } }, { text: 'Corner.', anchor: 0, point: { x: 1, y: 0 }, from: 'voice' }] }));
+  assert.match(pinned, /\n1\. \[anchor 1\] \[point 0\.25,0\.75\] On the rim\.\n2\. \[anchor 1\] \[point 1,0\] \[voice\] Corner\./);
+  const back = parseFeedback(bytes(pinned));
+  assert.equal(back.ok, true);
+  assert.deepEqual(back.report.notes.map(note => note.point), [{ x: 0.25, y: 0.75 }, { x: 1, y: 0 }]);
+  for (const point of [{ x: 1.5, y: 0 }, { x: 0.1234, y: 0 }, { x: 0.5 }, { x: 0.5, y: 0.5, z: 1 }, [0.5, 0.5], 'centre']) {
+    assert.equal(checkFeedback({ ...report({ said: '', notes: [{ text: 'On the rim.', anchor: 0 }] }), notes: [{ text: 'On the rim.', anchor: 0, point }] }).ok, false, `refuses ${JSON.stringify(point)}`);
+  }
+});

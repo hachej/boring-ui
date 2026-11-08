@@ -11,6 +11,9 @@ import { NoteBubble } from '../../../registry/feedback/feedback-session.tsx';
 const params = new URLSearchParams(location.search);
 const plate = document.getElementById('plate');
 if (params.get('mirror') === '1') plate.style.transform = 'scaleX(-1)';
+if (params.get('scale') === '1') plate.style.scale = '-1 1';
+if (params.get('rotate') === '1') plate.style.rotate = '90deg';
+if (params.get('ancestor') === '1') plate.parentElement.style.transform = 'scaleX(-1)';
 const points = [];
 const saved = [];
 const session = createFeedbackSession({

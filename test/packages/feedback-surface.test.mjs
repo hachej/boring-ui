@@ -121,6 +121,37 @@ test('a click on a surface pins a note at that point; pins "host" draws no box; 
     const tapped = await browser.evaluate('window.fixture.points[0]');
     assert.ok(Math.abs(tapped.x - 0.25) < 0.02 && Math.abs(tapped.y - 0.75) < 0.02, `the tap pinned near (0.25, 0.75): ${JSON.stringify(tapped)}`);
 
+    // Two fingers: A drags while B taps. B's release is not a tap (the gesture is a pinch or a scroll), and nothing sticks: once every
+    // finger is up the next single tap pins again.
+    await open('host');
+    const fingers = (type, points) => browser.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([id, at]) => ({ id, x: at.x, y: at.y })) });
+    const B = await plateAt(0.75, 0.5), A = { x: B.x - 30, y: B.y }, nearB = { x: B.x + 3, y: B.y };
+    await fingers('touchStart', [[1, A]]);
+    await fingers('touchStart', [[1, A], [2, B]]);
+    await fingers('touchMove', [[1, nearB], [2, B]]);
+    await fingers('touchEnd', [[1, nearB]]);
+    await fingers('touchEnd', []);
+    await noNote('finger A drags while finger B taps: B\'s release is no tap');
+    await fingers('touchStart', [[1, A], [2, B]]);
+    await fingers('touchEnd', []);
+    await noNote('two fingers down together are no tap');
+    await fingers('touchStart', [[1, B]]);
+    await fingers('touchEnd', []);
+    await browser.until('after every finger lifted, a single tap pins again', `window.fixture.session.getSnapshot().bubble`);
+    assert.equal(await browser.evaluate('window.fixture.points.length'), 1);
+
+    // Individual transform properties and ancestors: `scale: -1 1` leaves `transform: none`, an ancestor's transform is not the element's.
+    for (const [query, why] of [['&scale=1', 'the individual scale property'], ['&ancestor=1', 'a mirrored ancestor'], ['&ancestor=1&mirror=1', 'a mirrored ancestor and a mirrored element (the identity)'], ['&rotate=1', 'a quarter turn from the individual rotate property']]) {
+      await open('host', query);
+      // Local (0.25, 0.75) is drawn at viewport (0.75, 0.75) when mirrored once, at (0.25, 0.75) when mirrored twice, and at (0.25, 0.25)
+      // of the bounding box under a quarter turn clockwise.
+      const drawn = query === '&rotate=1' ? [0.25, 0.25] : query === '&ancestor=1&mirror=1' ? [0.25, 0.75] : [0.75, 0.75];
+      await clickAt(...drawn);
+      await browser.until('the bubble opens', `window.fixture.session.getSnapshot().bubble`);
+      const got = (await browser.evaluate('window.fixture.points'))[0];
+      assert.ok(Math.abs(got.x - 0.25) < 0.02 && Math.abs(got.y - 0.75) < 0.02, `${why}: a click on the drawn spot of local (0.25, 0.75) reports it: ${JSON.stringify(got)}`);
+    }
+
     // Transforms: a surface mirrored with scaleX(-1). A click on the drawn spot that is local (0.25, 0.75) reports (0.25, 0.75), not the
     // viewport fractions (0.75, 0.75); the bubble (the registry's NoteBubble, mounted once here) opens beside the drawn point.
     await open('host', '&mirror=1&bubble=1');
