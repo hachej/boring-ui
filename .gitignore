@@ -6,6 +6,7 @@ node_modules/
 .DS_Store
 packages/*/dist/
 packages/ui/r/
+packages/ui/design-system/
 *.tsbuildinfo
 *.tgz
 .claude/worktrees/

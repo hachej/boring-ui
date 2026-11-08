@@ -17,7 +17,8 @@
     "README.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
-    "styles"
+    "styles",
+    "design-system"
   ],
   "types": "./dist/index.d.ts",
   "bin": {

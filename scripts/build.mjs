@@ -36,7 +36,17 @@ export function build(root, { stdio = 'inherit' } = {}) {
   cleanOutputs(root);
   const result = spawnSync(process.execPath, [compiler, '--build', '--force', resolve(root, 'tsconfig.json')], { cwd: root, stdio });
   if (result.error) throw result.error;
-  if (result.status === 0) syncRegistryArchive(root);
+  if (result.status !== 0) return result.status ?? 1;
+  syncRegistryArchive(root);
+  return buildDesignSystemPage(root, stdio);
+}
+
+/** The kit ships a generated design-system page (D-1888, packages/ui/design-system/). Its own script bundles the real components, so it runs in a
+ * child process (this file stays free of esbuild and Tailwind); a tree without the page source (isolated fixtures) has nothing to build. */
+export function buildDesignSystemPage(root, stdio = 'inherit') {
+  if (!existsSync(resolve(root, 'lab/design-system/main.jsx'))) return 0;
+  const result = spawnSync(process.execPath, [resolve(root, 'scripts/build-design-system.mjs')], { cwd: root, stdio });
+  if (result.error) throw result.error;
   return result.status ?? 1;
 }
 

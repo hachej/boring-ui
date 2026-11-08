@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`design-system.html`: a page the kit builds from its own components and tokens (`@hachej/boring-ui-kit`, new, additive; D-1888 slice 1).** The kit now ships `design-system/` (`index.html`, `app.js`, `app.css`, `data.js`, `themes/default.css`): colour roles in light and dark with their measured contrast, type, shape and depth, density, and the shadcn/ui components in every variant and size. `npx boring-ui-blocks design-system --out <dir> [--theme name=path ...]` copies it and adds an app's theme to the picker. Nothing to change in an app.
+
 # Migrating to 0.4.70
 
 - **Atlas manifest and `boring-ui-blocks atlas <dir> --check` (new, additive; D-1831 slice 1).** An app may write `web/src/atlas.json` (states with `id`, `page`, `title`, `given: { fixture, steps }`, optional `flow` and `after`) and validate it with the new `atlas` command against the published `@hachej/boring-ui-kit/atlas.schema.json`; `--fixtures <dir>` also requires each named fixture file to exist. Shooting and the viewer come in later slices. No consumer action. Test: `test/atlas.test.mjs`; see `features/atlas.md`.

@@ -64,6 +64,8 @@ jobs:
     env:
       CHROMIUM: ${{ github.workspace }}/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+      # The design-system page test writes its shots here (390 and 1280, light and dark); the step below uploads them.
+      EVIDENCE_DIR: ${{ github.workspace }}/.cache/evidence/design-system
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,6 +82,14 @@ jobs:
       - name: Allow the Chromium sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: npm test -- --exclude-registered
+      - name: Upload the design-system page shots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: design-system-page-shots
+          path: .cache/evidence/design-system
+          retention-days: 14
+          if-no-files-found: ignore
   release-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 20

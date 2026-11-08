@@ -5,6 +5,7 @@
 //   npx boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <app web dir>] [--json]
 //   npx boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline]   (the one design check of an app's web/src; needs no components.json)
 //   npx boring-ui-blocks atlas <dir> --check [--fixtures <dir>] [--json]   (validates <dir>/atlas.json against atlas.schema.json; shooting is the next slice)
+//   npx boring-ui-blocks design-system --out <dir> [--theme <name>=<theme.core.css> ...]   (copies the packaged design-system page and adds each app theme)
 //   npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>]
 //   npx boring-ui-blocks add <shadcn add arguments...> [--overwrite] [--manifest <path>] [--cwd <dir>]
 //   npx boring-ui-blocks manifest [--manifest <path>] [--cwd <dir>]
@@ -12,7 +13,7 @@
 //
 // `check` writes nothing. `add`, `update` and `manifest` write the shadcn files they install and the manifest, nothing else.
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -274,7 +275,7 @@ export function check(app, design = [], manifest = MANIFEST) {
   return { version, blocks: blocks.map(block => block.name), violations };
 }
 
-const USAGE = `usage: boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline] | atlas <dir> --check [--fixtures <dir>] [--json] | check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--overwrite] [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
+const USAGE = `usage: boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline] | design-system --out <dir> [--theme <name>=<theme.core.css> ...] | atlas <dir> --check [--fixtures <dir>] [--json] | check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--overwrite] [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
   'Blocks: pi-app is the whole agent app with every chat feature and viewer. pi-chat is the core chat only: add pi-chat-plugins for every ' +
   'feature, or one of pi-chat-markdown, pi-chat-slash, pi-chat-mentions, pi-chat-pickers, pi-chat-voice, pi-chat-attachments, ' +
   'pi-chat-question, pi-chat-approval, pi-chat-subagent and pi-artifacts. Viewers are viewer-frame plus viewer-markdown, viewer-html, ' +
@@ -520,6 +521,59 @@ export function atlasMain(args, cwd, log, error) {
   return code;
 }
 
+// ---- design-system: the packaged page, plus the app's own themes ---------------------------------------------------------------------
+
+export const DESIGN_SYSTEM_USAGE = 'usage: boring-ui-blocks design-system --out <dir> [--theme <name>=<theme.core.css> ...]';
+const DATA_PREFIX = 'globalThis.BORING_DS = ';
+
+/** Why a theme file cannot be added, or undefined: it must be plain CSS whose job is to set custom properties (the core roles), nothing that loads or escapes. */
+export function themeFileProblem(text) {
+  let depth = 0;
+  for (const char of text.replace(/\/\*[\s\S]*?\*\//g, '')) { if (char === '{') depth++; else if (char === '}' && --depth < 0) break; }
+  if (depth !== 0) return 'braces do not balance';
+  if (/@import\b|<\/|<!--/i.test(text)) return 'it holds an @import or markup; a theme file only sets custom properties';
+  if (!cssDeclarations(text).some(d => /^(?::root|\.dark)\b/.test(d.selector))) return 'no custom property (--name: value) is set on :root or .dark';
+  return undefined;
+}
+
+export function designSystemMain(args, cwd, log, error) {
+  let out; const themes = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--out') out = args[++i];
+    else if (args[i] === '--theme') themes.push(args[++i] ?? '');
+    else { error(`unknown argument ${args[i]}\n${DESIGN_SYSTEM_USAGE}`); return 2; }
+  }
+  if (!out) { error(DESIGN_SYSTEM_USAGE); return 2; }
+  const source = join(dirname(fileURLToPath(import.meta.url)), '..', 'design-system');
+  if (!existsSync(join(source, 'data.js'))) { error('design-system: the packaged page is missing (a source checkout needs `npm run build` first)'); return 1; }
+  const added = [];
+  for (const spec of themes) {
+    const at = spec.indexOf('=');
+    const name = spec.slice(0, at), path = spec.slice(at + 1);
+    if (at < 1 || !path || !/^[a-z][a-z0-9-]*$/.test(name) || name === 'default') { error(`design-system: --theme is <name>=<path> with a lowercase name other than default, got "${spec}"`); return 2; }
+    let css;
+    try { css = readFileSync(resolve(cwd, path), 'utf8'); } catch { error(`design-system: cannot read ${path}`); return 1; }
+    const problem = themeFileProblem(css);
+    if (problem) { error(`design-system: ${path} is not a theme file: ${problem}`); return 1; }
+    added.push({ name, label: name, css });
+  }
+  const target = resolve(cwd, out);
+  mkdirSync(target, { recursive: true });
+  cpSync(source, target, { recursive: true });
+  const dataFile = join(target, 'data.js');
+  const text = readFileSync(dataFile, 'utf8');
+  if (!text.startsWith(DATA_PREFIX)) { error('design-system: data.js is not in the expected form'); return 1; }
+  const data = JSON.parse(text.slice(DATA_PREFIX.length).replace(/;\s*$/, ''));
+  mkdirSync(join(target, 'themes'), { recursive: true });
+  for (const theme of added) {
+    data.themes = data.themes.filter(t => t.name !== theme.name).concat(theme);
+    writeFileSync(join(target, 'themes', `${theme.name}.css`), theme.css);
+  }
+  writeFileSync(dataFile, `${DATA_PREFIX}${JSON.stringify(data).replace(/</g, '\\u003c')};\n`);
+  log(`design-system: wrote ${out} (themes: ${data.themes.map(t => t.name).join(', ')}); open ${join(out, 'index.html')}`);
+  return 0;
+}
+
 const line = v => `${v.check} ${v.rule} ${v.file}${v.line ? `:${v.line}:${v.column}` : ''} ${v.detail}`;
 
 export function main(argv, cwd = process.cwd(), log = console.log, error = console.error) {
@@ -527,6 +581,7 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
   if (['help', '--help', '-h'].includes(command)) { log(USAGE); return 0; }
   if (command === 'design') return designMain(rest, cwd, log, error);
   if (command === 'atlas') return atlasMain(rest, cwd, log, error);
+  if (command === 'design-system') return designSystemMain(rest, cwd, log, error);
   let flags;
   try {
     if (!['check', 'update', 'add', 'manifest'].includes(command)) throw new Error(command ? `unknown command ${command}` : 'missing command');
@@ -1163,12 +1218,12 @@ export const KIT_DERIVED = Object.freeze([
   'radius-sm', 'radius-md', 'radius-lg', 'radius-xl', 'radius-2xl', 'radius-3xl', 'radius-4xl',
 ]);
 /** Roles that are not colours: set once, with no dark value. */
-const NON_COLOR_ROLE = /^(?:radius|border-width|font-|text-|shadow-|color-)/;
+export const NON_COLOR_ROLE = /^(?:radius|border-width|font-|text-|shadow-|color-)/;
 const COLOR_VALUE = /#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla|oklch|oklab|lab|lch)\(/;
 const EXCEPTIONS_MARK = '=== EXCEPTIONS ===';
 
 /** The custom-property declarations of a css file: `{ name, value, line, selector, offset }` (comments blanked, lines kept). */
-function cssDeclarations(text) {
+export function cssDeclarations(text) {
   const bare = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
   const found = [], stack = [];
   let start = 0;

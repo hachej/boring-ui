@@ -80,6 +80,7 @@ Build screens from these before writing anything by hand.
 | Pick or drop one or more files | `FilePick` (`@boring/ui/blocks/file-pick/file-pick`): a button or a drop strip; refusals come back to `onRefused` as `{ file, reason: "type" \| "size" \| "count" }` and the app writes the words |
 | A list of files with upload | The `file-tree` block (`FileTreeView`) |
 | A sheet, drawer or bottom panel | `AppSheet` (`@boring/ui/blocks/app-shell/index`) |
+| See the whole system | The generated page: `node_modules/@hachej/boring-ui-kit/design-system/index.html` (roles in light and dark with measured contrast, type, shape, density, every component and variant); `npx boring-ui-blocks design-system --out <dir> --theme name=<theme.core.css>` adds your theme (`design-system-page`, D-1888) |
 | A chat with the agent | `pi-chat` through the shell's agent layer (`AppShell agent={spec}`; placements in the `app-layout-and-agent` skill) |
 | Voice | `pi-chat-voice`, or `useDictation` from app-shell |
 | Camera or attachments in the chat | `pi-chat-attachments` (`CameraSheet`) |
