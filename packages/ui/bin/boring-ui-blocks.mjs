@@ -1047,7 +1047,7 @@ export const LEGACY_NOTE = 'legacy components/ui path: factory D-1688 (Anciennes
 
 /** The source with comments and the inside of string literals blanked out (same length, same lines), so a rule never reads them; `strings: false` blanks the comments only. */
 export function mask(text, { strings = true } = {}) {
-  const out = [...text];
+  const out = text.split(''); // UTF-16 code units, like every index below: an astral character must not shift the offsets
   const blank = (from, to) => { for (let i = from; i < to; i++) if (out[i] !== '\n') out[i] = ' '; };
   const resume = []; // brace depth at which each open `${` hands back to its template literal
   let depth = 0, i = 0;
@@ -1522,7 +1522,7 @@ function scriptTokens(file, source) {
   if (!/\.[cm]?[jt]sx?$/.test(file)) return [];
   // Only an executable call: the same `.setProperty(` must survive in the fully masked text, where a string or template literal (a help text) is blank.
   const code = mask(source);
-  return [...mask(source, { strings: false }).matchAll(/\.setProperty\(\s*(["'`])--sidebar-width(?:-icon|-mobile)?\1/g)].filter((m) => code[m.index] === '.')
+  return [...mask(source, { strings: false }).matchAll(/\.setProperty\s*\(\s*(["'`])--sidebar-width(?:-icon|-mobile)?\1/g)].filter((m) => code[m.index] === '.')
     .map((m) => hit(file, source, m.index, 'design-no-script-tokens', 'a script sets a sidebar width token: the theme owns --sidebar-width (theme.core.css); to let the person resize the left pane use <AppShell resizable> (or SidebarProvider resizable)'));
 }
 

@@ -25,6 +25,8 @@ const STEP_REM = 1;
 export type SidebarResizable = boolean | { readonly min?: number; readonly max?: number };
 
 export interface SidebarResize {
+  /** The storage key of this app and person: a drag started under another key is cancelled. */
+  readonly storageKey: string;
   readonly minRem: number;
   readonly maxRem: number;
   /** The wrapper's style: the chosen `--sidebar-width`, or none (the theme's width). */
@@ -36,8 +38,9 @@ export interface SidebarResize {
 
 function readStored(key: string, min: number, max: number): number | null {
   try {
-    const value = Number.parseFloat(window.localStorage.getItem(key) ?? '');
-    return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : null;
+    const stored = window.localStorage.getItem(key) ?? '';
+    // The whole value must be a number: `20garbage` is not 20rem.
+    return /^\d+(\.\d+)?$/.test(stored) ? Math.min(max, Math.max(min, Number(stored))) : null;
   } catch {
     return null;
   }
@@ -82,7 +85,7 @@ export function useSidebarResize(resizable: SidebarResizable | undefined, identi
   }, [storageKey, minRem, maxRem]);
   const reset = useCallback(() => { setWidthRem(null); writeStored(storageKey, null); }, [storageKey]);
   const style = useMemo<CSSProperties | undefined>(() => (active && widthRem !== null ? ({ '--sidebar-width': `${widthRem}rem` } as CSSProperties) : undefined), [active, widthRem]);
-  return useMemo(() => (active ? { minRem, maxRem, style, widthRem, set, reset } : undefined), [active, minRem, maxRem, style, widthRem, set, reset]);
+  return useMemo(() => (active ? { storageKey, minRem, maxRem, style, widthRem, set, reset } : undefined), [active, storageKey, minRem, maxRem, style, widthRem, set, reset]);
 }
 
 // The rail's look is the host sidebar's own (same classes), so the handle sits exactly where the toggle did.
@@ -150,7 +153,9 @@ function ResizeHandle({ resize }: { readonly resize: SidebarResize }) {
       element.style.transition = 'none';
     }
   };
-  useEffect(() => settle, [settle]);
+  // The drag belongs to the key it started under: if the person (or app) changes mid-drag, it is cancelled, so the width is never written under the
+  // other key. The hook has already read that key's own width. The same cleanup puts the transitions back when the handle leaves.
+  useEffect(() => () => { drag.current = null; settle(); }, [resize.storageKey, settle]);
   return <div
     ref={ref}
     data-sidebar="rail"

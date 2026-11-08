@@ -58,6 +58,11 @@ export interface AppShellProps {
    * per person; the theme's `--sidebar-width` stays the default. `true` or `{ min, max }`.
    */
   readonly resizable?: boolean | { readonly min?: number; readonly max?: number };
+  /**
+   * A stable id of the app (its slug), which names the app in the stored sidebar width instead of `title`: two apps with the same title on one origin,
+   * or an app whose title is renamed or translated, keep (or do not share) their widths. Pass it with `resizable`; without it the key uses `title`.
+   */
+  readonly appId?: string;
 }
 
 /** The shells that ask for the blur now, and what `<html data-overlay-blur>` held before the first of them (the app's own HTML may set it). */
@@ -99,7 +104,7 @@ function Screens({ items, activeId, scrolls, slot }: { readonly items: readonly 
   </div>;
 }
 
-function Shell({ resizable, compactNav, layout, rail, title, nav, agent, panel, account, route, text }: { readonly resizable: AppShellProps['resizable']; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
+function Shell({ resizable, appId, compactNav, layout, rail, title, nav, agent, panel, account, route, text }: { readonly resizable: AppShellProps['resizable']; readonly appId: string | undefined; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
   const improve = panel && panel.menu !== false ? panel.label ?? text.improve : undefined;
   const Layout = panel?.Layout ?? NoPanelLayout;
   const compact = useIsCompact();
@@ -120,7 +125,7 @@ function Shell({ resizable, compactNav, layout, rail, title, nav, agent, panel, 
     </AppSheet>
   </> : null;
   // The structure is the same compact or expanded, so a resize never remounts a screen.
-  return <ResizableSidebarProvider data-testid="app-shell" resizable={resizable} app={title} person={account?.email} defaultOpen={rail !== 'hover' && layout === 'screen'} className="app-shell h-dvh min-h-0 overflow-hidden">
+  return <ResizableSidebarProvider data-testid="app-shell" resizable={resizable} app={appId ?? title} person={account?.email} defaultOpen={rail !== 'hover' && layout === 'screen'} className="app-shell h-dvh min-h-0 overflow-hidden">
     {(!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} title={title} items={nav} activeId={active.id} onChange={choose} agent={agent} account={account} improve={improve} text={text} />}
     <AgentDockLayout>
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-card">
@@ -145,6 +150,6 @@ export function AppShell(props: AppShellProps) {
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;
   return <AgentLayerProvider agent={agent} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title}>
-    <HeaderProvider><Shell resizable={props.resizable} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} /></HeaderProvider>
+    <HeaderProvider><Shell resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
 }
