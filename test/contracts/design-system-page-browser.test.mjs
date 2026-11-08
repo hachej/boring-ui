@@ -263,7 +263,7 @@ test('The design-system page renders every section, measures contrast, switches 
     const original = await inFrame(INSPECT);
     assert.ok(Number(original.mutedLight) >= 4.5, `muted-foreground on background measures ${original.mutedLight} unchanged`);
     // A surface with an alpha is composited over what lies under it: black text on 50% white over black is about 5.3:1 (over white it would be 21:1).
-    const alpha = await inFrame(`globalThis.boringDsContrast('black', 'rgb(255 255 255 / 50%)', ['black'])`);
+    const alpha = await browser.evaluate(`${FRAME}.contentWindow.boringDsContrast('black', 'rgb(255 255 255 / 50%)', ['black'])`); // the page's own world (an isolated world has no page globals)
     assert.ok(alpha > 5 && alpha < 5.6, `alpha contrast composites over the surface behind: ${alpha}`);
 
     // 4. Shots: the sections at 390 (touch) and 1280, light and dark, the whole frame page tall; and the header with its frame.
