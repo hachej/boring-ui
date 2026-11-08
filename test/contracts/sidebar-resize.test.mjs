@@ -68,6 +68,8 @@ const wait = ms => new Promise(done => setTimeout(done, ms));
 async function mount(query = '', { width = 1280, touch = false, clear = true } = {}) {
   await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: touch });
   await browser.send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: 5 });
+  // Headless Chromium does not promise a fine pointer: say which pointer this person has.
+  await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: touch ? 'coarse' : 'fine' }, { name: 'hover', value: touch ? 'none' : 'hover' }] });
   if (clear) { await browser.send('Page.navigate', { url: `http://127.0.0.1:${port}/?clear=1` }); await browser.until('origin ready', `document.readyState === 'complete'`); await browser.evaluate(`localStorage.clear()`); }
   await browser.send('Page.navigate', { url: `http://127.0.0.1:${port}/?${query}` });
   await browser.until('shell mounted', `document.querySelector('[data-slot=sidebar-gap]') !== null && document.readyState === 'complete'`);

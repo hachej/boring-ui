@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent, ReactNode } from 'react';
 import { EllipsisIcon, SparklesIcon } from '../_shared/icons';
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarSeparator, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarSeparator, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { afterBack } from '../utils/back';
@@ -15,6 +15,8 @@ import type { AgentSpec } from './agent-layer';
 import type { AccountSpec } from './account';
 import { AppSheet, SHEET_ROW } from './app-sheet';
 import type { AppShellText } from './text';
+import { ResizableRail } from './sidebar-resize';
+import type { SidebarResize } from './sidebar-resize';
 
 export interface NavItem {
   readonly id: string;
@@ -105,9 +107,10 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
 }
 
 /** The expanded sidebar: the app title, the nav items (none with one item) and the account in the footer. */
-export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, agent, account, improve, text }: {
+export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, agent, account, improve, text, resize }: {
   readonly rail?: 'icon' | 'hover'; readonly title: string; readonly items: readonly NavItem[]; readonly activeId: string; readonly onChange: (id: string) => void;
   readonly agent: AgentSpec | undefined; readonly account: AccountSpec | undefined; readonly improve: string | undefined; readonly text: AppShellText;
+  readonly resize?: SidebarResize | undefined;
 }) {
   const { setOpen, setOpenMobile, state, isMobile } = useSidebar();
   // In the phone sheet, choosing a screen closes it.
@@ -149,7 +152,7 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
       </>}
     </SidebarContent>
     <SidebarFooter><NavUser account={account} improve={improve} text={text} /></SidebarFooter>
-    <SidebarRail />
+    <ResizableRail resize={resize} />
     </div>
   </Sidebar>;
   if (rail !== 'hover') return sidebar;

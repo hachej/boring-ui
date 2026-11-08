@@ -27,39 +27,6 @@ const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 // Theme tokens: an app sets --sidebar-width, --sidebar-width-icon and --sidebar-width-mobile in its theme.core.css (:root); a SidebarProvider `style` on the wrapper wins. The phone sheet is 75% of the screen (the Sheet's own cap, 24rem, applies) unless --sidebar-width-mobile is set; the old inline 18rem never applied because the Sheet's side-qualified w-3/4 beat it. The wrapper resolves them with their defaults into the private --sidebar-w and --sidebar-w-icon, so the icon rail follows the wrapper's own --control-h.
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
-// Resizable left pane (D-1898): the width the person chose, in rem, kept in localStorage under the kit's own key (the origin is the app, the browser profile the person).
-// Every storage access is guarded: a blocked or throwing store only means the width is not remembered.
-const SIDEBAR_WIDTH_KEY = "boring-ui:sidebar-width"
-const SIDEBAR_MIN_REM = 12
-const SIDEBAR_MAX_REM = 28
-const SIDEBAR_STEP_REM = 1
-
-type SidebarResizable = boolean | { readonly min?: number; readonly max?: number }
-
-function readStoredWidth(min: number, max: number): number | null {
-  try {
-    const value = Number.parseFloat(window.localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? "")
-    return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : null
-  } catch {
-    return null
-  }
-}
-
-function writeStoredWidth(rem: number | null) {
-  try {
-    if (rem === null) window.localStorage.removeItem(SIDEBAR_WIDTH_KEY)
-    else window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(rem))
-  } catch {
-    // storage unavailable: the width lasts for this visit only
-  }
-}
-
-const rootRem = () =>
-  Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-const roundRem = (rem: number) => Math.round(rem * 10) / 10
-
-const useIsoLayoutEffect =
-  typeof window === "undefined" ? React.useEffect : React.useLayoutEffect
 
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
@@ -69,19 +36,6 @@ type SidebarContextProps = {
   setOpenMobile: (open: boolean) => void
   isMobile: boolean
   toggleSidebar: () => void
-  resize: SidebarResize | null
-}
-
-type SidebarResize = {
-  minRem: number
-  maxRem: number
-  /** The width in rem (the chosen one, else the theme's). */
-  current: () => number
-  /** Sets the width (rem, clamped); `commit` also remembers it. */
-  set: (rem: number, commit: boolean) => void
-  /** Back to the theme's `--sidebar-width`; forgets the remembered width. */
-  reset: () => void
-  setResizing: (resizing: boolean) => void
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
@@ -99,7 +53,6 @@ function SidebarProvider({
   defaultOpen = true,
   open: openProp,
   onOpenChange: setOpenProp,
-  resizable = false,
   className,
   style,
   children,
@@ -108,59 +61,8 @@ function SidebarProvider({
   defaultOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
-  /** Off by default. On, the rail is a drag handle (fine pointer only) between `min` and `max` rem (12 and 28). */
-  resizable?: SidebarResizable | undefined
 }) {
   const isMobile = useIsMobile()
-  const wrapper = React.useRef<HTMLDivElement>(null)
-  const bounds = typeof resizable === "object" ? resizable : {}
-  const minRem = bounds.min ?? SIDEBAR_MIN_REM
-  const maxRem = Math.max(minRem, bounds.max ?? SIDEBAR_MAX_REM)
-  const [fine, setFine] = React.useState(false)
-  const [widthRem, setWidthRem] = React.useState<number | null>(null)
-  const [resizing, setResizing] = React.useState(false)
-  const active = Boolean(resizable) && fine
-  useIsoLayoutEffect(() => {
-    if (!resizable) return
-    const query = window.matchMedia("(pointer: coarse)")
-    const sync = () => setFine(!query.matches)
-    sync()
-    query.addEventListener("change", sync)
-    return () => query.removeEventListener("change", sync)
-  }, [resizable])
-  useIsoLayoutEffect(() => {
-    if (active) setWidthRem(readStoredWidth(minRem, maxRem))
-  }, [active, minRem, maxRem])
-  const resize = React.useMemo<SidebarResize | null>(
-    () =>
-      active
-        ? {
-            minRem,
-            maxRem,
-            current: () => {
-              if (widthRem !== null) return widthRem
-              // The theme's width: resolve the wrapper's own --sidebar-w through a probe, whatever its unit.
-              const probe = document.createElement("div")
-              probe.style.cssText = "position:absolute;visibility:hidden;width:var(--sidebar-w)"
-              wrapper.current?.append(probe)
-              const px = probe.getBoundingClientRect().width
-              probe.remove()
-              return px / rootRem()
-            },
-            set: (rem, commit) => {
-              const next = Math.min(maxRem, Math.max(minRem, rem))
-              setWidthRem(next)
-              if (commit) writeStoredWidth(next)
-            },
-            reset: () => {
-              setWidthRem(null)
-              writeStoredWidth(null)
-            },
-            setResizing,
-          }
-        : null,
-    [active, minRem, maxRem, widthRem]
-  )
   const [openMobile, setOpenMobile] = React.useState(false)
 
   // This is the internal state of the sidebar.
@@ -216,22 +118,15 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
-      resize,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar, resize]
+    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
   )
 
   return (
     <SidebarContext.Provider value={contextValue}>
       <div
-        ref={wrapper}
         data-slot="sidebar-wrapper"
-        data-resizing={resizing ? "true" : undefined}
-        style={
-          active && widthRem !== null
-            ? ({ ...style, "--sidebar-width": `${widthRem}rem` } as React.CSSProperties)
-            : style
-        }
+        style={style}
         className={cn(
           "group/sidebar-wrapper flex min-h-svh w-full [--sidebar-w:var(--sidebar-width,16rem)] [--sidebar-w-icon:var(--sidebar-width-icon,calc(var(--sidebar-row)_+_1rem))] [--sidebar-row:var(--control-h,2.25rem)] pointer-coarse:[--sidebar-row:max(var(--control-h,2.25rem),var(--control-min,2.75rem))] has-data-[variant=inset]:bg-sidebar",
           className
@@ -308,7 +203,7 @@ function Sidebar({
       <div
         data-slot="sidebar-gap"
         className={cn(
-          "relative w-(--sidebar-w) bg-transparent transition-[width] duration-200 ease-linear group-data-[resizing=true]/sidebar-wrapper:transition-none",
+          "relative w-(--sidebar-w) bg-transparent transition-[width] duration-200 ease-linear",
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
@@ -320,7 +215,7 @@ function Sidebar({
         data-slot="sidebar-container"
         data-side={side}
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-w) transition-[left,right,width] duration-200 ease-linear group-data-[resizing=true]/sidebar-wrapper:transition-none data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-w)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-w)*-1)] md:flex",
+          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-w) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-w)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-w)*-1)] md:flex",
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
             ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-w-icon)+(--spacing(4))+2px)]"
@@ -368,95 +263,26 @@ function SidebarTrigger({
 }
 
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
-  const { toggleSidebar, resize, isMobile, state } = useSidebar()
-  const drag = React.useRef<{ x: number; rem: number; sign: number; moved: boolean } | null>(null)
-  const [now, setNow] = React.useState<number | null>(null)
-  const handle = resize !== null && !isMobile && state === "expanded"
-  const railClass = cn(
-    "absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2",
-    "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
-    "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
-    "group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar",
-    "[[data-side=left][data-collapsible=offcanvas]_&]:-right-2",
-    "[[data-side=right][data-collapsible=offcanvas]_&]:-left-2",
-    className
-  )
+  const { toggleSidebar } = useSidebar()
 
-  // The value shown to assistive technology follows the width (the theme's, until a width is chosen).
-  React.useEffect(() => {
-    if (handle) setNow(roundRem(resize.current()))
-  }, [handle, resize])
-
-  if (!handle) {
-    return (
-      <button
-        data-sidebar="rail"
-        data-slot="sidebar-rail"
-        aria-label="Toggle Sidebar"
-        tabIndex={-1}
-        onClick={toggleSidebar}
-        title="Toggle Sidebar"
-        className={railClass}
-        {...props}
-      />
-    )
-  }
-
-  // The handle grows the pane toward the page: to the right for a left sidebar.
-  const direction = (element: Element) =>
-    element.closest("[data-side]")?.getAttribute("data-side") === "right" ? -1 : 1
-  const to = (start: { x: number; rem: number; sign: number }, clientX: number) =>
-    start.rem + ((clientX - start.x) * start.sign) / rootRem()
-  const rest = props as React.ComponentProps<"div">
   return (
-    <div
-      {...rest}
+    <button
       data-sidebar="rail"
       data-slot="sidebar-rail"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize sidebar"
-      aria-valuemin={resize.minRem}
-      aria-valuemax={resize.maxRem}
-      aria-valuenow={now ?? undefined}
-      tabIndex={0}
-      title="Resize sidebar (double-click to reset)"
-      className={cn(railClass, "cursor-col-resize touch-none")}
-      onPointerDown={(event) => {
-        if (event.button !== 0) return
-        event.currentTarget.setPointerCapture(event.pointerId)
-        drag.current = { x: event.clientX, rem: resize.current(), sign: direction(event.currentTarget), moved: false }
-        resize.setResizing(true)
-      }}
-      onPointerMove={(event) => {
-        const start = drag.current
-        if (!start) return
-        start.moved = true
-        resize.set(to(start, event.clientX), false)
-      }}
-      onPointerUp={(event) => {
-        const start = drag.current
-        drag.current = null
-        resize.setResizing(false)
-        if (start?.moved) resize.set(to(start, event.clientX), true)
-      }}
-      onPointerCancel={() => {
-        drag.current = null
-        resize.setResizing(false)
-      }}
-      onDoubleClick={resize.reset}
-      onKeyDown={(event) => {
-        const grow = direction(event.currentTarget) === 1 ? "ArrowRight" : "ArrowLeft"
-        const shrink = grow === "ArrowRight" ? "ArrowLeft" : "ArrowRight"
-        let rem: number | null = null
-        if (event.key === grow) rem = resize.current() + SIDEBAR_STEP_REM
-        else if (event.key === shrink) rem = resize.current() - SIDEBAR_STEP_REM
-        else if (event.key === "Home") rem = resize.minRem
-        else if (event.key === "End") rem = resize.maxRem
-        if (rem === null) return
-        event.preventDefault()
-        resize.set(rem, true)
-      }}
+      aria-label="Toggle Sidebar"
+      tabIndex={-1}
+      onClick={toggleSidebar}
+      title="Toggle Sidebar"
+      className={cn(
+        "absolute inset-y-0 z-20 hidden w-4 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:start-1/2 after:w-[2px] hover:after:bg-sidebar-border sm:flex ltr:-translate-x-1/2 rtl:-translate-x-1/2",
+        "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
+        "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
+        "group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar",
+        "[[data-side=left][data-collapsible=offcanvas]_&]:-right-2",
+        "[[data-side=right][data-collapsible=offcanvas]_&]:-left-2",
+        className
+      )}
+      {...props}
     />
   )
 }
