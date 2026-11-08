@@ -975,7 +975,7 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
 // design-touch-target, design-button-raw-height, design-no-dark-overrides, design-link-token, design-mono-for-code (the Factory
 // template's) | design-color, design-border-width, design-font-tokens, design-literal-value, design-dark-variant, design-no-x-scroll (the
 // kit's BORING-UI-1 app profile, `check --design`) | design-tokens-only, design-no-kit-restyle, design-no-important,
-// design-hand-touch-size (new).
+// design-hand-touch-size, design-no-script-tokens (new).
 //
 // Tokens only: a hex, rgb, hsl or oklch literal and a Tailwind palette colour (`bg-red-500`) are design-color, except in theme.core.css
 // and theme.derived.css (and the token blocks of any css). An arbitrary value `utility-[...]` (colour, size, spacing, radius, text) is
@@ -1014,6 +1014,7 @@ export const LEVELS = Object.freeze({
   // New rules.
   'design-no-kit-restyle': 'error',
   'design-no-important': 'error',
+  'design-no-script-tokens': 'error',
   'design-hand-touch-size': 'error',
   'design-theme-core-only': 'error',
   'design-theme-roles-both-modes': 'error',
@@ -1516,6 +1517,13 @@ function important(file, source) {
   return found;
 }
 
+/** `setProperty("--sidebar-width"` (and its `-icon` and `-mobile` siblings) in script: the width is a theme token, and the kit's `resizable` sidebar writes it itself. */
+function scriptTokens(file, source) {
+  if (!/\.[cm]?[jt]sx?$/.test(file)) return [];
+  return [...mask(source, { strings: false }).matchAll(/\.setProperty\(\s*(["'`])--sidebar-width(?:-icon|-mobile)?\1/g)]
+    .map((m) => hit(file, source, m.index, 'design-no-script-tokens', 'a script sets a sidebar width token: the theme owns --sidebar-width (theme.core.css); to let the person resize the left pane use <AppShell resizable> (or SidebarProvider resizable)'));
+}
+
 /** `font-family` literals and `@font-face`: fonts are theme tokens, defined once in theme.core.css. */
 function fontFace(file, source) {
   return [...mask(source, { strings: false }).matchAll(/@font-face\b/g)].map((m) => hit(file, source, m.index, 'design-font-tokens', '@font-face outside theme.core.css: fonts are tokens, declare the family there and use var(--font-sans)'));
@@ -1687,7 +1695,7 @@ export function checkSource(file, source, { ui = false, scan, exceptions } = {})
   }
   if (THEME_FILES.has(name)) found.push(...themeRules(file, source, exceptions));
   if (SOURCE.test(file) && name !== 'theme.core.css') {
-    found.push(...restyle(file, source), ...important(file, source), ...fontFace(file, source));
+    found.push(...restyle(file, source), ...important(file, source), ...fontFace(file, source), ...scriptTokens(file, source));
     const bare = mask(source, { strings: false });
     const script = /\.[cm]?[jt]sx?$/.test(file), ranges = script ? classRanges(source) : [], starts = lineStarts(source);
     for (const f of scan(file, bare)) {
