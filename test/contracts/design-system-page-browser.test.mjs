@@ -215,7 +215,14 @@ test('The design-system page renders every section, measures contrast, switches 
     const slots = { ...seen.slots };
     for (let index = 0; index < seen.cells; index++) {
       const cell = `document.querySelector("iframe[data-ds-frame]").contentDocument.querySelectorAll("iframe[data-ds-cell]")[${index}]`;
-      await browser.until(`${label} cell ${index}`, `!!${cell}.contentDocument.querySelector('[data-slot=alert-dialog-content]')`);
+      const deadline = Date.now() + 30000;
+      while (!(await browser.evaluate(`!!${cell}.contentDocument.querySelector('[data-slot=alert-dialog-content]')`).catch(() => false))) {
+        if (Date.now() > deadline) {
+          const seen = await browser.evaluate(`(() => { const doc = ${cell}.contentDocument; return doc ? doc.location.href + ' | ' + doc.body.innerHTML.slice(0, 600) : 'no document'; })()`).catch(error => String(error));
+          throw new Error(`${label} cell ${index} shows no alert dialog: ${seen}\n${browser.problems.join('\n')}`);
+        }
+        await pause(200);
+      }
       Object.assign(slots, await browser.evaluate(`(() => { const win = ${cell}.contentWindow; return win.eval(${JSON.stringify(RENDERED_SLOTS)}); })()`));
     }
     problems.push(...uncovered(expected, slots).map(line => `${label}: ${line}`));
