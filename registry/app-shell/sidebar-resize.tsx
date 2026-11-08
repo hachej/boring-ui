@@ -4,13 +4,20 @@
 // prop. The width is the `--sidebar-width` custom property on the provider's wrapper (the theme token the sidebar already reads), so the host's
 // own sidebar needs no change; the rail becomes the drag handle (role separator, arrow keys, double-click reset). Fine pointers only: on touch
 // the rail stays the host's toggle and the phone sheet keeps `--sidebar-width-mobile`.
-// The width the person chose is kept in rem in localStorage under the kit's own key (the origin is the app, the browser profile the person).
-// Every storage access is guarded: a blocked or throwing store only means the width is not remembered.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { SidebarRail, useSidebar } from '@/components/ui/sidebar';
+// The width the person chose is kept in rem in localStorage under the kit's own key, which names the app and, when it is known, the person: another
+// person on the same browser, or another app on the same origin, starts from the theme's width. Every storage access is guarded: a blocked or
+// throwing store only means the width is not remembered.
+// An app that renders SidebarProvider itself uses ResizableSidebarProvider and ResizableRail in its place: the same behaviour, no AppShell.
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties } from 'react';
+import { SidebarProvider, SidebarRail, useSidebar } from '@/components/ui/sidebar';
 import { cn } from '../utils/utils';
 
 export const SIDEBAR_WIDTH_KEY = 'boring-ui:sidebar-width';
+/** The storage key for an app and a person: `boring-ui:sidebar-width:<app>:<person>`; with no person, `:<app>`; with neither, the bare prefix. */
+export function sidebarWidthKey(app?: string, person?: string): string {
+  const part = (value: string | undefined) => (value ? `:${encodeURIComponent(value)}` : '');
+  return `${SIDEBAR_WIDTH_KEY}${part(app)}${app ? part(person) : ''}`;
+}
 const MIN_REM = 12;
 const MAX_REM = 28;
 const STEP_REM = 1;
@@ -27,19 +34,19 @@ export interface SidebarResize {
   readonly reset: () => void;
 }
 
-function readStored(min: number, max: number): number | null {
+function readStored(key: string, min: number, max: number): number | null {
   try {
-    const value = Number.parseFloat(window.localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? '');
+    const value = Number.parseFloat(window.localStorage.getItem(key) ?? '');
     return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : null;
   } catch {
     return null;
   }
 }
 
-function writeStored(rem: number | null) {
+function writeStored(key: string, rem: number | null) {
   try {
-    if (rem === null) window.localStorage.removeItem(SIDEBAR_WIDTH_KEY);
-    else window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(rem));
+    if (rem === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, String(rem));
   } catch {
     // storage unavailable: the width lasts for this visit only
   }
@@ -50,7 +57,8 @@ const rootRem = () => Number.parseFloat(getComputedStyle(document.documentElemen
 const roundRem = (rem: number) => Math.round(rem * 10) / 10;
 
 /** The resize state of the shell. `undefined` while `resizable` is off or the pointer is not fine. Call it where the SidebarProvider is rendered. */
-export function useSidebarResize(resizable: SidebarResizable | undefined): SidebarResize | undefined {
+export function useSidebarResize(resizable: SidebarResizable | undefined, identity: { readonly app?: string | undefined; readonly person?: string | undefined } = {}): SidebarResize | undefined {
+  const storageKey = sidebarWidthKey(identity.app, identity.person);
   const bounds = typeof resizable === 'object' ? resizable : {};
   const minRem = bounds.min ?? MIN_REM;
   const maxRem = Math.max(minRem, bounds.max ?? MAX_REM);
@@ -66,13 +74,13 @@ export function useSidebarResize(resizable: SidebarResizable | undefined): Sideb
     return () => query.removeEventListener('change', sync);
   }, [on]);
   const active = on && fine;
-  useIsoLayoutEffect(() => { if (active) setWidthRem(readStored(minRem, maxRem)); }, [active, minRem, maxRem]);
+  useIsoLayoutEffect(() => { if (active) setWidthRem(readStored(storageKey, minRem, maxRem)); }, [active, storageKey, minRem, maxRem]);
   const set = useCallback((rem: number, commit: boolean) => {
     const next = Math.min(maxRem, Math.max(minRem, rem));
     setWidthRem(next);
-    if (commit) writeStored(next);
-  }, [minRem, maxRem]);
-  const reset = useCallback(() => { setWidthRem(null); writeStored(null); }, []);
+    if (commit) writeStored(storageKey, next);
+  }, [storageKey, minRem, maxRem]);
+  const reset = useCallback(() => { setWidthRem(null); writeStored(storageKey, null); }, [storageKey]);
   const style = useMemo<CSSProperties | undefined>(() => (active && widthRem !== null ? ({ '--sidebar-width': `${widthRem}rem` } as CSSProperties) : undefined), [active, widthRem]);
   return useMemo(() => (active ? { minRem, maxRem, style, widthRem, set, reset } : undefined), [active, minRem, maxRem, style, widthRem, set, reset]);
 }
@@ -85,8 +93,25 @@ const RAIL = cn(
   'cursor-col-resize touch-none',
 );
 
-/** The rail of the sidebar: the host's toggle, or, when the shell is resizable (fine pointer, expanded, wide), the drag handle. */
-export function ResizableRail({ resize }: { readonly resize: SidebarResize | undefined }) {
+const ResizeContext = createContext<SidebarResize | undefined>(undefined);
+
+export type ResizableSidebarProviderProps = ComponentProps<typeof SidebarProvider> & {
+  /** `true` or `{ min, max }` in rem (12 and 28). Off: this is the host's SidebarProvider. */
+  readonly resizable?: SidebarResizable | undefined;
+  /** The app's name and the signed-in person's id or email: the stored width is theirs. With no person it is the app's. */
+  readonly app?: string | undefined;
+  readonly person?: string | undefined;
+};
+
+/** The host's SidebarProvider with a resizable left pane, for an app that renders the provider itself. Put `ResizableRail` in the Sidebar where `SidebarRail` was. */
+export function ResizableSidebarProvider({ resizable, app, person, style, ...props }: ResizableSidebarProviderProps) {
+  const resize = useSidebarResize(resizable, { app, person });
+  return <ResizeContext value={resize}><SidebarProvider style={resize?.style ? { ...style, ...resize.style } : style} {...props} /></ResizeContext>;
+}
+
+/** The rail of the sidebar: the host's toggle, or, under a resizable provider (fine pointer, expanded, wide), the drag handle. */
+export function ResizableRail() {
+  const resize = useContext(ResizeContext);
   const { isMobile, state } = useSidebar();
   if (!resize || isMobile || state !== 'expanded') return <SidebarRail />;
   return <ResizeHandle resize={resize} />;
@@ -109,11 +134,23 @@ function ResizeHandle({ resize }: { readonly resize: SidebarResize }) {
   }, []);
   const direction = () => (ref.current?.closest('[data-side]')?.getAttribute('data-side') === 'right' ? -1 : 1);
   const to = (start: { x: number; rem: number; sign: number }, clientX: number) => start.rem + ((clientX - start.x) * start.sign) / rootRem();
-  // The sidebar animates its width; following the pointer must not lag behind it.
+  // The sidebar animates its width; following the pointer must not lag behind it. The inline transitions are put back as they were when the drag
+  // ends however it ends: release, cancel, a lost pointer capture, or the handle leaving (Ctrl+B mid-drag collapses the sidebar and unmounts it).
+  const held = useRef<Array<readonly [HTMLElement, string]>>([]);
+  const settle = useCallback(() => {
+    for (const [element, transition] of held.current) element.style.transition = transition;
+    held.current = [];
+  }, []);
   const follow = (on: boolean) => {
+    if (!on) { settle(); return; }
+    settle();
     const wrapper = ref.current?.closest('[data-slot=sidebar-wrapper]');
-    for (const element of wrapper?.querySelectorAll<HTMLElement>('[data-slot=sidebar-gap], [data-slot=sidebar-container]') ?? []) element.style.transition = on ? 'none' : '';
+    for (const element of wrapper?.querySelectorAll<HTMLElement>('[data-slot=sidebar-gap], [data-slot=sidebar-container]') ?? []) {
+      held.current.push([element, element.style.transition]);
+      element.style.transition = 'none';
+    }
   };
+  useEffect(() => settle, [settle]);
   return <div
     ref={ref}
     data-sidebar="rail"
@@ -146,6 +183,7 @@ function ResizeHandle({ resize }: { readonly resize: SidebarResize }) {
       if (start?.moved) resize.set(to(start, event.clientX), true);
     }}
     onPointerCancel={() => { drag.current = null; follow(false); }}
+    onLostPointerCapture={() => { drag.current = null; follow(false); }}
     onDoubleClick={resize.reset}
     onKeyDown={event => {
       const grow = direction() === 1 ? 'ArrowRight' : 'ArrowLeft';
