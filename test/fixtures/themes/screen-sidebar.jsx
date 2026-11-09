@@ -10,7 +10,10 @@ if (params.get('dark') === '1') document.documentElement.classList.add('dark');
 const rows = ['Harbour timelapse', 'Market walk', 'Night train'];
 const list = state => <div className="flex flex-col gap-1 p-2">
   <input aria-label="Search" placeholder="Search" data-testid="sidebar-search" className="h-9 rounded-md border px-2" />
-  {rows.map((row, at) => <button key={row} type="button" data-testid={`row-${at}`} className="min-h-11 rounded-md px-2 text-left" data-collapsed={state.collapsed}>{row}</button>)}
+  {rows.map((row, at) => <button key={row} type="button" data-testid={`row-${at}`} className="min-h-11 rounded-md px-2 text-left" data-collapsed={state.collapsed}
+    onClick={at === 2 ? () => history.pushState(null, '', '/x') : undefined}>{row}</button>)}
+  <div role="row" data-testid="row-field" className="p-1"><input aria-label="Rename" placeholder="Rename" data-testid="row-input" className="h-9 w-full rounded-md border px-2" /></div>
+  <div data-keep-sheet="" className="p-1"><button type="button" data-testid="keep-button" className="min-h-11 rounded-md px-2">Keep</button></div>
 </div>;
 const nav = [
   { id: 'library', label: 'Library', sidebarLabel: 'Videos', icon: LibraryIcon, sidebar: list, render: () => <p data-testid="library-screen" className="p-4">Fictional library</p> },

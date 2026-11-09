@@ -113,6 +113,41 @@ test('open the sheet, pick a row, the sheet closes; the search field keeps it op
   await browser.until('sheet closed', `!document.querySelector('[data-testid=screen-sidebar-sheet]')`);
 });
 
+test('a row that navigates keeps its navigation: the sheet closes and the URL is the row\'s', { skip, timeout: 120000 }, async () => {
+  await open('library');
+  await click('[data-testid=screen-sidebar-button]');
+  await browser.until('rows', `!!document.querySelector('[data-testid=row-2]')`);
+  await click('[data-testid=row-2]');
+  await browser.until('sheet closed', `!document.querySelector('[data-testid=screen-sidebar-sheet]')`);
+  await wait(600);
+  assert.equal(await browser.evaluate(`location.pathname`), '/x', 'the sheet\'s Back cleanup did not undo the row\'s pushState');
+});
+
+test('a field inside a row, and anything under data-keep-sheet, keeps the sheet open', { skip, timeout: 120000 }, async () => {
+  await open('library');
+  await click('[data-testid=screen-sidebar-button]');
+  await browser.until('rows', `!!document.querySelector('[data-testid=row-input]')`);
+  await click('[data-testid=row-input]');
+  await wait(500);
+  assert.equal(await has('[data-testid=screen-sidebar-sheet]'), true, 'the input inside role=row keeps the sheet');
+  await click('[data-testid=keep-button]');
+  await wait(500);
+  assert.equal(await has('[data-testid=screen-sidebar-sheet]'), true, 'a button under data-keep-sheet keeps the sheet');
+});
+
+test('Escape closes the sheet and returns focus to the header button', { skip, timeout: 120000 }, async () => {
+  await open('library');
+  await browser.evaluate(`document.querySelector('[data-testid=screen-sidebar-button]').focus()`);
+  await click('[data-testid=screen-sidebar-button]');
+  await browser.until('sheet', `!!document.querySelector('[data-testid=screen-sidebar-sheet]')`);
+  await wait(400);
+  await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await browser.until('sheet closed', `!document.querySelector('[data-testid=screen-sidebar-sheet]')`);
+  await wait(300);
+  assert.equal(await browser.evaluate(`document.activeElement?.getAttribute('data-testid')`), 'screen-sidebar-button');
+});
+
 for (const dark of [false, true]) {
   test(`shoot the library at 390, ${dark ? 'dark' : 'light'}: closed and open`, { skip, timeout: 120000 }, async () => {
     await open('library', dark);
