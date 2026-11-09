@@ -89,6 +89,8 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
   const pressedAt = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const sendOnText = useRef(false);
+  // A stop asked before the microphone is open (the kit's `finish` would cancel then) waits for the recording to begin.
+  const stopAsked = useRef(false);
   const field = useRef('');
   const quote = useRef(quoted?.label);
   useLayoutEffect(() => { field.current = text; quote.current = quoted?.label; });
@@ -119,8 +121,6 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
   }, [dictation.phase, dictation]);
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  // A stop asked before the microphone is open (the kit's `finish` would cancel then) waits for the recording to begin.
-  const stopAsked = useRef(false);
   const stopListening = (send: boolean) => {
     clearTimeout(timer.current); sendOnText.current = send; setMode('idle');
     if (dictation.phase === 'starting') stopAsked.current = true; else dictation.finish();
@@ -157,7 +157,7 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
       <span className="min-w-0 flex-1 truncate">{quoted.label}</span>
       <Button type="button" variant="ghost" size="icon" aria-label={words.removeQuote} onClick={quoted.onClear}><XIcon /></Button>
     </div> : null}
-    <div data-slot="agent-bar" data-testid="agent-bar" data-state={state} className={cn('flex items-center gap-1.5 rounded-(--radius-3xl) bg-card p-1.5 ring-1 ring-border focus-within:ring-primary', outlined && 'ring-2 ring-primary')}>
+    <div data-slot="agent-bar" data-testid="agent-bar" data-state={state} className={cn('flex items-center gap-1.5 rounded-(--radius-3xl) bg-card p-1.5 ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring', outlined && 'ring-2 ring-primary')}>
       {state === 'listening' ? <>
         <Button type="button" variant="secondary" size="icon" aria-label={words.cancel} onClick={abandon}><XIcon /></Button>
         <Wave levels={dictation.levels} />
