@@ -26,6 +26,8 @@ import { PanelLeftIcon } from "../../registry/_shared/icons"
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 // Theme tokens: an app sets --sidebar-width, --sidebar-width-icon and --sidebar-width-mobile in its theme.core.css (:root); a SidebarProvider `style` on the wrapper wins. The phone sheet is 75% of the screen (the Sheet's own cap, 24rem, applies) unless --sidebar-width-mobile is set; the old inline 18rem never applied because the Sheet's side-qualified w-3/4 beat it. The wrapper resolves them with their defaults into the private --sidebar-w and --sidebar-w-icon, so the icon rail follows the wrapper's own --control-h.
+// The row height token (one source): the wrapper defines it, and so does the phone Sheet content, which portals to body outside the wrapper.
+const SIDEBAR_ROW = "[--sidebar-row:var(--control-h,2.25rem)] pointer-coarse:[--sidebar-row:max(var(--control-h,2.25rem),var(--control-min,2.75rem))]"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
 type SidebarContextProps = {
@@ -39,6 +41,8 @@ type SidebarContextProps = {
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
+// The provider's wrapper element, so the portaled phone Sheet can read the --sidebar-row the wrapper resolved (its default, or a consumer's override in style or className).
+const SidebarWrapperContext = React.createContext<React.RefObject<HTMLDivElement | null> | null>(null)
 
 function useSidebar() {
   const context = React.useContext(SidebarContext)
@@ -122,19 +126,25 @@ function SidebarProvider({
     [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
   )
 
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null)
+
   return (
     <SidebarContext.Provider value={contextValue}>
+      <SidebarWrapperContext.Provider value={wrapperRef}>
       <div
+        ref={wrapperRef}
         data-slot="sidebar-wrapper"
         style={style}
         className={cn(
-          "group/sidebar-wrapper flex min-h-svh w-full [--sidebar-w:var(--sidebar-width,16rem)] [--sidebar-w-icon:var(--sidebar-width-icon,calc(var(--sidebar-row)_+_1rem))] [--sidebar-row:var(--control-h,2.25rem)] pointer-coarse:[--sidebar-row:max(var(--control-h,2.25rem),var(--control-min,2.75rem))] has-data-[variant=inset]:bg-sidebar",
+          SIDEBAR_ROW,
+          "group/sidebar-wrapper flex min-h-svh w-full [--sidebar-w:var(--sidebar-width,16rem)] [--sidebar-w-icon:var(--sidebar-width-icon,calc(var(--sidebar-row)_+_1rem))] has-data-[variant=inset]:bg-sidebar",
           className
         )}
         {...props}
       >
         {children}
       </div>
+      </SidebarWrapperContext.Provider>
     </SidebarContext.Provider>
   )
 }
@@ -153,6 +163,13 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const wrapperRef = React.useContext(SidebarWrapperContext)
+  // The sheet portals outside the wrapper: carry the wrapper's resolved --sidebar-row into it (falls back to SIDEBAR_ROW).
+  const [sheetRow, setSheetRow] = React.useState<string | undefined>()
+  React.useLayoutEffect(() => {
+    if (!isMobile || !openMobile || !wrapperRef?.current) return
+    setSheetRow(getComputedStyle(wrapperRef.current).getPropertyValue("--sidebar-row").trim() || undefined)
+  }, [isMobile, openMobile, wrapperRef])
 
   if (collapsible === "none") {
     return (
@@ -177,7 +194,8 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="data-[side=left]:w-[var(--sidebar-width-mobile,75%)] data-[side=right]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          className={cn(SIDEBAR_ROW, "data-[side=left]:w-[var(--sidebar-width-mobile,75%)] data-[side=right]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden")}
+          style={sheetRow ? ({ "--sidebar-row": sheetRow } as React.CSSProperties) : undefined}
           side={side}
         >
           <SheetHeader className="sr-only">
