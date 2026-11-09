@@ -1,5 +1,8 @@
 # Unreleased
 
+- **`AppShell resizable`: the left pane's minimum is 224px (`app-shell`; D-1969).** The default minimum rises from 12rem (192px) to 14rem (224px) so item names are no longer truncated; the maximum (28rem) and the default width are unchanged. A width an app or person stored below 224px is clamped up to 224px when the pane loads (the stored value is not rewritten until the next drag). An app that passes `resizable={{ min }}` keeps its own `min`. Re-run `npx shadcn add` for `app-shell` to pick it up.
+- **The wide agent dock takes no focus at page load (`app-shell`; D-1968).** A dock open at load (the `?agent=` URL, a remembered open state) no longer focuses its Float button, so no ring shows on load. Focus is still moved to the first dock control after a dock control, placement or side change; keyboard focus rings are unchanged. Re-run `npx shadcn add` for `app-shell`.
+
 # Migrating to 0.4.73
 
 - **`WorkspaceBar` / `AgentWorkspace barOptions.command`: a host panel id as `kind` (`pi-app`; additive; D-1930).** `command.kind` is now `'history' | 'library' | 'new' | (string & {})`: a kind other than the three built-ins names one of the `panels` by id and opens it through the same path as a click (`onOpenChange(true)`, then `onOpen`), also with `hidden` (bar=0); the same id requested again with a new `n` while it is shown closes it (`onOpenChange(false)`), back to the chat; an unknown id does nothing. `history`, `library` and `new` are unchanged (a repeat does not close them). Re-sync `pi-app` (`registry:build` refreshes `public/r`). Test: `test/ui/workspace-bar-command.test.mjs`; see `features/agent-workspace.md`.

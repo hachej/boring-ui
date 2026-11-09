@@ -803,9 +803,13 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   const { restoreFocus: restoreFocusRef } = layer;
   const openRef = useRef(open);
   useLayoutEffect(() => { openRef.current = open; });
+  // Only a change of placement or side can strand focus: the first run (the dock opened at load) leaves focus alone, so no header button shows a ring on page load (D-1968).
+  const placed = useRef({ placement: api.placement, side });
   useLayoutEffect(() => {
+    const changed = placed.current.placement !== api.placement || placed.current.side !== side;
+    placed.current = { placement: api.placement, side };
     const lost = !document.activeElement || document.activeElement === document.body;
-    const wanted = restoreFocusRef.current || (openRef.current && lost && api.placement !== 'closed');
+    const wanted = restoreFocusRef.current || (changed && openRef.current && lost && api.placement !== 'closed');
     restoreFocusRef.current = false;
     if (wanted) box.current?.querySelector<HTMLElement>('[data-dock-control]')?.focus({ preventScroll: true });
   }, [api.placement, side, restoreFocusRef]);
