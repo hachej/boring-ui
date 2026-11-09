@@ -94,8 +94,8 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
   const { before, after } = placeNav(items);
   const { tabs, overflow } = splitNav([...before, ...after]);
   const inOverflow = overflow.find(item => item.id === activeId);
-  /** « Plus » stands for the hidden items: it shows the first one's dot. */
-  const hidden = overflow.find(item => item.badge)?.badge;
+  /** « Plus » stands for the hidden items: it shows the dot of the first badged one other than the item on show (that one has its own tab face). */
+  const hidden = overflow.find(item => item.id !== activeId && item.badge)?.badge;
   const tab = (item: NavItem) => <Button key={item.id} variant={item.id === activeId ? 'secondary' : 'ghost'} role="tab" data-testid={`tab-${item.id}`} aria-selected={item.id === activeId} tabIndex={item.id === activeId ? 0 : -1}
     onClick={() => onChange(item.id)} className={TAB}>
     <item.icon />{item.label}{item.badge && <Dot badge={item.badge} className="absolute top-1 left-1/2 ml-2" />}
@@ -107,7 +107,7 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
     {Plus && <>
       <Button variant={inOverflow ? 'secondary' : 'ghost'} role="tab" data-testid="tab-plus" aria-selected={Boolean(inOverflow)} aria-haspopup="dialog" tabIndex={inOverflow ? 0 : -1} onClick={() => setPlusOpen(true)}
         className={TAB}>
-        <Plus />{inOverflow?.label ?? text.more}{!inOverflow && hidden && <Dot badge={hidden} className="absolute top-1 left-1/2 ml-2" />}
+        <Plus />{inOverflow?.label ?? text.more}{hidden && <Dot badge={hidden} className="absolute top-1 left-1/2 ml-2" />}
       </Button>
       <AppSheet open={plusOpen} onOpenChange={setPlusOpen} title={text.more}>
         {overflow.map(item => <Button key={item.id} variant={item.id === activeId ? 'secondary' : 'ghost'} size="lg" data-testid={`plus-${item.id}`} aria-current={item.id === activeId} className={SHEET_ROW}
