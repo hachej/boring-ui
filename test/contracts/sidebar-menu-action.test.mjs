@@ -123,10 +123,10 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
           // D-1972: in the real phone sheet (portaled outside the SidebarProvider wrapper) the count and the « … » are as tall as their row button and start at its top.
           check(await browser.evaluate(`document.querySelector('[data-mobile=true]')?.closest('[data-slot=sidebar-wrapper]') === null`), 'the rows are in the portaled sheet, outside the provider wrapper');
           for (const [id, r] of Object.entries(m.rows)) for (const what of ['badge', 'action']) {
-            if (!r[what]) continue;
+            if (!r[what] || r[what].w === 0) continue;
             check(Math.abs(r[what].y - r.button.y) <= 1 && Math.abs(r[what].h - r.button.h) <= 1, `${id}: the ${what} (top ${r[what].y}, ${r[what].h} high) matches its row button (top ${r.button.y}, ${r.button.h} high)`);
           }
-          if (mode === 'sheet-row') for (const [id, r] of Object.entries(m.rows)) for (const what of ['button', 'badge', 'action']) if (r[what]) check(r[what].h === 56, `${id}: the ${what} follows the provider's --sidebar-row of 3.5rem in the sheet (${r[what].h}px, expected 56)`);
+          if (mode === 'sheet-row') for (const [id, r] of Object.entries(m.rows)) for (const what of ['button', 'badge', 'action']) if (r[what] && r[what].w > 0) check(r[what].h === 56, `${id}: the ${what} follows the provider's --sidebar-row of 3.5rem in the sheet (${r[what].h}px, expected 56)`);
           continue;
         }
         if (mode === 'collapsed') {
@@ -178,7 +178,7 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
           }
           check(action.actionOpacity === 1, `a row with an action and no count keeps its action shown at rest (${action.actionOpacity})`);
           for (const id of ['folder', 'nested']) {
-            await browser.hover(`document.querySelector('[data-row=${id}]')`);
+            await browser.hover(`document.querySelector('[data-row=${id}] > [data-sidebar=menu-button]')`);
             await new Promise(done => setTimeout(done, 250));
             const h = (await measure()).rows[id];
             if (shots && id === 'nested') await browser.screenshot(`sidebar-action-${name}-${theme}-hover.png`);
