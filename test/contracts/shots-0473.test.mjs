@@ -127,10 +127,13 @@ test('resize handle: rest, hover, drag, min and max at 1280, light and dark', { 
     assert.equal(await browser.evaluate(`${handle}.matches(':hover')`), true, 'the pointer is over the handle');
     style.hover = await line();
     await take('hover', 256);
-    writeFileSync(join(shots, `resize-handle-hover-style-${mode}.json`), JSON.stringify(style));
+    // A CSS probe (the JS matchMedia is shimmed, so it proves nothing): does `@media (hover: hover)` itself match under the emulation?
+    style.cssHoverMedia = await browser.evaluate(`(() => { const s = document.createElement('style'); s.textContent = '@media (hover: hover) { #hover-probe { color: rgb(1, 2, 3) } }'; const p = document.createElement('i'); p.id = 'hover-probe'; document.head.append(s); document.body.append(p); return getComputedStyle(p).color === 'rgb(1, 2, 3)'; })()`);
     await fresh();
     const held = await browser.drag(handle, (await centre()).x + 64, { release: false }); await wait(300);
+    style.drag = await line();
     await take('drag', 320);
+    writeFileSync(join(shots, `resize-handle-hover-style-${mode}.json`), JSON.stringify(style));
     await held.release();
     await fresh();
     await browser.drag(handle, (await centre()).x - 2000); await wait(400);
