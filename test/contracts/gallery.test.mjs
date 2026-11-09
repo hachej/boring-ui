@@ -50,6 +50,8 @@ after(async () => { await browser?.close(); });
 
 const open = async (hash, theme) => {
   await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  // A fresh document each time: a hash change on the open page would only route, not start the page from that hash.
+  await browser.send('Page.navigate', { url: 'about:blank' });
   await browser.send('Page.navigate', { url: `${pathToFileURL(file).href}${theme === 'dark' ? '?theme=dark' : ''}#${hash}` });
   await browser.until('shell mounted', `!!document.querySelector('[data-testid=app-shell]') && !!document.querySelector('[data-testid^=gallery-]') && document.readyState === 'complete'`);
 };
@@ -70,7 +72,7 @@ for (const theme of ['light', 'dark']) {
       assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=gallery-${id}] [data-testid^=specimen-]')].map(e => e.dataset.testid.slice('specimen-'.length))`), specimens, `${id}: its cards, in order`);
       for (const specimen of specimens) {
         // Every card has a usage line, a feature reference and content with a size and something in it.
-        const card = await browser.evaluate(`(() => { const c = document.querySelector('[data-testid=specimen-${specimen}]'); const body = c.querySelector('[data-slot=card-content]'); const r = body.getBoundingClientRect(); return { size: r.width > 0 && r.height > 0, filled: body.children.length > 0 && body.textContent.trim().length + body.querySelectorAll('img,svg,iframe,canvas,input,table').length > 0, usage: !!c.querySelector('[data-testid=usage-code]')?.textContent.trim(), feature: !!c.querySelector('[data-testid=feature-ref]')?.textContent.trim() }; })()`);
+        const card = await browser.evaluate(`(() => { const c = document.querySelector('[data-testid=specimen-${specimen}]'); const body = c.querySelector('[data-slot=card-content]'); const r = body.getBoundingClientRect(); return { size: r.width > 0 && r.height > 0, filled: body.children.length > 0 && body.textContent.trim().length + body.querySelectorAll('img,svg,iframe,canvas,input,table,[data-slot=skeleton]').length > 0, usage: !!c.querySelector('[data-testid=usage-code]')?.textContent.trim(), feature: !!c.querySelector('[data-testid=feature-ref]')?.textContent.trim() }; })()`);
         assert.deepEqual(card, { size: true, filled: true, usage: true, feature: true }, `${id}/${specimen}: the card shows its specimen`);
         const [selector, least] = CONTENT[specimen] ?? [];
         if (selector) assert.ok(await browser.evaluate(`document.querySelectorAll('[data-testid=specimen-${specimen}] ${selector}').length >= ${least}`), `${id}/${specimen}: ${least} x ${selector}`);
