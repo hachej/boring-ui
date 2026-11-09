@@ -265,7 +265,7 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
     <div className="app-shell contents">
     {/* The one toggle: title and button expanded, the button alone on the icon rail, and « close » inside the phone sheet. The hover rail has no toggle on a wide screen (it opens on hover and focus by itself) but a pin (D-2010) that keeps it open, and keeps « close » in the sheet. */}
     <SidebarHeader className="flex-row items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center"><p data-testid="sidebar-title" className="m-0 min-w-0 truncate px-2 py-1 text-sm font-semibold group-data-[collapsible=icon]:hidden">{title}</p>{(rail !== 'hover' || isMobile) && <SidebarTrigger />}
-      {hover && <Toggle size="sm" data-testid="sidebar-pin" pressed={pinned} onPressedChange={() => togglePin()} aria-label={text.pin} title={`${pinned ? text.unpin : text.pin} · Ctrl+B`}
+      {hover && <Toggle size="icon-sm" data-testid="sidebar-pin" pressed={pinned} onPressedChange={() => togglePin()} aria-label={text.pin} title={`${pinned ? text.unpin : text.pin} · Ctrl+B`}
         className="group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:pointer-coarse:pointer-events-auto group-data-[collapsible=icon]:pointer-coarse:opacity-100"><PinIcon aria-hidden="true" weight={pinned ? 'fill' : 'regular'} /></Toggle>}</SidebarHeader>
     <SidebarContent>
       {/* Without the screen's own content, one group in placed order; with it, the before items above it and the rest below. */}
