@@ -3,10 +3,11 @@
 // D-1978 part 3: the conversation log sheet of the agent bar. The bar's history arrow (`onHistory`) opens it; it is a shadcn Drawer that is not modal, so the bar stays
 // usable under it (the arrow flips and closes it again) and there is no overlay. Focus moves to the close button on open and back to what had it (the arrow)
 // on close; Escape closes. The app owns the data and every word (title, entries, status labels): it passes `entries` and `labels`, the kit draws them.
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, useRef } from 'react';
 import { CheckIcon, ChevronDownIcon } from '../_shared/icons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { Drawer, DrawerClose, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 
 /** One row of the log. `id` is the app's stable key. */
@@ -61,27 +62,26 @@ function Row({ entry }: { readonly entry: ConversationLogEntry }) {
 
 export function ConversationLog({ open, onOpenChange, entries, labels, top = '4rem', bottom }: ConversationLogProps) {
   const words = { ...conversationLogLabels, ...labels };
-  const close = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
-  // What had the focus when the sheet opened (the bar's arrow) gets it back on close.
+  // The last element outside the sheet that had the focus (the bar's arrow) gets it back on close.
   const opener = useRef<HTMLElement | null>(null);
-  const was = useRef(false);
-  const gap = useRef('6rem');
-  if (open && !was.current) {
-    opener.current = typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    if (bottom === undefined) gap.current = barClearance();
-  }
-  was.current = open;
+  useEffect(() => {
+    const track = (event: FocusEvent) => { if (event.target instanceof HTMLElement && !event.target.closest('[data-conversation-log]')) opener.current = event.target; };
+    document.addEventListener('focusin', track);
+    return () => document.removeEventListener('focusin', track);
+  }, []);
+  const clearance = bottom ?? (open ? barClearance() : '6rem');
   // The log opens on its latest entry.
   useEffect(() => { if (open && list.current) list.current.scrollTop = list.current.scrollHeight; }, [open, entries.length]);
 
   return <Drawer open={open} onOpenChange={onOpenChange} modal={false} disablePointerDismissal showSwipeHandle>
-    <DrawerContent data-conversation-log="" initialFocus={close} finalFocus={opener as RefObject<HTMLElement | null>}
-      style={{ bottom: bottom ?? gap.current, height: `calc(100dvh - ${top} - ${bottom ?? gap.current})`, maxHeight: 'none' }}>
+    <DrawerContent data-conversation-log="" initialFocus={() => document.querySelector<HTMLElement>('[data-testid="conversation-log-close"]')} finalFocus={() => opener.current}
+      style={{ bottom: clearance, height: `calc(100dvh - ${top} - ${clearance})`, maxHeight: 'none' }}>
       <div className="flex items-center justify-between gap-2 px-4 py-3">
         <DrawerTitle>{words.title}</DrawerTitle>
-        <DrawerClose render={<Button type="button" variant="secondary" size="icon" data-conversation-log="" data-testid="conversation-log-close" aria-label={words.close} ref={close} />}><ChevronDownIcon /></DrawerClose>
+        <DrawerClose render={<Button type="button" variant="secondary" size="icon" data-conversation-log="" data-testid="conversation-log-close" aria-label={words.close} />}><ChevronDownIcon /></DrawerClose>
       </div>
+      <Separator />
       <div ref={node => { list.current = node; if (node) node.scrollTop = node.scrollHeight; }} data-testid="agent-log" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
         {entries.length ? entries.map(entry => <Row key={entry.id} entry={entry} />) : <p className="m-auto text-sm text-muted-foreground">{words.empty}</p>}
       </div>

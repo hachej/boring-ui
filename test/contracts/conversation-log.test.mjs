@@ -121,7 +121,8 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     await wait(200);
     await shot(`historique-${at}`);
     await browser.evaluate(`document.querySelector('[data-testid=agent-log]').scrollTop = 99999`);
-    await press('Prévoir le saumon');
+    const salmon = `[...document.querySelectorAll('button')].find(b => b.textContent === 'Prévoir le saumon')`;
+    await (touch ? browser.tap(salmon) : browser.click(salmon));
     assert.deepEqual(await browser.evaluate(`window.__selected`), ['Prévoir le saumon']);
 
     // The bar stays alive under the sheet.
