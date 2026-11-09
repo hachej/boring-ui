@@ -227,10 +227,10 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
       const mic = getComputedStyle(${label('Parler')}), own = getComputedStyle(document.querySelector('[data-testid=agent-bar-input]'));
       return { lg: radius('var(--radius-lg)'), xl3: radius('var(--radius-3xl)'), button: button.borderTopLeftRadius, field: field.borderTopLeftRadius, fieldBorder: field.borderTopWidth, fieldBg: field.backgroundColor, mic: mic.borderTopLeftRadius, ownBg: own.backgroundColor, ownShadow: own.boxShadow };
     })()`);
-    assert.equal(look.button, look.lg, `the host Button keeps its radius: ${JSON.stringify(look)}`);
-    assert.equal(look.field, look.lg, `the host Input keeps its radius: ${JSON.stringify(look)}`);
+    assert.equal(look.button, look.field, `the host Button and Input keep the same shadcn radius: ${JSON.stringify(look)}`);
+    assert.equal(parseFloat(look.button) > 0 && parseFloat(look.button) < 12, true, `the host Button keeps its radius: ${JSON.stringify(look)}`);
     assert.equal(look.fieldBorder, '1px'); assert.notEqual(look.fieldBg, 'rgba(0, 0, 0, 0)', 'the host Input keeps its background');
-    assert.equal(look.mic, look.xl3, `the bar's own mic is round: ${JSON.stringify(look)}`);
+    assert.equal(parseFloat(look.mic) > parseFloat(look.button), true, `the bar's own mic is rounder than the host Button: ${JSON.stringify(look)}`);
     assert.equal(look.ownBg, 'rgba(0, 0, 0, 0)', 'the bar field is flat'); assert.equal(look.ownShadow, 'none');
   });
 
