@@ -183,23 +183,26 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
   const hover = rail === 'hover' && !isMobile;
   const { pinned, set: setPinned } = useSidebarPin(hover, identity ?? {});
   const wrapper = useRef<HTMLDivElement>(null);
+  // A dialog, menu or popover opened from the pane lives in a portal outside it: the pointer and focus leave the pane while it is open. Its trigger says so; the pane waits.
+  const layerOpen = () => Boolean(wrapper.current?.querySelector('[aria-haspopup][aria-expanded="true"], [aria-haspopup][data-popup-open], [aria-haspopup][data-state="open"]'));
   const togglePin = () => {
     const next = !pinned;
     setPinned(next);
     // Unpinning folds unless the pointer or focus is still in the pane (then leaving does).
     const el = wrapper.current;
-    setOpen(next || Boolean(el && (el.matches(':hover') || el.contains(document.activeElement))));
+    setOpen(next || layerOpen() || Boolean(el && (el.matches(':hover') || el.contains(document.activeElement))));
   };
   const toggle = useRef(togglePin);
   useEffect(() => { toggle.current = togglePin; });
-  useEffect(() => { if (pinned) setOpen(true); }, [pinned, setOpen]);
-  // A dialog, menu or popover opened from the pane lives in a portal outside it: the pointer and focus leave the pane while it is open. Its trigger says so; the pane waits.
-  const layerOpen = () => Boolean(wrapper.current?.querySelector('[aria-haspopup][aria-expanded="true"], [aria-haspopup][data-popup-open], [aria-haspopup][data-state="open"]'));
+  useEffect(() => { if (pinned && state === 'collapsed') setOpen(true); }, [pinned, state, setOpen]);
   const settled = () => {
     const el = wrapper.current;
     try { return Boolean(el) && !el!.matches(':hover') && !(el!.contains(document.activeElement) && document.activeElement!.matches(':focus-visible')); } catch { return false; }
   };
-  const fold = () => { if (!pinned && !layerOpen()) setOpen(false); };
+  // Keyboard focus inside the pane (a mouse click leaves none to keep it open) and the pointer over it each keep it open: it folds when both have gone.
+  const focusIn = () => { const el = wrapper.current; try { return Boolean(el && el.contains(document.activeElement) && document.activeElement!.matches(':focus-visible')); } catch { return false; } };
+  const pointerIn = () => { try { return Boolean(wrapper.current?.matches(':hover')); } catch { return false; } };
+  const fold = (by: 'pointer' | 'focus') => { if (!pinned && !layerOpen() && !(by === 'pointer' ? focusIn() : pointerIn())) setOpen(false); };
   // When that layer closes, the pane folds if the pointer and focus are outside (the trigger gets focus back after a pause).
   useEffect(() => {
     const el = wrapper.current;
@@ -214,6 +217,8 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
     if (!hover) return undefined;
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'b' || !(event.metaKey || event.ctrlKey)) return;
+      // A text field or editor keeps its own Ctrl+B (bold, say).
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
       event.preventDefault();
       event.stopPropagation();
       toggle.current();
@@ -249,7 +254,7 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
     {/* The one toggle: title and button expanded, the button alone on the icon rail, and « close » inside the phone sheet. The hover rail has no toggle on a wide screen (it opens on hover and focus by itself) but a pin (D-2010) that keeps it open, and keeps « close » in the sheet. */}
     <SidebarHeader className="flex-row items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center"><p data-testid="sidebar-title" className="m-0 min-w-0 truncate px-2 py-1 text-sm font-semibold group-data-[collapsible=icon]:hidden">{title}</p>{(rail !== 'hover' || isMobile) && <SidebarTrigger />}
       {hover && <Button type="button" variant="ghost" size="icon-sm" data-testid="sidebar-pin" aria-pressed={pinned} aria-label={text.pin} title={text.pin} onClick={togglePin}
-        className="group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:pointer-coarse:opacity-100"><PinIcon aria-hidden="true" weight={pinned ? 'fill' : 'regular'} /></Button>}</SidebarHeader>
+        className="group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:pointer-coarse:pointer-events-auto group-data-[collapsible=icon]:pointer-coarse:opacity-100"><PinIcon aria-hidden="true" weight={pinned ? 'fill' : 'regular'} /></Button>}</SidebarHeader>
     <SidebarContent>
       {/* Without the screen's own content, one group in placed order; with it, the before items above it and the rest below. */}
       {items.length > 1 && own != null && navGroup(before, 'shrink-0', 'nav-before')}
@@ -275,9 +280,9 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
   // Reserve the native inset icon gap even while the fixed sidebar reveals its labels over the page.
   return <div ref={wrapper} data-rail="hover" data-pinned={pinned} className={pinned ? 'relative z-20 shrink-0' : 'relative z-20 w-[calc(var(--sidebar-w-icon)+(--spacing(4)))] shrink-0'}
     onPointerEnter={event => { if (event.pointerType === 'mouse' || event.pointerType === 'pen') setOpen(true); }}
-    onPointerLeave={fold}
+    onPointerLeave={() => fold('pointer')}
     onFocusCapture={event => { if (event.target.matches(':focus-visible')) setOpen(true); }}
-    onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) fold(); }}
+    onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) fold('focus'); }}
     onKeyDownCapture={event => { if (!pinned && event.key === 'Escape' && event.target instanceof Node && event.currentTarget.contains(event.target)) { event.preventDefault(); event.stopPropagation(); setOpen(false); } }}>
     {sidebar}
   </div>;
