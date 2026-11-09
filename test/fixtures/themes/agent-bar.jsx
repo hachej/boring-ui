@@ -65,8 +65,8 @@ const Day = () => {
   const [open, setOpen] = useState(false);
   window.__clearQuoted = () => setQuoted(undefined);
   const status = params.get('status');
-  return <div className="flex min-h-dvh flex-col bg-background text-foreground">
-    <main className="flex flex-1 flex-col gap-3 p-4">
+  return <div className="flex h-dvh flex-col bg-background text-foreground">
+    <main data-testid="page" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
       <p className="text-sm text-muted-foreground">Lundi 9 novembre</p>
       <p className="text-4xl font-semibold">1 240 <span className="text-base font-medium text-muted-foreground">/ 2 100 kcal</span></p>
       <div className="flex gap-2"><Button data-testid="host-button" variant="outline">Hôte</Button><Input data-testid="host-input" defaultValue="Hôte" aria-label="Champ hôte" /></div>
@@ -75,7 +75,7 @@ const Day = () => {
         {rows.map(row => <p key={row} className="rounded-lg bg-background p-3 text-sm">{row}</p>)}
       </section>)}
     </main>
-    <div data-testid="dock" className="flex flex-col gap-2 border-t bg-background px-4 pt-3 pb-6">
+    <div data-testid="dock" className="flex shrink-0 flex-col gap-2 border-t bg-background px-4 pt-3 pb-6">
       {status ? <AgentStatus state={status} text={status === 'working' ? 'Max compte la tarte…' : 'Tarte vérifiée : 285 kcal'} onCancel={() => { window.__cancelled += 1; }} /> : null}
       {card === 'info' ? <AgentQuestion question={info} hint={false} /> : null}
       <AgentBar {...(params.get('live') === '1' ? { stream } : { transcribe })} onSend={payload => { window.__sent.push(payload); }} historyOpen={open}

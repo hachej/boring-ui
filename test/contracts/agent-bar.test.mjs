@@ -391,6 +391,11 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     assert.equal(await browser.evaluate(`${card}.querySelector('[data-testid=agent-question-hint]')`), null, 'no hint on an answer card');
     assert.equal(await browser.evaluate(`${card}.textContent.includes('≈ 2 280 kcal') && ${card}.textContent.includes('CIQUAL + étiquettes · rien n’est noté')`), true);
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-input]').placeholder`), 'Maintiens pour parler');
+    const fit = await browser.evaluate(`(() => { const bar = document.querySelector('[data-testid=agent-bar]').getBoundingClientRect(); const card = ${card}.getBoundingClientRect(); return { bar: bar.bottom, card: card.top, height: innerHeight }; })()`);
+    if (width === 390) {
+      assert.equal(fit.bar <= fit.height && fit.bar > fit.height - 120, true, `the bar is pinned at the bottom of the viewport: ${JSON.stringify(fit)}`);
+      assert.equal(fit.card >= 120, true, `the card leaves the content visible above it: ${JSON.stringify(fit)}`);
+    }
     await shot(`question-info-${at}`);
     await pressText('Ajouter une part');
     await browser.until('answer card action', `window.__answered.length === 1`);
