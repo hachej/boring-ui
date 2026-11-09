@@ -116,7 +116,7 @@ function Shell({ resizable, appId, compactNav, layout, rail, title, nav, agent, 
   const active = nav.find(item => item.id === route.id) ?? nav[0];
   // The left pane: the person's kept choice, else the first visit's default (D-1909). `rail="hover"` keeps its own reveal and today's default.
   const today = rail !== 'hover' && layout === 'screen';
-  const paneOpen = useSidebarOpen(rail !== 'hover', { app: appId || title, person: account?.email }, today, Boolean(active?.sidebar));
+  const paneOpen = useSidebarOpen(rail !== 'hover', { app: appId || title, person: account?.email }, layout === 'screen', today, Boolean(active?.sidebar));
   if (!active) return null;
   // A nav choice waits for an open detail's stack entry to go back, so the app's router can replace the URL without that Back restoring
   // the detail's. Choosing the screen already on show changes nothing and keeps the detail.
