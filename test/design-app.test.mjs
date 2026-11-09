@@ -273,9 +273,13 @@ test('D-1898: design-no-script-tokens flags setProperty of the sidebar width tok
   assert.equal(count('n.ts', 'const label = "\u{1F600}\u{1F600}";\nconst help = `el.style.setProperty("--sidebar-width", x)`;\n'), 0, 'a help string after an emoji');
   assert.equal(count('o.ts', 'pane.style.setProperty?.("--sidebar-width", "20rem");\n'), 1, 'the optional-call form');
   assert.equal(count('p.ts', 'pane.style.setProperty ?. ("--sidebar-width", "20rem");\n'), 1, 'the optional-call form, spaced');
-  assert.equal(count('q.ts', 'const re = /.setProperty("--sidebar-width")/;\n'), 0, 'a regex literal writes nothing');
-  assert.equal(count('r.ts', 'const re = /[/"]x/; el.style.setProperty("--sidebar-width", x);\n'), 1, 'a real call after a regex literal');
-  assert.equal(count('s.ts', 'const half = a / b; el.style.setProperty("--sidebar-width", x / 2);\n'), 1, 'a division is not a regex');
+  assert.equal(count('s.ts', 'const half = a / b; el.style.setProperty("--sidebar-width", x / 2);\n'), 1, 'a real call after a division');
+  // The shared mask does not guess regex literals: a guess hides real findings in every design rule. A regex literal that holds the call is a false positive we accept.
+  const touch = (name, source) => appFindings(name, source, 'design-hand-touch-size').count;
+  assert.equal(touch('t.tsx', 'let a = 1, b = 2;\na++ / b; <Button className="h-11" />;\n'), 1, 'postfix ++ before a slash, same line');
+  assert.equal(touch('u.tsx', 'let a = 1, b = 2;\na++\n/ b; <Button className="h-11" />;\n'), 1, 'postfix ++ before a slash, next line');
+  assert.equal(touch('v.tsx', 'export const A = () => <div>\n / <Button className="h-11">hello</Button> /\n</div>;\n'), 1, 'a slash in JSX text');
+  assert.equal(count('w.ts', '/* c */ /"/;\nel.style.setProperty("--sidebar-width", x);\n'), 1, 'a stray slash and quote after a comment');
   const kit = readFileSync(join(root, 'shadcn/ui/sidebar.tsx'), 'utf8');
   assert.equal(count('sidebar.tsx', kit), 0, 'the kit\'s SidebarProvider sets the width through React style, never setProperty');
 });
