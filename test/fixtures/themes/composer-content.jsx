@@ -8,6 +8,8 @@ import { useAgentLayer } from '../../../registry/app-shell/agent-layer.tsx';
 // `?dark=1` picks the dark theme.
 const params = new URLSearchParams(location.search);
 if (params.get('dark') === '1') document.documentElement.classList.add('dark');
+// Each person's tray-or-dock choice is remembered by the shell; a test starts fresh unless it asks to keep it (`?keep=1`).
+if (!params.has('keep')) { try { localStorage.removeItem('boring.app-shell.agent.mode'); } catch { /* none */ } }
 window.__sent = [];
 const assistant = content => ({ role: 'assistant', content, api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: 2 });
 const entry = (id, model) => ({ id, kind: 'message', byTaskId: 100, model: [model] });
@@ -41,11 +43,12 @@ const voiceMessage = params.get('voice') === '1' ? {
 } : undefined;
 // Local state of a screen: it must survive the shell crossing the wide breakpoint.
 const Counter = () => { const [count, setCount] = useState(0); return <button type="button" data-testid="counter" onClick={() => setCount(value => value + 1)}>Count {count}</button>; };
-const Page = () => <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+const rows = Math.max(5, Number(params.get('rows') ?? 5));
+const Page = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
   <Probe />
   <h1 className="text-lg font-medium">Week of the market walk</h1>
   <Counter />
-  {['Harbour timelapse', 'Market walk', 'Night train', 'Hill path', 'Bakery morning'].map(row => <p key={row} role="row" className="rounded-md border p-3">{row}</p>)}
+  {Array.from({ length: rows }, (_, index) => <p key={index} role="row" className="flex items-center justify-between rounded-md border p-3">Row {index + 1}<button type="button" data-testid={`cite-${index + 1}`} onClick={() => window.__layer.talkAbout('@meal:2026-10-27/lunch')}>Cite</button></p>)}
 </div>;
 const nav = [{ id: 'week', label: 'Week', icon: Icon, render: () => <Page /> }];
 
