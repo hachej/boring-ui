@@ -54,9 +54,11 @@ test('a fixture that opts into a system font says so explicitly', { skip }, asyn
 
 test('the font list is parsed respecting quotes ("Acme, Inc" is one family)', { skip }, async t => {
   const html = `<!doctype html><style>:root{--font-sans:"Acme, Inc",sans-serif}</style><body>x<script>
-    const loaded = new FontFace('Acme, Inc', fetch('/font.woff2').then(r => r.arrayBuffer())); document.fonts.add(loaded);
-    const broken = new FontFace('Acme', 'url(/missing.woff2)'); document.fonts.add(broken); broken.load().catch(() => {});
-    loaded.load().then(() => { window.ready = true; });</script>`;
+    (async () => {
+      const broken = new FontFace('Acme', 'url(/missing.woff2)'); document.fonts.add(broken); broken.load().catch(() => {});
+      const loaded = new FontFace('Acme, Inc', await (await fetch('/font.woff2')).arrayBuffer()); document.fonts.add(loaded);
+      await loaded.load(); window.ready = true;
+    })();</script>`;
   await withPage(t, html, async browser => { assert.ok(await browser.until('face loaded', 'window.ready === true')); });
 });
 
