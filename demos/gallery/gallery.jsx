@@ -18,7 +18,8 @@ const frame = window.__frame;
 const query = new URLSearchParams(location.search);
 // `#bases` is a section; `#agent-bar` is one card, found by its id inside the section that holds it (every screen stays mounted).
 const hashTarget = () => {
-  const id = decodeURIComponent(location.hash.slice(1));
+  let id = '';
+  try { id = decodeURIComponent(location.hash.slice(1)); } catch { /* a malformed fragment (#%) is an unknown anchor */ }
   if (IDS.includes(id)) return { route: id };
   const card = id ? document.getElementById(id) : null;
   const section = card?.closest('[data-testid^="gallery-"]')?.dataset.testid.slice('gallery-'.length);

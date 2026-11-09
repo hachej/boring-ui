@@ -3,7 +3,7 @@
 The kit in its default style, in the real `AppShell`, on fictional data. One page to open and click through, like a system-design page.
 
 ```
-npm run gallery:build        # writes .cache/gallery/index.html
+npm run gallery:build        # builds the workspace packages, then writes .cache/gallery/index.html
 ```
 
 The file is self-contained: JS and CSS inline, the mono font embedded, no external URL, no network. CI uploads it as the `kit-gallery` artifact.

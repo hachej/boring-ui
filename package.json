@@ -17,6 +17,7 @@
     "typecheck": "npm run build && tsc --project tsconfig.contract-tests.json --noEmit",
     "pretest": "npm run build",
     "test": "node scripts/run-tests.mjs",
+    "pregallery:build": "npm run build",
     "gallery:build": "node scripts/gallery-build.mjs",
     "test:feedback-registry-consumer": "node scripts/test-feedback-registry-consumer.mjs",
     "studio": "node lab/studio/server.mjs",
