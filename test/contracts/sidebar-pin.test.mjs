@@ -119,7 +119,7 @@ test('the pin is reached by keyboard: Tab opens the pane on it, Space pins, the 
   await browser.press(' ');
   await wait(400);
   assert.equal(await pressed(), 'true');
-  assert.equal(await name(), 'Désépingler le volet');
+  assert.equal(await name(), 'Épingler le volet', 'one stable name in both states');
   const pinned = await left();
   assert.ok(pinned > folded + 100, 'pinned: the page starts beside the open pane, ' + pinned + ' vs ' + folded);
   await browser.evaluate(`document.activeElement.blur()`);
@@ -144,6 +144,7 @@ test('a click on the pin keeps the pane open; unpinning folds it when the pointe
   await browser.click(`document.querySelector('${PIN}')`);
   await wait(400);
   assert.equal(await pressed(), 'false');
+  assert.equal(await name(), 'Épingler le volet', 'one stable name in both states');
   assert.equal(await state(), 'expanded', 'still under the pointer');
   assert.equal(await stored(), '0');
   await away();
@@ -194,6 +195,49 @@ test('rail="icon" has no pin, and a throwing store does not break the pin', { sk
   await browser.click(`document.querySelector('${PIN}')`);
   await away();
   assert.equal(await state(), 'expanded', 'pinned for this visit');
+});
+
+const dialogOpen = () => browser.evaluate(`document.querySelector('[data-slot=dialog-content]') !== null`);
+const ownSidebar = () => browser.evaluate(`document.querySelector('[data-testid=own-sidebar]') !== null`);
+const closeDialog = async () => { await browser.click(`document.querySelector('[data-slot=dialog-close]')`); await wait(600); };
+
+test('pinned means open through everything: a portaled dialog, a click in the page, focus leaving; the screen sidebar stays rendered', { skip, timeout: 120000 }, async () => {
+  await mount('dialog=1');
+  await over();
+  assert.equal(await ownSidebar(), true, 'rendered while expanded');
+  await browser.click(`document.querySelector('${PIN}')`);
+  await away();
+  assert.equal(await ownSidebar(), true, 'pinned: rendered with the pointer away');
+  await browser.click(`document.querySelector('[data-testid=open-dialog]')`);
+  await wait(500);
+  assert.equal(await dialogOpen(), true);
+  assert.equal(await state(), 'expanded', 'open under a dialog');
+  await closeDialog();
+  assert.equal(await dialogOpen(), false);
+  await browser.click(`document.querySelector('[data-testid=screen-Comptes]')`);
+  await wait(400);
+  assert.equal(await state(), 'expanded', 'a click in the page leaves it open');
+  assert.equal(await ownSidebar(), true, 'its sidebar content is still rendered');
+  await browser.evaluate(`document.activeElement.blur()`);
+  await wait(300);
+  assert.equal(await state(), 'expanded');
+});
+
+test('unpinned: the pane does not fold under a dialog opened from it, and folds once it is closed with the pointer and focus outside', { skip, timeout: 120000 }, async () => {
+  await mount('dialog=1');
+  await over();
+  await browser.click(`document.querySelector('[data-testid=open-dialog]')`);
+  await wait(500);
+  assert.equal(await dialogOpen(), true);
+  await away();
+  await wait(400);
+  assert.equal(await state(), 'expanded', 'the dialog is open: the portal took the pointer and focus, the pane waits');
+  assert.equal(await dialogOpen(), true);
+  await closeDialog();
+  await away();
+  await wait(400);
+  assert.equal(await dialogOpen(), false);
+  assert.equal(await state(), 'collapsed', 'closed, pointer and focus outside: folded');
 });
 
 test('shots at 1280 light and dark: hover-open unpinned, then pinned', { skip, timeout: 120000 }, async () => {
