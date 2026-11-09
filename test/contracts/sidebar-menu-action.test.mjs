@@ -70,6 +70,8 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
     for (const [name, width, touch, mode] of [['390-touch', 390, true, ''], ['1280-fine', 1280, false, ''], ['390-fine', 390, false, ''], ['1024-touch-collapsed', 1024, true, 'collapsed'], ['1280-fine-collapsed', 1280, false, 'collapsed']]) {
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 560, deviceScaleFactor: 1, mobile: touch });
       await browser.send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: 5 });
+      // The pointer media features follow the device: a headless browser reports none, which pointer-fine: and hover rules would not match.
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: touch ? 'coarse' : 'fine' }, { name: 'hover', value: touch ? 'none' : 'hover' }] });
       for (const theme of ['light', 'dark']) {
         await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?theme=${theme}&mode=${mode}` });
         await browser.until('fixture mounted', `document.querySelectorAll('[data-row]').length === 8 && document.readyState === 'complete'`);
