@@ -220,7 +220,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const scrollToBottom = useRef<() => void>(() => {});
   const useRecorder = voiceMessage?.useRecorder ?? noVoice;
   // eslint-disable-next-line react-hooks/refs -- the recorder is the host's hook, picked by prop, so the compiler cannot see it calls admitted only after a recording is admitted, never during render.
-  const voice = useRecorder({ controller, config: voiceMessage, attachments, labels, activeController: active, admitted: () => timeline ? timeline.afterSend?.() : scrollToBottom.current() });
+  const voice = useRecorder({ controller, config: voiceMessage, attachments, labels, activeController: active, admitted: () => { if (timeline) timeline.afterSend?.(); else scrollToBottom.current(); onSent?.(); } });
   // A reply's Fork button calls the host's latest `fork`; the row context changes only when forking is switched on or off.
   const fork = useRef(conversations?.fork);
   useLayoutEffect(() => { fork.current = conversations?.fork; });
@@ -279,6 +279,21 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const dock = useRef<HTMLElement>(null), belowLg = useBelowLg();
   useToastOffset(dock, belowLg && placement === 'docked');
   const zone = composerHost ? dropZone : null;
+  // Moving the footer between the chat and the content column remounts the field: carry the focus and the selection across.
+  const hosted = Boolean(composerHost), hostedBefore = useRef(hosted), carried = useRef<{ start: number; end: number } | null>(null);
+  if (hostedBefore.current !== hosted) {
+    hostedBefore.current = hosted;
+    const input = dock.current?.querySelector<HTMLTextAreaElement>('[data-testid=composer-input]');
+    carried.current = input && document.activeElement === input ? { start: input.selectionStart, end: input.selectionEnd } : null;
+  }
+  useLayoutEffect(() => {
+    const kept = carried.current;
+    carried.current = null;
+    const input = kept ? dock.current?.querySelector<HTMLTextAreaElement>('[data-testid=composer-input]') : null;
+    if (!kept || !input) return;
+    input.focus({ preventScroll: true });
+    input.setSelectionRange(kept.start, kept.end);
+  }, [hosted]);
   const pickFiles = composer.onPickFiles;
   const dragged = useContentDrop(zone, composer.canAttach ? pickFiles : undefined);
 
@@ -348,7 +363,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   </section>
   {/* The shell's `composer: 'content'`: the same footer, drawn into the content column (the `pi-chat` class keeps the chat's text and resets there). */}
   {composerHost && createPortal(<div data-boring="pi-chat-composer" className="pi-chat bg-card text-card-foreground">{footer}</div>, composerHost)}
-  {zone && dragged && createPortal(<div data-testid="content-drop-overlay" aria-hidden="true" className="pi-chat pointer-events-none absolute inset-0 z-10 flex items-center justify-center border border-dashed border-primary bg-background/80 text-sm font-medium text-foreground">{labels.attachFiles}</div>, zone)}
+  {zone && dragged && createPortal(<div data-testid="content-drop-overlay" aria-hidden="true" className="pi-chat pointer-events-none absolute inset-0 z-10 flex items-center justify-center ring-2 ring-inset ring-primary bg-background/80 text-sm font-medium text-foreground">{labels.attachFiles}</div>, zone)}
   </>;
 }
 

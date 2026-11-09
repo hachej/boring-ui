@@ -158,6 +158,8 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly setSide: (side: DockSide) => void;
   /** `composer: 'content'` on a wide screen with an assistant: the field is drawn under the page content, the dock holds only the thread. False on a phone (the peek drawer) and for `'dock'`. */
   readonly contentComposer: boolean;
+  /** `composer: 'content'` with an agent: the content always sits in the same column wrapper, wide or narrow, so crossing the breakpoint never remounts the screen. */
+  readonly contentColumn: boolean;
   /** Where the content composer is drawn and the element a dropped file is taken on (both set by `AgentDockLayout`). */
   readonly composerSlot: HTMLElement | null;
   readonly dropZone: HTMLElement | null;
@@ -272,7 +274,8 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after mount; reading it before paint keeps server and client markup equal without a flash
   useLayoutEffect(() => { try { const saved = globalThis.localStorage?.getItem(SIDE_KEY); if (saved === 'left' || saved === 'right') setSideState(saved); } catch { /* a convenience */ } }, []);
   const setSide = useCallback((next: DockSide) => { setSideState(next); try { globalThis.localStorage?.setItem(SIDE_KEY, next); } catch { /* a convenience */ } }, []);
-  const contentComposer = composer === 'content' && expanded && agent !== undefined;
+  const contentColumn = composer === 'content' && agent !== undefined;
+  const contentComposer = contentColumn && expanded;
   const specs = useRef({ agent, improve, snap, shown, pmOpen, together });
   // eslint-disable-next-line react-hooks/refs -- latest-value ref: open/lend/showAgent may be called from a child's layout effect, before this component's own effects run
   specs.current = { agent, improve, snap, shown, pmOpen, together };
@@ -438,8 +441,8 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // Sending from the content composer shows the thread; a dock already open stays as it is.
   const onSent = useCallback(() => { if (specs.current.snap === 'closed' || specs.current.shown !== 'agent') open('agent'); }, [open]);
   const value = useMemo<Internal>(() => ({
-    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, composerSlot, dropZone, setComposerSlot: setSlot, setDropZone, onSent,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, composerSlot, dropZone, setSlot, onSent]);
+    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, setDropZone, onSent,
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, onSent]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -880,7 +883,7 @@ export function AgentDockLayout({ children }: { readonly children: ReactNode }):
   // The PM column sits inside the main content: while it is open beside the dock, the dock leaves the screen its least width beside it.
   return <DockLayout storageKey={DOCK_KEY} persist="local" minMain={MIN_MAIN + (layer.besidePanel ? PM_COLUMN : 0)}>
     {layer.side === 'left' && dock}
-    <DockMain>{layer.contentComposer ? <ContentColumn>{children}</ContentColumn> : children}</DockMain>
+    <DockMain>{layer.contentColumn ? <ContentColumn>{children}</ContentColumn> : children}</DockMain>
     {layer.side === 'right' && dock}
   </DockLayout>;
 }
