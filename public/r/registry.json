@@ -2056,25 +2056,7 @@
           "line-height": "var(--leading-snug, 1.375)"
         },
         "[data-boring=\"feedback\"].boring-feedback-bubble": {
-          "z-index": "2147483001",
-          "display": "flex",
-          "flex-direction": "column",
-          "gap": "0.5rem",
-          "background-color": "var(--boring-feedback-surface)",
-          "color": "var(--boring-feedback-text)",
-          "border": "var(--default-border-width) solid var(--boring-feedback-border)",
-          "border-radius": "var(--radius-lg)",
-          "box-shadow": "var(--shadow-md)",
-          "padding-block": "0.75rem"
-        },
-        "[data-boring=\"feedback\"].boring-feedback-bubble-sheet": {
-          "border-inline-width": "0",
-          "border-bottom-width": "0",
-          "border-radius": "var(--radius-xl) var(--radius-xl) 0 0",
-          "box-shadow": "none",
-          "padding-bottom": "max(0.75rem, env(safe-area-inset-bottom))",
-          "max-height": "calc(100dvh - 6rem)",
-          "overflow-y": "auto"
+          "z-index": "2147483001"
         },
         "[data-boring=\"feedback\"] .boring-feedback-bubble-head, [data-boring=\"feedback\"] .boring-feedback-note-head": {
           "display": "flex",
