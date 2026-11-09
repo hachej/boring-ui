@@ -34,7 +34,7 @@ const SubWith = ({ kind }) => <SidebarMenuSub><SidebarMenuSubItem><SidebarMenuSu
 
 createRoot(document.getElementById('root')).render(<SidebarProvider defaultOpen={!collapsed} style={tall ? { '--sidebar-row': '3.5rem' } : undefined}>{tap ? <SidebarTrigger /> : null}<Sidebar collapsible={collapsed ? 'icon' : sheet ? 'offcanvas' : 'none'} className={collapsed || sheet ? undefined : 'w-full'}>{sheet && !tap ? <OpenSheet /> : null}<SidebarContent><SidebarMenu>
   {rows.map(([id, label, action, count, child]) => <SidebarMenuItem key={id} data-row={id}>
-    <SidebarMenuButton className={tall ? 'h-14' : undefined}>{collapsed ? <Dot /> : null}<span>{label}</span>{id === 'dot' ? <Badge aria-hidden="true" className="ml-auto group-data-[collapsible=icon]:hidden" /> : null}</SidebarMenuButton>
+    <SidebarMenuButton className={tall ? 'h-14' : undefined}>{collapsed ? <Dot /> : null}<span>{label}</span>{id === 'dot' ? <span role="img" aria-label="Import en cours" className="ml-auto size-2 rounded-full bg-info group-data-[collapsible=icon]:hidden" /> : null}</SidebarMenuButton>
     {action ? <More /> : null}
     {count ? <SidebarMenuBadge>{count}</SidebarMenuBadge> : null}
     {id === 'dot' ? <><SidebarMenuBadge>{0}</SidebarMenuBadge><SidebarMenuBadge /><SidebarMenuBadge><Badge aria-hidden="true" /></SidebarMenuBadge></> : null}

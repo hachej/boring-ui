@@ -954,6 +954,52 @@
       ]
     },
     {
+      "name": "agent-bar",
+      "type": "registry:block",
+      "title": "Agent bar",
+      "description": "The voice-first bar for an agent that works in the background: a pill with a history arrow, the field, a mic (tap to listen, hold to talk and release to send) and send, an optional quoted-row chip, and AgentStatus, the one-line spinner or check above it. Dictation and the hold gesture are the kit's; the app supplies `transcribe` and `onSend`.",
+      "dependencies": [
+        "@hachej/boring-ui-kit@^0.4.75",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/utils",
+        "@boring-ui/_shared",
+        "@boring-ui/pi-chat-voice"
+      ],
+      "files": [
+        {
+          "path": "registry/agent-bar/agent-bar.tsx",
+          "type": "registry:component",
+          "target": "components/agent-bar/agent-bar.tsx"
+        }
+      ],
+      "css": {
+        "@layer utilities": {
+          "[data-slot=\"agent-bar\"] [data-agent-bar][data-slot=\"button\"]": {
+            "border-radius": "var(--radius-3xl)"
+          },
+          "[data-slot=\"agent-bar\"] [data-agent-bar][data-slot=\"input\"]": {
+            "border-color": "transparent",
+            "background-color": "transparent",
+            "box-shadow": "none",
+            "border-radius": "var(--radius-3xl)"
+          },
+          "[data-slot=\"agent-bar\"] [data-agent-bar][data-slot=\"input\"]:focus-visible": {
+            "box-shadow": "none"
+          },
+          "[data-slot=\"agent-bar\"] [data-testid=\"agent-bar-quoted\"] [data-agent-bar][data-slot=\"button\"]": {
+            "border-radius": "var(--radius-3xl)",
+            "color": "var(--primary)"
+          },
+          "[data-slot=\"agent-bar\"] [data-testid=\"agent-bar-mic\"][data-held]": {
+            "background-color": "var(--foreground)",
+            "color": "var(--background)"
+          }
+        }
+      }
+    },
+    {
       "name": "pi-chat-attachments",
       "type": "registry:block",
       "title": "Pi chat camera",

@@ -345,11 +345,14 @@ test('unpinned, the hover reveal floats over the page on the sidebar surface wit
   const inner = prop => browser.evaluate(`getComputedStyle(document.querySelector('${SIDEBAR} [data-slot=sidebar-inner]')).${prop}`);
   assert.notEqual(await inner('boxShadow'), 'none', 'a shadow lifts the floating pane');
   assert.notEqual(await inner('backgroundColor'), 'rgba(0, 0, 0, 0)', 'on the sidebar surface');
+  assert.equal(await inner('borderRightWidth'), '1px', 'D-2029: a right hairline edges the floating pane (the shadow does not show on dark)');
+  assert.equal(await inner('borderRightStyle'), 'solid', 'D-2029: the hairline is drawn');
   await browser.click(`document.querySelector('${PIN}')`);
   await away();
   const pinned = await rect('[data-testid=screen-Comptes]');
   assert.ok(pinned.left > folded.left + 100 && pinned.width < folded.width - 100, 'pinned: the page reflows beside the pane');
   assert.equal(await inner('boxShadow'), 'none', 'pinned: no floating shadow');
+  assert.equal(await inner('borderRightWidth'), '0px', 'D-2029: pinned, no hairline (the pane sits beside the page)');
 });
 
 test('the pin shows pressed, keeps the collapse toggle\'s footprint and its tooltip names the shortcut', { skip, timeout: 120000 }, async () => {

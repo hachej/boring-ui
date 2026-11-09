@@ -15,7 +15,7 @@ const own = ({ collapsed }) => collapsed ? null : <div data-testid="own-sidebar"
 // ?editor=1: a textarea and a contenteditable that count the Ctrl+B keydowns they receive (their own shortcut, e.g. bold).
 const count = event => { if ((event.ctrlKey || event.metaKey) && event.key === 'b') event.currentTarget.dataset.bold = String(Number(event.currentTarget.dataset.bold ?? 0) + 1); };
 const Editors = () => <div><textarea data-testid="editor-area" aria-label="Zone fictive" onKeyDown={count} /><div data-testid="editor-rich" contentEditable suppressContentEditableWarning role="textbox" aria-label="Texte fictif" tabIndex={0} onKeyDown={count}>Texte</div></div>;
-const nav = ['Comptes', 'Écritures', 'Bilan'].map(label => ({ id: label, label, icon: Dot, render: () => <><p>Écritures fictives de la société Exemple</p>{query.get('editor') && <Editors />}</>, ...(label === 'Comptes' && query.get('dialog') ? { sidebar: own } : {}) }));
+const nav = ['Comptes', 'Écritures', 'Bilan'].map(label => ({ id: label, label, icon: Dot, render: () => <><p className="m-0 px-3 py-2">Écritures fictives de la société Exemple</p>{query.get('editor') && <Editors />}</>, ...(label === 'Comptes' && query.get('dialog') ? { sidebar: own } : {}) }));
 
 function App() {
   const account = query.get('user') ? { name: 'Personne fictive', email: query.get('user'), menu: [] } : undefined;
