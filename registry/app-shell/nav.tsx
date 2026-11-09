@@ -122,7 +122,8 @@ export function ScreenSidebarSheet({ item, text }: { readonly item: NavItem; rea
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState(false);
   const replaying = useRef(false);
-  const close = () => { setOpen(false); setShown(false); };
+  const choosing = useRef(false);
+  const close = () => { choosing.current = false; setOpen(false); setShown(false); };
   useExclusiveSheet(open, close);
   useBackLayer(open, close, 'sheet');
   if (!item.sidebar) return null;
@@ -136,13 +137,19 @@ export function ScreenSidebarSheet({ item, text }: { readonly item: NavItem; rea
           onClickCapture={event => {
             // The choice is held back: the sheet lets go of its Back entry first, and only then does the row's own click (a router push, a link) run, so that entry's `history.back()` cannot undo it.
             const target = event.target;
-            if (replaying.current || !(target instanceof Element) || target.closest(KEEPS) || !target.closest(CHOOSES)) return;
+            // A modified or non-primary click (new tab, new window, middle button) is not a choice: it goes through untouched and the sheet stays open.
+            const { button, metaKey, ctrlKey, shiftKey, altKey } = event;
+            if (replaying.current || !(target instanceof Element) || target.closest(KEEPS) || !target.closest(CHOOSES) || button !== 0 || metaKey || ctrlKey || shiftKey || altKey) return;
             event.preventDefault();
             event.stopPropagation();
+            // One choice at a time: a second tap while the sheet is closing is swallowed, so a navigating row navigates once.
+            if (choosing.current) return;
+            choosing.current = true;
             setOpen(false);
             afterBack(() => {
               replaying.current = true;
               try { target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); } finally { replaying.current = false; }
+              choosing.current = false;
               setShown(false);
             });
           }}>
