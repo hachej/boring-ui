@@ -1,5 +1,6 @@
 # Unreleased
 
+- **`composer="content"`: the field is under the page at rest, also when the PM was the view shown first (`registry/app-shell/agent-layer.tsx`; D-2026).** The assistant's chat is now mounted whenever the content composer applies, so its field is in `agent-content-composer` with the layer closed (before, an assistant that arrived after a PM panel left the slot empty until first opened). Thread, controller and tray/dock behaviour are unchanged; phone and `composer="dock"` untouched. Re-sync `app-shell` if you carry a copy. Test: `test/contracts/composer-content.test.mjs`.
 - **`feedback:voice-sync` tool moved (no behaviour change; `@hachej/boring-ui-kit`, `@hachej/boring-feedback`; D-2019).** The measurement script is now `scripts/feedback-voice-sync.mjs` (was `tools/`); `npm run feedback:voice-sync` is unchanged. Two source comments name the new path. Nothing to do.
 
 # Migrating to 0.4.75

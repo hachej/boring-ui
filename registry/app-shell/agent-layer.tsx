@@ -637,12 +637,13 @@ function ChatSlot({ live = true }: { readonly live?: boolean }) {
 
 /** Both specs, each mounted once it has been shown. */
 function Chats({ showing }: { readonly showing: Which }) {
-  const { agent } = useInternal();
+  const { agent, contentComposer } = useInternal();
   const seen = useRef(new Set<Which>());
   // eslint-disable-next-line react-hooks/refs -- a monotonic "ever shown" set filled during render: no setState, no re-render
   seen.current.add(showing);
   // eslint-disable-next-line react-hooks/refs -- reads the "ever shown" set filled above in this same render
-  const seenAgent = seen.current.has('agent');
+  // With the field under the page (`composer: 'content'`, wide) the agent's chat is mounted at rest even while the PM is the view shown: its composer is portaled into the slot, its thread stays hidden (D-2026).
+  const seenAgent = seen.current.has('agent') || contentComposer;
   return <>
     {agent && seenAgent && <SpecChat spec={agent} visible={showing === 'agent'} role="agent" />}
   </>;
