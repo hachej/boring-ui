@@ -26,6 +26,8 @@ import { PanelLeftIcon } from "../../registry/_shared/icons"
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 // Theme tokens: an app sets --sidebar-width, --sidebar-width-icon and --sidebar-width-mobile in its theme.core.css (:root); a SidebarProvider `style` on the wrapper wins. The phone sheet is 75% of the screen (the Sheet's own cap, 24rem, applies) unless --sidebar-width-mobile is set; the old inline 18rem never applied because the Sheet's side-qualified w-3/4 beat it. The wrapper resolves them with their defaults into the private --sidebar-w and --sidebar-w-icon, so the icon rail follows the wrapper's own --control-h.
+// The row height token (one source): the wrapper defines it, and so does the phone Sheet content, which portals to body outside the wrapper.
+const SIDEBAR_ROW = "[--sidebar-row:var(--control-h,2.25rem)] pointer-coarse:[--sidebar-row:max(var(--control-h,2.25rem),var(--control-min,2.75rem))]"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
 type SidebarContextProps = {
@@ -128,7 +130,8 @@ function SidebarProvider({
         data-slot="sidebar-wrapper"
         style={style}
         className={cn(
-          "group/sidebar-wrapper flex min-h-svh w-full [--sidebar-w:var(--sidebar-width,16rem)] [--sidebar-w-icon:var(--sidebar-width-icon,calc(var(--sidebar-row)_+_1rem))] [--sidebar-row:var(--control-h,2.25rem)] pointer-coarse:[--sidebar-row:max(var(--control-h,2.25rem),var(--control-min,2.75rem))] has-data-[variant=inset]:bg-sidebar",
+          SIDEBAR_ROW,
+          "group/sidebar-wrapper flex min-h-svh w-full [--sidebar-w:var(--sidebar-width,16rem)] [--sidebar-w-icon:var(--sidebar-width-icon,calc(var(--sidebar-row)_+_1rem))] has-data-[variant=inset]:bg-sidebar",
           className
         )}
         {...props}
@@ -177,7 +180,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="data-[side=left]:w-[var(--sidebar-width-mobile,75%)] data-[side=right]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          className={cn(SIDEBAR_ROW, "data-[side=left]:w-[var(--sidebar-width-mobile,75%)] data-[side=right]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden")}
           side={side}
         >
           <SheetHeader className="sr-only">
