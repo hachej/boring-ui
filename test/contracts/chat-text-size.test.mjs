@@ -127,7 +127,11 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
         if (state === 'question') { near(m.question?.size ?? null, prose, `${label}: question text`); near(m.questionInput?.size ?? null, prose, `${label}: question input`); }
         if (state === 'reply') { // D-1905: the header "..." is the same size as the reply actions' icons, and its touch target is not reduced
           assert.ok(m.headerMore && m.replyMore, `${label}: both overflow triggers render`);
-          near(m.headerMore.w, m.replyMore.w, `${label}: header "..." icon width equals the reply actions' icon`); near(m.headerMore.h, m.replyMore.h, `${label}: header "..." icon height equals the reply actions' icon`);
+          // D-1905 round 2: the header glyph is one kit step larger than the reply row's (20px, size-5): Phosphor's dots are 16/256 of the glyph box, so at 16px they are 1.7px and read as a speck.
+          assert.ok(m.headerMore.w >= 19.5 && m.headerMore.h >= 19.5, `${label}: the header "..." icon is at least 19.5px (${m.headerMore.w}x${m.headerMore.h})`);
+          assert.ok(m.headerMore.w * 32 / 256 >= 2.2, `${label}: each dot of the header "..." is at least 2.2px wide (${m.headerMore.w * 32 / 256}px)`);
+          assert.ok(m.headerMore.w > m.replyMore.w, `${label}: the header "..." is larger than the reply row's, which is unchanged (${m.replyMore.w}px)`);
+          if (!mobile) near(m.headerMore.boxW, 24, `${label}: the header "..." button keeps its size at 1280`);
           // D-1905: at the same 16px the header glyph is drawn bold so the dots do not read as a speck; the reply row keeps its regular dots.
           assert.equal(m.headerMore.weight, 'bold', `${label}: the header "..." is the bold glyph`);
           assert.notEqual(m.headerMore.shape, m.replyMore.shape, `${label}: the header "..." dots are drawn heavier than the reply row's`);
