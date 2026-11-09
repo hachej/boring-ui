@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/ui/toggle';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
+import { usePhone } from '../utils/use-media';
 import { Textarea } from '@/components/ui/textarea';
 import { readableElement } from '@hachej/boring-feedback/format';
 import { createVoiceCapture, type VoiceCapture } from '@hachej/boring-feedback/page';
@@ -99,6 +101,8 @@ export function FeedbackBar({ session, className, docked = false }: FeedbackBarP
 }
 
 const BUBBLE_WIDTH = 280;
+/** Where a bubble pinned on a surface may sit: inside the surface's box (default), or anywhere in the viewport. */
+export type BubbleWithin = 'surface' | 'viewport';
 /** Pixels at the bottom of the viewport taken by comment mode's banner on a phone (CommentBanner, `data-feedback-point-bar="bottom"`), plus a gap; 0 without it. */
 export function pointBarInset(document: Document): number {
   const bar = document.querySelector('[data-feedback-point-bar="bottom"]');
@@ -110,8 +114,12 @@ export function pointBarInset(document: Document): number {
  * Beside the element: below it when the bubble (`size`, its measured height once drawn) fits above point mode's bar (if any), else
  * above it, else as low as it fits. Every branch is clamped to the space above the bar, so the bubble never covers it; a bubble taller
  * than that space scrolls inside it.
+ *
+ * A note pinned at a `point` of a surface keeps the bubble inside the surface's box (clipped to the viewport): it opens right of the
+ * point and flips to its left near the surface's right edge, opens below it and flips above near the bottom, so it never lands on the
+ * pane beside the surface or on the app's header. `within: 'viewport'` keeps the viewport as the only bound.
  */
-function bubblePlace(element: Element, size = 120, point?: { readonly x: number; readonly y: number }): CSSProperties {
+function bubblePlace(element: Element, size = 120, point?: { readonly x: number; readonly y: number }, within: BubbleWithin = 'surface'): CSSProperties {
   const view = element.ownerDocument.defaultView;
   const width = view?.innerWidth ?? 1024, height = (view?.innerHeight ?? 768) - pointBarInset(element.ownerDocument);
   const box = element.getBoundingClientRect();
@@ -119,12 +127,17 @@ function bubblePlace(element: Element, size = 120, point?: { readonly x: number;
   // The forward transform places it, so a mirrored or rotated surface puts the bubble where the point is drawn.
   const at = point ? surfacePointToViewport(element, point) : undefined;
   const rect = at ? { left: at.x, right: at.x, top: at.y, bottom: at.y } : box;
-  const left = Math.min(Math.max(8, rect.left), Math.max(8, width - BUBBLE_WIDTH - 8));
+  const bounded = at !== undefined && within === 'surface';
+  const bound = bounded ? { left: Math.max(0, box.left), right: Math.min(width, box.right), top: Math.max(0, box.top), bottom: Math.min(height, box.bottom) } : { left: 0, right: width, top: 0, bottom: height };
+  const gap = bounded ? 8 : 0;
+  const wide = Math.min(BUBBLE_WIDTH, Math.max(0, bound.right - bound.left - 16));
+  const wanted = bounded && rect.left + wide > bound.right - 8 ? rect.left - wide : rect.left;
+  const left = Math.min(Math.max(bound.left + 8, wanted), Math.max(bound.left + 8, bound.right - wide - 8));
   const below = rect.bottom + 8;
   const above = rect.top - size - 8;
-  const lowest = Math.max(8, height - size);
-  const top = Math.min(below + size <= height ? below : above >= 8 ? above : lowest, lowest);
-  return { position: 'fixed', top, left, width: Math.min(BUBBLE_WIDTH, width - 16), maxHeight: Math.max(0, height - top), overflowY: 'auto', boxSizing: 'border-box' };
+  const lowest = Math.max(bound.top + 8, bound.bottom - size - gap);
+  const top = Math.min(below + size <= bound.bottom - gap ? below : above >= bound.top + 8 ? above : lowest, lowest);
+  return { position: 'fixed', top, left, width: wide, maxHeight: Math.max(0, bound.bottom - top - gap), overflowY: 'auto', boxSizing: 'border-box' };
 }
 
 /** The bubble's natural height (its content plus borders), not the height it is clamped to, so it grows back when there is room. */
@@ -200,9 +213,11 @@ export type PinTranscribe = (audio: Blob, signal: AbortSignal) => Promise<string
 
 /**
  * The pin beside a picked element: a text field with a mic inside it, "Add note" (Enter) and Cancel (Esc). Enter saves, Shift-Enter for a
- * new line, Esc discards the pin. The element is named in plain words (`plainElement`). On a phone it keeps clear of the comment banner. `transcribe` turns the mic's recording into text; without it there is no mic.
+ * new line, Esc discards the pin. The element is named in plain words (`plainElement`). A note pinned on a surface is a bottom sheet (the kit's Drawer) below the kit's phone breakpoint, not a floating bubble. A note pinned on a surface stays inside the surface (`within`). `transcribe` turns the mic's recording into text; without it there is no mic.
  */
-export function NoteBubble({ session, labels, transcribe }: { readonly session: FeedbackSession; readonly labels?: Partial<FeedbackLabels>; readonly transcribe?: PinTranscribe }) {
+export function NoteBubble({ session, labels, transcribe, within = 'surface' }: { readonly session: FeedbackSession; readonly labels?: Partial<FeedbackLabels>; readonly transcribe?: PinTranscribe;
+  /** Where a note pinned on a surface may open: `surface` (default) keeps the bubble inside the surface's box, flipping left and up near its edges; `viewport` bounds it by the viewport only. Notes on picked elements are unaffected. */
+  readonly within?: BubbleWithin }) {
   const state = useExternal(session);
   const words = withLabels(labels);
   const bubble = state.bubble;
@@ -211,24 +226,25 @@ export function NoteBubble({ session, labels, transcribe }: { readonly session: 
   const [, redraw] = useState(0);
   const [announce, setAnnounce] = useState('');
   const box = useRef<HTMLDivElement>(null);
+  const phone = usePhone();
   const noteId = bubble?.noteId, element = bubble?.element, point = bubble?.point;
-  useLayoutEffect(() => { if (element) setPlace(bubblePlace(element, naturalHeight(box.current), point)); }, [noteId, element, point]);
+  useLayoutEffect(() => { if (element) setPlace(bubblePlace(element, naturalHeight(box.current), point, within)); }, [noteId, element, point, within]);
   // Once drawn, place it again with its real height (taller with 44px touch targets and wrapped buttons).
   // eslint-disable-next-line react-hooks/exhaustive-deps -- measures after every commit on purpose (content, labels and voice state change the height); it sets state only when the place moved, so it settles
   useLayoutEffect(() => {
     if (!bubble || !place || !box.current) return;
-    const next = bubblePlace(bubble.element, naturalHeight(box.current), bubble.point);
+    const next = bubblePlace(bubble.element, naturalHeight(box.current), bubble.point, within);
     if (next.top !== place.top || next.left !== place.left) setPlace(next);
   });
   useEffect(() => { if (noteId !== undefined) field.current?.focus({ preventScroll: true }); }, [noteId]);
   useEffect(() => {
     if (!element) return;
     const view = element.ownerDocument.defaultView;
-    const follow = () => { setPlace(bubblePlace(element, naturalHeight(box.current), point)); redraw(value => value + 1); };
+    const follow = () => { setPlace(bubblePlace(element, naturalHeight(box.current), point, within)); redraw(value => value + 1); };
     view?.addEventListener('scroll', follow, { capture: true, passive: true });
     view?.addEventListener('resize', follow);
     return () => { view?.removeEventListener('scroll', follow, { capture: true }); view?.removeEventListener('resize', follow); };
-  }, [noteId, element, point]);
+  }, [noteId, element, point, within]);
   // A polite live region outlives the bubble, so the cancellation is heard even though the dialog is gone.
   const cancel = (): void => { session.cancelSelection(); setAnnounce(words.selectionCancelled); };
   const live = <span data-boring="feedback" data-feedback-ignore="" role="status" aria-live="polite" className="boring-feedback-sr" data-testid="feedback-bubble-announce"
@@ -238,10 +254,9 @@ export function NoteBubble({ session, labels, transcribe }: { readonly session: 
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.target === field.current) { event.preventDefault(); session.saveBubble(); }
     else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); session.cancelBubble(); }
   };
-  return <>{live}<Card size="sm" data-boring="feedback" data-feedback-ignore="" role="dialog" aria-label={`Note ${bubble.number}`} data-testid="feedback-bubble" data-note={bubble.number}
-    ref={box} className="boring-feedback-bubble" style={place} onKeyDown={onKeyDown}>
-    <span className="boring-feedback-bubble-head"><span className="boring-feedback-pin" aria-hidden="true">{pinMark(bubble.number)}</span>
-      <span className="boring-feedback-bubble-label" data-testid="feedback-bubble-label">{plainElement(bubble.label, words)}</span></span>
+  const head = <span className="boring-feedback-bubble-head"><span className="boring-feedback-pin" aria-hidden="true">{pinMark(bubble.number)}</span>
+    <span className="boring-feedback-bubble-label" data-testid="feedback-bubble-label">{plainElement(bubble.label, words)}</span></span>;
+  const body = <>
     <span className="boring-feedback-pin-field">
       <Textarea ref={field} data-testid="feedback-bubble-input" rows={2} placeholder={words.bubblePlaceholder} aria-label={words.bubblePlaceholder} value={bubble.text}
         onChange={event => session.setBubbleText(event.target.value)} />
@@ -250,7 +265,18 @@ export function NoteBubble({ session, labels, transcribe }: { readonly session: 
     <span className="boring-feedback-bubble-actions">
       <Button variant="ghost" className="min-h-11 min-w-11" data-testid="feedback-cancel-selection" onClick={cancel}>{words.cancelSelection}</Button>
       <Button variant="default" className="min-h-11 min-w-11" data-testid="feedback-bubble-save" onClick={() => session.saveBubble()}>{words.add}</Button>
-    </span>
+    </span></>;
+  // A note pinned on a surface, on a phone: a bottom sheet (the same note in the kit's Drawer) instead of a bubble over the page's header.
+  if (phone && point !== undefined) return <>{live}<Drawer open onOpenChange={open => { if (!open) session.cancelBubble(); }}>
+    <DrawerContent data-boring="feedback" data-feedback-ignore="" aria-label={`Note ${bubble.number}`} data-testid="feedback-bubble" data-note={bubble.number}
+      className="boring-feedback-bubble boring-feedback-bubble-sheet" onKeyDown={onKeyDown}>
+      <DrawerTitle className="sr-only">{`Note ${bubble.number}`}</DrawerTitle>
+      {head}{body}
+    </DrawerContent>
+  </Drawer></>;
+  return <>{live}<Card size="sm" data-boring="feedback" data-feedback-ignore="" role="dialog" aria-label={`Note ${bubble.number}`} data-testid="feedback-bubble" data-note={bubble.number}
+    ref={box} className="boring-feedback-bubble" style={place} onKeyDown={onKeyDown}>
+    {head}{body}
   </Card></>;
 }
 

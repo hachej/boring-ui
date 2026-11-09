@@ -41,7 +41,7 @@ test('the note bubble stays in the surface, flips at its edges, is a sheet on a 
   const bundle = await build({ entryPoints: [join(root, 'test/fixtures/feedback-surface/entry.mjs')], bundle: true, write: false, metafile: true, format: 'esm', platform: 'browser', jsx: 'automatic', alias: { '@': join(root, 'examples/app-shell') }, define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty' }, logLevel: 'silent' });
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx|mjs)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
-  const tokens = `:root {${block(theme.cssVars.light)}}\n.dark {${block(theme.cssVars.dark)}}\nbody { background: var(--background); color: var(--foreground); }`;
+  const tokens = `:root {${block(theme.cssVars.light)}\n${block(theme.cssVars.theme)}}\n.dark {${block(theme.cssVars.dark)}}\nbody { background: var(--background); color: var(--foreground); }`;
   const compiler = await compile(`@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n${tokens}\n@theme inline {${block(theme.cssVars.theme)}}\n@layer base { * { @apply border-border; } }\n${registryCss(registry.items.find(entry => entry.name === 'feedback'))}`, { base: root, loadStylesheet: async id => {
     const path = require.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id);
     return { path, base: dirname(path), content: readFileSync(path, 'utf8') };
@@ -73,7 +73,7 @@ test('the note bubble stays in the surface, flips at its edges, is a sheet on a 
     const at = await browser.evaluate(`(() => { const r = document.getElementById('plate').getBoundingClientRect(); return { x: r.left + ${fx} * r.width, y: r.top + ${fy} * r.height }; })()`);
     if (touch) { await browser.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] }); await browser.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); }
     else for (const type of ['mousePressed', 'mouseReleased']) await browser.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: 1 });
-    await browser.until('the bubble opens', `window.fixture.session.getSnapshot().bubble && document.querySelector('[data-testid="feedback-bubble"]')`);
+    await browser.until('the bubble opens', `window.fixture.session.getSnapshot().bubble && !!document.querySelector('[data-testid="feedback-bubble"]')`);
     await frames(); await frames();
     return at;
   };
@@ -115,6 +115,8 @@ test('the note bubble stays in the surface, flips at its edges, is a sheet on a 
     for (const mode of ['light', 'dark']) {
       await open(`size=350x240&at=20,120${mode === 'dark' ? '&dark=1' : ''}`, { phone: true });
       await pinAt(0.6, 0.4, { touch: true });
+      // The drawer slides in; wait until it rests on the bottom edge.
+      await browser.until('the sheet rests', `(() => { const n = document.querySelector('[data-testid="feedback-bubble"]'); return n && Math.abs(n.getBoundingClientRect().bottom - innerHeight) <= 2; })()`, 5000).catch(() => undefined);
       const sheet = await browser.evaluate(`(() => { const n = document.querySelector('[data-testid="feedback-bubble"]'), r = n.getBoundingClientRect(); return { slot: n.getAttribute('data-slot'), bottom: r.bottom, view: innerHeight, width: innerWidth, left: r.left, right: r.right }; })()`);
       assert.equal(sheet.slot, 'drawer-popup', `${mode}: at 390 the composer is the kit's drawer, a bottom sheet`);
       assert.ok(Math.abs(sheet.bottom - sheet.view) <= 2 && sheet.left <= 1 && sheet.right >= sheet.width - 1, `${mode}: the sheet sits at the bottom edge, full width: ${JSON.stringify(sheet)}`);

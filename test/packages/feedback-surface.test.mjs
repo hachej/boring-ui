@@ -222,10 +222,13 @@ test('a click on a surface pins a note at that point; pins "host" draws no box; 
       const plate = document.getElementById('plate').getBoundingClientRect(), bubble = document.querySelector('[data-testid="feedback-bubble"]').getBoundingClientRect();
       // Drawn position of local (0.25, 0.75) under scaleX(-1): from the right edge.
       const x = plate.right - 0.25 * plate.width, y = plate.top + 0.75 * plate.height;
-      return { x, y, left: bubble.left, top: bubble.top, width: innerWidth };
+      return { x, y, plate: { left: plate.left, top: plate.top, right: plate.right, bottom: plate.bottom }, bubble: { left: bubble.left, top: bubble.top, right: bubble.right, bottom: bubble.bottom } };
     })()`);
-    assert.ok(Math.abs(placed.left - Math.min(placed.x, placed.width - 288)) <= 2, `the bubble's left edge is at the drawn point: ${JSON.stringify(placed)}`);
-    assert.ok(placed.top >= placed.y && placed.top <= placed.y + 24, `the bubble sits just below the drawn point: ${JSON.stringify(placed)}`);
+    // D-1967: beside the drawn point but inside the surface: near its right edge the bubble opens to the left of the point, near the bottom above it.
+    const { plate: p, bubble: b } = placed;
+    assert.ok(b.left >= p.left - 1 && b.right <= p.right + 1 && b.top >= p.top - 1 && b.bottom <= p.bottom + 1, `the bubble is inside the surface: ${JSON.stringify(placed)}`);
+    assert.ok(Math.abs(b.right - placed.x) <= 2, `the bubble's right edge is at the drawn point (flipped left): ${JSON.stringify(placed)}`);
+    assert.ok(b.bottom <= placed.y + 1, `the bubble sits above the drawn point (flipped up): ${JSON.stringify(placed)}`);
     assert.deepEqual(browser.problems, []);
   } finally {
     await browser.close();
