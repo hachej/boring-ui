@@ -448,6 +448,29 @@ test('agent URL: closing before the drawer settles cancels composer focus', asyn
   await opened.unmount();
 });
 
+test('the wide dock opened at load takes no focus: the Float button shows no focus ring on page load (D-1968)', async t => {
+  const opened = await openedLayer(t, 1280, { agent: agentWith(), panel: stubSlot }, { search: '?agent=agent&open=half', strict: true });
+  await opened.act(async () => new Promise(done => setTimeout(done, 100)));
+  const float = opened.window.document.querySelector('[data-testid=agent-layer-float]');
+  assert.ok(float, 'the docked header has its Float button');
+  assert.equal(opened.window.document.activeElement === float, false, 'focus did not land on the Float button at mount');
+  assert.equal(opened.window.document.activeElement?.closest('[data-testid=agent-layer-header]') == null, true, 'no header control holds focus at mount');
+  await opened.unmount();
+});
+
+test('a side change while the wide dock is open still moves focus into the dock (D-1968)', async t => {
+  const opened = await openedLayer(t, 1280, { agent: agentWith(), panel: stubSlot }, { search: '?agent=agent&open=half', strict: true });
+  await opened.act(async () => new Promise(done => setTimeout(done, 100)));
+  const doc = opened.window.document;
+  const move = doc.querySelector('[data-testid=agent-layer-dock-left]') ?? doc.querySelector('[data-testid=agent-layer-dock-right]');
+  assert.ok(move, 'the docked header has a side control');
+  await opened.act(async () => move.dispatchEvent(new opened.window.MouseEvent('click', { bubbles: true, cancelable: true })));
+  await opened.act(async () => new Promise(done => setTimeout(done, 100)));
+  const held = doc.activeElement;
+  assert.equal(held != null && held.hasAttribute('data-dock-control') && held.closest('[data-testid=agent-layer]') != null, true, 'focus is on a dock control after the side change');
+  await opened.unmount();
+});
+
 async function headerOf(opened, which) {
   await opened.act(async () => opened.latest().open(which, 'half'));
   for (let tries = 0; tries < 40 && !opened.window.document.querySelector('[data-testid=agent-layer-header]'); tries++) await opened.act(async () => new Promise(done => setTimeout(done, 25)));

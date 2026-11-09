@@ -107,12 +107,12 @@ test('the rail is a vertical separator with the width in rem and the default bou
   assert.equal(await aria('role'), 'separator');
   assert.equal(await aria('aria-orientation'), 'vertical');
   assert.equal(await aria('aria-valuenow'), '16');
-  assert.equal(await aria('aria-valuemin'), '12');
+  assert.equal(await aria('aria-valuemin'), '14');
   assert.equal(await aria('aria-valuemax'), '28');
   assert.equal(await aria('tabindex'), '0');
 });
 
-test('a drag of the rail sets the width, clamped to 12rem and 28rem', { skip, timeout: 120000 }, async () => {
+test('a drag of the rail sets the width, clamped to 14rem and 28rem', { skip, timeout: 120000 }, async () => {
   await mount();
   await dragBy(100);
   assert.equal(await gap(), 356);
@@ -120,8 +120,8 @@ test('a drag of the rail sets the width, clamped to 12rem and 28rem', { skip, ti
   await dragBy(2000);
   assert.equal(await gap(), 448, 'clamped at 28rem');
   await dragBy(-2000);
-  assert.equal(await gap(), 192, 'clamped at 12rem');
-  assert.equal(await aria('aria-valuenow'), '12');
+  assert.equal(await gap(), 224, 'clamped at 14rem (224px)');
+  assert.equal(await aria('aria-valuenow'), '14');
 });
 
 test('the arrow keys resize by 1rem and stop at the bounds; Home and End jump to them', { skip, timeout: 120000 }, async () => {
@@ -135,9 +135,18 @@ test('the arrow keys resize by 1rem and stop at the bounds; Home and End jump to
   await key('ArrowRight');
   assert.equal(await gap(), 448, 'clamped at the maximum');
   await key('Home');
-  assert.equal(await gap(), 192);
+  assert.equal(await gap(), 224);
   await key('ArrowLeft');
-  assert.equal(await gap(), 192, 'clamped at the minimum');
+  assert.equal(await gap(), 224, 'clamped at the minimum');
+});
+
+test('a stored width of 192px (the old minimum) renders at the new 224px minimum (D-1969)', { skip, timeout: 120000 }, async () => {
+  await mount();
+  await key('ArrowRight');
+  await setStored('12');
+  await mount('', { clear: false });
+  assert.equal(await gap(), 224, 'clamped up to 14rem');
+  assert.equal(await aria('aria-valuenow'), '14');
 });
 
 test('min and max narrow the bounds', { skip, timeout: 120000 }, async () => {

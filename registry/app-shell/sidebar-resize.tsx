@@ -22,7 +22,8 @@ export function sidebarKey(setting: 'width' | 'open' | 'open-screen', app?: stri
 export function sidebarWidthKey(app?: string, person?: string): string {
   return sidebarKey('width', app, person);
 }
-const MIN_REM = 12;
+/** The least width (D-1969): 14rem = 224px, so item names are not truncated. The one place; a stored narrower width is clamped to it on read. */
+const MIN_REM = 14;
 const MAX_REM = 28;
 const STEP_REM = 1;
 

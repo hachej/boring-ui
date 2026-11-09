@@ -55,7 +55,7 @@ export interface AppShellProps {
   readonly overlayBlur?: boolean;
   /**
    * The wide-screen left pane can be resized (default `false`): its rail becomes a drag handle (`role="separator"`, arrow keys, double-click to reset),
-   * between `min` and `max` rem (12 and 28). Fine pointer only; the phone sheet keeps `--sidebar-width-mobile`. The width is remembered per app and
+   * between `min` and `max` rem (14 and 28). Fine pointer only; the phone sheet keeps `--sidebar-width-mobile`. The width is remembered per app and
    * per person; the theme's `--sidebar-width` stays the default. `true` or `{ min, max }`.
    */
   readonly resizable?: boolean | { readonly min?: number; readonly max?: number };
