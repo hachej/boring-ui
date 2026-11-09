@@ -62,6 +62,24 @@ test('the font list is parsed respecting quotes ("Acme, Inc" is one family)', { 
   await withPage(t, html, async browser => { assert.ok(await browser.until('face loaded', 'window.ready === true')); });
 });
 
+test('family names compare case-insensitively, as CSS does', { skip }, async t => {
+  await withPage(t, '<!doctype html><style>:root{--font-sans:"inter variable",sans-serif}</style><body>x', async browser => {
+    assert.ok(await browser.until('page', 'document.body.innerText === "x"'));
+  });
+});
+
+test('CSS escapes in a family name are decoded ("Inter\\20 Variable", "Acme\\" Brand" is one family)', { skip }, async t => {
+  await withPage(t, '<!doctype html><style>:root{--font-sans:"Inter\\20 Variable",sans-serif}</style><body>x', async browser => {
+    assert.ok(await browser.until('page', 'document.body.innerText === "x"'));
+  });
+  const quoted = `<!doctype html><style>:root{--font-sans:"Acme\\" Brand",sans-serif}</style><body>x<script>
+    (async () => {
+      const face = new FontFace('Acme" Brand', await (await fetch('/font.woff2')).arrayBuffer()); document.fonts.add(face);
+      await face.load(); window.ready = true;
+    })();</script>`;
+  await withPage(t, quoted, async browser => { assert.ok(await browser.until('face loaded', 'window.ready === true')); });
+});
+
 test('a stalled font request cannot outlast the until timeout', { skip }, async t => {
   const html = '<!doctype html><style>@font-face{font-family:Stall;src:url(/stall.woff2)}:root{--font-sans:Stall,sans-serif}</style><body style="font-family:Stall">x';
   await withPage(t, html, async browser => {
