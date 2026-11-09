@@ -111,6 +111,22 @@ test('the choice is kept: collapse then reload stays collapsed, expand then relo
   assert.equal(await browser.evaluate(`localStorage.getItem(${JSON.stringify(key('Compta', 'a@example.test'))})`), '1');
 });
 
+test('D-1919: the choice is kept per layout, a fold in the workspace rail does not fold a screen-layout pane', { skip, timeout: 120000 }, async () => {
+  const own = `document.querySelector('[data-testid=own-sidebar]')?.getBoundingClientRect().width > 0`;
+  await mount('item=Liste&user=a@example.test');
+  await ctrlB();
+  assert.equal(await state(), 'collapsed', 'folded in the workspace layout');
+  await mount('layout=screen&item=Liste&user=a@example.test', { clear: false });
+  assert.equal(await state(), 'expanded', 'the screen layout does not read the workspace fold');
+  assert.equal(await browser.evaluate(own), true, 'its sidebar content shows');
+  await ctrlB();
+  assert.equal(await state(), 'collapsed', 'folded in the screen layout');
+  await mount('layout=screen&item=Liste&user=a@example.test', { clear: false });
+  assert.equal(await state(), 'collapsed', 'the screen fold is kept');
+  await mount('item=Liste&user=a@example.test', { clear: false });
+  assert.equal(await state(), 'collapsed', 'the workspace choice is its own');
+});
+
 test('another person on the same browser gets their own default, and a switch never writes into the other key', { skip, timeout: 120000 }, async () => {
   await mount('item=Liste&user=a@example.test');
   await ctrlB();
