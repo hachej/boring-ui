@@ -677,11 +677,13 @@ async function openPage(cdp, { width, height, touch }, mode) {
   const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
   const send = (method, params) => cdp.send(method, params, sessionId);
   const errors = [];
-  // Requests the page has started and not finished: the shot waits for them (a page that fetches its content after the load event).
+  // Ordinary requests the page has started and not finished: the shot waits for them (a page that fetches its content after the load event).
   const inflight = new Set();
   off = cdp.on(message => {
     if (message.sessionId !== sessionId) return;
-    if (message.method === 'Network.requestWillBeSent' && !/^(?:data|blob):/.test(message.params.request.url)) inflight.add(message.params.requestId);
+    // Long-lived connections (EventSource, WebSocket, a text/event-stream response) never finish: they are not waited for.
+    if (message.method === 'Network.requestWillBeSent' && !/^(?:data|blob):/.test(message.params.request.url) && message.params.type !== 'EventSource' && message.params.type !== 'WebSocket') inflight.add(message.params.requestId);
+    if (message.method === 'Network.responseReceived' && /^text\/event-stream\b/i.test(message.params.response.mimeType ?? '')) inflight.delete(message.params.requestId);
     if (message.method === 'Network.loadingFinished' || message.method === 'Network.loadingFailed') inflight.delete(message.params.requestId);
     if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') errors.push(message.params.args.map(a => a.value ?? a.description ?? a.type).join(' '));
     if (message.method === 'Runtime.exceptionThrown') errors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
@@ -848,8 +850,7 @@ async function shootAtlas({ manifest, flags, cwd, fixtures, log, error }) {
   mkdirSync(out, { recursive: true });
   const states = [];
   let failed = 0;
-  const browser = launchChromium(chromium);
-  let cdp, cleaning;
+  let browser, cdp, cleaning;
   // Ctrl-C or a kill still closes the socket, kills Chromium and removes its profile before the process ends.
   // Installed before the launch and kept: a second signal while the cleanup runs is ignored, the exit follows the cleanup.
   const onSignal = signal => {
@@ -858,6 +859,8 @@ async function shootAtlas({ manifest, flags, cwd, fixtures, log, error }) {
   };
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
+  // After the handlers: a signal that lands while the profile is made is handled once the launch returns, not by the default action.
+  browser = launchChromium(chromium);
   try {
     cdp = await connectCdp(await browser.url);
     for (const state of manifest.states) {
