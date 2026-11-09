@@ -156,7 +156,7 @@ export function AppShell(props: AppShellProps) {
   useOverlayBlur(props.overlayBlur ?? false);
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;
-  return <AgentLayerProvider agent={agent} composer={props.composer} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title}>
+  return <AgentLayerProvider agent={agent} composer={props.composer} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title} modeIdentity={{ app: props.appId || title, person: account?.email, screen: layout === 'screen' }}>
     <HeaderProvider><Shell resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
 }

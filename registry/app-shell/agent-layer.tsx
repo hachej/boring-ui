@@ -42,6 +42,7 @@ import { CommentBanner, useCommenting, usePointing } from '../feedback/point-mod
 import { cn } from '../utils/utils';
 import { useBackLayer } from '../utils/back';
 import { parseAgentLink } from './agent-link';
+import { sidebarKey } from './sidebar-resize';
 import { closeShellLayer, registerAgentLayerCloser } from './shell-layer';
 import { appShellText } from './text';
 import type { AppShellLocale, AppShellText } from './text';
@@ -172,6 +173,10 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   /** Content composer on a wide screen: where a send opens the thread, the person's remembered choice. A tray above the field (default) or the dock. */
   readonly mode: AgentMode;
   readonly setMode: (mode: AgentMode) => void;
+  /** The tray's Dock: the same thread to the side pane, docked (never floating), and remember the choice. */
+  readonly moveToDock: () => void;
+  /** The dock panel reports its api so the tray can dock it. */
+  readonly registerDock: (api: DockApi | null) => void;
   /** The tray is filling the main column (Agrandir). */
   readonly grown: boolean;
   readonly setGrown: (grown: boolean) => void;
@@ -193,7 +198,6 @@ export type AgentComposer = 'dock' | 'content';
 /** The dock's remembered state lives under this prefix (DockLayout's storageKey): `<key>.agent.floating`, `.width`, and the side. */
 const DOCK_KEY = 'boring.app-shell';
 const SIDE_KEY = `${DOCK_KEY}.agent.side`;
-const MODE_KEY = `${DOCK_KEY}.agent.mode`;
 /** The tray's height: 35% of the content column, at most this many px. */
 const TRAY_MAX = 360;
 
@@ -265,7 +269,7 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): { readonly pe
 }
 
 /** Places the layer in the app. `agent` is the one assistant; `panel` sits beside the app (the product manager). Either may be absent. */
-export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLink, appName, composer = 'dock', children }: { readonly composer?: AgentComposer | undefined; readonly agent?: AgentSpec | undefined; readonly panel?: ShellPanel | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly appName?: string | undefined; readonly children: ReactNode }): ReactElement {
+export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLink, appName, composer = 'dock', modeIdentity, children }: { readonly modeIdentity?: { readonly app?: string | undefined; readonly person?: string | undefined; readonly screen?: boolean | undefined } | undefined; readonly composer?: AgentComposer | undefined; readonly agent?: AgentSpec | undefined; readonly panel?: ShellPanel | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly appName?: string | undefined; readonly children: ReactNode }): ReactElement {
   const compact = usePhone();
   const expanded = !compact;
   const together = useMedia(TOGETHER_QUERY) && expanded;
@@ -292,9 +296,15 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const [mode, setModeState] = useState<AgentMode>('tray');
   const [grown, setGrown] = useState(false);
   // The tray-or-dock choice is the viewer's, remembered with the side; read after mount for the same reason.
+  // Keyed as the left pane's open choice (D-1919): the same helper and identity (app, person) and a key per layout, so two apps on one origin never share it. Reloaded when the identity changes.
+  const modeKey = sidebarKey(modeIdentity?.screen ? 'agent-mode-screen' : 'agent-mode', modeIdentity?.app, modeIdentity?.person);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after mount; reading it before paint keeps server and client markup equal without a flash
-  useLayoutEffect(() => { try { if (globalThis.localStorage?.getItem(MODE_KEY) === 'dock') setModeState('dock'); } catch { /* a convenience */ } }, []);
-  const setMode = useCallback((next: AgentMode) => { setModeState(next); try { globalThis.localStorage?.setItem(MODE_KEY, next); } catch { /* a convenience */ } }, []);
+  useLayoutEffect(() => { let next: AgentMode = 'tray'; try { if (globalThis.localStorage?.getItem(modeKey) === 'dock') next = 'dock'; } catch { /* a convenience */ } setModeState(next); }, [modeKey]);
+  const setMode = useCallback((next: AgentMode) => { setModeState(next); try { globalThis.localStorage?.setItem(modeKey, next); } catch { /* a convenience */ } }, [modeKey]);
+  const dockApi = useRef<DockApi | null>(null);
+  const registerDock = useCallback((api: DockApi | null) => { dockApi.current = api; }, []);
+  // The tray's Dock: this thread goes to the docked side pane whatever placement was persisted (a floated dock stays floated only for the dock's own controls).
+  const moveToDock = useCallback(() => { restoreFocus.current = true; dockApi.current?.dock(); setMode('dock'); }, [setMode]);
   const contentColumn = composer === 'content' && agent !== undefined;
   const contentComposer = contentColumn && expanded;
   const specs = useRef({ agent, improve, snap, shown, pmOpen, together, contentComposer, mode });
@@ -472,8 +482,8 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the tray is gone with the content composer (a phone width, a lost agent): the fill state goes with it
   useEffect(() => { if (!trayOpen && grown) setGrown(false); }, [trayOpen, grown]);
   const value = useMemo<Internal>(() => ({
-    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, setDropZone, onSent, mode, setMode, grown, setGrown, trayOpen, dockOpen,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, onSent, mode, setMode, grown, trayOpen, dockOpen]);
+    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, setDropZone, onSent, mode, setMode, moveToDock, registerDock, grown, setGrown, trayOpen, dockOpen,
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -847,6 +857,8 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   const { text, title } = useTitle();
   const open = layer.dockOpen;
   const floating = api.floating;
+  const { registerDock } = layer;
+  useLayoutEffect(() => { registerDock(api); return () => registerDock(null); }, [api, registerDock]);
   // The chats report this as their placement: the phone drawer and the floating panel are `floating`, the dock is `docked`.
   const { setDockFloating } = layer;
   useLayoutEffect(() => { setDockFloating(floating); return () => setDockFloating(false); }, [floating, setDockFloating]);
@@ -922,8 +934,7 @@ function ContentColumn({ children }: { readonly children: ReactNode }) {
 function ContentTray() {
   const layer = useInternal();
   const { text, title } = useTitle();
-  const { grown, setGrown, side, restoreFocus: restoreFocusRef } = layer;
-  const toDock = () => { restoreFocusRef.current = true; layer.setMode('dock'); };
+  const { grown, setGrown, side, moveToDock } = layer;
   const reduce = useCallback(() => {
     layer.close();
     layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true });
@@ -934,6 +945,8 @@ function ContentTray() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+      // Only a key pressed in the tray or in the one field is the tray's; a host dock beside the content, a menu or a dialog keep their own Esc.
+      if (!(event.target instanceof Element) || !event.target.closest('[data-testid=agent-tray], [data-testid=agent-content-composer]')) return;
       if (document.querySelector('[role=menu],[role=listbox],[role=dialog],[role=alertdialog],[data-boring-overlay]')) return;
       if (event.target instanceof Element && event.target.closest('[aria-expanded=true]')) return;
       reduceRef.current();
@@ -950,7 +963,7 @@ function ContentTray() {
       <div data-testid="agent-tray-header" className="flex shrink-0 items-center gap-1 pt-1">
         <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{title}</h2>
         <Button variant="ghost" size="icon" data-testid="agent-tray-dock" aria-label={dockLabel} title={dockLabel}
-          onClick={toDock}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button>
+          onClick={moveToDock}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button>
         <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
           onClick={() => setGrown(!grown)}>{grown ? <ChevronDownIcon data-icon="inline-start" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>
         <Button variant="ghost" size="icon" data-testid="agent-tray-reduce" aria-label={text.collapse} title={text.collapse} onClick={reduce}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>

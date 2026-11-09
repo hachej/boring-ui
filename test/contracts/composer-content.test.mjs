@@ -206,11 +206,13 @@ test('composer=content: the focused field keeps focus, its selection and its dra
   assert.deepEqual(crossed, { focused: true, start: 6, end: 9 }, 'focus and selection carried across');
 });
 
-test('1280, composer=content: sending a voice message opens the dock like a typed one', { skip, timeout: 120000 }, async () => {
+test('1280, composer=content: sending a voice message opens the tray on the same thread like a typed one', { skip, timeout: 120000 }, async () => {
   await open(1280, 'composer=content&voice=1');
   assert.equal(await state(), 'closed');
   await browser.evaluate(`document.querySelector('[data-testid=fake-voice]').click()`);
-  await browser.until('dock open', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  await browser.until('tray open', `!!document.querySelector('[data-testid=agent-tray]')`);
+  assert.equal(await state(), 'closed', 'not the dock');
+  assert.equal(await inside('[data-testid=transcript]', '[data-testid=agent-tray]'), true, 'the thread is in the tray');
 });
 
 const sendFromField = async text => {
@@ -308,6 +310,49 @@ test('1280, composer="dock" has no tray; 390 has no tray (the peek drawer)', { s
   await browser.evaluate(`window.__layer.talkAbout('@meal:2026-10-27/lunch')`);
   await browser.until('drawer', `['half', 'peek'].includes(document.querySelector('[data-testid=agent-layer]')?.dataset.state)`);
   assert.equal(await count('[data-testid=agent-tray]'), 0);
+});
+
+test('1280, composer=content: the tray-or-dock choice is kept per app (D-1919 keys), not for the whole origin', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'composer=content&app=alpha');
+  await sendFromField('How much was the bread?');
+  await browser.evaluate(`document.querySelector('[data-testid=agent-tray-dock]').click()`);
+  await browser.until('dock open', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  await open(1280, 'composer=content&keep=1&app=beta');
+  await type('And the cheese?');
+  await browser.evaluate(`document.querySelector('[data-testid=composer-submit]').click()`);
+  await browser.until('tray open', `!!document.querySelector('[data-testid=agent-tray]')`);
+  assert.equal(await state(), 'closed', 'another app on the same origin starts with the tray');
+  await open(1280, 'composer=content&keep=1&app=alpha');
+  await type('And the cheese?');
+  await browser.evaluate(`document.querySelector('[data-testid=composer-submit]').click()`);
+  await browser.until('dock open', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  assert.equal(await count('[data-testid=agent-tray]'), 0, 'the first app kept its choice');
+});
+
+test('1280, composer=content: the tray Dock puts the thread in the docked side pane even after the dock was floated', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'composer=content');
+  await sendFromField('How much was the bread?');
+  await browser.evaluate(`document.querySelector('[data-testid=agent-tray-dock]').click()`);
+  await browser.until('dock open', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  await browser.evaluate(`document.querySelector('[data-testid=agent-layer-float]').click()`);
+  await browser.until('floating', `document.querySelector('[data-testid=agent-layer]')?.dataset.placement === 'floating'`);
+  await browser.evaluate(`document.querySelector('[data-testid=agent-layer-close]').click()`);
+  await browser.until('closed', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'closed'`);
+  await sendFromField('And the cheese?');
+  await browser.evaluate(`document.querySelector('[data-testid=agent-tray-dock]').click()`);
+  await browser.until('dock open', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-layer]').dataset.placement`), 'docked', 'docked, not floating');
+});
+
+test('1280, composer=content: Esc from a host dock beside the content (outside the tray and the field) leaves the tray and the focus alone', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'composer=content');
+  await sendFromField('How much was the bread?');
+  await browser.evaluate(`(() => { const side = document.createElement('button'); side.id = 'host-dock'; side.textContent = 'host'; document.body.append(side); side.focus(); })()`);
+  await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await wait(300);
+  assert.equal(await count('[data-testid=agent-tray]'), 1, 'the tray stays');
+  assert.equal(await browser.evaluate(`document.activeElement?.id`), 'host-dock', 'focus stays where it was');
 });
 
 for (const dark of [false, true]) {

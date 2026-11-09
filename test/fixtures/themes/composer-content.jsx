@@ -9,7 +9,7 @@ import { useAgentLayer } from '../../../registry/app-shell/agent-layer.tsx';
 const params = new URLSearchParams(location.search);
 if (params.get('dark') === '1') document.documentElement.classList.add('dark');
 // Each person's tray-or-dock choice is remembered by the shell; a test starts fresh unless it asks to keep it (`?keep=1`).
-if (!params.has('keep')) { try { localStorage.removeItem('boring.app-shell.agent.mode'); } catch { /* none */ } }
+if (!params.has('keep')) { try { for (const key of Object.keys(localStorage)) if (key.startsWith('boring-ui:sidebar-agent-mode') || key.startsWith('boring.app-shell.agent.')) localStorage.removeItem(key); } catch { /* none */ } }
 window.__sent = [];
 const assistant = content => ({ role: 'assistant', content, api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: 2 });
 const entry = (id, model) => ({ id, kind: 'message', byTaskId: 100, model: [model] });
@@ -53,5 +53,5 @@ const Page = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-c
 const nav = [{ id: 'week', label: 'Week', icon: Icon, render: () => <Page /> }];
 
 createRoot(document.getElementById('root')).render(
-  <AppShell layout="screen" title="Visual" nav={nav} route={{ id: 'week', onChange() {} }} composer={params.get('composer') ?? 'dock'} rail="icon"
+  <AppShell layout="screen" title="Visual" {...(params.get('app') ? { appId: params.get('app') } : {})} nav={nav} route={{ id: 'week', onChange() {} }} composer={params.get('composer') ?? 'dock'} rail="icon"
     agent={{ controller, icon: Icon, label: 'Assistant', chatProps: { mentions, attachments, title: 'Assistant', ...(voiceMessage ? { voiceMessage } : {}) } }} />);
