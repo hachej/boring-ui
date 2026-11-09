@@ -7,6 +7,7 @@ import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { createFeedbackSession, parseSaveRequest } from '@hachej/boring-feedback/ui';
 import { parseFeedback } from '@hachej/boring-feedback/format';
 import { NoteBubble } from '../../../registry/feedback/feedback-session.tsx';
+import { CommentBanner } from '../../../registry/feedback/point-mode.tsx';
 
 const params = new URLSearchParams(location.search);
 const plate = document.getElementById('plate');
@@ -25,7 +26,8 @@ const session = createFeedbackSession({
   surface: { element: plate, pins: params.get('pins') === 'host' ? 'host' : 'kit', onPoint: point => points.push(point) },
   save: async request => { saved.push(request); return { kind: 'saved', id: 'fb_7Q2mK9xRt4vW1cZp', revision: 'r1' }; },
 });
-if (params.get('bubble') === '1') createRoot(document.getElementById('ui')).render(createElement(NoteBubble, { session }));
+// `?banner=1` mounts the normal CommentBanner beside the bubble, as a host does (D-1967).
+if (params.get('bubble') === '1') createRoot(document.getElementById('ui')).render(createElement('div', null, createElement(NoteBubble, { session }), params.get('banner') === '1' ? createElement(CommentBanner, { session }) : null));
 // What a host route and a reader do with a sent report: the save route's request check (`store.create` validates with the same
 // draft check), and the stored report text parsed back strictly.
 const checkSent = () => {
