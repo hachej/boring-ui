@@ -159,6 +159,34 @@ test('a double tap on a navigating row navigates once', { skip, timeout: 120000 
   assert.equal(await browser.evaluate(`location.pathname`), '/x');
 });
 
+test('a Back that never lands does not wedge the sheet: after a bounded wait the next row choice still runs', { skip, timeout: 120000 }, async () => {
+  await open('library');
+  await click('[data-testid=screen-sidebar-button]');
+  await browser.until('rows', `!!document.querySelector('[data-testid=row-1]')`);
+  await browser.evaluate(`window.__realBack = history.back; history.back = () => {}`);
+  await click('[data-testid=row-0]');
+  await wait(1200);
+  await browser.evaluate(`history.back = window.__realBack`);
+  assert.equal(await has('[data-testid=screen-sidebar-sheet]'), false, 'the unsettled close is treated as done: the sheet is closed');
+  await click('[data-testid=screen-sidebar-button]');
+  await browser.until('rows again', `!!document.querySelector('[data-testid=row-1]')`);
+  await click('[data-testid=row-1]');
+  await browser.until('row-1 handler ran', `window.__clicks.some(entry => entry.row === 1)`);
+  assert.equal((await browser.evaluate(`window.__clicks`)).some(entry => entry.row === 0), false, 'the dropped choice was not replayed ahead of the traversal');
+});
+
+test('a choice pending when the sheet unmounts is dropped: no replay, no error', { skip, timeout: 120000 }, async () => {
+  await open('library');
+  await click('[data-testid=screen-sidebar-button]');
+  await browser.until('rows', `!!document.querySelector('[data-testid=row-2]')`);
+  await browser.evaluate(`window.__errors = []; addEventListener('error', event => window.__errors.push(String(event.message))); (() => { document.querySelector('[data-testid=row-2]').click(); document.querySelector('[data-testid=tab-settings]').click(); })()`);
+  await wait(1200);
+  assert.equal(await has('[data-testid=screen-sidebar-sheet]'), false);
+  assert.deepEqual(await browser.evaluate(`window.__clicks`), [], 'the held click was dropped, the row handler never ran');
+  assert.equal(await browser.evaluate(`location.pathname`), '/', 'nothing navigated');
+  assert.deepEqual(await browser.evaluate(`window.__errors`), []);
+});
+
 test('Escape closes the sheet and returns focus to the header button', { skip, timeout: 120000 }, async () => {
   await open('library');
   await browser.evaluate(`document.querySelector('[data-testid=screen-sidebar-button]').focus()`);
