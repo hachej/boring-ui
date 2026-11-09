@@ -8,6 +8,8 @@ export interface AppShellText {
   readonly collapse: string;
   /** The hover rail's pin: keeps the pane open. One name in both states; `aria-pressed` tells which. */
   readonly pin: string;
+  /** The pin's tooltip once pinned (its name stays `pin`). */
+  readonly unpin: string;
   /** « ← » back to the assistant from the improve view. */
   readonly back: string;
   readonly listening: string;
@@ -45,6 +47,7 @@ const en: AppShellText = {
   expand: 'Expand',
   collapse: 'Collapse',
   pin: 'Pin the pane',
+  unpin: 'Unpin the pane',
   back: 'Back to the assistant',
   listening: 'Listening…',
   improve: 'Improve the app',
@@ -69,6 +72,7 @@ const fr: AppShellText = {
   expand: 'Agrandir',
   collapse: 'Réduire',
   pin: 'Épingler le volet',
+  unpin: 'Désépingler le volet',
   back: 'Retour à l’assistant',
   listening: 'J’écoute…',
   improve: "Améliorer l'app",
