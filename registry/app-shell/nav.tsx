@@ -14,6 +14,7 @@ import { useAgentLayer } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
 import type { AccountSpec } from './account';
 import { AppSheet, SHEET_ROW } from './app-sheet';
+import { useExclusiveSheet } from './use-exclusive-sheet';
 import type { AppShellText } from './text';
 
 export interface NavItem {
@@ -109,7 +110,7 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
   readonly rail?: 'icon' | 'hover'; readonly title: string; readonly items: readonly NavItem[]; readonly activeId: string; readonly onChange: (id: string) => void;
   readonly agent: AgentSpec | undefined; readonly account: AccountSpec | undefined; readonly improve: string | undefined; readonly text: AppShellText;
 }) {
-  const { setOpen, setOpenMobile, state, isMobile } = useSidebar();
+  const { setOpen, openMobile, setOpenMobile, state, isMobile } = useSidebar();
   // In the phone sheet, choosing a screen closes it.
   const choose = (id: string) => { setOpenMobile(false); onChange(id); };
   const own = items.find(item => item.id === activeId)?.sidebar?.({ collapsed: state === 'collapsed' && !isMobile });
@@ -124,6 +125,10 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
     </SidebarMenuItem>)}
   </SidebarMenu></SidebarGroupContent></SidebarGroup>;
   const layer = useAgentLayer();
+  // One layer at a time on a phone (D-1903): the sheet closes when the assistant or the PM opens, or when another sheet (the account's) opens.
+  const covering = layer.state !== 'closed' ? layer.showing : null;
+  useEffect(() => { if (covering) setOpenMobile(false); }, [covering, setOpenMobile]);
+  useExclusiveSheet(isMobile && openMobile, () => setOpenMobile(false));
   const pressed = layer.state !== 'closed' && layer.showing === 'agent';
   const AgentIcon = agent?.icon ?? SparklesIcon;
   const agentLabel = agent?.label ?? agent?.chatProps?.labels?.title ?? text.assistant;

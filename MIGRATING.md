@@ -1,5 +1,7 @@
 # Unreleased
 
+- **The phone nav sheet closes when something it holds opens another layer (`app-shell`; D-1903).** With `compactNav="sheet"` on a phone, Account > « Améliorer l'app » (or the assistant, or any other sheet such as the account sheet) used to leave the nav sheet open over the PM panel, so a tap on the PM's Close did nothing. The sheet now closes when the assistant or the PM opens and when another exclusive sheet opens: one layer at a time. Re-sync `app-shell` (`registry:build` refreshes `public/r`). Test: `test/contracts/nav-sheet-layer.test.mjs`.
+
 # Migrating to 0.4.72
 
 - **The assistant reads larger: new core token `--text-chat` (D-1901).** pi-chat's message prose, Markdown, composer, empty state and cards now compute to `--text-chat` (default 0.9375rem, line-height 1.6, at least 1rem on touch); meta rows are 0.93 of it and code 0.875. The rules ship in the kit's `app.css`, so a kit bump resizes the chat itself. Visual change for every app. To size the composer menus, the model picker, the queue menu, the header and reply overflow menus and the camera too, re-sync the `button`, `pi-chat`, `pi-chat-pickers` and `pi-chat-attachments` items (they now carry the `pi-chat` class on those portalled roots). An app may set `--text-chat` (and `--text-chat--line-height`) in its `theme.core.css`. Test: `test/contracts/chat-text-size.test.mjs`; see `features/chat.md`.
