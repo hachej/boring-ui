@@ -12,7 +12,26 @@ import { buildGallery } from '../../scripts/gallery-build.mjs';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const skip = !process.env.CHROMIUM && !process.env.CI;
 const shots = process.env.EVIDENCE_DIR ?? join(root, '.cache/evidence/gallery');
-const SECTIONS = [['bases', 'button-variants'], ['blocs', 'data-table'], ['chat', 'pi-chat'], ['visionneuses', 'viewers-soon'], ['coquille', 'phone']];
+// Each section: its cards, in order, and for some a check that the card's content is really there (a card emptied of its specimen must fail).
+const SECTIONS = {
+  bases: ['button-variants', 'button-sizes', 'button-states', 'badges', 'fields', 'choices', 'tooltip', 'overlays', 'tabs', 'toast', 'skeleton'],
+  blocs: ['page-header', 'kpi-stat', 'list-row', 'empty-state', 'data-table', 'space-card', 'wiring-chips', 'file-pick', 'inline-question', 'status-narrative'],
+  chat: ['pi-chat', 'agent-bar'],
+  visionneuses: ['viewer-image', 'viewer-svg', 'viewer-csv', 'viewer-markdown', 'viewer-text'],
+  coquille: ['shell', 'phone'],
+};
+const CONTENT = {
+  'button-variants': ['button', 4],
+  fields: ['input', 1],
+  tabs: ['[role=tab]', 2],
+  'data-table': ['tbody tr', 4],
+  'pi-chat': ['[data-testid=composer-input]', 1],
+  'viewer-image': ['img[src^="blob:"]', 1],
+  'viewer-svg': ['[data-testid=artifact-svg]', 1],
+  'viewer-csv': ['[data-testid=artifact-csv] tbody tr', 3],
+  'viewer-markdown': ['iframe', 1],
+  phone: ['[data-testid=phone-frame]', 1],
+};
 
 let browser, file;
 before(async () => {
@@ -44,11 +63,18 @@ for (const theme of ['light', 'dark']) {
   test(`every section renders with no console error and no network, ${theme}`, { skip, timeout: 240000 }, async () => {
     await open('bases', theme);
     assert.equal(await browser.evaluate(`document.documentElement.classList.contains('dark')`), theme === 'dark');
-    for (const [id, specimen] of SECTIONS) {
+    for (const [id, specimens] of Object.entries(SECTIONS)) {
       await browser.evaluate(`document.querySelector('[data-testid=nav-${id}]').click()`);
       await browser.until(`${id} on show`, `(() => { const e = document.querySelector('[data-testid=gallery-${id}]'); return !!e && e.getBoundingClientRect().width > 0; })()`);
       assert.equal(await visible(`gallery-${id}`), true, `${id} is on show`);
-      assert.equal(await visible(`specimen-${specimen}`), true, `${id}: its first card renders`);
+      assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=gallery-${id}] [data-testid^=specimen-]')].map(e => e.dataset.testid.slice('specimen-'.length))`), specimens, `${id}: its cards, in order`);
+      for (const specimen of specimens) {
+        // Every card has a usage line, a feature reference and content with a size and something in it.
+        const card = await browser.evaluate(`(() => { const c = document.querySelector('[data-testid=specimen-${specimen}]'); const body = c.querySelector('[data-slot=card-content]'); const r = body.getBoundingClientRect(); return { size: r.width > 0 && r.height > 0, filled: body.children.length > 0 && body.textContent.trim().length + body.querySelectorAll('img,svg,iframe,canvas,input,table').length > 0, usage: !!c.querySelector('[data-testid=usage-code]')?.textContent.trim(), feature: !!c.querySelector('[data-testid=feature-ref]')?.textContent.trim() }; })()`);
+        assert.deepEqual(card, { size: true, filled: true, usage: true, feature: true }, `${id}/${specimen}: the card shows its specimen`);
+        const [selector, least] = CONTENT[specimen] ?? [];
+        if (selector) assert.ok(await browser.evaluate(`document.querySelectorAll('[data-testid=specimen-${specimen}] ${selector}').length >= ${least}`), `${id}/${specimen}: ${least} x ${selector}`);
+      }
       await browser.screenshot(`gallery-${id}-${theme}`);
     }
     assert.deepEqual(await browser.evaluate(`performance.getEntriesByType('resource').map(entry => entry.name).filter(name => /^https?:/.test(name))`), [], 'no network request');
@@ -78,6 +104,25 @@ test('a card anchor opens its section and shows the usage line and the feature i
   assert.equal(await visible('specimen-data-table'), true, 'the card is on show');
   assert.match(await browser.evaluate(`document.querySelector('#data-table [data-testid=usage-code]').textContent`), /boring-ui-blocks add data-table/);
   assert.match(await browser.evaluate(`document.querySelector('#data-table [data-testid=feature-ref]').textContent`), /pattern-data-table/);
+  assert.deepEqual(browser.problems, [], 'no console error');
+});
+
+test('a malformed fragment is an unknown anchor: the page renders on its first section', { skip, timeout: 120000 }, async () => {
+  for (const hash of ['%', '%E0%A4%A', 'no-such-card']) {
+    await open(hash, 'light');
+    assert.equal(await visible('gallery-bases'), true, `#${hash} opens the first section`);
+  }
+  assert.deepEqual(browser.problems, [], 'no console error');
+});
+
+test('a message sent in the chat is answered by the fake reply', { skip, timeout: 120000 }, async () => {
+  await open('chat', 'light');
+  await browser.until('the composer', `!!document.querySelector('[data-testid=gallery-chat-frame] [data-testid=composer-input]')`);
+  await browser.type(`document.querySelector('[data-testid=gallery-chat-frame] [data-testid=composer-input]')`, 'Que faire jeudi ?');
+  await browser.until('send enabled', `document.querySelector('[data-testid=gallery-chat-frame] [data-testid=composer-submit]')?.disabled === false`);
+  await browser.evaluate(`document.querySelector('[data-testid=gallery-chat-frame] [data-testid=composer-submit]').click()`);
+  await browser.until('the reply', `document.querySelector('[data-testid=gallery-chat-frame]').textContent.includes('réponse fictive')`);
+  assert.match(await browser.evaluate(`document.querySelector('[data-testid=gallery-chat-frame]').textContent`), /Que faire jeudi \?/, 'the sent message is in the thread');
   assert.deepEqual(browser.problems, [], 'no console error');
 });
 
