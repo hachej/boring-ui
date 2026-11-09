@@ -1457,7 +1457,7 @@ function handTouchSize(file, source, code) {
 
 /** The data-slot values of the kit's own parts (shadcn/ui and registry); an app's own data-slot is its own. A test keeps this list equal to the sources. */
 export const KIT_SLOTS = Object.freeze([
-  'accordion', 'accordion-content', 'accordion-item', 'accordion-trigger', 'accordion-trigger-icon', 'alert', 'alert-action',
+  'accordion', 'accordion-content', 'accordion-item', 'accordion-trigger', 'accordion-trigger-icon', 'agent-bar', 'alert', 'alert-action',
   'alert-description', 'alert-dialog', 'alert-dialog-action', 'alert-dialog-cancel', 'alert-dialog-content',
   'alert-dialog-description', 'alert-dialog-footer', 'alert-dialog-header', 'alert-dialog-media', 'alert-dialog-overlay',
   'alert-dialog-portal', 'alert-dialog-title', 'alert-dialog-trigger', 'alert-title', 'attachment', 'attachment-action',
