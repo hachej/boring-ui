@@ -1,0 +1,12 @@
+<h1>Chaîne</h1>
+<p id="step">0</p>
+<script>
+  // A burst of short requests, 100 ms apart, each finishing within a few ms: the page is never "in flight" for long, yet not settled until the last one.
+  let n = 0;
+  const next = () => setTimeout(() => fetch('/pages/apropos.html').then(r => r.text()).then(() => {
+    n++;
+    if (n === 10) { const done = document.getElementById('step'); done.textContent = 'Fini'; done.style.cssText = 'height:200px;background:#c00'; }
+    if (n < 10) next();
+  }), 100);
+  next();
+</script>
