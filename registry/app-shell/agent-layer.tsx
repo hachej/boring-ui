@@ -298,13 +298,13 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // The tray-or-dock choice is the viewer's, remembered with the side; read after mount for the same reason.
   // Keyed as the left pane's open choice (D-1919): the same helper and identity (app, person) and a key per layout, so two apps on one origin never share it. Reloaded when the identity changes.
   const modeKey = sidebarKey(modeIdentity?.screen ? 'agent-mode-screen' : 'agent-mode', modeIdentity?.app, modeIdentity?.person);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after mount; reading it before paint keeps server and client markup equal without a flash
   const refocusField = useRef(false);
   useLayoutEffect(() => {
     let next: AgentMode = 'tray';
     try { if (globalThis.localStorage?.getItem(modeKey) === 'dock') next = 'dock'; } catch { /* a convenience */ }
     // Another person's choice can take the tray (or the dock) away from under the focus: the one field is the stable control to land on.
     if (next !== specs.current.mode && specs.current.snap !== 'closed' && document.activeElement?.closest('[data-testid=agent-tray], [data-testid=agent-layer]')) refocusField.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after mount; reading it before paint keeps server and client markup equal without a flash
     setModeState(next);
   }, [modeKey]);
   useLayoutEffect(() => {
