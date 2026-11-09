@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
+import { Badge } from '@/components/ui/badge';
 import { SidebarProvider, Sidebar, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarMenuAction, SidebarMenuBadge, SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton } from '@/components/ui/sidebar';
 
 // D-1904: sidebar rows with a « … » SidebarMenuAction and a SidebarMenuBadge (the count). Fictional accounting data. ?theme=light|dark; ?mode=collapsed folds the sidebar to its icon rail (collapsible="icon"). The nested row has a button, an action, a count and an open SidebarMenuSub.
@@ -10,6 +11,7 @@ const rows = [
   ['action', 'Banque', true, null],
   ['badge', 'Brouillons', false, '8'],
   ['nested', 'Exercices', true, '3'],
+  ['dot', 'Importer', false, null],
   ['folder', 'Pièces justificatives de l’exercice en cours avec un très long nom de dossier', true, '128'],
 ];
 
@@ -19,7 +21,7 @@ const Sub = () => <SidebarMenuSub>{['2025', '2024'].map(year => <SidebarMenuSubI
 
 createRoot(document.getElementById('root')).render(<SidebarProvider defaultOpen={!collapsed}><Sidebar collapsible={collapsed ? 'icon' : 'none'} className={collapsed ? undefined : 'w-full'}><SidebarContent><SidebarMenu>
   {rows.map(([id, label, action, count]) => <SidebarMenuItem key={id} data-row={id}>
-    <SidebarMenuButton>{collapsed ? <Dot /> : null}<span>{label}</span></SidebarMenuButton>
+    <SidebarMenuButton>{collapsed ? <Dot /> : null}<span>{label}</span>{id === 'dot' ? <Badge aria-hidden="true" className="ml-auto group-data-[collapsible=icon]:hidden" /> : null}</SidebarMenuButton>
     {action ? <More /> : null}
     {count ? <SidebarMenuBadge>{count}</SidebarMenuBadge> : null}
     {id === 'nested' ? <Sub /> : null}
