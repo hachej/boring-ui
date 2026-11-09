@@ -89,20 +89,23 @@ for (const view of views) for (const density of ['default', 'compact']) for (con
   const gutter = density === 'compact' ? 12 : 16;
   test(`${view.name}, ${density} density, ${screen === 'Padded' ? 'a padded body' : 'a bled list'}: the header title and the body text start on the same screen gutter (${gutter}px)`, { skip, timeout: 120000 }, async () => {
     await mount(`screen=${screen}${density === 'compact' ? '&density=compact' : ''}`, view);
+    // The screen box starts beside the open sidebar at 1280, so the gutter is measured from its left edge.
+    const edge = await browser.evaluate(`document.querySelector('[data-testid=screen-${screen}]').getBoundingClientRect().left`);
     const title = await textX('[data-testid=header-title]');
     const body = await textX(`[data-testid=screen-${screen}]`);
-    near(title, gutter, 'the header title sits on the gutter');
-    near(body, gutter, 'the body text sits on the gutter');
+    near(title - edge, gutter, 'the header title sits on the gutter');
+    near(body - edge, gutter, 'the body text sits on the gutter');
     near(title, body, 'title and body share one left edge');
   });
 }
 
 test('the gutter is a token with a fallback: a root that sets --screen-gutter moves the title and the body together', { skip, timeout: 120000 }, async () => {
   await mount('screen=Padded');
+  const edge = await browser.evaluate(`document.querySelector('[data-testid=screen-Padded]').getBoundingClientRect().left`);
   await browser.evaluate(`document.documentElement.style.setProperty('--screen-gutter', '2rem')`);
   await wait(200);
-  near(await textX('[data-testid=header-title]'), 32, 'title');
-  near(await textX('[data-testid=screen-Padded]'), 32, 'body');
+  near(await textX('[data-testid=header-title]') - edge, 32, 'title');
+  near(await textX('[data-testid=screen-Padded]') - edge, 32, 'body');
 });
 
 test('shots at 1280 and 390, light and dark (padded body and bled list)', { skip, timeout: 180000 }, async () => {

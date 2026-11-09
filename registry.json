@@ -275,7 +275,8 @@
         "@layer base": {
           ":root": {
             "--control-h": "2.25rem",
-            "--control-min": "0rem"
+            "--control-min": "0rem",
+            "--screen-gutter": "1rem"
           },
           "@media (width < 768px), (pointer: coarse)": {
             ":root": {
@@ -285,7 +286,8 @@
           },
           "[data-density=\"compact\"]": {
             "--control-h": "2.25rem",
-            "--control-min": "0rem"
+            "--control-min": "0rem",
+            "--screen-gutter": "0.75rem"
           }
         }
       },
@@ -2258,6 +2260,9 @@
             "--app-shell-safe-bottom": "env(safe-area-inset-bottom)",
             "--app-shell-tabbar-min": "calc(3.5rem + env(safe-area-inset-bottom))",
             "--app-shell-sheet-max": "85dvh"
+          },
+          ":where([data-slot=\"screen-body\"][data-bleed]) :where(li, tr, [role=\"row\"]) > :first-child": {
+            "padding-inline-start": "var(--screen-gutter, 1rem)"
           }
         }
       },
@@ -2301,6 +2306,11 @@
           "path": "registry/app-shell/list-detail.tsx",
           "type": "registry:component",
           "target": "components/app-shell/list-detail.tsx"
+        },
+        {
+          "path": "registry/app-shell/screen-body.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/screen-body.tsx"
         },
         {
           "path": "registry/app-shell/header.tsx",

@@ -11,6 +11,8 @@ export { useShellLayer } from './shell-layer';
 export type { ShellLayer } from './shell-layer';
 export { AppSidebar, TabBar } from './nav';
 export type { NavItem } from './nav';
+export { ScreenBody } from './screen-body';
+export type { ScreenBodyProps } from './screen-body';
 export { ScreenHeader, useScreenHeader } from './header';
 export type { ScreenHeaderSpec } from './header';
 export { useIsCompact } from './compact';
