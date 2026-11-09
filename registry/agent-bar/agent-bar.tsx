@@ -76,7 +76,7 @@ function Wave({ levels }: { readonly levels: readonly number[] }) {
     {Array.from({ length: BARS }, (_, index) => {
       const level = tail[index - (BARS - tail.length)] ?? 0;
       const loud = level > 0.04;
-      return <span key={index} className={cn('w-0.5 shrink-0 rounded-full', loud ? 'bg-primary' : 'bg-muted-foreground/40')} style={{ height: loud ? `${Math.min(100, 20 + level * 400)}%` : '12%' }} />;
+      return <span key={index} className={cn('w-0.5 shrink-0 rounded-(--radius-sm)', loud ? 'bg-primary' : 'bg-muted-foreground/40')} style={{ height: loud ? `${Math.min(100, 20 + level * 400)}%` : '12%' }} />;
     })}
   </div>;
 }
@@ -113,10 +113,19 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
     if (before.current !== 'idle' && dictation.phase === 'idle') { clearTimeout(timer.current); setMode('idle'); }
     before.current = dictation.phase;
   }, [dictation.phase]);
+  useEffect(() => {
+    if (dictation.phase === 'recording' && stopAsked.current) { stopAsked.current = false; dictation.finish(); }
+    if (dictation.phase === 'idle') stopAsked.current = false;
+  }, [dictation.phase, dictation]);
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  const stopListening = (send: boolean) => { clearTimeout(timer.current); sendOnText.current = send; setMode('idle'); dictation.finish(); };
-  const abandon = () => { clearTimeout(timer.current); sendOnText.current = false; setMode('idle'); dictation.cancel(); };
+  // A stop asked before the microphone is open (the kit's `finish` would cancel then) waits for the recording to begin.
+  const stopAsked = useRef(false);
+  const stopListening = (send: boolean) => {
+    clearTimeout(timer.current); sendOnText.current = send; setMode('idle');
+    if (dictation.phase === 'starting') stopAsked.current = true; else dictation.finish();
+  };
+  const abandon = () => { stopAsked.current = false; clearTimeout(timer.current); sendOnText.current = false; setMode('idle'); dictation.cancel(); };
   const hold = useHoldToRecord({
     start: () => {
       pressedAt.current = Date.now(); setMode('press'); setTranscript('');
@@ -143,31 +152,31 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
   return <div className={cn('mx-auto flex w-full max-w-xl flex-col gap-2', className)}>
     {shown}
     {dictation.problem ? <p role="alert" className="px-3 text-sm text-destructive">{dictation.problem}</p> : null}
-    {quoted ? <div data-testid="agent-bar-quoted" className="flex items-center gap-1 rounded-xl bg-primary/10 py-0.5 pr-0.5 pl-3 text-sm font-semibold text-primary">
+    {quoted ? <div data-testid="agent-bar-quoted" className="flex items-center gap-1 rounded-(--radius-xl) bg-primary/10 py-0.5 pr-0.5 pl-3 text-sm font-semibold text-primary">
       <CornerDownRightIcon className="size-4 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">{quoted.label}</span>
-      <Button type="button" variant="ghost" size="icon" className="rounded-full text-primary" aria-label={words.removeQuote} onClick={quoted.onClear}><XIcon /></Button>
+      <Button type="button" variant="ghost" size="icon" aria-label={words.removeQuote} onClick={quoted.onClear}><XIcon /></Button>
     </div> : null}
-    <div data-testid="agent-bar" data-state={state} className={cn('flex items-center gap-1.5 rounded-full border bg-card p-1.5', outlined && 'border-primary ring-1 ring-primary')}>
+    <div data-slot="agent-bar" data-testid="agent-bar" data-state={state} className={cn('flex items-center gap-1.5 rounded-(--radius-3xl) bg-card p-1.5 ring-1 ring-border focus-within:ring-primary', outlined && 'ring-2 ring-primary')}>
       {state === 'listening' ? <>
-        <Button type="button" variant="secondary" size="icon" className="rounded-full" aria-label={words.cancel} onClick={abandon}><XIcon /></Button>
+        <Button type="button" variant="secondary" size="icon" aria-label={words.cancel} onClick={abandon}><XIcon /></Button>
         <Wave levels={dictation.levels} />
-        <Button type="button" variant="secondary" size="icon" className="rounded-full" aria-label={words.stop} onClick={() => stopListening(false)}><SquareIcon /></Button>
+        <Button type="button" variant="secondary" size="icon" aria-label={words.stop} onClick={() => stopListening(false)}><SquareIcon /></Button>
       </> : state === 'holding' ? <>
-        <span className="flex size-[var(--control-h,2.25rem)] shrink-0 items-center justify-center rounded-full bg-foreground text-background" aria-hidden="true"><SquareIcon /></span>
+        <span className="flex size-[var(--control-h,2.25rem)] shrink-0 items-center justify-center rounded-(--radius-3xl) bg-foreground text-background" aria-hidden="true"><SquareIcon /></span>
         <span data-testid="agent-bar-hold-label" className="min-w-0 flex-1 truncate text-sm font-medium">{words.releaseToSend}</span>
         <Wave levels={dictation.levels} />
       </> : <>
-        {onHistory ? <Button type="button" variant="secondary" size="icon" className="rounded-full" aria-label={words.history} aria-expanded={historyOpen} onClick={onHistory}>{historyOpen ? <ChevronDownIcon /> : <ChevronUpIcon />}</Button> : null}
+        {onHistory ? <Button type="button" variant="secondary" size="icon" aria-label={words.history} aria-expanded={historyOpen} onClick={onHistory}>{historyOpen ? <ChevronDownIcon /> : <ChevronUpIcon />}</Button> : null}
         {state === 'transcribing'
-          ? <span className="flex min-w-0 flex-1 items-center gap-2 px-2 text-sm text-muted-foreground"><Spinner aria-label={words.transcribing} />{words.transcribing}</span>
+          ? <span className="flex min-w-0 flex-1 items-center gap-2 px-2 text-sm text-muted-foreground"><span className="text-primary"><Spinner aria-label={words.transcribing} /></span>{words.transcribing}</span>
           : <Input data-testid="agent-bar-input" value={text} disabled={disabled} placeholder={placeholder ?? words.placeholder} aria-label={placeholder ?? words.placeholder}
-              className="min-w-0 flex-1 rounded-full border-0 bg-transparent shadow-none focus-visible:ring-0" enterKeyHint="send"
+              className="min-w-0 flex-1" enterKeyHint="send"
               onChange={event => { setText(event.target.value); setTranscript(''); }}
               onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />}
-        {state === 'rest' ? <Button type="button" variant="secondary" size="icon" className="touch-none rounded-full select-none" aria-label={words.speak} disabled={disabled} {...hold}><MicIcon /></Button> : null}
+        {state === 'rest' ? <Button type="button" variant="secondary" size="icon" className="touch-none select-none" aria-label={words.speak} disabled={disabled} {...hold}><MicIcon /></Button> : null}
       </>}
-      <Button type="button" size="icon" className="rounded-full" aria-label={words.send} disabled={disabled || !canSend || state === 'holding'} onClick={submit}><ArrowUpIcon /></Button>
+      <Button type="button" size="icon" aria-label={words.send} disabled={disabled || !canSend || state === 'holding'} onClick={submit}><ArrowUpIcon /></Button>
     </div>
   </div>;
 }
@@ -186,9 +195,9 @@ export function AgentStatus({ state, text, onCancel, labels, className }: AgentS
   const words = { ...agentBarLabels, ...labels };
   return <div data-testid="agent-status" data-state={state} role="status" className={cn('mx-auto flex min-h-11 w-full max-w-xl items-center gap-2 text-sm', className)}>
     {state === 'working'
-      ? <Spinner data-testid="agent-status-spinner" aria-label={words.working} className="size-3.5 text-primary" />
-      : <span data-testid="agent-status-check" className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>}
+      ? <span className="text-primary"><Spinner data-testid="agent-status-spinner" aria-label={words.working} /></span>
+      : <span data-testid="agent-status-check" className="flex size-4 shrink-0 items-center justify-center rounded-(--radius-3xl) bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>}
     <span className="min-w-0 flex-1 truncate">{text}</span>
-    {state === 'working' && onCancel ? <Button type="button" variant="link" className="px-0 font-semibold" onClick={onCancel}>{words.cancel}</Button> : null}
+    {state === 'working' && onCancel ? <Button type="button" variant="link" onClick={onCancel}>{words.cancel}</Button> : null}
   </div>;
 }
