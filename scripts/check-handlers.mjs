@@ -27,6 +27,9 @@ export const REMOVED_FILE_APIS = /\b(?:openSqliteResources|SqliteResourceProvide
 
 const HISTORY_HEADING = '## Migrating from the removed resource store';
 
+// The Atlas shooter (D-1831) writes its own `index.json` catalogue beside the PNGs; that is not the removed artifact index.
+const ATLAS_INDEX_FILES = new Set(['MIGRATING.md', 'features/atlas.md', 'packages/ui/bin/boring-ui-blocks.mjs', 'test/atlas-shoot.test.mjs']);
+
 /** Every tracked file (or each of `files`) that names a removed file API, as `path:line: name`. */
 export function removedFileApis(root, files) {
   const listed = files ?? spawnSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' }).stdout.split('\0').filter(Boolean);
@@ -40,7 +43,7 @@ export function removedFileApis(root, files) {
     text.split('\n').forEach((line, index) => {
       // The one place that may name them: a README's migration note for consumers still on the old calls.
       if (line.startsWith('## ')) history = path.endsWith('README.md') && line === HISTORY_HEADING;
-      if (!history) for (const match of line.matchAll(REMOVED_FILE_APIS)) found.push(`${path}:${index + 1}: ${match[0]}`);
+      if (!history) for (const match of line.matchAll(REMOVED_FILE_APIS)) if (match[0] !== 'index.json' || !ATLAS_INDEX_FILES.has(path)) found.push(`${path}:${index + 1}: ${match[0]}`);
     });
   }
   return found;

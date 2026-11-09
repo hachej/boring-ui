@@ -69,7 +69,7 @@ function RowActions({ label, items }: { readonly label: string; readonly items: 
   return <DropdownMenu>
     <DropdownMenuTrigger render={<Button ref={node => { portal.current = node?.ownerDocument.body ?? null; }} variant="ghost" size="icon-sm" aria-label={label} title={label} data-testid="conversation-action-more"><EllipsisIcon data-icon="inline-start" aria-hidden="true" /></Button>} />
     <DropdownMenuPortal container={portal}>
-      <DropdownMenuContent align="end" aria-label={label} data-testid="conversation-action-more-list" className="w-64 max-w-[calc(100vw-1rem)]">
+      <DropdownMenuContent align="end" aria-label={label} data-testid="conversation-action-more-list" className="pi-chat w-64 max-w-[calc(100vw-1rem)]">
         {items.map(item => <Fragment key={item.id}>
           {item.separatorBefore && <DropdownMenuSeparator />}
           <DropdownMenuItem variant={item.destructive ? 'destructive' : 'default'} disabled={item.disabled} data-testid={item.testId ?? `conversation-action-more-${item.id}`} data-item={item.id} onClick={item.onSelect} className="min-h-8 max-md:min-h-10 pointer-coarse:min-h-10">

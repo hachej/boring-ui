@@ -4,7 +4,8 @@
 //
 //   npx boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <app web dir>] [--json]
 //   npx boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline]   (the one design check of an app's web/src; needs no components.json)
-//   npx boring-ui-blocks atlas <dir> --check [--fixtures <dir>] [--json]   (validates <dir>/atlas.json against atlas.schema.json; shooting is the next slice)
+//   npx boring-ui-blocks atlas <dir> --check [--fixtures <dir>] [--json]   (validates <dir>/atlas.json against atlas.schema.json)
+//   npx boring-ui-blocks atlas <dir> --url <base url> --out <dir> [--fixtures <dir>] [--since <index.json>] [--chromium <path>] [--commit <sha>] [--json]   (checks, then shoots every state)
 //   npx boring-ui-blocks design-system --out <dir> [--theme <name>=<theme.core.css> ...]   (copies the packaged design-system page and adds each app theme)
 //   npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>]
 //   npx boring-ui-blocks add <shadcn add arguments...> [--overwrite] [--manifest <path>] [--cwd <dir>]
@@ -13,9 +14,11 @@
 //
 // `check` writes nothing. `add`, `update` and `manifest` write the shadcn files they install and the manifest, nothing else.
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { inflateSync } from 'node:zlib';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 // BORING-UI-1 rule engine, one implementation: this repository's `scripts/check-design.mjs` imports `scanDesign` (DESIGN_RULES) from
@@ -275,7 +278,7 @@ export function check(app, design = [], manifest = MANIFEST) {
   return { version, blocks: blocks.map(block => block.name), violations };
 }
 
-const USAGE = `usage: boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline] | design-system --out <dir> [--theme <name>=<theme.core.css> ...] | atlas <dir> --check [--fixtures <dir>] [--json] | check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--overwrite] [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
+const USAGE = `usage: boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline] | design-system --out <dir> [--theme <name>=<theme.core.css> ...] | atlas <dir> (--check | --url <base url> --out <dir>) [--fixtures <dir>] [--since <index.json>] [--chromium <path>] [--commit <sha>] [--json] | check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>] | add <shadcn add args...> [--overwrite] [--manifest <path>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
   'Blocks: pi-app is the whole agent app with every chat feature and viewer. pi-chat is the core chat only: add pi-chat-plugins for every ' +
   'feature, or one of pi-chat-markdown, pi-chat-slash, pi-chat-mentions, pi-chat-pickers, pi-chat-voice, pi-chat-attachments, ' +
   'pi-chat-question, pi-chat-approval, pi-chat-subagent and pi-artifacts. Viewers are viewer-frame plus viewer-markdown, viewer-html, ' +
@@ -489,21 +492,26 @@ export function checkAtlas(manifest, { fixtures } = {}) {
   return found;
 }
 
-export const ATLAS_USAGE = 'usage: boring-ui-blocks atlas <dir> --check [--fixtures <dir>] [--json]';
+export const ATLAS_USAGE = 'usage: boring-ui-blocks atlas <dir> --check [--fixtures <dir>] [--json]\n       boring-ui-blocks atlas <dir> --url <base url> --out <dir> [--fixtures <dir>] [--since <index.json>] [--chromium <path>] [--commit <sha>] [--json]';
 
-/** The `atlas` command. `<dir>/atlas.json` is read; exit 1 on any finding, 2 for a use error or for shooting (next slice). */
+/** The `atlas` command. `<dir>/atlas.json` is read and checked (exit 1 on any finding, 2 for a use error); without `--check` the states are then shot, and the result is a promise. */
 export function atlasMain(args, cwd, log, error) {
   const positional = [];
   const flags = {};
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--check') flags.check = true;
     else if (args[i] === '--json') flags.json = true;
-    else if (args[i] === '--fixtures') { flags.fixtures = args[++i]; if (!flags.fixtures) { error(ATLAS_USAGE); return 2; } }
+    else if (['--fixtures', '--url', '--out', '--since', '--chromium', '--commit'].includes(args[i])) {
+      const name = args[i].slice(2);
+      flags[name] = args[++i];
+      if (!flags[name]) { error(ATLAS_USAGE); return 2; }
+    }
     else if (args[i].startsWith('--')) { error(`unknown option ${args[i]}\n${ATLAS_USAGE}`); return 2; }
     else positional.push(args[i]);
   }
   if (positional.length !== 1) { error(ATLAS_USAGE); return 2; }
-  if (!flags.check) { error('atlas: shooting lands in the next slice; for now only `atlas <dir> --check` runs'); return 2; }
+  if (!flags.check && (!flags.url || !flags.out)) { error(`atlas: shooting needs --url and --out (or pass --check to only validate)\n${ATLAS_USAGE}`); return 2; }
+  if (!flags.check) { try { new URL(flags.url); } catch { error(`atlas: --url ${flags.url} is not a URL`); return 2; } }
   const file = resolve(cwd, positional[0], 'atlas.json');
   const report = list => { if (flags.json) log(JSON.stringify(list, null, 2)); else for (const f of list) log(`${file}: ${f.path || '(root)'}: ${f.message}`); return list.length ? 1 : 0; };
   let fixtures;
@@ -516,9 +524,386 @@ export function atlasMain(args, cwd, log, error) {
   let manifest;
   try { manifest = JSON.parse(readFileSync(file, 'utf8')); } catch (e) { return report([{ path: '', message: `atlas.json is not valid JSON: ${e.message}` }]); }
   const findings = checkAtlas(manifest, { fixtures });
-  const code = report(findings);
+  const code = flags.json && !flags.check && !findings.length ? 0 : report(findings);
   if (!flags.json) log(code ? `atlas: ${findings.length} finding(s)` : `atlas: ${manifest.states.length} state(s) ok`);
-  return code;
+  if (code || flags.check) return code;
+  return shootAtlas({ manifest, flags, cwd, fixtures: flags.fixtures && resolve(cwd, flags.fixtures), log, error }).catch(e => { error(`atlas: ${e.message}`); return 1; });
+}
+
+// ---- Shooting: `atlas <dir> --url <base> --out <dir>` drives a headless Chromium over CDP (Node's global WebSocket, no dependency) and shoots every
+// state at 390 touch and 1280, light and dark. The page-side finders below are serialized into the page, so they use nothing from this file.
+const VIEWPORTS = [{ width: 390, height: 844, touch: true }, { width: 1280, height: 800, touch: false }];
+const MODES = ['light', 'dark'];
+const STEP_TIMEOUT = 10000;
+const CDP_TIMEOUT = 15000;
+const CLEANUP_TIMEOUT = 5000;
+const SHOT_TIMEOUT = 30000;
+const MAX_HEIGHT = 16000;
+const CLICKABLE = ['button', 'link', 'tab', 'menuitem', 'checkbox', 'radio'];
+const sleep = ms => new Promise(done => setTimeout(done, ms));
+
+/** Runs in the page. kind 'click': the centre of the first visible element named `label`; 'fill': focuses the field labelled `label` (a select takes `value`). */
+function pageFind(kind, label, value, clickable) {
+  const norm = s => String(s ?? '').replace(/\s+/g, ' ').trim();
+  const visible = el => {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    const s = getComputedStyle(el);
+    return s.visibility !== 'hidden' && s.display !== 'none';
+  };
+  const labelledBy = el => (el.getAttribute('aria-labelledby') ?? '').split(/\s+/).filter(Boolean).map(id => norm(document.getElementById(id)?.textContent)).join(' ');
+  const labels = el => [...(el.labels ?? [])].map(l => norm(l.textContent));
+  const roleOf = el => {
+    const role = el.getAttribute('role');
+    if (role) return role;
+    if (el.tagName === 'BUTTON' || el.tagName === 'SUMMARY') return 'button';
+    if (el.tagName === 'A' && el.hasAttribute('href')) return 'link';
+    if (el.tagName === 'INPUT') {
+      if (['button', 'submit', 'reset'].includes(el.type)) return 'button';
+      if (el.type === 'checkbox' || el.type === 'radio') return el.type;
+    }
+    return '';
+  };
+  const aim = el => {
+    el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+    const r = el.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  };
+  if (kind === 'click') {
+    // One accessible name per element, in the spec's order: aria-labelledby, aria-label, a label, then the content.
+    const nameOf = el => labelledBy(el) || norm(el.getAttribute('aria-label')) || labels(el).find(Boolean) || norm(el.innerText ?? el.textContent) || (el.tagName === 'INPUT' ? norm(el.value) : '');
+    // A click lands on the closest actionable ancestor, so its name and its disabled state decide, never a descendant's.
+    const actionable = 'button, a[href], summary, label, select, textarea, input:not([type="hidden"]), [role="button"], [role="link"], [role="tab"], [role="menuitem"], [role="checkbox"], [role="radio"]';
+    const disabled = el => el.matches(':disabled') || !!el.closest('[aria-disabled="true"]');
+    const found = [...new Set([...document.querySelectorAll('*')].map(el => el.closest(actionable) ?? el))].filter(el => visible(el) && nameOf(el) === label);
+    const pick = list => list.find(e => clickable.includes(roleOf(e))) ?? list.find(e => !list.some(o => o !== e && e.contains(o)));
+    const el = pick(found.filter(e => !disabled(e)));
+    if (el) return aim(el);
+    return found.length ? { disabled: true } : null;
+  }
+  const fields = [...document.querySelectorAll('input, textarea, select')].filter(el => el.type !== 'hidden' && el.type !== 'file' && visible(el)
+    && [norm(el.getAttribute('aria-label')), labelledBy(el), ...labels(el), norm(el.getAttribute('placeholder'))].includes(label));
+  const field = fields[0];
+  if (!field) return null;
+  aim(field);
+  field.focus();
+  if (field.tagName === 'SELECT') {
+    const option = [...field.options].find(o => o.value === value || norm(o.textContent) === value);
+    if (!option) return { error: `the list "${label}" has no option "${value}"` };
+    field.value = option.value;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+    return { done: true };
+  }
+  try { field.select(); } catch { /* a type without a selection is cleared by insertText alone */ }
+  return { focused: true };
+}
+
+/** Launches a headless Chromium on a fresh profile; resolves `{ url, close }` where `url` is the DevTools WebSocket. */
+function launchChromium(path) {
+  const profile = mkdtempSync(join(tmpdir(), 'atlas-chromium-'));
+  const args = ['--headless', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--hide-scrollbars', '--force-color-profile=srgb', 'about:blank'];
+  if (process.getuid?.() === 0) args.unshift('--no-sandbox');
+  // Its own process group: killing the group takes the renderers and helpers with the browser.
+  const child = spawn(path, args, { stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+  const killGroup = () => { try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch { /* already gone */ } } };
+  const exited = new Promise(done => child.once('exit', done));
+  const close = async () => {
+    process.off('exit', onExit);
+    killGroup();
+    if (child.exitCode === null) await Promise.race([exited, sleep(5000)]);
+    try { rmSync(profile, { recursive: true, force: true, maxRetries: 3 }); } catch { /* a temp profile left behind is not a failure */ }
+  };
+  const onExit = killGroup;
+  process.on('exit', onExit);
+  const url = (async () => {
+    try {
+      return await new Promise((resolveUrl, reject) => {
+      let log = '', ready = false;
+      const timer = setTimeout(() => reject(new Error('Chromium printed no DevTools address within 20 s')), 20000);
+      child.stderr.on('data', chunk => {
+        if (ready) return;
+        log += chunk;
+        const match = /DevTools listening on (ws:\/\/\S+)/.exec(log);
+        if (match) { ready = true; clearTimeout(timer); resolveUrl(match[1]); }
+      });
+      child.once('error', e => { clearTimeout(timer); reject(e); });
+      child.once('exit', code => { clearTimeout(timer); reject(new Error(`Chromium exited (${code}) before it was ready: ${log.slice(-400).trim()}`)); });
+      });
+    } catch (e) { await close(); throw e; }
+  })();
+  url.catch(() => {});
+  return { url, close };
+}
+
+/** A CDP connection: `send(method, params, sessionId)` and `on(listener)` (returns the off function). */
+function connectCdp(url) {
+  return new Promise((resolveCdp, reject) => {
+    const ws = new WebSocket(url);
+    let id = 0;
+    const pending = new Map();
+    const listeners = new Set();
+    ws.onerror = () => reject(new Error(`cannot connect to ${url}`));
+    ws.onclose = () => { for (const p of pending.values()) p.reject(new Error(`${p.method}: the browser closed the connection`)); pending.clear(); };
+    ws.onmessage = event => {
+      const message = JSON.parse(event.data);
+      if (message.id === undefined) { for (const listener of listeners) listener(message); return; }
+      const p = pending.get(message.id);
+      if (!p) return;
+      pending.delete(message.id);
+      if (message.error) p.reject(new Error(`${p.method}: ${message.error.message}`)); else p.resolve(message.result ?? {});
+    };
+    ws.onopen = () => resolveCdp({
+      // Every request is bounded: a page stuck in a loop never answers, and the run must not wait for it.
+      send: (method, params = {}, sessionId, timeout = CDP_TIMEOUT) => new Promise((resolve, rej) => {
+        const n = ++id;
+        const timer = setTimeout(() => { pending.delete(n); rej(new Error(`${method}: no answer from the browser within ${timeout / 1000} s`)); }, timeout);
+        pending.set(n, { method, resolve: v => { clearTimeout(timer); resolve(v); }, reject: e => { clearTimeout(timer); rej(e); } });
+        ws.send(JSON.stringify({ id: n, method, params, sessionId }));
+      }),
+      on: listener => { listeners.add(listener); return () => listeners.delete(listener); },
+      close: () => ws.close(),
+    });
+  });
+}
+
+/** A new page at `viewport` in `mode`; `errors` collects console errors and uncaught exceptions. */
+async function openPage(cdp, { width, height, touch }, mode) {
+  // A fresh browser context per shot: no storage, cookies or cache from another state or mode.
+  const { browserContextId } = await cdp.send('Target.createBrowserContext');
+  let targetId, off = () => {};
+  const close = async () => { off(); if (targetId) await cdp.send('Target.closeTarget', { targetId }, undefined, CLEANUP_TIMEOUT).catch(() => {}); await cdp.send('Target.disposeBrowserContext', { browserContextId }, undefined, CLEANUP_TIMEOUT).catch(() => {}); };
+  try {
+  ({ targetId } = await cdp.send('Target.createTarget', { url: 'about:blank', browserContextId }));
+  const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
+  const send = (method, params) => cdp.send(method, params, sessionId);
+  const errors = [];
+  off = cdp.on(message => {
+    if (message.sessionId !== sessionId) return;
+    if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') errors.push(message.params.args.map(a => a.value ?? a.description ?? a.type).join(' '));
+    if (message.method === 'Runtime.exceptionThrown') errors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
+  });
+  await Promise.all([send('Page.enable'), send('Runtime.enable'), send('DOM.enable')]);
+  await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: touch });
+  await send('Emulation.setTouchEmulationEnabled', touch ? { enabled: true, maxTouchPoints: 5 } : { enabled: false });
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }] });
+  const apply = `document.documentElement.classList.${mode === 'dark' ? 'add' : 'remove'}('dark')`;
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { const apply = () => ${apply}; if (document.documentElement) apply(); else new MutationObserver((_, o) => { if (document.documentElement) { o.disconnect(); apply(); } }).observe(document, { childList: true }); document.addEventListener('DOMContentLoaded', apply); })()` });
+  return { send, errors, apply, close };
+  } catch (e) { await close(); throw e; }
+}
+
+async function evaluate(page, expression) {
+  const r = await page.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, timeout: 8000 });
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+  return r.result.value;
+}
+
+/** Calls `probe` every 100 ms for up to 10 s; its first truthy value, or null. A page that is navigating throws meanwhile: that is a retry. */
+async function poll(probe) {
+  const end = Date.now() + STEP_TIMEOUT;
+  for (;;) {
+    const left = end - Date.now();
+    if (left <= 0) return null;
+    try { const value = await Promise.race([probe(), new Promise(done => setTimeout(done, left, null).unref())]); if (value) return value; } catch { /* the document is changing */ }
+    if (Date.now() > end) return null;
+    await sleep(100);
+  }
+}
+
+async function navigate(page, url) {
+  const r = await page.send('Page.navigate', { url });
+  if (r.errorText) throw new Error(`cannot open ${url}: ${r.errorText}`);
+  if (!await poll(() => evaluate(page, `document.readyState === 'complete' && location.href !== 'about:blank'`))) throw new Error(`${url} did not finish loading within ${STEP_TIMEOUT / 1000} s`);
+}
+
+async function tap(page, touch, { x, y }) {
+  if (touch) {
+    await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  } else {
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 });
+  }
+}
+
+const finder = (kind, label, value) => `(${pageFind})(${JSON.stringify(kind)}, ${JSON.stringify(label)}, ${JSON.stringify(value ?? null)}, ${JSON.stringify(CLICKABLE)})`;
+
+/** One step, with the semantics of the grammar. Throws an Error whose message is the reason. */
+async function runStep(page, { verb, args }, ctx) {
+  if (verb === 'open' && args[0].startsWith('/')) return navigate(page, ctx.base + args[0]);
+  if (verb === 'open' || verb === 'click') {
+    let seen = null;
+    const point = await poll(async () => { seen = await evaluate(page, finder('click', args[0])); return seen && !seen.disabled ? seen : null; });
+    if (!point) throw new Error(seen?.disabled ? `element named "${args[0]}" is disabled (still disabled after ${STEP_TIMEOUT / 1000} s)` : `no element named "${args[0]}"`);
+    return tap(page, ctx.touch, point);
+  }
+  if (verb === 'fill') {
+    const field = await poll(() => evaluate(page, finder('fill', args[0], args[1])));
+    if (!field) throw new Error(`no field labelled "${args[0]}"`);
+    if (field.error) throw new Error(field.error);
+    if (field.focused) await page.send('Input.insertText', { text: args[1] });
+    return;
+  }
+  if (verb === 'upload') {
+    const name = args[0] ?? ctx.fixture;
+    if (!ctx.fixtures) throw new Error('upload needs --fixtures <dir>');
+    const file = join(ctx.fixtures, name);
+    if (!existsSync(file)) throw new Error(`fixture "${name}" is not in ${ctx.fixtures}`);
+    const nodeId = await poll(async () => {
+      const { root } = await page.send('DOM.getDocument', { depth: 0 });
+      return (await page.send('DOM.querySelector', { nodeId: root.nodeId, selector: 'input[type=file]' })).nodeId;
+    });
+    if (!nodeId) throw new Error('no file input on the page');
+    return page.send('DOM.setFileInputFiles', { files: [file], nodeId });
+  }
+  if (!await poll(() => evaluate(page, `document.body.innerText.includes(${JSON.stringify(args[0])})`))) throw new Error(`the text "${args[0]}" did not appear within ${STEP_TIMEOUT / 1000} s`);
+}
+
+/** The full-page PNG of the page as it is now, once fonts are loaded and two frames are painted. */
+async function capture(page, height) {
+  await evaluate(page, `${page.apply}; document.fonts.ready.then(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))))`);
+  const metrics = await page.send('Page.getLayoutMetrics');
+  const size = metrics.cssContentSize ?? metrics.contentSize;
+  const full = Math.max(height, Math.ceil(size.height));
+  const clip = { x: 0, y: 0, width: Math.max(1, Math.ceil(size.width)), height: Math.min(MAX_HEIGHT, full), scale: 1 };
+  const shot = await page.send('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: true, clip });
+  return { png: Buffer.from(shot.data, 'base64'), truncated: full > MAX_HEIGHT, height: full };
+}
+
+/** 8-bit RGB/RGBA non-interlaced PNG (what Chromium writes) to `{ width, height, channels, data }`. */
+export function decodePng(buf) {
+  if (buf.length < 8 || !buf.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error('not a PNG');
+  let pos = 8, header;
+  const parts = [];
+  while (pos + 8 <= buf.length) {
+    const length = buf.readUInt32BE(pos), type = buf.toString('latin1', pos + 4, pos + 8), data = buf.subarray(pos + 8, pos + 8 + length);
+    if (type === 'IHDR') header = { width: data.readUInt32BE(0), height: data.readUInt32BE(4), depth: data[8], color: data[9], interlace: data[12] };
+    else if (type === 'IDAT') parts.push(data);
+    else if (type === 'IEND') break;
+    pos += 12 + length;
+  }
+  if (!header || header.depth !== 8 || (header.color !== 2 && header.color !== 6) || header.interlace !== 0) throw new Error('unsupported PNG (need 8-bit RGB or RGBA, not interlaced)');
+  const { width, height } = header, channels = header.color === 6 ? 4 : 3, stride = width * channels;
+  const raw = inflateSync(Buffer.concat(parts));
+  const data = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)], line = y * (stride + 1) + 1, row = y * stride, up = row - stride;
+    for (let i = 0; i < stride; i++) {
+      const x = raw[line + i], a = i >= channels ? data[row + i - channels] : 0, b = y > 0 ? data[up + i] : 0, c = y > 0 && i >= channels ? data[up + i - channels] : 0;
+      let v;
+      if (filter === 0) v = x;
+      else if (filter === 1) v = x + a;
+      else if (filter === 2) v = x + b;
+      else if (filter === 3) v = x + ((a + b) >> 1);
+      else if (filter === 4) { const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c); v = x + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c); }
+      else throw new Error(`bad PNG filter ${filter}`);
+      data[row + i] = v & 255;
+    }
+  }
+  return { width, height, channels, data };
+}
+
+/** True when the two PNGs differ in size, or in more than 0.1% of pixels by more than 8 in any channel. */
+export function pngChanged(oldPng, newPng) {
+  const a = decodePng(oldPng), b = decodePng(newPng);
+  if (a.width !== b.width || a.height !== b.height) return true;
+  const channels = Math.min(a.channels, b.channels);
+  let differing = 0;
+  for (let p = 0; p < a.width * a.height; p++) {
+    for (let c = 0; c < channels; c++) {
+      if (Math.abs(a.data[p * a.channels + c] - b.data[p * b.channels + c]) > 8) { differing++; break; }
+    }
+  }
+  return differing / (a.width * a.height) > 0.001;
+}
+
+function commitOf(flag, cwd) {
+  if (flag) return flag;
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
+  const r = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' });
+  return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : null;
+}
+
+/** Shoots every state of `manifest`; writes the PNGs and `index.json` into `out`. Returns the exit code. */
+async function shootAtlas({ manifest, flags, cwd, fixtures, log, error }) {
+  const base = flags.url.replace(/\/+$/, '');
+  const out = resolve(cwd, flags.out);
+  let since = null, sinceDir;
+  if (flags.since) {
+    const file = resolve(cwd, flags.since);
+    try { since = JSON.parse(readFileSync(file, 'utf8')); } catch (e) { error(`${flags.since}: --since is an index.json from an earlier run (${e.message})`); return 2; }
+    sinceDir = dirname(file);
+  }
+  const chromium = flags.chromium ?? process.env.CHROMIUM;
+  if (!chromium) { error('atlas: no browser. Pass --chromium <path> or set CHROMIUM to a Chromium or chrome-headless-shell binary'); return 2; }
+  if (!existsSync(chromium)) { error(`atlas: the browser ${chromium} does not exist`); return 2; }
+  mkdirSync(out, { recursive: true });
+  const states = [];
+  let failed = 0;
+  const browser = launchChromium(chromium);
+  let cdp, cleaning;
+  // Ctrl-C or a kill still closes the socket, kills Chromium and removes its profile before the process ends.
+  // Installed before the launch and kept: a second signal while the cleanup runs is ignored, the exit follows the cleanup.
+  const onSignal = signal => {
+    if (cleaning) return;
+    cleaning = (async () => { cdp?.close(); await browser.close(); })().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
+  };
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
+  try {
+    cdp = await connectCdp(await browser.url);
+    for (const state of manifest.states) {
+      const entry = { id: state.id, page: state.page, title: state.title, ...(state.flow ? { flow: state.flow } : {}), ...(state.after ? { after: state.after } : {}), shots: [] };
+      states.push(entry);
+      const before = since?.states?.find(s => s.id === state.id);
+      const steps = (state.given.steps ?? []).map(parseStep);
+      shots: for (const viewport of VIEWPORTS) for (const mode of MODES) {
+        let page, at = 'open';
+        const control = { over: false };
+        const deadline = SHOT_TIMEOUT + steps.length * STEP_TIMEOUT;
+        try {
+          page = await openPage(cdp, viewport, mode);
+          let timer;
+          await Promise.race([(async () => {
+          const ctx = { base, touch: viewport.touch, fixtures, fixture: state.given.fixture };
+          await navigate(page, base + state.page);
+          for (let n = 0; n < steps.length; n++) {
+            at = `step ${n + 1} "${state.given.steps[n]}"`;
+            await runStep(page, steps[n], ctx);
+          }
+          at = 'shoot';
+          const { png, truncated, height } = await capture(page, viewport.height);
+          if (control.over) return;
+          const file = `${state.id}.${viewport.width}.${mode}.png`;
+          const sha256 = createHash('sha256').update(png).digest('hex');
+          const old = before?.shots?.find(s => s.viewport === viewport.width && s.mode === mode);
+          let status = 'new';
+          if (old) {
+            status = 'same';
+            if (old.sha256 !== sha256) {
+              try { status = pngChanged(readFileSync(join(sinceDir, old.file)), png) ? 'changed' : 'same'; } catch { status = 'changed'; }
+            }
+          }
+          writeFileSync(join(out, file), png);
+          entry.shots.push({ viewport: viewport.width, mode, file, sha256, consoleErrors: [...page.errors], status, ...(truncated ? { truncated: true, height } : {}) });
+          if (truncated) error(`warning: state ${state.id} (${viewport.width} ${mode}): the page is ${height} px tall, the shot is cut at ${MAX_HEIGHT} px (truncated: true in index.json)`);
+          })(), new Promise((_, reject) => { timer = setTimeout(() => { control.over = true; reject(new Error(`the page did not answer within ${deadline / 1000} s (is it stuck in a loop?)`)); }, deadline); })]).finally(() => clearTimeout(timer));
+        } catch (e) {
+          failed++;
+          error(`state ${state.id} ${at === 'open' || at === 'shoot' ? `${at} (${viewport.width} ${mode})` : at}: ${e.message}`);
+          break shots;
+        } finally { await page?.close(); }
+      }
+    }
+  } finally { process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal); cdp?.close(); await browser.close(); }
+  const index = { version: 1, commit: commitOf(flags.commit, cwd), url: flags.url, createdAt: new Date().toISOString(), states };
+  writeFileSync(join(out, 'index.json'), `${JSON.stringify(index, null, 2)}\n`);
+  const shots = states.reduce((n, s) => n + s.shots.length, 0);
+  if (flags.json) log(JSON.stringify(index, null, 2));
+  else log(`atlas: ${shots} shot(s) of ${states.length} state(s) in ${flags.out}${failed ? `, ${failed} failed` : ''}`);
+  return failed ? 1 : 0;
 }
 
 // ---- design-system: the packaged page, plus the app's own themes ---------------------------------------------------------------------
@@ -1232,7 +1617,7 @@ const PROFILE = Object.freeze({
 // ---- Theme files and overlays ---------------------------------------------------------------------------------------------------------
 
 /** The core roles: what the Factory template's theme.core.css sets (its :root and .dark colour roles, and the radius, border width, font, text and shadow tokens). */
-export const CORE_ROLES = Object.freeze(['background', 'card', 'foreground', 'primary', 'primary-foreground', 'accent', 'muted', 'border', 'ring', 'destructive', 'success', 'warning', 'info', 'chart-series-1', 'chart-series-2', 'chart-series-3', 'chart-series-4', 'chart-series-5', 'radius', 'border-width', 'font-sans', 'font-display', 'font-mono', 'text-body', 'text-title', 'shadow-xs', 'shadow-sm', 'shadow-md', 'shadow-lg']);
+export const CORE_ROLES = Object.freeze(['background', 'card', 'foreground', 'primary', 'primary-foreground', 'accent', 'muted', 'border', 'ring', 'destructive', 'success', 'warning', 'info', 'chart-series-1', 'chart-series-2', 'chart-series-3', 'chart-series-4', 'chart-series-5', 'radius', 'border-width', 'font-sans', 'font-display', 'font-mono', 'text-body', 'text-title', 'text-chat', 'shadow-xs', 'shadow-sm', 'shadow-md', 'shadow-lg']);
 /**
  * What the Factory template's theme.derived.css computes (the names the kit derives from the core roles). An app sets the core roles; it
  * does not set these above its EXCEPTIONS block. A name in neither list is the app's own token (--pm-*, --shadow-halo, --text-2xs).
@@ -1564,4 +1949,4 @@ export function designMain(args, cwd, log, error, scan = scanAppDesign) {
   return errors ? 1 : 0;
 }
 
-if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) process.exitCode = main(process.argv.slice(2));
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) Promise.resolve(main(process.argv.slice(2))).then(code => { process.exitCode = code; });

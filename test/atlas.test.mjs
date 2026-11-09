@@ -71,10 +71,11 @@ test('a missing atlas.json exits 1 and names the file', () => {
   assert.match(r.stdout + r.stderr, /atlas\.json/);
 });
 
-test('without --check the command does not fake shooting', () => {
+test('without --check and without --url and --out the command is a use error, never a fake shot', () => {
   const r = run('valid');
   assert.equal(r.status, 2);
-  assert.match(r.stdout + r.stderr, /next slice/);
+  assert.match(r.stdout + r.stderr, /--url and --out/);
+  assert.equal(run('valid', '--url', 'http://127.0.0.1:1').status, 2);
 });
 
 test('a directory named like a fixture is not a fixture file', () => {

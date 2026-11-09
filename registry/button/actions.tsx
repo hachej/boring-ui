@@ -60,7 +60,7 @@ export function useMenuPortal() {
 }
 
 /** Maps host menu items to the consumer's shadcn dropdown items inside a `DropdownMenu`; the primitives own focus, positioning and dismissal. */
-export function ActionMenuContent({ label, testId, items, container, align = 'end', children }: { readonly label: string; readonly testId: string; readonly items: readonly MenuItem[]; readonly container?: RefObject<HTMLElement | null>; readonly align?: 'start' | 'end'; readonly children?: ReactNode }) {
+export function ActionMenuContent({ label, testId, items, container, align = 'end', menuClassName, children }: { readonly label: string; readonly testId: string; readonly items: readonly MenuItem[]; readonly container?: RefObject<HTMLElement | null>; readonly align?: 'start' | 'end'; readonly menuClassName?: string; readonly children?: ReactNode }) {
   const groups: MenuItem[][] = [];
   for (const item of items) {
     const last = groups[groups.length - 1];
@@ -81,7 +81,7 @@ export function ActionMenuContent({ label, testId, items, container, align = 'en
     </DropdownMenuGroup>
   </Fragment>);
   return <DropdownMenuPortal {...(container ? { container } : {})}>
-    <DropdownMenuContent align={align} aria-label={label} data-testid={`${testId}-list`} className="w-64 max-w-[calc(100vw-1rem)]">
+    <DropdownMenuContent align={align} aria-label={label} data-testid={`${testId}-list`} className={cn('w-64 max-w-[calc(100vw-1rem)]', menuClassName)}>
       {children}
       {items.some(item => item.checked !== undefined) ? <DropdownMenuRadioGroup value={items.find(item => item.checked)?.id ?? ''}>{rows}</DropdownMenuRadioGroup> : rows}
     </DropdownMenuContent>
@@ -104,10 +104,12 @@ export function ActionButton({ action, testId, size = 'icon-sm', className, icon
   return <Button size={Icon ? size : 'sm'} variant="ghost" aria-label={action.label} title={action.label} data-testid={`${testId}-${action.id}`} data-action={action.id} disabled={action.disabled} onClick={action.onSelect} className={layout}>{content}</Button>;
 }
 
-export function BlockActions({ actions, testId, menuLabel, size = 'icon-sm', className, iconOnly = false }: {
+export function BlockActions({ actions, testId, menuLabel, size = 'icon-sm', className, menuClassName, iconOnly = false }: {
   readonly actions: readonly BlockAction[] | undefined;
   readonly testId: string;
   readonly menuLabel: string;
+  /** Extra classes for the menu's portalled content (pi-chat passes `pi-chat` so the menu is sized like the chat). */
+  readonly menuClassName?: string;
   readonly size?: ActionIconSize;
   readonly className?: string;
   readonly iconOnly?: boolean;
@@ -120,7 +122,7 @@ export function BlockActions({ actions, testId, menuLabel, size = 'icon-sm', cla
     {buttons.map(action => <ActionButton key={action.id} action={action} testId={testId} size={size} iconOnly={iconOnly} />)}
     {menu.length > 0 && <DropdownMenu>
       <DropdownMenuTrigger render={<Button ref={portalRef} variant="ghost" aria-label={menuLabel} title={menuLabel} size={size} data-testid={moreId}><EllipsisIcon data-icon="inline-start" aria-hidden="true" /></Button>} />
-      <ActionMenuContent label={menuLabel} testId={moreId} container={container} items={menu.map(action => actionMenuItem(action, testId))} />
+      <ActionMenuContent label={menuLabel} testId={moreId} container={container} {...(menuClassName ? { menuClassName } : {})} items={menu.map(action => actionMenuItem(action, testId))} />
     </DropdownMenu>}
   </div>;
 }

@@ -151,7 +151,7 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly tabbar: number;
   /** The persistent element holding both chats: it moves between the drawer and the panel, so closing never unmounts a chat. */
   readonly host: HTMLElement | null;
-  /** The shell's `locale`: the layer's own words when the agent spec sets none (`agent.chatProps.locale` first). */
+  /** The shell's `locale`: it wins over `agent.chatProps.locale` (used only when the shell sets none). */
   readonly locale: AppShellLocale | undefined;
   /** Expanded only: the side the dock sits on while docked (the viewer's choice, remembered). */
   readonly side: DockSide;
@@ -209,7 +209,7 @@ export function useAgentLayer(): AgentLayerApi {
 /** Push-to-talk uses the same dictation lifecycle as page targeting, over the existing composer/controller. */
 function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefined, done: (outcome: 'sent' | 'drafted') => void): Voice {
   return useChatVoice({ controller: agent?.controller, voice: agent?.voice, attachments: agent?.chatProps?.attachments,
-    labels: chatTextFor(agent?.chatProps?.locale ?? locale).labels, onDone: done });
+    labels: chatTextFor(locale ?? agent?.chatProps?.locale).labels, onDone: done });
 }
 
 /** The height in px of the tab bar the peek sits above (`--app-shell-tabbar` on the shell root), and one rem. */
@@ -438,7 +438,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
 export function AgentTrigger({ className, children }: { readonly className?: string; readonly children?: ReactNode }) {
   const layer = useInternal();
   const { agent, voice } = layer;
-  const text = appShellText(agent?.chatProps?.locale ?? layer.locale);
+  const text = appShellText(layer.locale ?? agent?.chatProps?.locale);
   const hold = useRef<{ timer: ReturnType<typeof setTimeout> | undefined; held: boolean; id: number } | null>(null);
   const voiceRef = useRef(voice);
   useLayoutEffect(() => { voiceRef.current = voice; });
@@ -528,7 +528,7 @@ function VoiceProblem() {
 /** One agent's PiChat. It stays mounted while hidden, so its scroll, focus and drafts survive a swap with the other spec. */
 function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly visible: boolean; readonly role: Which }) {
   const layer = useInternal();
-  const locale = spec.chatProps?.locale ?? layer.locale;
+  const locale = layer.locale ?? spec.chatProps?.locale;
   // One annotate toggle: pins on desktop, point mode (which hides the layer while the person taps the app) on touch and compact screens.
   const feedback = useComposerFeedback(spec.feedback);
   const pointing = usePointing(spec.feedback);
@@ -586,7 +586,7 @@ function useTitle(): { text: AppShellText; title: string } {
   const layer = useInternal();
   const improve = layer.showing === 'improve' ? layer.improve : undefined;
   const spec = improve ? undefined : layer.agent;
-  const text = appShellText((improve?.locale as AppShellLocale | undefined) ?? spec?.chatProps?.locale ?? layer.locale);
+  const text = appShellText(layer.locale ?? (improve ? (improve.locale as AppShellLocale | undefined) : undefined) ?? layer.agent?.chatProps?.locale);
   const title = improve ? improve.label ?? text.improve : (spec?.chatProps?.labels?.title ?? text.assistant);
   return { text, title };
 }
@@ -866,7 +866,7 @@ export function AgentLayer(): ReactElement | null {
   if (!layer.agent && !layer.improve) return null;
   const pointed = layer.agent;
   const transcribe = (pointed?.voice ?? layer.agent?.voice)?.transcribe;
-  const locale = pointed?.chatProps?.locale ?? layer.locale;
+  const locale = layer.locale ?? pointed?.chatProps?.locale;
   // Comment mode shows its banner either way: on a phone (point mode) above the tab bar, outside the layer, while the compact sheet steps
   // aside; on a wide screen at the top, the dock beside the app. The note bubble is here only while pointing (else inside the layer).
   return <>

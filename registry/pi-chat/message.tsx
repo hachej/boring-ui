@@ -443,7 +443,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
       const lastText = [...row.parts].reverse().find(part => part.kind === 'text');
       const firstText = row.parts.find(part => part.kind === 'text');
       const host = nativeActions && row.text && context.messageActions
-        ? <BlockActions iconOnly actions={context.messageActions(replyRef(row))} testId="reply-action" menuLabel={labels.moreActions} />
+        ? <BlockActions iconOnly actions={context.messageActions(replyRef(row))} testId="reply-action" menuLabel={labels.moreActions} menuClassName="pi-chat" />
         : null;
       const unread = nativeActions && row.text ? context.unread?.(replyRef(row)) : null;
       const footer = nativeActions && !row.active && row.text ? context.replyFooter?.(replyRef(row)) : null;
