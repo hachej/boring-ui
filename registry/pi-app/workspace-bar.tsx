@@ -89,8 +89,12 @@ export interface WorkspaceBarProps {
    * conversation. The panels open from an invisible anchor at the top right.
    */
   readonly hidden?: boolean | undefined;
-  /** A host's request to open `history` or `library` or start a `new` conversation; `n` changes with each request (the same kind twice needs a new `n`). */
-  readonly command?: { readonly kind: 'history' | 'library' | 'new'; readonly n: number } | undefined;
+  /**
+   * A host's request; `n` changes with each request (the same kind twice needs a new `n`). `history` and `library` open that panel and `new` starts a
+   * conversation; a repeat of these does not close them. Any other `kind` names one of the host `panels` by id: it opens through the same path as a click
+   * (`onOpenChange(true)`, then `onOpen`), and the same id requested while it is shown closes it (`onOpenChange(false)`), back to the chat. An unknown id does nothing.
+   */
+  readonly command?: { readonly kind: 'history' | 'library' | 'new' | (string & {}); readonly n: number } | undefined;
 }
 
 /** The bar, or only its controls in the app shell's header when the page sits in a shell screen (then nothing renders here). */
@@ -110,8 +114,15 @@ export function WorkspaceBar({ title, subtitle, conversations, library, panels, 
     // eslint-disable-next-line react-hooks/set-state-in-effect -- a host's request is handled once per `n`; the effect settles
     setHandled(command.n);
     if (command.kind === 'new') conversations?.onNew?.();
-    else if (command.kind === 'history' ? conversations : library) setShown(command.kind);
-  }, [command, handled, conversations, library]);
+    else if (command.kind === 'history' || command.kind === 'library') { if (command.kind === 'history' ? conversations : library) setShown(command.kind); }
+    else {
+      const panel = panels?.find(candidate => candidate.id === command.kind);
+      if (!panel) return;
+      if (shown === panel.id) change(null);
+      else { change(panel.id); panel.onOpen?.(); }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `change` and `shown` are read at the request; a request is handled once per `n`, never again when they move
+  }, [command, handled, conversations, library, panels]);
   const toggle = (which: string) => (open: boolean) => change(open ? which : shown === which ? null : shown);
   const close = () => change(null);
   const hostPanels = panels?.map(panel => <BarPanel key={panel.id} id={panel.id} label={panel.label} icon={panel.icon} dot={panel.dot} narrow={narrow} open={shown === panel.id} onOpenChange={open => { toggle(panel.id)(open); if (open) panel.onOpen?.(); }}>
