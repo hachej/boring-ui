@@ -13,6 +13,8 @@ import { registryCss } from '../../lab/studio/tailwind.mjs';
 // with a count (SidebarMenuBadge) and an action must not overlap them (the badge moves left of the action, the label truncates before both). A real Chromium mounts
 // the real Sidebar (shadcn/ui/sidebar.tsx) at 390 with a coarse pointer, at 1280 with a fine pointer, and at 390 with a fine pointer (the rule is the pointer, not the width),
 // light and dark. The fine-pointer geometry is the one before D-1904 (action 20x20 at top 6 right 4; badge 20 high at top 6 right 4) and must not move.
+// Two more cases: a parent row with an open SidebarMenuSub keeps its action and count centred on its own button, never on the whole item (they must not drift over the child rows),
+// and an icon-collapsed rail on a tablet-width coarse pointer (1024) keeps every button inside the rail (the expanded end padding must not apply when collapsed).
 // Set SIDEBAR_ACTION_EVIDENCE to also write the shots. In CI a missing browser fails the test; it never skips (D-1731).
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
@@ -54,47 +56,54 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
     const out = {};
     for (const row of document.querySelectorAll('[data-row]')) {
       const label = row.querySelector('[data-sidebar=menu-button] > span'), badge = row.querySelector('[data-sidebar=menu-badge]');
-      out[row.dataset.row] = { row: box(row), action: box(row.querySelector('[data-sidebar=menu-action]')), badge: box(badge), label: box(label),
+      out[row.dataset.row] = { row: box(row), button: box(row.querySelector('[data-sidebar=menu-button]')), sub: box(row.querySelector('[data-sidebar=menu-sub]')), action: box(row.querySelector('[data-sidebar=menu-action]')), badge: box(badge), label: box(label),
         labelTruncates: label.scrollWidth > label.clientWidth, badgeClipped: badge ? badge.scrollWidth > badge.clientWidth : false };
     }
-    return { rows: out, overflowX: document.documentElement.scrollWidth > innerWidth };
+    return { rows: out, rail: box(document.querySelector('[data-slot=sidebar-container]')), overflowX: document.documentElement.scrollWidth > innerWidth };
   })()`);
   const intersects = (a, b) => a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom;
   const report = [], problems = [];
   try {
-    for (const [name, width, touch] of [['390-touch', 390, true], ['1280-fine', 1280, false], ['390-fine', 390, false]]) {
-      await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 520, deviceScaleFactor: 1, mobile: touch });
+    for (const [name, width, touch, mode] of [['390-touch', 390, true, ''], ['1280-fine', 1280, false, ''], ['390-fine', 390, false, ''], ['1024-touch-collapsed', 1024, true, 'collapsed'], ['1280-fine-collapsed', 1280, false, 'collapsed']]) {
+      await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 560, deviceScaleFactor: 1, mobile: touch });
       await browser.send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: 5 });
       for (const theme of ['light', 'dark']) {
-        await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?theme=${theme}` });
-        await browser.until('fixture mounted', `document.querySelectorAll('[data-row]').length === 4 && document.readyState === 'complete'`);
+        await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?theme=${theme}&mode=${mode}` });
+        await browser.until('fixture mounted', `document.querySelectorAll('[data-row]').length === 5 && document.readyState === 'complete'`);
         await new Promise(done => setTimeout(done, 250));
         const m = await measure();
         report.push({ name, theme, ...m });
-        if (shots && name !== '390-fine') await browser.screenshot(`sidebar-action-${width}-${theme}.png`);
+        if (shots && name !== '390-fine') await browser.screenshot(`sidebar-action-${name}-${theme}.png`);
         const check = (ok, message) => { if (!ok) problems.push(`${name} ${theme}: ${message}`); };
-        const { plain, action, badge, folder } = m.rows;
-        const heights = Object.values(m.rows).map(r => r.row.h);
+        const { plain, action, badge, folder, nested } = m.rows;
+        if (mode === 'collapsed') {
+          for (const [id, r] of Object.entries(m.rows)) check(r.button.w > 0 && r.button.right <= m.rail.right && r.button.w <= m.rail.w, `${id}: the collapsed button (${r.button.w}px wide, to ${r.button.right}) stays inside the ${m.rail.w}px rail (to ${m.rail.right})`);
+          check(!m.overflowX, 'the page does not scroll sideways');
+          continue;
+        }
+        const heights = [action, badge, folder].map(r => r.row.h);
         check(heights.every(h => h === plain.row.h), `every row is as tall as the plain row: ${heights}`);
+        check(nested.button.h === plain.row.h, `the parent button is as tall as the plain row: ${nested.button.h}`);
         check(touch || width < 768 ? plain.row.h >= 44 : plain.row.h < 44, `row height ${plain.row.h} (rows are 44px or more on touch and below md, shorter on a wide fine pointer)`);
         check(!m.overflowX, 'the page does not scroll sideways');
         check(!folder.badgeClipped && !badge.badgeClipped, 'the count is not clipped');
         check(width >= 768 || folder.labelTruncates, 'the long folder label truncates at 390');
         if (touch) {
-          for (const [id, r] of Object.entries({ action, folder })) {
-            check(Math.abs(r.action.cy - r.row.cy) <= 1, `${id}: the action centre ${r.action.cy} is the row centre ${r.row.cy}`);
+          for (const [id, r] of Object.entries({ action, folder, nested })) {
+            check(Math.abs(r.action.cy - r.button.cy) <= 1, `${id}: the action centre ${r.action.cy} is its button centre ${r.button.cy}`);
             check(r.action.w >= 44 && r.action.h >= 44, `${id}: the action is ${r.action.w}x${r.action.h}, 44x44 or more`);
-            check(r.action.y >= r.row.y && r.action.bottom <= r.row.bottom, `${id}: the 44px target stays inside its own row`);
+            check(r.action.y >= r.button.y && r.action.bottom <= r.button.bottom, `${id}: the 44px target stays inside its own row`);
           }
           check(!intersects(folder.badge, folder.action), `the count ${JSON.stringify(folder.badge)} and the action ${JSON.stringify(folder.action)} overlap`);
           check(folder.badge.right <= folder.action.x, 'the count is left of the action');
-          check(Math.abs(folder.badge.cy - folder.row.cy) <= 1 && Math.abs(badge.badge.cy - badge.row.cy) <= 1, 'the count is centred on its row');
+          check(Math.abs(folder.badge.cy - folder.button.cy) <= 1 && Math.abs(badge.badge.cy - badge.button.cy) <= 1 && Math.abs(nested.badge.cy - nested.button.cy) <= 1, 'the count is centred on its button');
           check(folder.label.right <= folder.badge.x && folder.label.right <= folder.action.x, `the label (to ${folder.label.right}) ends before the count and the action`);
+          check(nested.sub.h > 0 && nested.action.bottom <= nested.sub.y && nested.badge.bottom <= nested.sub.y, `the parent's action (to ${nested.action.bottom}) and count (to ${nested.badge.bottom}) stay above the child rows (from ${nested.sub.y})`);
         } else {
-          for (const [id, r] of Object.entries({ action, folder })) {
+          for (const [id, r] of Object.entries({ action, folder, nested })) {
             check(r.action.w === 20 && r.action.h === 20 && r.action.y - r.row.y === 6 && r.row.right - r.action.right === 4, `${id}: the fine-pointer action is unchanged (20x20, top 6, right 4): ${JSON.stringify(r.action)} in ${JSON.stringify(r.row)}`);
           }
-          for (const [id, r] of Object.entries({ badge, folder })) {
+          for (const [id, r] of Object.entries({ badge, folder, nested })) {
             check(r.badge.h === 20 && r.badge.y - r.row.y === 6 && r.row.right - r.badge.right === 4, `${id}: the fine-pointer count is unchanged (20 high, top 6, right 4): ${JSON.stringify(r.badge)} in ${JSON.stringify(r.row)}`);
           }
         }
