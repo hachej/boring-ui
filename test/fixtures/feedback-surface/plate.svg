@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+  <title>Fictional kiln plate</title>
+  <rect width="400" height="300" fill="#f3ece2"/>
+  <circle cx="200" cy="150" r="96" fill="#c9774a"/>
+  <circle cx="200" cy="150" r="58" fill="#f3ece2"/>
+  <rect x="24" y="24" width="64" height="40" fill="#5b7a8c"/>
+</svg>

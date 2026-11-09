@@ -72,7 +72,13 @@ export interface FeedbackResolution { readonly at: string; readonly by: string; 
  * (rendered 1-based as `[anchor N]`); without it the note is about the page in general. `from: 'voice'` marks a note made from
  * speech rather than typed. Notes live in the body (`## Notes`), escaped like `## Said`.
  */
-export interface FeedbackNote { readonly text: string; readonly anchor?: number; readonly from?: 'voice' }
+export interface FeedbackNote {
+  readonly text: string;
+  readonly anchor?: number;
+  readonly from?: 'voice';
+  /** Where on its anchor's surface (an image, a video frame) the note was pinned: fractions (0 to 1, three decimals) of the surface's box. Rendered `[point x,y]`. */
+  readonly point?: { readonly x: number; readonly y: number };
+}
 /**
  * One step of the timeline between notes (`## Steps`): a note was made (`note`, 0-based note index), the route changed (`route`,
  * the route template), the person clicked (`click`) or pressed a named key (`key`) while using the page. `target` is the element's
@@ -296,6 +302,17 @@ function stepText(value: unknown, at: string, problems: Problems): value is stri
   return text(value, at, problems, FEEDBACK_LIMITS.stepCharacters);
 }
 
+/** A surface point: { x, y }, each a number in [0, 1] with at most three decimals (so it renders and parses back exactly). */
+function notePoint(value: unknown, at: string, problems: Problems): { readonly x: number; readonly y: number } | undefined {
+  if (value === undefined) return undefined;
+  const fraction = (item: unknown): item is number => typeof item === 'number' && Number.isFinite(item) && item >= 0 && item <= 1 && Math.round(item * 1000) / 1000 === item;
+  if (!isObject(value) || !only(value, ['x', 'y'], at, 4, problems, false) || !fraction(value['x']) || !fraction(value['y'])) {
+    problem(problems, 'schema', at, 'must be { x, y }, each between 0 and 1 with at most three decimals');
+    return undefined;
+  }
+  return { x: value['x'], y: value['y'] };
+}
+
 function notes(value: unknown, anchors: number, problems: Problems): FeedbackNote[] | undefined {
   if (!Array.isArray(value) || !value.length) { problem(problems, 'schema', 'notes', 'must be a non-empty array when present'); return undefined; }
   if (value.length > FEEDBACK_LIMITS.notes) { problem(problems, 'limit', 'notes', `more than ${FEEDBACK_LIMITS.notes} notes`); return undefined; }
@@ -303,13 +320,14 @@ function notes(value: unknown, anchors: number, problems: Problems): FeedbackNot
   const out: FeedbackNote[] = [];
   value.forEach((item: unknown, index) => {
     const at = `notes[${index}]`;
-    if (!isObject(item) || !only(item, ['text', 'anchor', `from`] /* a template literal: the manifest test reads a quoted from as an import */, at, 3, problems, false)) { if (!isObject(item)) problem(problems, 'schema', at, 'must be { text, anchor?, from? }'); return; }
+    if (!isObject(item) || !only(item, ['text', 'anchor', `from`, 'point'] /* a template literal: the manifest test reads a quoted from as an import */, at, 3, problems, false)) { if (!isObject(item)) problem(problems, 'schema', at, 'must be { text, anchor?, from?, point? }'); return; }
     const noteText = item['text'];
     if (body(noteText, `${at}.text`, FEEDBACK_LIMITS.noteBytes, problems) && !noteText.trim()) problem(problems, 'schema', `${at}.text`, 'must say something');
     const anchor = item['anchor'];
     if (anchor !== undefined && (!Number.isSafeInteger(anchor) || (anchor as number) < 0 || (anchor as number) >= anchors)) problem(problems, 'schema', `${at}.anchor`, `must be the index of one of the ${anchors} anchors`);
     if (item.from !== undefined && item.from !== 'voice') problem(problems, 'schema', `${at}.from`, 'must be "voice" when present');
-    out.push({ text: noteText as string, ...(anchor !== undefined ? { anchor: anchor as number } : {}), ...(item.from === 'voice' ? { from: 'voice' as const } : {}) });
+    const point = notePoint(item['point'], `${at}.point`, problems);
+    out.push({ text: noteText as string, ...(anchor !== undefined ? { anchor: anchor as number } : {}), ...(item.from === 'voice' ? { from: 'voice' as const } : {}), ...(point ? { point } : {}) });
   });
   return problems.length === before ? out : undefined;
 }
@@ -426,7 +444,7 @@ const SECTION = '\n\n## ';
 const INDENT = '   ';
 
 function renderNote(note: FeedbackNote, index: number): string {
-  const marks = `${note.anchor !== undefined ? `[anchor ${note.anchor + 1}] ` : ''}${note.from === 'voice' ? '[voice] ' : ''}`;
+  const marks = `${note.anchor !== undefined ? `[anchor ${note.anchor + 1}] ` : ''}${note.point ? `[point ${note.point.x},${note.point.y}] ` : ''}${note.from === 'voice' ? '[voice] ' : ''}`;
   return `${index + 1}. ${marks}${escapeMarkdown(note.text).replace(/\n/g, `\n${INDENT}`)}`;
 }
 function renderStep(step: FeedbackStep, index: number): string {
@@ -455,9 +473,9 @@ function readNotes(section: string, problems: Problems): Record<string, unknown>
     else { problem(problems, 'section', 'body', 'malformed ## Notes item'); return undefined; }
   }
   return items.map(({ head, lines }) => {
-    const marks = /^(?:\[anchor (\d{1,4})\] )?(\[voice\] )?/.exec(head)!;
+    const marks = /^(?:\[anchor (\d{1,4})\] )?(?:\[point (\d(?:\.\d{1,3})?),(\d(?:\.\d{1,3})?)\] )?(\[voice\] )?/.exec(head)!;
     const text = unescape([head.slice(marks[0].length), ...lines].join('\n'));
-    return { text, ...(marks[1] !== undefined ? { anchor: Number(marks[1]) - 1 } : {}), ...(marks[2] !== undefined ? { from: 'voice' } : {}) };
+    return { text, ...(marks[1] !== undefined ? { anchor: Number(marks[1]) - 1 } : {}), ...(marks[2] !== undefined && marks[3] !== undefined ? { point: { x: Number(marks[2]), y: Number(marks[3]) } } : {}), ...(marks[4] !== undefined ? { from: 'voice' } : {}) };
   });
 }
 

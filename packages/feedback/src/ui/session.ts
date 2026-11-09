@@ -16,11 +16,12 @@ import {
   type FeedbackAnchor, type FeedbackDraft, type FeedbackNote, type FeedbackStep, type HostObserved,
 } from '../format/index.js';
 import {
-  alignSpeech, anchorOf, createOverlay, createPicker, isExcluded, pickRefusal, pickerLabel, routeFor, serializePage,
+  alignSpeech, anchorOf, createOverlay, createPicker, isExcluded, pickRefusal, pickerLabel, routeFor, serializePage, TAP_SLOP,
   type Picker, type PickerOverlay, type PinMark, type PointerSample, type SpeechSegment, type VoiceCapture, type VoiceRecording, type VoiceRefusal,
 } from '../page/index.js';
 import { copyToClipboard } from '@hachej/boring-files/platform';
 import { draftId, observePage, operationId, type AnnotateHost, type CopyState } from './annotate.js';
+import { viewportToSurfacePoint, type SurfacePoint } from './surface.js';
 import type { SaveEndpoint, SaveResult } from './save.js';
 import { createState, type ExternalState } from './state.js';
 
@@ -59,7 +60,25 @@ function readTranscription(answer: unknown): { readonly segments: readonly Speec
   return typeof text === 'string' ? { text } : null;
 }
 
+export type { SurfacePoint } from './surface.js';
+
+/**
+ * An element whose content the page cannot name by element (an image, a video frame, a canvas): in comment mode a click inside it pins a
+ * note at that point instead of picking an element, and Enter on the focused surface pins one at its centre. The note carries the point
+ * (`SessionNote.point`), so the host can map it to its own model.
+ */
+export interface FeedbackSurface {
+  /** The surface element (or a React ref to it), inside the session's `root`. */
+  readonly element: Element | { readonly current: Element | null };
+  /** A note was pinned at this point. */
+  readonly onPoint?: (point: SurfacePoint) => void;
+  /** `kit` (default): the session draws its pinned box on the surface. `host`: it draws nothing on the surface; the host draws its own marks. */
+  readonly pins?: 'kit' | 'host';
+}
+
 export interface FeedbackSessionOptions extends AnnotateHost {
+  /** Comment on one surface by point (see `FeedbackSurface`); element picking elsewhere is unchanged. */
+  readonly surface?: FeedbackSurface;
   /** Optional voice: both a capture (`createVoiceCapture()`) and the host's `transcribe` are needed for the 🎙 toggle; without
    * `transcribe` the Record button is simply not offered. */
   readonly voice?: VoiceCapture;
@@ -94,6 +113,8 @@ export interface SessionNote {
   readonly text: string;
   /** The privacy-policy label of its element ("SettingsPage · button «Save profile»"), or "the page" for a general note. */
   readonly label: string;
+  /** Pinned on a surface (`FeedbackSessionOptions.surface`): where, as fractions of the surface. */
+  readonly point?: SurfacePoint;
   /** The anchor's fallback, when it has an anchor. */
   readonly fallback?: string;
   /** The anchor's development source location (`src/settings/SaveBar.tsx:42`), when it has one. */
@@ -119,6 +140,8 @@ export interface SessionBubble {
   readonly number: number;
   readonly element: Element;
   readonly label: string;
+  /** Pinned on a surface: the bubble opens next to this point of `element` (the surface). */
+  readonly point?: SurfacePoint;
   readonly text: string;
   /** A new pin (Esc removes it) or an existing note being edited (Esc keeps it as it was). */
   readonly fresh: boolean;
@@ -221,7 +244,7 @@ const MAX_ELEMENTS = 500;
 const MAX_TRAIL = 5000;
 
 /** `label` is the element's privacy-policy label when it was pinned (or spoken about), kept for when it leaves the page. */
-interface NoteRecord { id: number; element?: Element; target?: number; label?: string; text: string; t: number; from?: 'voice'; recorded?: true }
+interface NoteRecord { id: number; element?: Element; target?: number; point?: SurfacePoint; label?: string; text: string; t: number; from?: 'voice'; recorded?: true }
 type TimedStep = { readonly t: number; readonly step: FeedbackStep } | { readonly t: number; readonly noteId: number };
 
 /** The anchor's own `data-feedback-id`, or the one its path starts from (`[data-feedback-id="…"]`: its nearest marked ancestor). */
@@ -317,7 +340,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
       const source = typeof found === 'string' ? found : undefined;
       const feedbackId = markedId(signals);
       return Object.freeze({ id: note.id, number: index + 1, text: note.text, label: labelOf(note), ...(anchor ? { fallback: String(anchor['fallback']) } : {}),
-        ...(source !== undefined ? { source } : {}), ...(feedbackId !== undefined ? { feedbackId } : {}), ...(note.from ? { from: note.from } : {}), ...(note.recorded ? { recorded: true as const } : {}) });
+        ...(source !== undefined ? { source } : {}), ...(note.point ? { point: note.point } : {}), ...(feedbackId !== undefined ? { feedbackId } : {}), ...(note.from ? { from: note.from } : {}), ...(note.recorded ? { recorded: true as const } : {}) });
     });
     const open = bubble ? list.find(note => note.id === bubble!.noteId) : undefined;
     const { bubble: _bubble, problem: _problem, hover: _hover, ...base } = { ...state.getSnapshot(), ...change };
@@ -326,17 +349,29 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
       ...base,
       notes: Object.freeze(views),
       stepCount: timeline.filter(entry => 'step' in entry).length,
-      ...(open && bubble && open.element ? { bubble: Object.freeze({ noteId: open.id, number: list.indexOf(open) + 1, element: open.element, label: labelOf(open), text: bubble.text, fresh: bubble.fresh }) } : {}),
+      ...(open && bubble && open.element ? { bubble: Object.freeze({ noteId: open.id, number: list.indexOf(open) + 1, element: open.element, label: labelOf(open), text: bubble.text, fresh: bubble.fresh, ...(open.point ? { point: open.point } : {}) }) } : {}),
       ...(problem !== undefined ? { problem } : {}),
       ...(showHover ? { hover: hoverLabel! } : {}),
     });
     drawPins();
   };
 
+  const surfaceElement = (): Element | undefined => {
+    const given = options.surface?.element;
+    const element = given && 'current' in given ? given.current : given;
+    return element && element.isConnected ? element : undefined;
+  };
+  const inside = (event: Event, surface: Element): boolean => {
+    const path = event.composedPath();
+    return path.includes(surface) && !path.some(item => (item as Element).hasAttribute?.('data-feedback-ignore'));
+  };
+
   const drawPins = (): void => {
     if (!pinsOverlay) return;
     if (state.getSnapshot().phase !== 'active') { pinsOverlay.clear(); return; }
-    pinsOverlay.draw(ordered().flatMap((note, index) => note.element ? [{ element: note.element, label: pinMark(index + 1), tone: 'pinned' as const }] : []));
+    const surface = surfaceElement();
+    const hostPins = options.surface?.pins === 'host';
+    pinsOverlay.draw(ordered().flatMap((note, index) => note.element && !(hostPins && surface !== undefined && surface.contains(note.element)) ? [{ element: note.element, label: pinMark(index + 1), tone: 'pinned' as const }] : []));
   };
 
   const clip = (text: string): string => [...text].slice(0, FEEDBACK_LIMITS.stepCharacters).join('');
@@ -431,6 +466,80 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     publish();
   };
 
+  /** A note pinned at `point` of the surface: always a new note (several can share the surface); no element is picked. */
+  const onSurfacePoint = (surface: Element, point: SurfacePoint): void => {
+    if (state.getSnapshot().phase !== 'active') return;
+    problem = undefined;
+    stash = '';
+    if (state.getSnapshot().generalOpen) state.set({ generalOpen: false });
+    closeBubble(true);
+    const recording = state.getSnapshot().voice.kind === 'recording';
+    const refused = pickRefusal(surface, root);
+    const target = refused === undefined ? indexOf(surface) : null;
+    if (target === null) { problem = `This element cannot be pointed at: ${refused ?? 'too many elements in one session'}.`; publish(); return; }
+    if (!anchors.has(target) && new Set(notes.flatMap(note => note.target !== undefined ? [note.target] : [])).size >= FEEDBACK_LIMITS.anchors) {
+      problem = `At most ${FEEDBACK_LIMITS.anchors} pinned elements per feedback.`; publish(); return;
+    }
+    const captured = capture(target);
+    if (!captured.anchor) { problem = `This element cannot be pointed at: ${captured.reason ?? 'unknown reason'}.`; publish(); return; }
+    const t = now();
+    pins.push({ t, target });
+    const note: NoteRecord = { id: nextId++, element: surface, target, point, label: pickerLabel(surface, policy), text: '', t, ...(recording ? { recorded: true as const } : {}) };
+    notes.push(note);
+    if (recording) timeline.push({ t, noteId: note.id });
+    else bubble = { noteId: note.id, text: '', fresh: true, before: '' };
+    checkRoute();
+    publish();
+    options.surface?.onPoint?.(point);
+  };
+  /**
+   * The fingers on the page, by pointer id: where each went down and whether it dragged past the picker's slop. A second finger spoils
+   * the gesture (a pinch, or one finger scrolling while another rests) until every finger is up, and a cancel spoils it too. Only the
+   * release of the one finger of an undisturbed gesture is a tap (`tapEnd`, read by the pointerup handler right after).
+   */
+  const contacts = new Map<number, { x: number; y: number; dragged: boolean }>();
+  let spoiled = false;
+  let tapEnd = false;
+  const onSurfaceTouch = (event: Event): void => {
+    const touch = event as PointerEvent;
+    // Every pointer type is a contact (a pen and a finger down together are two), whatever it later does.
+    const contact = contacts.get(touch.pointerId);
+    const moved = contact !== undefined && Math.hypot(touch.clientX - contact.x, touch.clientY - contact.y) > TAP_SLOP;
+    if (event.type === 'pointerdown') {
+      contacts.set(touch.pointerId, { x: touch.clientX, y: touch.clientY, dragged: false });
+      if (contacts.size > 1) spoiled = true;
+    } else if (event.type === 'pointermove') {
+      if (contact && moved) contact.dragged = true;
+    } else {
+      tapEnd = event.type === 'pointerup' && !spoiled && contact !== undefined && !contact.dragged && !moved;
+      contacts.delete(touch.pointerId);
+      if (event.type === 'pointercancel') spoiled = true;
+      if (contacts.size === 0) spoiled = false;
+    }
+  };
+  /** A click or tap inside the surface pins a note there, ahead of the picker (which never sees it). */
+  const onSurfaceClick = (event: Event): void => {
+    const surface = surfaceElement();
+    if (!surface || state.getSnapshot().phase !== 'active' || state.getSnapshot().using || !inside(event, surface)) return;
+    const mouse = event as MouseEvent;
+    const kind = (event as PointerEvent).pointerType;
+    const touch = event.type === 'pointerup' ? kind === 'touch' : false;
+    // Mouse and keyboard clicks arrive as `click`; a finger as `pointerup` (the picker cancels the click that would follow).
+    if ((event.type === 'click') === touch) return;
+    // The click a finger synthesises after its release is the same gesture: only the pointerup above decides (tap, or drag and so none).
+    if (event.type === 'click' && kind === 'touch') return;
+    if (touch || (event.type === 'click' && kind === 'pen')) {
+      // A real tap only: a drag (past the picker's slop, even one that came back), a cancelled gesture or one with several fingers is the page's own.
+      const tapped = tapEnd;
+      tapEnd = false;
+      if (!tapped) return;
+    }
+    event.preventDefault(); event.stopImmediatePropagation();
+    // A click from the keyboard (Enter or Space on a focused control) has no position: the centre.
+    const keyboard = event.type === 'click' && mouse.detail === 0 && mouse.clientX === 0 && mouse.clientY === 0;
+    onSurfacePoint(surface, keyboard ? { x: 0.5, y: 0.5 } : viewportToSurfacePoint(surface, mouse.clientX, mouse.clientY));
+  };
+
   const onHover = (element: Element | undefined): void => {
     const target = element ? indexOf(element) : null;
     if (target === lastHover) return;
@@ -473,6 +582,13 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
       }
       return;
     }
+    // Enter on the focused surface pins a note at its centre.
+    const surface = surfaceElement();
+    if (key.key === 'Enter' && !key.shiftKey && !key.altKey && !key.ctrlKey && !key.metaKey && !key.isComposing && current.phase === 'active' && surface && event.target === surface && inside(event, surface)) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      onSurfacePoint(surface, { x: 0.5, y: 0.5 });
+      return;
+    }
     // Esc on the page closes the bubble and never ends feedback mode by accident; in the bubble, the bubble handles it.
     if (key.key === 'Escape' && !event.composedPath().some(item => (item as Element).hasAttribute?.('data-feedback-ignore'))) {
       event.preventDefault(); event.stopImmediatePropagation();
@@ -505,6 +621,8 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     pinsOverlay?.dispose();
     pinsOverlay = undefined;
     alt = false;
+    // Listeners off: a contact lifted from now on is never seen, so none may outlive the teardown.
+    contacts.clear(); spoiled = false; tapEnd = false;
   };
 
   let sessionGeneration = 0;
@@ -521,11 +639,11 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     const focused = document.activeElement;
     if (focused && focused !== document.body && isExcluded(focused) && typeof (focused as HTMLElement).blur === 'function') (focused as HTMLElement).blur();
     // Listeners first, so they see Alt and Esc before the picker takes them.
-    for (const [type, handler] of [['keydown', onKeyDown], ['keyup', onKeyUp], ['click', onClick], ['popstate', onRoute], ['hashchange', onRoute]] as const) listen(type, handler);
+    for (const [type, handler] of [['keydown', onKeyDown], ['keyup', onKeyUp], ['pointerdown', onSurfaceTouch], ['pointermove', onSurfaceTouch], ['pointercancel', onSurfaceTouch], ['pointerup', onSurfaceTouch], ['click', onSurfaceClick], ['pointerup', onSurfaceClick], ['click', onClick], ['popstate', onRoute], ['hashchange', onRoute]] as const) listen(type, handler);
     if (view) { view.addEventListener('blur', onBlur); removers.push(() => view.removeEventListener('blur', onBlur)); }
     pinsOverlay = createOverlay({ document, ...(options.styles !== undefined ? { styles: options.styles } : {}) });
     picker = createPicker({
-      root, policy, onPick, wheel: false, keys: 'outside-ignored', ...(mode === 'point' ? { tap: 'pick' as const } : {}),
+      root, policy, onPick: element => { const surface = surfaceElement(); if (!surface || !surface.contains(element)) onPick(element); }, wheel: false, keys: 'outside-ignored', ...(mode === 'point' ? { tap: 'pick' as const } : {}),
       ...(options.styles !== undefined ? { styles: options.styles } : {}),
       ...(options.hitTest ? { hitTest: options.hitTest } : {}),
       onChange: next => { if (next.mode === 'picking' && !next.suspended) onHover(next.current); },
@@ -692,7 +810,7 @@ export function createFeedbackSession(options: FeedbackSessionOptions): Feedback
     const draftNotes: FeedbackNote[] = list.map(note => {
       const anchored = note.target !== undefined && anchors.has(note.target);
       if (anchored && !targets.includes(note.target!)) targets.push(note.target!);
-      return { text: note.text, ...(anchored ? { anchor: targets.indexOf(note.target!) } : {}), ...(note.from ? { from: note.from } : {}) };
+      return { text: note.text, ...(anchored ? { anchor: targets.indexOf(note.target!) } : {}), ...(note.point ? { point: note.point } : {}), ...(note.from ? { from: note.from } : {}) };
     });
     const noteIndex = new Map(list.map((note, index) => [note.id, index]));
     const steps: FeedbackStep[] = [...timeline].sort((a, b) => a.t - b.t).flatMap((entry): FeedbackStep[] => {
