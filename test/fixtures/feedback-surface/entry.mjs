@@ -14,6 +14,10 @@ if (params.get('mirror') === '1') plate.style.transform = 'scaleX(-1)';
 if (params.get('scale') === '1') plate.style.scale = '-1 1';
 if (params.get('rotate') === '1') plate.style.rotate = '90deg';
 if (params.get('ancestor') === '1') plate.parentElement.style.transform = 'scaleX(-1)';
+// `?size=640x420` and `?at=100,120` size and place the surface; `?dark=1` turns the host's dark tokens on (D-1967).
+if (params.get('size')) { const [w, h] = params.get('size').split('x'); plate.style.width = `${w}px`; plate.style.height = `${h}px`; }
+if (params.get('at')) { const [x, y] = params.get('at').split(','); plate.style.left = `${x}px`; plate.style.top = `${y}px`; }
+if (params.get('dark') === '1') document.documentElement.classList.add('dark');
 const points = [];
 const saved = [];
 const session = createFeedbackSession({
