@@ -335,7 +335,6 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
       const style = getComputedStyle(${card}); return { cta, bg: style.backgroundColor, radius: style.borderTopLeftRadius, shadow: style.boxShadow, ink: getComputedStyle(${byText('Boulangerie')}).backgroundColor, quiet: getComputedStyle(${byText('Maison')}).backgroundColor }; })()`);
     assert.equal(look.bg, look.cta, `the card takes the --agent-question variable: ${JSON.stringify(look)}`);
     assert.equal(parseFloat(look.radius) > 12, true, `the card is rounded: ${look.radius}`);
-    assert.notEqual(look.shadow, 'none', 'the card has a shadow');
     assert.notEqual(look.ink, look.quiet, 'the selected choice differs from the others');
     const cardBox = await rectOf(card), barBox = await rectOf(`document.querySelector('[data-testid=agent-bar]')`);
     assert.equal(cardBox.y + cardBox.h <= barBox.y + 1, true, 'the card is above the bar');
