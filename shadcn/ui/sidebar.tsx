@@ -196,7 +196,7 @@ function Sidebar({
           data-slot="sidebar"
           data-mobile="true"
           ref={sheetRef}
-          initialFocus={(openType) => (openType === "keyboard" ? true : sheetRef)}
+          initialFocus={(openType) => (openType === "keyboard" ? true : sheetRef.current)}
           className={cn(SIDEBAR_ROW, "data-[side=left]:w-[var(--sidebar-width-mobile,75%)] data-[side=right]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground outline-none [&>button]:hidden")}
           style={sheetRow ? ({ "--sidebar-row": sheetRow } as React.CSSProperties) : undefined}
           side={side}
