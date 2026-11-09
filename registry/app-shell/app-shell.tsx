@@ -19,7 +19,7 @@ import type { ShellPanel } from './shell-panel';
 import { ScreenActiveContext, useAgentContext } from './agent-context';
 import { useIsCompact } from './compact';
 import { HeaderProvider, ScreenHeader } from './header';
-import { AppSidebar, TabBar } from './nav';
+import { AppSidebar, ScreenSidebarSheet, TabBar } from './nav';
 import { ResizableSidebarProvider } from './sidebar-resize';
 import { useSidebarOpen } from './sidebar-open';
 import type { NavItem } from './nav';
@@ -135,7 +135,7 @@ function Shell({ resizable, appId, compactNav, layout, rail, title, nav, agent, 
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-card">
       <Layout screen={active.label} navigation={compact && !sheet ? <TabBar items={nav} activeId={active.id} onChange={choose} text={text} /> : undefined}>
         <ShellContext name={active.label} />
-        <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} menu={sheet} text={text} slotRef={setSlot} />
+        <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} menu={sheet} screenSidebar={compact && !sheet && active.sidebar ? <ScreenSidebarSheet key={active.id} item={active} text={text} /> : undefined} text={text} slotRef={setSlot} />
         <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} />
       </Layout>
       </div>
