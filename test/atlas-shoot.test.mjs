@@ -161,6 +161,16 @@ test('a connection the page keeps open (EventSource) is not waited for: late con
   assert.ok(quickMs < 20000 && slowMs < 20000, `the runs took ${quickMs} ms and ${slowMs} ms: the shot waited for an open stream`);
 });
 
+test('a burst of short requests, each over before the next poll, is waited for: the shot has the last content', { skip, timeout: 240000 }, async () => {
+  const withStep = manifestDir('chain-ref', [state('chaine.rafale', '/chain', ['wait Fini'])]);
+  const bare = manifestDir('chain', [state('chaine.rafale', '/chain')]);
+  const ref = join(work, 'out-chain-ref'), out = join(work, 'out-chain');
+  assert.equal((await shoot(withStep, ref)).status, 0);
+  const run = await shoot(bare, out, '--since', join(ref, 'index.json'));
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.deepEqual(shotsOf(index(out), 'chaine.rafale').map(s => s.status), ['same', 'same', 'same', 'same']);
+});
+
 const state = (id, page, steps) => ({ id, page, title: id, given: { fixture: 'ledger.synthetic.csv', ...(steps ? { steps } : {}) } });
 function manifestDir(name, states) {
   const dir = join(work, name);
