@@ -18,6 +18,7 @@ const bin = join(root, 'packages/ui/bin/boring-ui-blocks.mjs');
 const skip = !process.env.CHROMIUM && !process.env.CI;
 
 let work, server, base;
+let pageDelay = 0; // ms the server holds a /pages/ fragment: the page's own fetch is then still in flight when the load event fires
 before(async () => {
   if (skip) return;
   assert.ok(process.env.CHROMIUM, 'CHROMIUM must be set when CI is set');
@@ -27,7 +28,8 @@ before(async () => {
     const path = decodeURIComponent(req.url.split('?')[0]);
     const file = path.startsWith('/pages/') && !path.includes('..') ? join(work, 'app', path) : join(work, 'app/index.html');
     res.setHeader('content-type', 'text/html; charset=utf-8');
-    res.end(readFileSync(existsSync(file) ? file : join(work, 'app/index.html')));
+    const body = readFileSync(existsSync(file) ? file : join(work, 'app/index.html'));
+    if (path.startsWith('/pages/') && pageDelay) setTimeout(() => res.end(body), pageDelay); else res.end(body);
   });
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -125,6 +127,18 @@ test('--since marks only the changed state changed, the others same, and a new s
   assert.deepEqual(statuses('connexion.form'), ['same', 'same', 'same', 'same']);
   assert.deepEqual(statuses('connexion.merci'), ['same', 'same', 'same', 'same']);
   assert.deepEqual(statuses('apropos.page'), ['new', 'new', 'new', 'new']);
+});
+
+test('--since says same for an unchanged state whose content arrives late: the shot waits for the page\'s own requests', { skip, timeout: 240000 }, async () => {
+  const dir = manifestDir('late', [state('connexion.tard', '/connexion')]);
+  const quick = join(work, 'out-late-quick'), slow = join(work, 'out-late-slow');
+  assert.equal((await shoot(dir, quick)).status, 0);
+  pageDelay = 1200;
+  try {
+    const run = await shoot(dir, slow, '--since', join(quick, 'index.json'));
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+  } finally { pageDelay = 0; }
+  assert.deepEqual(shotsOf(index(slow), 'connexion.tard').map(s => `${s.viewport}.${s.mode}.${s.status}`), ['390.light.same', '390.dark.same', '1280.light.same', '1280.dark.same']);
 });
 
 const state = (id, page, steps) => ({ id, page, title: id, given: { fixture: 'ledger.synthetic.csv', ...(steps ? { steps } : {}) } });
