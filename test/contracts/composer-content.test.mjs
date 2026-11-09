@@ -313,6 +313,51 @@ test('1280, composer=content: Dock puts focus on a dock control, never on the bo
   assert.equal(await state(), 'closed', 'closing the dock went back to the tray, and that is remembered');
 });
 
+test('1280, composer=content, the assistant arriving after a PM panel: the field is under the page at rest, a send opens the tray, Esc and the close button keep the field and its focus, dock and back keep exactly one field (D-2026)', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'composer=content&pm=1&late=1');
+  await browser.until('slot present', `!!document.querySelector('[data-testid=agent-content-composer]')`);
+  await wait(500);
+  const slotField = () => browser.evaluate(`document.querySelectorAll('[data-testid=agent-content-composer] [data-testid=composer-input]').length`);
+  assert.equal(await slotField(), 1, 'at rest the slot holds the composer input');
+  assert.equal(await count('[data-testid=composer-input]'), 1, 'and it is the only one on the page');
+  assert.equal(await count('[data-testid=agent-tray]'), 0, 'no tray at rest');
+  assert.equal(await state(), 'closed');
+  const page = await browser.evaluate(`window.__pageNode = document.querySelector('[data-testid=agent-page]'), true`);
+  assert.equal(page, true);
+  await type('How much was the bread?');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`), 'How much was the bread?', 'the draft is in the field');
+  await browser.evaluate(`document.querySelector('[data-testid=composer-submit]').click()`);
+  await browser.until('tray open', `!!document.querySelector('[data-testid=agent-tray]')`);
+  await browser.until('reply', `document.querySelector('[data-testid=agent-tray]').textContent.includes('Noted, fictional answer.')`);
+  assert.deepEqual(await browser.evaluate(`window.__sent`), ['How much was the bread?'], 'the one controller sent it once');
+  assert.equal(await browser.evaluate(`window.__pageNode === document.querySelector('[data-testid=agent-page]')`), true, 'the page was not remounted');
+  assert.equal(await count('[data-testid=composer-input]'), 1, 'one field with the tray open');
+  assert.equal(await slotField(), 1, 'still in the slot');
+  await browser.evaluate(`document.querySelector('[data-testid=agent-tray-reduce]').click()`);
+  await browser.until('tray gone', `!document.querySelector('[data-testid=agent-tray]')`);
+  assert.equal(await slotField(), 1, 'the close button keeps the field');
+  assert.equal(await browser.evaluate(`document.activeElement?.dataset.testid`), 'composer-input', 'and its focus');
+  await type('And the cheese?');
+  await browser.evaluate(`document.querySelector('[data-testid=composer-submit]').click()`);
+  await browser.until('tray again', `!!document.querySelector('[data-testid=agent-tray]')`);
+  await browser.evaluate(`document.querySelector('[data-testid=composer-input]').focus()`);
+  await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await browser.until('tray closed by Esc', `!document.querySelector('[data-testid=agent-tray]')`);
+  assert.equal(await slotField(), 1, 'Esc keeps the field');
+  assert.equal(await browser.evaluate(`document.activeElement?.dataset.testid`), 'composer-input', 'and its focus');
+  await browser.evaluate(`window.__layer.open('agent')`);
+  await browser.until('tray', `!!document.querySelector('[data-testid=agent-tray]')`);
+  await browser.evaluate(`document.querySelector('[data-testid=agent-tray-dock]').click()`);
+  await browser.until('dock open', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  assert.equal(await count('[data-testid=composer-input]'), 1, 'one field with the dock open');
+  assert.equal(await slotField(), 1);
+  await browser.evaluate(`document.querySelector('[data-testid=agent-layer-close]').click()`);
+  await browser.until('dock closed', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'closed'`);
+  assert.equal(await count('[data-testid=composer-input]'), 1, 'one field after the dock closes');
+  assert.equal(await slotField(), 1);
+});
+
 test('1280, composer="dock" has no tray; 390 has no tray (the peek drawer)', { skip, timeout: 120000 }, async () => {
   await open(1280, 'composer=dock');
   await browser.evaluate(`window.__layer.open('agent')`);

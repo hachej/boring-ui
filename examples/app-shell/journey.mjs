@@ -49,6 +49,11 @@ try {
     await tapAt(selector);
   };
   const live = () => browser.until('the chats are live', `${q('[data-testid=agent-trigger]')} && !${q('[data-testid=connecting]')}`, 30000);
+  /** D-2038: the element is drawn in the page's own sans, Inter Variable (the face the driver registers), not a fallback: first computed family, and document.fonts.check, after fonts.ready. */
+  const inter = async (selector, where) => {
+    const got = await browser.evaluate(`(async () => { await document.fonts.ready; const e = ${q(selector)}; const first = getComputedStyle(e).fontFamily.split(',')[0].trim().replace(/^["']|["']$/g, ''); return { first, check: document.fonts.check('14px "Inter Variable"') }; })()`);
+    assert.deepEqual(got, { first: 'Inter Variable', check: true }, `${where}: drawn in Inter Variable`);
+  };
   /** Every visible control of the layer is at least 44x44px (touch) and inside the viewport; fails with the selector. */
   const controls = async where => {
     const small = await browser.evaluate(`(() => { const out = []; const sel = '${LAYER} button, ${LAYER} [role=button], ${LAYER} textarea, ${LAYER} a[href], ${TRIGGER}, [data-testid=tabbar] [role=tab], [data-testid=screen-header] button';
@@ -336,6 +341,84 @@ try {
     await browser.until('closed', `${openSheets} === 0`);
     assert.equal(await browser.evaluate(`history.state`), null);
     await controls('six');
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+  });
+
+  await step('E2 nav dot (D-2028): role img named by its label, 8x8, the info token, in the tab bar (390 touch) and the sidebar (1280 fine), light and dark', async () => {
+    const dot = parent => `(() => { const d = document.querySelector('${parent} [role=img][aria-label="Nuit à noter"][data-testid=nav-badge]'); if (!d) return null; const r = d.getBoundingClientRect(), p = document.createElement('span'); p.style.backgroundColor = 'var(--info)'; document.body.append(p); const token = getComputedStyle(p).backgroundColor; p.remove(); return { w: Math.round(r.width), h: Math.round(r.height), bg: getComputedStyle(d).backgroundColor, token, tag: d.tagName }; })()`;
+    const check = async (where, parent) => {
+      for (const theme of ['light', 'dark']) {
+        await browser.evaluate(`document.documentElement.classList.${theme === 'dark' ? 'add' : 'remove'}('dark')`);
+        await pause(150);
+        const got = await browser.evaluate(dot(parent));
+        assert.ok(got, `${where} ${theme}: a dot with role img and name « Nuit à noter »`);
+        assert.deepEqual([got.w, got.h, got.tag], [8, 8, 'SPAN'], `${where} ${theme}: 8x8 span`);
+        assert.notEqual(got.bg, 'rgba(0, 0, 0, 0)', `${where} ${theme}: painted`);
+        assert.equal(got.bg, got.token, `${where} ${theme}: the info token`);
+        await inter(parent, `${where} ${theme}`);
+        await browser.screenshot(`nav-dot-${where}-${theme}.png`);
+      }
+      await browser.evaluate(`document.documentElement.classList.remove('dark')`);
+    };
+    await browser.send('Page.navigate', { url: `${app.url}?app=fitness&nav=6` });
+    await live();
+    await check('tabbar-390-touch', '[data-testid=tab-plus]');
+    await browser.emulate('desktop');
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await browser.send('Page.navigate', { url: `${app.url}?app=fitness&nav=6` });
+    await live();
+    await check('sidebar-1280-fine', '[data-testid=nav-sommeil]');
+    await browser.emulate('phone');
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+  });
+
+  await step('E3 « Plus » keeps the dot of another hidden badged item while an overflow item is on show (D-2037), heard in its name, light and dark at 390 touch', async () => {
+    await browser.send('Page.navigate', { url: `${app.url}?app=fitness&nav=6` });
+    await live();
+    const plusDots = `[...document.querySelectorAll('[data-testid=tab-plus] [role=img][data-testid=nav-badge]')].map(e => e.getAttribute('aria-label'))`;
+    // The accessible names of the tabs that carry the hidden label, from the browser's accessibility tree (role tab, by name).
+    const plusNames = async () => {
+      await browser.send('Accessibility.enable');
+      const { nodes } = await browser.send('Accessibility.getFullAXTree');
+      return nodes.filter(n => n.role?.value === 'tab' && !n.ignored && /Nuit à noter/.test(n.name?.value ?? '')).map(n => n.name.value);
+    };
+    assert.deepEqual(await browser.evaluate(plusDots), ['Nuit à noter'], 'closed bar: « Plus » shows the dot');
+    assert.deepEqual((await plusNames()).map(name => /^Plus\b/.test(name)), [true], 'closed bar: the tab is named « Plus » with the hidden label (« Plus, Nuit à noter »)');
+    await tap('[data-testid=tab-plus]');
+    await browser.until('the Plus sheet', `${openSheets} === 1 && !!${q('[data-testid=plus-objectifs]')}`);
+    await pause(700);
+    await tap('[data-testid=plus-objectifs]');
+    await browser.until('Objectifs on show', `${q('[data-testid=tab-plus]')}.textContent.trim() === 'Objectifs' && ${openSheets} === 0`);
+    await pause(800);
+    const infoToken = `(() => { const p = document.createElement('span'); p.style.backgroundColor = 'var(--info)'; document.body.append(p); const c = getComputedStyle(p).backgroundColor; p.remove(); return c; })()`;
+    for (const theme of ['light', 'dark']) {
+      await browser.evaluate(`document.documentElement.classList.${theme === 'dark' ? 'add' : 'remove'}('dark')`);
+      await pause(150);
+      assert.deepEqual(await browser.evaluate(plusDots), ['Nuit à noter'], `${theme}: Objectifs on show, « Plus » still shows Sommeil's dot`);
+      const names = await plusNames();
+      assert.equal(names.length, 1, `${theme}: one tab carries the hidden label in its name`);
+      assert.match(names[0], /Objectifs/, `${theme}: and still names the screen on show`);
+      assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-testid=tab-plus] [data-testid=nav-badge]')}).backgroundColor === ${infoToken}`), true, `${theme}: the info token`);
+      await inter('[data-testid=tab-plus]', `plus ${theme}`);
+      await browser.screenshot(`nav-dot-plus-other-active-${theme}.png`);
+    }
+    await tap('[data-testid=tab-plus]');
+    await browser.until('the Plus sheet', `${openSheets} === 1 && !!${q('[data-testid=plus-sommeil]')}`);
+    await pause(700);
+    for (const theme of ['light', 'dark']) {
+      await browser.evaluate(`document.documentElement.classList.${theme === 'dark' ? 'add' : 'remove'}('dark')`);
+      await pause(150);
+      assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=plus-sommeil] [role=img][data-testid=nav-badge]')].map(e => e.getAttribute('aria-label'))`), ['Nuit à noter'], `${theme}: Sommeil inside the open menu shows the same dot`);
+      await inter('[data-testid=plus-sommeil]', `menu ${theme}`);
+      await browser.screenshot(`nav-dot-plus-open-${theme}.png`);
+    }
+    await browser.evaluate(`document.documentElement.classList.remove('dark')`);
+    await tap('[data-testid=plus-sommeil]');
+    await browser.until('Sommeil on show', `${q('[data-testid=tab-plus]')}.textContent.trim() === 'Sommeil' && ${openSheets} === 0`);
+    await pause(800);
+    assert.deepEqual(await browser.evaluate(plusDots), [], 'the only badged hidden item is the one on show: no dot on « Plus »');
     await browser.send('Page.navigate', { url: app.url });
     await live();
   });
