@@ -1,5 +1,6 @@
 # Unreleased
 
+- **`NavItem.badge` is `{ tone, label }` (`app-shell`; breaking type change; D-2028).** The nav dot was an empty grey `Badge` with no meaning and no name. `badge` is now `{ readonly tone: 'info' | 'success' | 'warning' | 'destructive'; readonly label: string }`, both required (no neutral default); the dot is an 8px `span` in the tone's token (`bg-info`, `bg-success`, `bg-warning`, `bg-destructive`) with `role="img"` and `aria-label={label}` (`data-testid="nav-badge"` is kept), and the phone « Plus » tab shows the first badged hidden item's dot. `badge: true` is now a type error at each call site, on purpose: pick the tone and label for what the dot means, or delete the badge if it carries no state (no codemod, no invented label). Known consumer: coach-max `web/src/app.tsx`. `NavBadge` is exported next to `NavItem`. Re-sync `app-shell` (`registry:build` refreshes `public/r`). Test: the `E2 nav dot` step of `npm run app-shell:journey`; see `features/app-shell.md`.
 - **`feedback:voice-sync` tool moved (no behaviour change; `@hachej/boring-ui-kit`, `@hachej/boring-feedback`; D-2019).** The measurement script is now `scripts/feedback-voice-sync.mjs` (was `tools/`); `npm run feedback:voice-sync` is unchanged. Two source comments name the new path. Nothing to do.
 
 # Migrating to 0.4.75
