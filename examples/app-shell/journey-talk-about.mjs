@@ -7,7 +7,7 @@ import { launch, pause, q } from '@hachej/boring-testing/browser';
 
 process.env.STUDIO_MODEL = 'scripted';
 const { startAppShell } = await import('./server.mjs');
-const evidence = process.env.TALK_ABOUT_EVIDENCE ?? '.agent-handoff/talk-about/shots';
+const evidence = process.env.TALK_ABOUT_EVIDENCE ?? '.cache/evidence/talk-about/shots';
 mkdirSync(evidence, { recursive: true });
 const app = await startAppShell({ directory: mkdtempSync(join(tmpdir(), 'fictional-talk-about-')) });
 let browser;
