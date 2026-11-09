@@ -49,8 +49,9 @@ const INSPECT = `(() => {
   const overlays = all('[data-ds-bounded]').map(box => {
     const id = box.dataset.dsBounded, outer = box.getBoundingClientRect();
     const popups = [...box.querySelectorAll('[data-ds-overlay]')].map(node => node.getBoundingClientRect());
+    const rects = popups.map(r => [r.left, r.top, r.right, r.bottom].map(Math.round).join(",") + " in " + [outer.left, outer.top, outer.right, outer.bottom].map(Math.round).join(","));
     const inside = popups.length > 0 && popups.every(inner => inner.top >= outer.top - 1 && inner.bottom <= outer.bottom + 1 && inner.left >= outer.left - 1 && inner.right <= outer.right + 1);
-    return { id, inside, count: popups.length, popup: popups.length ? popups[0].height : 0, box: outer.height };
+    return { id, inside, rects, count: popups.length, popup: popups.length ? popups[0].height : 0, box: outer.height };
   });
   const card = name => { const node = document.querySelector(name); return node ? getComputedStyle(node).getPropertyValue('--card').trim() : ''; };
   return {
@@ -154,7 +155,7 @@ test('The design-system page renders every section, measures contrast, switches 
     if (seen.steps.length !== data.textSteps.length || !seen.steps.every(text => /^\d+(\.\d+)?px \/ \S+/.test(text))) problems.push(`${label}: text steps ${JSON.stringify(seen.steps)}`);
     if (seen.heights.fine !== '36px' || seen.heights.touch !== '44px') problems.push(`${label}: control heights ${JSON.stringify(seen.heights)}`);
     if (seen.radii !== data.radii.length || seen.shadows !== 4) problems.push(`${label}: ${seen.radii} radii, ${seen.shadows} shadows`);
-    for (const frame of seen.overlays) if (!frame.inside) problems.push(`${label}: ${frame.id} is not inside its box`);
+    for (const frame of seen.overlays) if (!frame.inside) problems.push(`${label}: ${frame.id} is not inside its box (${frame.count} popups: ${frame.rects.join(" ; ")})`);
     for (const frame of seen.overlays.filter(entry => entry.id.endsWith('-tall'))) if (!(frame.popup <= frame.box * 0.85 + 1)) problems.push(`${label}: ${frame.id} is ${frame.popup}px in a ${frame.box}px box`);
   };
 
