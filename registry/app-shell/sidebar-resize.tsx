@@ -14,7 +14,7 @@ import { cn } from '../utils/utils';
 
 export const SIDEBAR_WIDTH_KEY = 'boring-ui:sidebar-width';
 /** The storage key of one sidebar setting for an app and a person: `boring-ui:sidebar-<setting>:<app>:<person>`; with no person, `:<app>`; with neither, the bare prefix. The person is never dropped: with no app the app part is empty. The width (D-1898) and the open state (D-1909) share this one scheme; the open state of the `screen` layout is its own setting, `open-screen` (D-1919). */
-export function sidebarKey(setting: 'width' | 'open' | 'open-screen', app?: string, person?: string): string {
+export function sidebarKey(setting: 'width' | 'open' | 'open-screen' | 'agent-mode' | 'agent-mode-screen', app?: string, person?: string): string {
   const part = (value: string | undefined) => `:${encodeURIComponent(value ?? '')}`;
   return `boring-ui:sidebar-${setting}${app || person ? part(app) : ''}${person ? part(person) : ''}`;
 }
