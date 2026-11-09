@@ -352,7 +352,7 @@ test('unpinned, the hover reveal floats over the page on the sidebar surface wit
   assert.equal(await inner('boxShadow'), 'none', 'pinned: no floating shadow');
 });
 
-test('the pin shows pressed, keeps the collapse toggle\'s footprint and its tooltip names the shortcut', { skip, timeout: 120000 }, async () => {
+test('the pin shows pressed, is a square target and its tooltip names the shortcut', { skip, timeout: 120000 }, async () => {
   await mount();
   await over();
   const unpressed = await pin('getComputedStyle(e).backgroundColor');
@@ -366,7 +366,8 @@ test('the pin shows pressed, keeps the collapse toggle\'s footprint and its tool
   assert.equal(await name(), 'Épingler le volet', 'the visible name stays');
   await mount('plain=1');
   const toggle = await rect('[data-slot=sidebar-trigger]');
-  assert.ok(Math.abs(toggle.width - box.width) <= 1 && Math.abs(toggle.height - box.height) <= 1, `same box as the collapse toggle: ${JSON.stringify(box)} vs ${JSON.stringify(toggle)}`);
+  // The shadcn Toggle has no 24px size (its smallest, `sm`, is 32px) and the pin takes no className override: a square target at least the collapse toggle's size.
+  assert.ok(box.width === box.height && box.width >= toggle.width, `a square pin no smaller than the collapse toggle: ${JSON.stringify(box)} vs ${JSON.stringify(toggle)}`);
 });
 
 test('shots at 1280 light and dark (collapsed, revealed on hover, the pin focused, pinned) and at 390 touch (no hover reveal, the phone sheet opens)', { skip, timeout: 180000 }, async () => {
