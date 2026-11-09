@@ -218,6 +218,23 @@ test('two apps with the same title keep separate widths when they pass an appId,
   assert.equal(await gap(), 336, 'the title changed, the appId did not');
 });
 
+test('an empty appId falls back to the title and the person stays in the key: B does not inherit A, and a mid-drag switch is cancelled', { skip, timeout: 120000 }, async () => {
+  await mount('appid=&user=a@example.test');
+  await key('ArrowRight');
+  assert.equal(await gap(), 272, 'person A chose a width');
+  assert.ok((await keys()).every((k) => k.includes('a%40example.test')), 'the key names the person');
+  await browser.evaluate(`window.__setUser('b@example.test')`);
+  await wait(300);
+  assert.equal(await gap(), 256, 'person B starts at the theme width');
+  const held = await browser.drag(`document.querySelector('${RAIL}')`, (await centre()).x + 60, { release: false });
+  await browser.evaluate(`window.__setUser('a@example.test')`);
+  await wait(300);
+  await held.moveTo((await centre()).x + 120);
+  await held.release();
+  await wait(200);
+  assert.equal(await gap(), 272, 'the cancelled drag wrote nothing under A');
+});
+
 test('a drag is cancelled when the person changes mid-drag: nothing is written under the other person', { skip, timeout: 120000 }, async () => {
   await mount('user=a@example.test');
   const held = await browser.drag(`document.querySelector('${RAIL}')`, (await centre()).x + 60, { release: false });

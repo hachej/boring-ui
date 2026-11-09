@@ -271,6 +271,11 @@ test('D-1898: design-no-script-tokens flags setProperty of the sidebar width tok
   assert.equal(count('l.ts', 'el.style.setProperty ("--sidebar-width", x);\n'), 1, 'a space before the parenthesis');
   assert.equal(count('m.ts', 'const label = "\u{1F600}";\nel.style.setProperty("--sidebar-width", x);\n'), 1, 'after an emoji (UTF-16 offsets unchanged)');
   assert.equal(count('n.ts', 'const label = "\u{1F600}\u{1F600}";\nconst help = `el.style.setProperty("--sidebar-width", x)`;\n'), 0, 'a help string after an emoji');
+  assert.equal(count('o.ts', 'pane.style.setProperty?.("--sidebar-width", "20rem");\n'), 1, 'the optional-call form');
+  assert.equal(count('p.ts', 'pane.style.setProperty ?. ("--sidebar-width", "20rem");\n'), 1, 'the optional-call form, spaced');
+  assert.equal(count('q.ts', 'const re = /.setProperty("--sidebar-width")/;\n'), 0, 'a regex literal writes nothing');
+  assert.equal(count('r.ts', 'const re = /[/"]x/; el.style.setProperty("--sidebar-width", x);\n'), 1, 'a real call after a regex literal');
+  assert.equal(count('s.ts', 'const half = a / b; el.style.setProperty("--sidebar-width", x / 2);\n'), 1, 'a division is not a regex');
   const kit = readFileSync(join(root, 'shadcn/ui/sidebar.tsx'), 'utf8');
   assert.equal(count('sidebar.tsx', kit), 0, 'the kit\'s SidebarProvider sets the width through React style, never setProperty');
 });
