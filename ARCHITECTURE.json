@@ -509,7 +509,8 @@
         "node:net",
         "node:os",
         "node:path",
-        "node:url"
+        "node:url",
+        "@fontsource-variable/inter"
       ],
       "typeOnlyExternal": [
         "@earendil-works/pi-ai"
