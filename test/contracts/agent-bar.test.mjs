@@ -191,7 +191,7 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
   // D-1978 review fixes, one per finding, each driven with real input.
   test(`the bar survives drift, a refused microphone and slow transcription, and keeps focus (${width}, ${theme})`, { skip, timeout: 240000 }, async () => {
     if (theme === 'dark') return;
-    const focused = `(document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.dataset?.testid ?? document.activeElement?.tagName)`;
+    const focused = `(document.activeElement?.dataset?.testid ?? document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName)`;
     // P1: the mic moves to the left while held; 1px of drift is not a slide off, and the release still sends.
     await open(width, theme);
     let gesture = await hold(label('Parler'));
@@ -206,13 +206,13 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     await browser.until('rest again', `document.querySelector('[data-testid=agent-bar]').dataset.state === 'rest'`);
     await press('Parler');
     await browser.until('listening', `document.querySelector('[data-testid=agent-bar]').dataset.state === 'listening'`);
-    assert.equal(await browser.evaluate(focused), 'Arrêter', 'focus is on Arrêter while listening');
+    assert.equal(await browser.evaluate(focused), 'agent-bar-stop', 'focus is on Arrêter while listening');
     await press('Arrêter');
     await browser.until('text landed', `document.querySelector('[data-testid=agent-bar-input]')?.value === ${JSON.stringify(spoken)}`);
     assert.equal(await browser.evaluate(focused), 'agent-bar-input', 'focus is back in the field after stop');
     await press('Parler');
     await browser.until('listening again', `document.querySelector('[data-testid=agent-bar]').dataset.state === 'listening'`);
-    assert.equal(await browser.evaluate(focused), 'Arrêter');
+    assert.equal(await browser.evaluate(focused), 'agent-bar-stop');
     await press('Annuler');
     await browser.until('rest after cancel', `document.querySelector('[data-testid=agent-bar]').dataset.state === 'rest'`);
     assert.equal(await browser.evaluate(focused), 'agent-bar-input', 'focus is back in the field after cancel');

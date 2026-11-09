@@ -4,7 +4,7 @@
   "title": "Agent bar",
   "description": "The voice-first bar for an agent that works in the background: a pill with a history arrow, the field, a mic (tap to listen, hold to talk and release to send) and send, an optional quoted-row chip, and AgentStatus, the one-line spinner or check above it. Dictation and the hold gesture are the kit's; the app supplies `transcribe` and `onSend`.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.74",
+    "@hachej/boring-ui-kit@^0.4.75",
     "react@^19.0.0"
   ],
   "registryDependencies": [
