@@ -74,6 +74,7 @@ const Day = () => {
       {status ? <AgentStatus state={status} text={status === 'working' ? 'Max compte la tarte…' : 'Tarte vérifiée : 285 kcal'} onCancel={() => { window.__cancelled += 1; }} /> : null}
       {card === 'info' ? <AgentQuestion question={info} hint={false} /> : null}
       <AgentBar transcribe={transcribe} onSend={payload => { window.__sent.push(payload); }} historyOpen={open}
+        {...(params.get('badge') ? { historyBadge: { label: 'Question en attente' } } : {})}
         {...(card && card !== 'info' ? { question: cards[card](answer) } : {})}
         onHistory={() => { window.__history += 1; setOpen(value => !value); }}
         {...(quoted ? { quoted: { label: quoted, onClear: () => { window.__cleared += 1; setQuoted(undefined); } } } : {})} />

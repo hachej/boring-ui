@@ -317,6 +317,11 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     const floor = width === 390 ? 44 : 36;
     await open(width, theme, 'question=1');
     assert.equal(await hasCard(), true, 'the question card shows above the bar');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-history-badge]')`), null, 'no dot without historyBadge');
+    await open(width, theme, 'question=1&badge=1');
+    assert.equal(await browser.evaluate(`(() => { const dot = document.querySelector('[data-testid=agent-bar-history-badge]'); return !!dot && dot.getAttribute('role') === 'img' && dot.getAttribute('aria-label') === 'Question en attente' && dot.closest('button').getAttribute('aria-label') === 'Historique' && Math.round(dot.getBoundingClientRect().width) === 8; })()`), true, 'the history arrow carries the 8px dot');
+    await shot(`question-badge-${at}`);
+    await open(width, theme, 'question=1');
     assert.equal(await browser.evaluate(`${card}.querySelector('[data-testid=agent-question-step]').textContent`), 'Tarte · 1 sur 2');
     assert.equal(await browser.evaluate(`${card}.querySelector('h2').textContent`), 'D’où vient la tarte ?');
     assert.equal(await browser.evaluate(`${card}.querySelector('[data-testid=agent-question-hint]').textContent`), 'ou réponds avec tes mots, dans la barre ↓');
