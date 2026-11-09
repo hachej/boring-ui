@@ -13,10 +13,14 @@ import { SidebarProvider, SidebarRail, useSidebar } from '@/components/ui/sideba
 import { cn } from '../utils/utils';
 
 export const SIDEBAR_WIDTH_KEY = 'boring-ui:sidebar-width';
-/** The storage key for an app and a person: `boring-ui:sidebar-width:<app>:<person>`; with no person, `:<app>`; with neither, the bare prefix. The person is never dropped: with no app the app part is empty. */
-export function sidebarWidthKey(app?: string, person?: string): string {
+/** The storage key of one sidebar setting for an app and a person: `boring-ui:sidebar-<setting>:<app>:<person>`; with no person, `:<app>`; with neither, the bare prefix. The person is never dropped: with no app the app part is empty. The width (D-1898) and the open state (D-1909) share this one scheme. */
+export function sidebarKey(setting: 'width' | 'open', app?: string, person?: string): string {
   const part = (value: string | undefined) => `:${encodeURIComponent(value ?? '')}`;
-  return `${SIDEBAR_WIDTH_KEY}${app || person ? part(app) : ''}${person ? part(person) : ''}`;
+  return `boring-ui:sidebar-${setting}${app || person ? part(app) : ''}${person ? part(person) : ''}`;
+}
+/** The stored width's key: `boring-ui:sidebar-width:<app>:<person>`. */
+export function sidebarWidthKey(app?: string, person?: string): string {
+  return sidebarKey('width', app, person);
 }
 const MIN_REM = 12;
 const MAX_REM = 28;
