@@ -225,13 +225,13 @@ const activeIn = selector => browser.evaluate(`!!document.activeElement && docum
 
 test('1280, composer=content: the tray sits above the field at its width, the content shrinks above it, the cited row is in view, the header has Dock, Agrandir, Réduire', { skip, timeout: 120000 }, async () => {
   await open(1280, 'composer=content&rows=30');
-  await browser.evaluate(`(() => { document.querySelector('[data-testid=page]').scrollTop = 0; document.querySelector('[data-testid=cite-30]').focus({ preventScroll: true }); })()`);
-  const pageBefore = await rect('[data-testid=page]');
+  await browser.evaluate(`(() => { document.querySelector('[data-testid=screen-week]').scrollTop = 0; document.querySelector('[data-testid=cite-30]').focus({ preventScroll: true }); })()`);
+  const pageBefore = await rect('[data-testid=screen-week]');
   await browser.evaluate(`document.querySelector('[data-testid=cite-30]').click()`);
   await browser.until('tray open', `!!document.querySelector('[data-testid=agent-tray]')`);
   await wait(700);
   const tray = await rect('[data-testid=agent-tray]'), body = await rect('[data-testid=agent-tray-body]'), field = await rect('[data-testid=composer]');
-  const column = await rect('[data-testid=agent-content]'), page = await rect('[data-testid=page]'), row = await rect('[data-testid=cite-30]');
+  const column = await rect('[data-testid=agent-content]'), page = await rect('[data-testid=screen-week]'), row = await rect('[data-testid=cite-30]');
   assert.ok(Math.abs(body.w - field.w) <= 1, `the tray is the field's width (${body.w} vs ${field.w})`);
   assert.ok(tray.bottom <= field.y + 1, 'above the field');
   const wanted = Math.min(column.h * 0.35, 360);
@@ -316,7 +316,9 @@ test('1280, composer=content: the tray-or-dock choice is kept per app (D-1919 ke
   await open(1280, 'composer=content&app=alpha');
   await sendFromField('How much was the bread?');
   await browser.evaluate(`document.querySelector('[data-testid=agent-tray-dock]').click()`);
-  await browser.until('dock open', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  await browser.until('alpha dock open', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  const stored = await browser.evaluate(`JSON.stringify(Object.fromEntries(Object.keys(localStorage).filter(key => key.startsWith('boring-ui:sidebar-agent-mode')).map(key => [key, localStorage.getItem(key)])))`);
+  assert.equal(stored, JSON.stringify({ 'boring-ui:sidebar-agent-mode-screen:alpha': 'dock' }), 'the dock choice is stored under the app');
   await open(1280, 'composer=content&keep=1&app=beta');
   await type('And the cheese?');
   await browser.evaluate(`document.querySelector('[data-testid=composer-submit]').click()`);
@@ -325,7 +327,7 @@ test('1280, composer=content: the tray-or-dock choice is kept per app (D-1919 ke
   await open(1280, 'composer=content&keep=1&app=alpha');
   await type('And the cheese?');
   await browser.evaluate(`document.querySelector('[data-testid=composer-submit]').click()`);
-  await browser.until('dock open', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  await browser.until('alpha dock open again', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
   assert.equal(await count('[data-testid=agent-tray]'), 0, 'the first app kept its choice');
 });
 
@@ -383,7 +385,7 @@ for (const dark of [false, true]) {
     await open(1280, query);
     await browser.screenshot(`composer-content-1280-${name}-dock-closed.png`);
     await open(1280, query + '&rows=12');
-    await browser.evaluate(`document.querySelector('[data-testid=page]').scrollTop = 0; document.querySelector('[data-testid=cite-12]').focus({ preventScroll: true })`);
+    await browser.evaluate(`document.querySelector('[data-testid=screen-week]').scrollTop = 0; document.querySelector('[data-testid=cite-12]').focus({ preventScroll: true })`);
     await browser.evaluate(`document.querySelector('[data-testid=cite-12]').click()`);
     await browser.until('tray open', `!!document.querySelector('[data-testid=agent-tray]')`);
     await wait(700);
