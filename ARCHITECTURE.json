@@ -508,7 +508,8 @@
         "node:fs",
         "node:net",
         "node:os",
-        "node:path"
+        "node:path",
+        "node:url"
       ],
       "typeOnlyExternal": [
         "@earendil-works/pi-ai"

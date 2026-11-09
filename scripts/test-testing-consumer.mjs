@@ -37,6 +37,7 @@ try {
   const dependencies = Object.fromEntries(['@earendil-works/pi-durable', '@earendil-works/chord', '@earendil-works/pi-ai'].map(name => [name, agent.peerDependencies[name]]));
   for (const name of ['typescript', '@types/node', '@modelcontextprotocol/sdk']) dependencies[name] = rootManifest.devDependencies[name];
   // Native SDK declarations optionally import these names; keep resolution inside the installed fixture.
+  dependencies['@fontsource-variable/inter'] = sourceLock.packages['node_modules/@fontsource-variable/inter'].version;
   for (const name of ['buffer', 'undici', 'undici-types']) dependencies[name] = sourceLock.packages['node_modules/' + name].version;
   writeLockedManifest(root, directory, 'isolated-testing-consumer', dependencies);
   run('npm', ['install', '--package-lock-only', ...npmInstallFlags(cache), ...archives]);
