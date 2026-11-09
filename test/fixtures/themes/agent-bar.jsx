@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { AgentBar, AgentStatus } from '../../../registry/agent-bar/agent-bar.tsx';
 
 // D-1978 slice 1: the agent bar (field, mic, send, quoted chip) and the status line above it, over a fictional day page, with a fake microphone
-// and a fake transcriber (fictional text). `?dark=1` picks the dark theme; `?status=working|done` shows the status line; `?quoted=1` cites a row; `?live=1` streams the words (see below); `?slow=1` makes the transcription take 1.5s; `?deny=1` refuses the microphone.
+// and a fake transcriber (fictional text). `?dark=1` picks the dark theme; `?status=working|done` shows the status line; `?quoted=1` cites a row; `?slow=1` makes the transcription take 1.5s; `?deny=1` refuses the microphone.
 // What the app would see is on window: __sent (onSend payloads), __transcribed (blobs handed to transcribe), __cancelled (status Annuler),
 // __cleared (quoted ✕), __history (history taps), __tracks (microphone tracks released).
 const params = new URLSearchParams(location.search);
@@ -35,11 +35,6 @@ class FakeRecorder extends EventTarget {
 }
 window.MediaRecorder = FakeRecorder;
 
-// `?live=1` hands the bar a live stream instead of `transcribe`: a fictional provider that says nothing by itself. The page (the test) plays it through
-// window.__sink (`partial(text)`, `final(text)`) and reads window.__stream ({ opened, stopped, cancelled }).
-window.__stream = { opened: 0, stopped: 0, cancelled: 0 };
-const stream = async sink => { window.__sink = sink; window.__stream.opened += 1; return { stop: async () => { window.__stream.stopped += 1; }, cancel: () => { window.__stream.cancelled += 1; } }; };
-
 const transcribe = async audio => { window.__transcribed.push(audio.size); await new Promise(done => setTimeout(done, params.get('slow') === '1' ? 1500 : 60)); return 'Au goûter une part de tarte aux pommes'; };
 const meals = [['Petit-déjeuner', 420, ['Flocons d’avoine 60 g', 'Lait demi-écrémé 200 ml']], ['Midi', 820, ['Riz cuit 200 g', 'Poulet grillé 150 g']], ['Goûter', 2, ['Tarte aux pommes · 1 part', 'Café noir 1 tasse']]];
 
@@ -60,7 +55,7 @@ const Day = () => {
     </main>
     <div data-testid="dock" className="flex flex-col gap-2 border-t bg-background px-4 pt-3 pb-6">
       {status ? <AgentStatus state={status} text={status === 'working' ? 'Max compte la tarte…' : 'Tarte vérifiée : 285 kcal'} onCancel={() => { window.__cancelled += 1; }} /> : null}
-      <AgentBar {...(params.get('live') === '1' ? { stream } : { transcribe })} onSend={payload => { window.__sent.push(payload); }} historyOpen={open}
+      <AgentBar transcribe={transcribe} onSend={payload => { window.__sent.push(payload); }} historyOpen={open}
         onHistory={() => { window.__history += 1; setOpen(value => !value); }}
         {...(quoted ? { quoted: { label: quoted, onClear: () => { window.__cleared += 1; setQuoted(undefined); } } } : {})} />
     </div>

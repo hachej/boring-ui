@@ -957,7 +957,7 @@
       "name": "agent-bar",
       "type": "registry:block",
       "title": "Agent bar",
-      "description": "The voice-first bar for an agent that works in the background: a pill with a history arrow, the field, a mic (tap to listen, hold to talk and release to send) and send, an optional quoted-row chip, and AgentStatus, the one-line spinner or check above it. Dictation and the hold gesture are the kit's; the app supplies `transcribe` (or a live `stream`, which shows the words as they come) and `onSend`.",
+      "description": "The voice-first bar for an agent that works in the background: a pill with a history arrow, the field, a mic (tap to listen, hold to talk and release to send) and send, an optional quoted-row chip, and AgentStatus, the one-line spinner or check above it. Dictation and the hold gesture are the kit's; the app supplies `transcribe` and `onSend`.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.75",
         "react@^19.0.0"
@@ -972,11 +972,6 @@
           "path": "registry/agent-bar/agent-bar.tsx",
           "type": "registry:component",
           "target": "components/agent-bar/agent-bar.tsx"
-        },
-        {
-          "path": "registry/agent-bar/use-live-dictation.ts",
-          "type": "registry:hook",
-          "target": "components/agent-bar/use-live-dictation.ts"
         }
       ],
       "css": {
@@ -1858,6 +1853,7 @@
           "--boring-feedback-text": "var(--popover-foreground)",
           "--boring-feedback-muted": "var(--muted-foreground)",
           "--boring-feedback-border": "var(--border)",
+          "--boring-feedback-shadow": "var(--shadow-md, 0 4px 6px -1px color-mix(in oklab, var(--foreground) 10%, transparent), 0 2px 4px -2px color-mix(in oklab, var(--foreground) 10%, transparent))",
           "--boring-feedback-label-background": "var(--foreground)",
           "--boring-feedback-label-foreground": "var(--background)",
           "font-family": "inherit",
@@ -2107,7 +2103,28 @@
           "line-height": "var(--leading-snug, 1.375)"
         },
         "[data-boring=\"feedback\"].boring-feedback-bubble": {
-          "z-index": "2147483001"
+          "z-index": "2147483001",
+          "display": "flex",
+          "flex-direction": "column",
+          "gap": "0.5rem",
+          "background-color": "var(--boring-feedback-surface)",
+          "color": "var(--boring-feedback-text)",
+          "border": "var(--default-border-width, var(--border-width, 1px)) solid var(--boring-feedback-border)",
+          "border-radius": "var(--radius-lg, 0.5rem)",
+          "box-shadow": "var(--boring-feedback-shadow)",
+          "padding-block": "0.75rem"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-banner:has(~ * .boring-feedback-bubble-sheet)": {
+          "z-index": "40"
+        },
+        "[data-boring=\"feedback\"].boring-feedback-bubble-sheet": {
+          "border-inline-width": "0",
+          "border-bottom-width": "0",
+          "border-radius": "var(--radius-xl, 0.75rem) var(--radius-xl, 0.75rem) 0 0",
+          "box-shadow": "none",
+          "padding-bottom": "max(0.75rem, env(safe-area-inset-bottom))",
+          "max-height": "calc(100dvh - 6rem)",
+          "overflow-y": "auto"
         },
         "[data-boring=\"feedback\"] .boring-feedback-bubble-head, [data-boring=\"feedback\"] .boring-feedback-note-head": {
           "display": "flex",

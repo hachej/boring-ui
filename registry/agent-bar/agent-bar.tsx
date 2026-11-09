@@ -3,7 +3,7 @@
 // D-1978 slice 1: the agent bar (a pill with a history arrow, the field, the mic and send) and the status line that sits above it. Voice is the kit's:
 // `useDictation` records and hands the audio to the app's `transcribe`, `useHoldToRecord` is the hold gesture and its cancel policy (slide off, Escape,
 // blur, a hidden page). One tap on the mic listens (stop puts the text in the field, send sends it); a press held past TAP_MS talks and sends on release.
-// Slice 2 puts a question card above the bar and swaps `placeholder` for « Ou réponds ici »; slice 4 feeds the words live (`stream`). Slice 2 is not built here.
+// Slice 2 puts a question card above the bar and swaps `placeholder` for « Ou réponds ici »; slice 4 feeds `partial` live. Neither is built here.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useDictation, type DictationLabels } from '@hachej/boring-ui-kit/chat-react/voice';
 import { ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, CornerDownRightIcon, MicIcon, SquareIcon, XIcon } from '../_shared/icons';
@@ -12,9 +12,6 @@ import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '../utils/utils';
 import { useHoldToRecord } from '../pi-chat-voice/use-hold-to-record';
-import { useLiveDictation, type LiveStream } from './use-live-dictation';
-
-export type { LiveSink, LiveSession, LiveStream } from './use-live-dictation';
 
 export interface AgentBarLabels extends DictationLabels {
   readonly placeholder: string;
@@ -54,10 +51,8 @@ export interface AgentBarSend { readonly text: string; readonly quoted?: string 
 export interface AgentBarProps {
   /** Called with the typed or spoken text, and the label of the quoted row when one is shown. The app clears the quote (`quoted.onClear`) if it wants to. */
   readonly onSend: (message: AgentBarSend) => void;
-  /** The app's batch transcription of one recording. Not needed with `stream`. */
-  readonly transcribe?: (audio: Blob) => Promise<string>;
-  /** Live dictation: while listening the bar shows the words as they come (final words normal, not-yet-final words dimmed) and sends the final text on stop. Replaces `transcribe`. */
-  readonly stream?: LiveStream;
+  /** The app's batch transcription of one recording. */
+  readonly transcribe: (audio: Blob) => Promise<string>;
   readonly quoted?: { readonly label: string; readonly onClear: () => void };
   /** Shows the history arrow; it flips with `historyOpen`. */
   readonly onHistory?: () => void;
@@ -87,7 +82,7 @@ function Wave({ levels }: { readonly levels: readonly number[] }) {
   </div>;
 }
 
-export function AgentBar({ onSend, transcribe, stream, quoted, onHistory, historyOpen = false, placeholder, partial, labels, disabled = false, className }: AgentBarProps) {
+export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = false, placeholder, partial, labels, disabled = false, className }: AgentBarProps) {
   const words = { ...agentBarLabels, ...labels };
   const [text, setText] = useState('');
   const [transcript, setTranscript] = useState('');
@@ -110,14 +105,14 @@ export function AgentBar({ onSend, transcribe, stream, quoted, onHistory, histor
     onSend(quote.current === undefined ? { text: clean } : { text: clean, quoted: quote.current });
     setText(''); setTranscript('');
   };
-  const onText = (spoken: string) => {
-    if (sendOnText.current) { sendOnText.current = false; deliver([field.current, spoken].filter(Boolean).join(' ')); return; }
-    setTranscript(spoken); setText(current => [current, spoken].filter(Boolean).join(' '));
-  };
-  // Both hooks always run (hook order); with a `stream` the batch one has no transcriber and never starts.
-  const batch = useDictation({ transcribe: stream || !transcribe ? undefined : audio => transcribe(audio), labels: words, onText });
-  const live = useLiveDictation({ stream, labels: words, onText });
-  const dictation = stream ? live : batch;
+  const dictation = useDictation({
+    transcribe: audio => transcribe(audio),
+    labels: words,
+    onText: spoken => {
+      if (sendOnText.current) { sendOnText.current = false; deliver([field.current, spoken].filter(Boolean).join(' ')); return; }
+      setTranscript(spoken); setText(current => [current, spoken].filter(Boolean).join(' '));
+    },
+  });
   // The attempt ended on its own (refused microphone, Escape, blur, the time limit): the bar is at rest again.
   const before = useRef(dictation.phase);
   useEffect(() => {
@@ -172,9 +167,7 @@ export function AgentBar({ onSend, transcribe, stream, quoted, onHistory, histor
     window.addEventListener('keydown', escape, true);
     return () => window.removeEventListener('keydown', escape, true);
   });
-  const lead = live.final || transcript;
-  const dim = [live.interim, partial].filter(Boolean).join(' ');
-  const shown = lead || dim ? <p data-testid="agent-bar-transcript" className="px-3 text-sm text-foreground italic">{lead}{dim ? <span className="text-muted-foreground">{lead ? ' ' : ''}{dim}</span> : null}</p> : null;
+  const shown = transcript || partial ? <p data-testid="agent-bar-transcript" className="px-3 text-sm text-foreground italic">{transcript}{partial ? <span className="text-muted-foreground">{transcript ? ' ' : ''}{partial}</span> : null}</p> : null;
   const submit = () => {
     if (state === 'listening') { stopListening(true); return; }
     if (canSend) deliver(text);

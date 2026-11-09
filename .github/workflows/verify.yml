@@ -87,12 +87,30 @@ jobs:
         env:
           SIDEBAR_RESIZE_EVIDENCE: ${{ runner.temp }}/evidence/sidebar-resize
           SIDEBAR_OPEN_EVIDENCE: ${{ runner.temp }}/evidence/sidebar-open
+          FEEDBACK_BUBBLE_EVIDENCE: ${{ runner.temp }}/evidence/note-bubble
+          SIDEBAR_PIN_EVIDENCE: ${{ runner.temp }}/evidence/sidebar-pin
       - name: Resizable left pane shots (1280, light and dark)
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sidebar-resize-shots
           path: ${{ runner.temp }}/evidence/sidebar-resize
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Note bubble shots (1280 and 390, light and dark, edge flips)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: note-bubble-shots
+          path: ${{ runner.temp }}/evidence/note-bubble
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Hover rail pin shots (1280, light and dark)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sidebar-pin-shots
+          path: ${{ runner.temp }}/evidence/sidebar-pin
           retention-days: 7
           if-no-files-found: warn
       - name: Left pane open on a first visit shots (1280, light and dark)
