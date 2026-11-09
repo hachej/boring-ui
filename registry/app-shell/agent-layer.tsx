@@ -156,11 +156,26 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   /** Expanded only: the side the dock sits on while docked (the viewer's choice, remembered). */
   readonly side: DockSide;
   readonly setSide: (side: DockSide) => void;
+  /** `composer: 'content'` on a wide screen with an assistant: the field is drawn under the page content, the dock holds only the thread. False on a phone (the peek drawer) and for `'dock'`. */
+  readonly contentComposer: boolean;
+  /** Where the content composer is drawn and the element a dropped file is taken on (both set by `AgentDockLayout`). */
+  readonly composerSlot: HTMLElement | null;
+  readonly dropZone: HTMLElement | null;
+  readonly setComposerSlot: (element: HTMLElement | null) => void;
+  readonly setDropZone: (element: HTMLElement | null) => void;
+  /** The content composer sent a message: the thread opens in the dock. */
+  readonly onSent: () => void;
   /** Set by a dock control: the next placement or side change puts focus back on the panel's first dock control. */
   readonly restoreFocus: { current: boolean };
 }
 
 type DockSide = 'left' | 'right';
+/**
+ * Where the assistant's field sits on a wide screen. `dock` (default): inside the dock, under the thread. `content`: pinned under the page
+ * content, at the content's width, with the dock holding only the thread (one controller, one thread, the same chat as the phone's peek).
+ * Below the wide breakpoint nothing changes: the peek drawer.
+ */
+export type AgentComposer = 'dock' | 'content';
 /** The dock's remembered state lives under this prefix (DockLayout's storageKey): `<key>.agent.floating`, `.width`, and the side. */
 const DOCK_KEY = 'boring.app-shell';
 const SIDE_KEY = `${DOCK_KEY}.agent.side`;
@@ -233,7 +248,7 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): { readonly pe
 }
 
 /** Places the layer in the app. `agent` is the one assistant; `panel` sits beside the app (the product manager). Either may be absent. */
-export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLink, appName, children }: { readonly agent?: AgentSpec | undefined; readonly panel?: ShellPanel | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly appName?: string | undefined; readonly children: ReactNode }): ReactElement {
+export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLink, appName, composer = 'dock', children }: { readonly composer?: AgentComposer | undefined; readonly agent?: AgentSpec | undefined; readonly panel?: ShellPanel | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly appName?: string | undefined; readonly children: ReactNode }): ReactElement {
   const compact = usePhone();
   const expanded = !compact;
   const together = useMedia(TOGETHER_QUERY) && expanded;
@@ -241,6 +256,9 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // The PM column beside the dock, used only `together`; below that the PM is `shown === 'improve'` with the one snap, as on a phone.
   const [pmOpen, setPmOpen] = useState(false);
   const [dockFloating, setDockFloating] = useState(false);
+  const [composerSlot, setComposerSlot] = useState<HTMLElement | null>(null);
+  const [dropZone, setDropZone] = useState<HTMLElement | null>(null);
+  const composerSlotRef = useRef<HTMLElement | null>(null);
   // A screen may lend the layer its assistant (`useAgentLoan`); the shell's own `agent` always wins.
   const [lent, setLent] = useState<AgentSpec | undefined>();
   const agent = own ?? lent;
@@ -254,6 +272,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after mount; reading it before paint keeps server and client markup equal without a flash
   useLayoutEffect(() => { try { const saved = globalThis.localStorage?.getItem(SIDE_KEY); if (saved === 'left' || saved === 'right') setSideState(saved); } catch { /* a convenience */ } }, []);
   const setSide = useCallback((next: DockSide) => { setSideState(next); try { globalThis.localStorage?.setItem(SIDE_KEY, next); } catch { /* a convenience */ } }, []);
+  const contentComposer = composer === 'content' && expanded && agent !== undefined;
   const specs = useRef({ agent, improve, snap, shown, pmOpen, together });
   // eslint-disable-next-line react-hooks/refs -- latest-value ref: open/lend/showAgent may be called from a child's layout effect, before this component's own effects run
   specs.current = { agent, improve, snap, shown, pmOpen, together };
@@ -323,7 +342,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const [host] = useState(() => typeof document === 'undefined' ? null : Object.assign(document.createElement('div'), { className: 'flex min-h-0 flex-1 flex-col [&_[data-boring=pi-chat]>header]:hidden' }));
   const opened = useRef(false);
   // eslint-disable-next-line react-hooks/refs -- a monotonic "ever opened" latch for this render: no re-render, no setState during render
-  if (snap !== 'closed') opened.current = true;
+  if (snap !== 'closed' || contentComposer) opened.current = true;
 
   // Consume the launch URL before an open layer pushes its Back entry. Keep the parsed request through StrictMode's effect replay.
   const launch = useRef<ReturnType<typeof parseAgentLink> | undefined>(undefined);
@@ -349,7 +368,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     const timer = setTimeout(() => {
       const current = specs.current;
       if (onShow(current, which) && controllerOf(current[which]) === controllerOf(spec)) {
-        host?.querySelector<HTMLElement>(`[data-spec=${which}] [data-testid=composer-input]`)?.focus({ preventScroll: true });
+        (host?.querySelector<HTMLElement>(`[data-spec=${which}] [data-testid=composer-input]`) ?? (which === 'agent' ? composerSlotRef.current?.querySelector<HTMLElement>('[data-testid=composer-input]') : null))?.focus({ preventScroll: true });
       }
     }, 520);
     return () => clearTimeout(timer);
@@ -385,7 +404,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
       voice.start();
     } else {
       focusTimer.current = setTimeout(() => {
-        if (specs.current.agent?.controller === selected.controller && specs.current.snap !== 'closed' && specs.current.shown === 'agent') host?.querySelector<HTMLElement>('[data-spec=agent] [data-testid=composer-input]')?.focus({ preventScroll: true });
+        if (specs.current.agent?.controller === selected.controller && specs.current.snap !== 'closed' && specs.current.shown === 'agent') (host?.querySelector<HTMLElement>('[data-spec=agent] [data-testid=composer-input]') ?? composerSlotRef.current?.querySelector<HTMLElement>('[data-testid=composer-input]'))?.focus({ preventScroll: true });
       }, 520);
     }
     return true;
@@ -415,9 +434,12 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // Both open: the state is `open` and `showing` the assistant; the PM alone: `improve`.
   const state: AgentLayerState = snap === 'closed' ? (improveOpen ? 'open' : 'closed') : expanded ? 'open' : snap;
   const besidePanel = together && improveOpen;
+  const setSlot = useCallback((element: HTMLElement | null) => { composerSlotRef.current = element; setComposerSlot(element); }, []);
+  // Sending from the content composer shows the thread; a dock already open stays as it is.
+  const onSent = useCallback(() => { if (specs.current.snap === 'closed' || specs.current.shown !== 'agent') open('agent'); }, [open]);
   const value = useMemo<Internal>(() => ({
-    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide]);
+    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, composerSlot, dropZone, setComposerSlot: setSlot, setDropZone, onSent,
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, composerSlot, dropZone, setSlot, onSent]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -536,7 +558,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
-    <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
+    <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(role === 'agent' && layer.contentComposer ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
       {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: layer.voice.phase === 'starting' || layer.voice.phase === 'recording' ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
@@ -839,6 +861,15 @@ function AgentDock({ side }: { readonly side: DockSide }) {
   </Dock>;
 }
 
+/** `composer: 'content'`: the page content, then the field's slot at the bottom; a file dropped anywhere on the column goes to that field. */
+function ContentColumn({ children }: { readonly children: ReactNode }) {
+  const { setComposerSlot, setDropZone } = useInternal();
+  return <div ref={setDropZone} data-testid="agent-content" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+    {children}
+    <div ref={setComposerSlot} data-testid="agent-content-composer" className="shrink-0" />
+  </div>;
+}
+
 /**
  * Wraps the app's content (placed once by the shell): on a wide screen the agent dock sits on its left or right and the content reflows,
  * or it floats over the content; on a phone this is only the content (the layer is the bottom drawer). Host concern: Pi has no layout.
@@ -849,7 +880,7 @@ export function AgentDockLayout({ children }: { readonly children: ReactNode }):
   // The PM column sits inside the main content: while it is open beside the dock, the dock leaves the screen its least width beside it.
   return <DockLayout storageKey={DOCK_KEY} persist="local" minMain={MIN_MAIN + (layer.besidePanel ? PM_COLUMN : 0)}>
     {layer.side === 'left' && dock}
-    <DockMain>{children}</DockMain>
+    <DockMain>{layer.contentComposer ? <ContentColumn>{children}</ContentColumn> : children}</DockMain>
     {layer.side === 'right' && dock}
   </DockLayout>;
 }

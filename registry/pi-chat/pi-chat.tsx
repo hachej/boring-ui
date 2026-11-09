@@ -4,6 +4,7 @@ import { useKeyboardInset, useBelowLg, useToastOffset } from '../utils/use-media
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { viewHasEarlier } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import { Loader2Icon } from '../_shared/icons';
@@ -117,6 +118,12 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly pendingVoice?: readonly PendingVoice[] | undefined;
   /** Host content under the composer (for example a collapsed list of the person's requests). Absent: nothing is shown. */
   readonly belowComposer?: ReactNode;
+  /** Draws the composer (not the thread) into this element, outside the chat: one session, one controller, the field somewhere else (the shell's `composer: 'content'`). Absent or null: the composer stays under the thread. */
+  readonly composerHost?: HTMLElement | null | undefined;
+  /** With `composerHost`: a file dropped anywhere in this element goes to the composer's attachments, with a drop overlay over it while one is dragged in. */
+  readonly dropZone?: HTMLElement | null | undefined;
+  /** Called after the composer sends a message (the shell opens its thread). */
+  readonly onSent?: (() => void) | undefined;
   /** Rendered before the title in the header (for example a menu button on narrow screens). */
   readonly headerStart?: ReactNode;
   readonly onFiles?: FilesHandler;
@@ -203,7 +210,7 @@ const noVoice: VoiceRecorderHook = () => silent;
 /** A shell's pending voice row when no `voiceMessage.Bubble` is plugged in: nothing to draw. */
 function NoVoiceBubble(_: { readonly pending: PendingVoice | undefined }) { return null; }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, voiceReplay, targetLabel, sentContent, messageStyle = 'default', answeredBy, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, voiceReplay, targetLabel, sentContent, messageStyle = 'default', answeredBy, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerHost, dropZone, onSent, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
   onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', composerRecording, renderComposer, conversationTitle, onRenameTitle, feedback, sendContext, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
@@ -220,7 +227,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const canFork = Boolean(conversations?.fork);
   const rowExtras = useMemo(() => canFork || messageStyle === 'messaging' || answeredBy ? { ...(canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : {}), ...(messageStyle === 'messaging' ? { messageStyle } : {}), ...(answeredBy ? { answeredBy } : {}) } : undefined, [canFork, messageStyle, answeredBy]);
   const session = useChatSession({ controller, activeController: active, mode, presentation, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept,
-    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => timeline ? timeline.afterSend?.() : scrollToBottom.current(), feedback, sendContext, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
+    slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => { if (timeline) timeline.afterSend?.(); else scrollToBottom.current(); onSent?.(); }, feedback, sendContext, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
   const { state, derived, rows: nativeRows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   // New or fork is on its way: nothing may go to this conversation (D-1499).
   const leaving = conversations?.creating === true;
@@ -271,8 +278,32 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   // Toasts sit above the composer while it is docked below lg (D-1801); the token goes with the chat.
   const dock = useRef<HTMLElement>(null), belowLg = useBelowLg();
   useToastOffset(dock, belowLg && placement === 'docked');
+  const zone = composerHost ? dropZone : null;
+  const pickFiles = composer.onPickFiles;
+  const dragged = useContentDrop(zone, composer.canAttach ? pickFiles : undefined);
 
-  return <section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative box-border flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card text-card-foreground ', keyboardInset && 'max-md:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'md:justify-center', className)}>
+  const footer = <footer ref={dock} data-testid="composer-dock" className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-4 md:pt-1.5">
+    <div className="mx-auto w-full max-w-[720px] space-y-2">
+      <div {...(session.natural ? {} : { 'aria-live': 'polite' as const })} className="space-y-2 empty:hidden">
+        <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} sending={session.sending} />
+        <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} conversations={conversations} />
+      </div>
+      <div>
+        <ConversationFiles files={[...conversationFiles.values()]} />
+        <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
+        {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
+        {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, disabled: composer.disabled || leaving, stopOpen: leaving && !composer.disabled,
+          ...(composerRecording === undefined && VoiceStatus && VoiceStop && capturing ? { recordingStatus: <VoiceStatus voice={voice} />, recordingStop: <VoiceStop voice={voice} /> }
+            : { recording: composerRecording ?? (VoiceButton && capturing ? <VoiceButton voice={voice} /> : undefined) }), layout: composerLayout,
+          placeholder: labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder, barStart, barNote, start: composerStart,
+          ...(voiceMessage && VoiceButton && voiceReplacesSend ? { barEnd: tools, whenEmpty: <VoiceButton voice={voice} primary disabled={leaving || state.disposed || !connected || state.send.kind === 'unknown'} /> }
+            : { barEnd: voiceMessage && VoiceButton ? <>{tools}<VoiceButton voice={voice} disabled={leaving || state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools }),
+        })}
+        {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}
+      </div>
+    </div>
+  </footer>;
+  return <><section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative box-border flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card text-card-foreground ', keyboardInset && 'max-md:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'md:justify-center', className)}>
     {header && <header className={cn(empty && emptyLayout === 'centered' && 'md:absolute md:inset-x-0 md:top-0', 'flex h-13 shrink-0 items-center gap-2 px-3 md:gap-3 md:px-4')}>
       {headerStart}
       {avatar && <Avatar data-testid="chat-avatar" className="overflow-hidden"><AvatarFallback className="*:max-h-full *:max-w-full">{avatar}</AvatarFallback></Avatar>}
@@ -313,26 +344,34 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
         </div></div>}
     </div>
 
-    <footer ref={dock} data-testid="composer-dock" className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-4 md:pt-1.5">
-      <div className="mx-auto w-full max-w-[720px] space-y-2">
-        <div {...(session.natural ? {} : { 'aria-live': 'polite' as const })} className="space-y-2 empty:hidden">
-          <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} sending={session.sending} />
-          <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} conversations={conversations} />
-        </div>
-        <div>
-          <ConversationFiles files={[...conversationFiles.values()]} />
-          <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
-          {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
-          {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, disabled: composer.disabled || leaving, stopOpen: leaving && !composer.disabled,
-            ...(composerRecording === undefined && VoiceStatus && VoiceStop && capturing ? { recordingStatus: <VoiceStatus voice={voice} />, recordingStop: <VoiceStop voice={voice} /> }
-              : { recording: composerRecording ?? (VoiceButton && capturing ? <VoiceButton voice={voice} /> : undefined) }), layout: composerLayout,
-            placeholder: labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder, barStart, barNote, start: composerStart,
-            ...(voiceMessage && VoiceButton && voiceReplacesSend ? { barEnd: tools, whenEmpty: <VoiceButton voice={voice} primary disabled={leaving || state.disposed || !connected || state.send.kind === 'unknown'} /> }
-              : { barEnd: voiceMessage && VoiceButton ? <>{tools}<VoiceButton voice={voice} disabled={leaving || state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools }),
-          })}
-          {belowComposer !== undefined && <div data-testid="below-composer" className="pt-2">{belowComposer}</div>}
-        </div>
-      </div>
-    </footer>
-  </section>;
+    {composerHost ? null : footer}
+  </section>
+  {/* The shell's `composer: 'content'`: the same footer, drawn into the content column (the `pi-chat` class keeps the chat's text and resets there). */}
+  {composerHost && createPortal(<div data-boring="pi-chat-composer" className="pi-chat bg-card text-card-foreground">{footer}</div>, composerHost)}
+  {zone && dragged && createPortal(<div data-testid="content-drop-overlay" aria-hidden="true" className="pi-chat pointer-events-none absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed border-primary bg-background/80 text-sm font-medium text-foreground">{labels.attachFiles}</div>, zone)}
+  </>;
+}
+
+/** A file dragged over `zone` shows the drop overlay; dropped anywhere in it (but the composer, which takes its own) it goes to `pick`. Absent `zone` or `pick`: nothing is listened to. */
+function useContentDrop(zone: HTMLElement | null | undefined, pick: ((files: readonly File[]) => void) | undefined): boolean {
+  const [dragged, setDragged] = useState(false);
+  const latest = useRef(pick);
+  useLayoutEffect(() => { latest.current = pick; });
+  const active = zone !== null && zone !== undefined && pick !== undefined;
+  useEffect(() => {
+    if (!active || !zone) return;
+    const files = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes('Files');
+    const over = (event: DragEvent) => { if (files(event)) { event.preventDefault(); setDragged(true); } };
+    const leave = (event: DragEvent) => { if (!(event.relatedTarget instanceof Node) || !zone.contains(event.relatedTarget)) setDragged(false); };
+    const drop = (event: DragEvent) => {
+      setDragged(false);
+      // The composer's own form handles a drop on it; handling it here too would attach twice.
+      if (!files(event) || (event.target instanceof Element && event.target.closest('[data-testid=composer]'))) return;
+      event.preventDefault();
+      latest.current?.(Array.from(event.dataTransfer?.files ?? []));
+    };
+    zone.addEventListener('dragenter', over); zone.addEventListener('dragover', over); zone.addEventListener('dragleave', leave); zone.addEventListener('drop', drop);
+    return () => { zone.removeEventListener('dragenter', over); zone.removeEventListener('dragover', over); zone.removeEventListener('dragleave', leave); zone.removeEventListener('drop', drop); setDragged(false); };
+  }, [active, zone]);
+  return dragged;
 }
