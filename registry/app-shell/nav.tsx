@@ -8,12 +8,14 @@ import { EllipsisIcon, SparklesIcon } from '../_shared/icons';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarSeparator, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { afterBack } from '../utils/back';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { afterBack, useBackLayer } from '../utils/back';
 import { NavUser } from './account';
 import { useAgentLayer } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
 import type { AccountSpec } from './account';
 import { AppSheet, SHEET_ROW } from './app-sheet';
+import { useExclusiveSheet } from './use-exclusive-sheet';
 import type { AppShellText } from './text';
 
 export interface NavItem {
@@ -24,6 +26,8 @@ export interface NavItem {
   readonly render: () => ReactNode;
   /** The screen's own content inside the shell's sidebar (its list, say) while this item is on show: above the nav items, which move below it. `collapsed` is true on the icon rail, so the content can fold with it. */
   readonly sidebar?: (state: { readonly collapsed: boolean }) => ReactNode;
+  /** The sidebar content's own name, for the phone button that opens it in tabs mode (« Library »): its label reads « <item label>: <sidebarLabel> ». Default: the shell's word for « panel ». */
+  readonly sidebarLabel?: string;
   /** Where this item sits against a screen's own sidebar content: `'before-sidebar'` puts it above that content, `'after-sidebar'` (the default) below. Items marked before come first everywhere (the tab bar and the phone sheet too); each side keeps the registered order. */
   readonly placement?: 'before-sidebar' | 'after-sidebar';
 }
@@ -102,6 +106,34 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
       </AppSheet>
     </>}
   </nav>;
+}
+
+/** What a tap on a row of the sidebar content counts as « choosing a row »: it closes the sheet. A field to type in does not, and an element may opt out with `data-keep-sheet`. */
+const CHOOSES = 'a, button, [role=button], [role=option], [role=menuitem], [role=treeitem], [role=row], [role=link]';
+
+/**
+ * Tabs mode on a phone: the current item's `sidebar` has no sidebar to live in, so the header carries a leading button that opens that same content in a left sheet
+ * (the width of `compactNav="sheet"`). Choosing a row closes the sheet. An item without a `sidebar` renders nothing. Exported for the header.
+ */
+export function ScreenSidebarSheet({ item, text }: { readonly item: NavItem; readonly text: AppShellText }) {
+  const [open, setOpen] = useState(false);
+  const close = () => setOpen(false);
+  useExclusiveSheet(open, close);
+  useBackLayer(open, close, 'sheet');
+  if (!item.sidebar) return null;
+  const name = `${item.label}: ${item.sidebarLabel ?? text.panel}`;
+  return <>
+    <Button variant="ghost" size="icon" data-testid="screen-sidebar-button" aria-label={name} title={name} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}><item.icon data-icon="inline-start" aria-hidden="true" /></Button>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetContent side="left" showCloseButton={false} data-testid="screen-sidebar-sheet" className="app-shell data-[side=left]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground">
+        <SheetHeader className="sr-only"><SheetTitle>{name}</SheetTitle><SheetDescription>{name}</SheetDescription></SheetHeader>
+        <div data-testid="screen-sidebar-content" className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pb-(--app-shell-safe-bottom)"
+          onClick={event => { const row = event.target instanceof Element ? event.target.closest(CHOOSES) : null; if (row && !row.closest('[data-keep-sheet]')) close(); }}>
+          {item.sidebar({ collapsed: false })}
+        </div>
+      </SheetContent>
+    </Sheet>
+  </>;
 }
 
 /** The expanded sidebar: the app title, the nav items (none with one item) and the account in the footer. */
