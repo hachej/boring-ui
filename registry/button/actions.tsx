@@ -104,7 +104,7 @@ export function ActionButton({ action, testId, size = 'icon-sm', className, icon
   return <Button size={Icon ? size : 'sm'} variant="ghost" aria-label={action.label} title={action.label} data-testid={`${testId}-${action.id}`} data-action={action.id} disabled={action.disabled} onClick={action.onSelect} className={layout}>{content}</Button>;
 }
 
-export function BlockActions({ actions, testId, menuLabel, size = 'icon-sm', className, menuClassName, iconOnly = false }: {
+export function BlockActions({ actions, testId, menuLabel, size = 'icon-sm', className, menuClassName, iconOnly = false, moreWeight }: {
   readonly actions: readonly BlockAction[] | undefined;
   readonly testId: string;
   readonly menuLabel: string;
@@ -113,6 +113,8 @@ export function BlockActions({ actions, testId, menuLabel, size = 'icon-sm', cla
   readonly size?: ActionIconSize;
   readonly className?: string;
   readonly iconOnly?: boolean;
+  /** Glyph weight of the "…" trigger (D-1905). Default: the icon set's regular weight. pi-chat's header passes `bold`. */
+  readonly moreWeight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone';
 }) {
   const { container, ref: portalRef } = useMenuPortal();
   const buttons = headerActions(actions), menu = menuActions(actions);
@@ -121,7 +123,7 @@ export function BlockActions({ actions, testId, menuLabel, size = 'icon-sm', cla
   return <div data-boring="block-actions" data-actions={testId} className={cn('flex shrink-0 items-center gap-0.5', className)}>
     {buttons.map(action => <ActionButton key={action.id} action={action} testId={testId} size={size} iconOnly={iconOnly} />)}
     {menu.length > 0 && <DropdownMenu>
-      <DropdownMenuTrigger render={<Button ref={portalRef} variant="ghost" aria-label={menuLabel} title={menuLabel} size={size} data-testid={moreId}><EllipsisIcon data-icon="inline-start" aria-hidden="true" /></Button>} />
+      <DropdownMenuTrigger render={<Button ref={portalRef} variant="ghost" aria-label={menuLabel} title={menuLabel} size={size} data-testid={moreId}><EllipsisIcon data-icon="inline-start" aria-hidden="true" {...(moreWeight ? { weight: moreWeight, 'data-weight': moreWeight } : {})} /></Button>} />
       <ActionMenuContent label={menuLabel} testId={moreId} container={container} {...(menuClassName ? { menuClassName } : {})} items={menu.map(action => actionMenuItem(action, testId))} />
     </DropdownMenu>}
   </div>;

@@ -1,5 +1,7 @@
 # Unreleased
 
+- **The pi-chat header "…" trigger is drawn in the bold glyph weight (`pi-chat`, `button`; D-1905).** At the same 16px icon size as the reply actions it read as a speck beside the title. `BlockActions` gains an optional `moreWeight` (default: unchanged regular look); `PiChat`'s header passes `bold`. Re-run `npx shadcn add` for `button` and `pi-chat` to pick it up; nothing to change in an app.
+
 # Migrating to 0.4.72
 
 - **The assistant reads larger: new core token `--text-chat` (D-1901).** pi-chat's message prose, Markdown, composer, empty state and cards now compute to `--text-chat` (default 0.9375rem, line-height 1.6, at least 1rem on touch); meta rows are 0.93 of it and code 0.875. The rules ship in the kit's `app.css`, so a kit bump resizes the chat itself. Visual change for every app. To size the composer menus, the model picker, the queue menu, the header and reply overflow menus and the camera too, re-sync the `button`, `pi-chat`, `pi-chat-pickers` and `pi-chat-attachments` items (they now carry the `pi-chat` class on those portalled roots). An app may set `--text-chat` (and `--text-chat--line-height`) in its `theme.core.css`. Test: `test/contracts/chat-text-size.test.mjs`; see `features/chat.md`.
