@@ -77,13 +77,26 @@ const fontCheck = (deadline: number) => `(async () => {
     return quote ? out : out.trim();
   };
   const family = parseFamily(list) || ${JSON.stringify(FONT_FAMILY)};
-  const same = name => parseFamily(name).toLowerCase() === family.toLowerCase();
+  // FontFace.family is one family name, which the browser may hand back quoted or bare ("Acme, Inc" bare would parse as "Acme"): compare both readings.
+  const same = name => [parseFamily(name), name.trim().replace(/^(["'])(.*)\\1$/, '$2')].some(candidate => candidate.toLowerCase() === family.toLowerCase());
   if (!waited) return 'document.fonts.ready did not settle before the timeout (a font request is stalled?) for "' + family + '"';
   if (document.documentElement.hasAttribute('data-system-font')) return '';
   // A stack that starts with a system font keyword or a CSS generic has no face to load: not a gap.
   if (${JSON.stringify(SYSTEM_FAMILIES)}.includes(family.toLowerCase())) return '';
+  // document.fonts.ready only covers loads already in flight when it was read: a face of this family that is still loading (or added
+  // just before) is awaited here through its own promise, bounded by the same deadline, then the set is read again.
+  const left = () => Math.max(0, ${deadline} - Date.now());
+  for (let round = 0; round < 8; round++) {
+    const mine = [...document.fonts].filter(face => same(face.family));
+    if (mine.some(face => face.status === 'loaded')) break;
+    const pending = mine.filter(face => face.status === 'loading' || face.status === 'unloaded');
+    if (!pending.length) break;
+    await Promise.race([Promise.allSettled(pending.map(face => face.load())), new Promise(done => setTimeout(done, left()))]);
+    if (!left()) break;
+  }
+  const faces = [...document.fonts].map(face => face.family + ' [' + face.status + ']').join(', ');
   const loaded = [...document.fonts].some(face => same(face.family) && face.status === 'loaded');
-  if (!loaded) return 'no loaded @font-face for "' + family + '" (--font-sans of the page): it would be measured in a fallback font; load the face or set data-system-font on <html>';
+  if (!loaded) return 'no loaded @font-face for "' + family + '" (--font-sans of the page; faces in document.fonts: ' + (faces || 'none') + '): it would be measured in a fallback font; load the face or set data-system-font on <html>';
   if (!document.fonts.check('14px "' + family.replace(/["\\\\]/g, '\\\\$&') + '"')) return 'document.fonts.check is false for "' + family + '"';
   return '';
 })()`;
