@@ -298,21 +298,6 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // The tray-or-dock choice is the viewer's, remembered with the side; read after mount for the same reason.
   // Keyed as the left pane's open choice (D-1919): the same helper and identity (app, person) and a key per layout, so two apps on one origin never share it. Reloaded when the identity changes.
   const modeKey = sidebarKey(modeIdentity?.screen ? 'agent-mode-screen' : 'agent-mode', modeIdentity?.app, modeIdentity?.person);
-  const refocusField = useRef(false);
-  useLayoutEffect(() => {
-    let next: AgentMode = 'tray';
-    try { if (globalThis.localStorage?.getItem(modeKey) === 'dock') next = 'dock'; } catch { /* a convenience */ }
-    // Another person's choice can take the tray (or the dock) away from under the focus: the one field is the stable control to land on.
-    if (next !== specs.current.mode && specs.current.snap !== 'closed' && document.activeElement?.closest('[data-testid=agent-tray], [data-testid=agent-layer]')) refocusField.current = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after mount; reading it before paint keeps server and client markup equal without a flash
-    setModeState(next);
-  }, [modeKey]);
-  useLayoutEffect(() => {
-    if (!refocusField.current) return;
-    refocusField.current = false;
-    const active = document.activeElement;
-    if (!active || active === document.body) composerSlotRef.current?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true });
-  }, [mode]);
   const setMode = useCallback((next: AgentMode) => { setModeState(next); try { globalThis.localStorage?.setItem(modeKey, next); } catch { /* a convenience */ } }, [modeKey]);
   const dockApi = useRef<DockApi | null>(null);
   const registerDock = useCallback((api: DockApi | null) => { dockApi.current = api; }, []);
@@ -323,6 +308,21 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const specs = useRef({ agent, improve, snap, shown, pmOpen, together, contentComposer, mode });
   // eslint-disable-next-line react-hooks/refs -- latest-value ref: open/lend/showAgent may be called from a child's layout effect, before this component's own effects run
   specs.current = { agent, improve, snap, shown, pmOpen, together, contentComposer, mode };
+  // Another person's choice (the account switched, no remount) can take the tray or the dock away from under the focus: the one field is the stable control to land on.
+  const refocusField = useRef(false);
+  useLayoutEffect(() => {
+    let next: AgentMode = 'tray';
+    try { if (globalThis.localStorage?.getItem(modeKey) === 'dock') next = 'dock'; } catch { /* a convenience */ }
+    if (next !== specs.current.mode && specs.current.snap !== 'closed' && document.activeElement?.closest('[data-testid=agent-tray], [data-testid=agent-layer]')) refocusField.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after mount; reading it before paint keeps server and client markup equal without a flash
+    setModeState(next);
+  }, [modeKey]);
+  useLayoutEffect(() => {
+    if (!refocusField.current) return;
+    refocusField.current = false;
+    const active = document.activeElement;
+    if (!active || active === document.body) composerSlotRef.current?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true });
+  }, [mode]);
   const lentRef = useRef<AgentSpec | undefined>(undefined);
 
   const setSnap = useCallback((next: Snap) => setSnapState(next), []);
