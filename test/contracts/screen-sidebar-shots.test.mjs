@@ -46,7 +46,7 @@ before(async () => {
     const path = require.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id);
     return { path, base: dirname(path), content: readFileSync(path, 'utf8') };
   } });
-  const css = compiler.build(sources.flatMap(source => source.split(/[\s"'`]+/)));
+  const css = compiler.build(sources.flatMap(source => [...source.split(/[\s"'`]+/), ...source.split(/[\s"`]+/)]));
   const html = '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script type="module" src="/app.js"></script></body></html>';
   server = createServer((req, res) => {
     const path = req.url.split('?')[0];
@@ -82,6 +82,8 @@ test('the rule: every nav item with a sidebar has a phone path at 390, every ite
     if (!hasSidebar) continue;
     const box = await browser.evaluate(`(() => { const r = document.querySelector('[data-testid=screen-sidebar-button]').getBoundingClientRect(); return { w: r.width, h: r.height }; })()`);
     assert.ok(box.w >= 44 && box.h >= 44, `${id}: the button is at least 44px (${box.w}x${box.h})`);
+    const icon = await browser.evaluate(`document.querySelector('[data-testid=screen-sidebar-button] svg').getBoundingClientRect().width`);
+    assert.ok(icon >= 12 && icon <= 28, `${id}: the button's icon has a normal size (${icon}px)`);
     await click('[data-testid=screen-sidebar-button]');
     await browser.until(`${id} sheet`, `!!document.querySelector('[data-testid=screen-sidebar-sheet]')`);
   }
