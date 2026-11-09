@@ -77,9 +77,10 @@ test('390 touch, compactNav sheet: Account > Improve the app closes the sheet, a
   await browser.until('the account menu', `!!document.querySelector('[data-testid=account-improve]')`);
   await wait(400);
   await browser.screenshot('3-account-menu.png');
-  const probe = await browser.evaluate(`JSON.stringify((() => { const box = e => { if (!e) return null; const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height), !!e.closest('[inert]'), e.checkVisibility({ visibilityProperty: true })]; }; const i = document.querySelector('[data-testid=account-improve]'); return { viewport: [innerWidth, innerHeight], sheet: box(document.querySelector('[data-mobile=true]')), user: box(document.querySelector('[data-testid=nav-user]')), improve: box(i), hit: i ? document.elementFromPoint(i.getBoundingClientRect().x + 5, i.getBoundingClientRect().y + 5)?.outerHTML.slice(0, 80) : null }; })())`);
-  console.log('PROBE', probe);
-  await browser.tap(`document.querySelector('[data-testid=account-improve]')`);
+  // The account menu is a dropdown that overflows the 390 screen to the right (the page widens), so a scroll-into-view would keep moving it: tap it where it stands, as a finger does.
+  const at = await browser.evaluate(`(() => { const r = document.querySelector('[data-testid=account-improve]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await browser.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] });
+  await browser.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await browser.until('the PM panel', `document.querySelector('[data-testid=pm-panel]')?.hidden === false`);
   await wait(900);
   await browser.screenshot('4-pm-open.png');
