@@ -2,7 +2,7 @@
 
 // The app shell. Layout A (`screen`): one screen at a time. Compact: bottom tabs (at most four; more give three plus « Plus »), or with `compactNav="sheet"` no bar and the sidebar as a sheet from the header. Expanded:
 // the shadcn sidebar (icon rail plus NavUser). Layout B (`workspace`): the same, with a screen made of a `ListDetail`; the sidebar starts
-// as the icon rail because the list pane is the wide navigation. Layout C (`chat`): the one nav item renders the app's `AgentWorkspace`,
+// as the icon rail below 1280px, and from 1280px when the screen has no `sidebar` content (D-1909); the person's choice is kept. Layout C (`chat`): the one nav item renders the app's `AgentWorkspace`,
 // untouched, below the same sidebar, account menu and header; there is no shell agent (the page is the chat). The shell imports nothing from pi-app: a layout C app installs the `pi-app` item itself. One header per screen
 // (`useScreenHeader`). The AgentLayer is mounted once, here.
 // Host concern: Pi has no layout; the screen on show travels as the agent's context (useAgentContext -> createPromptContext).
@@ -21,6 +21,7 @@ import { useIsCompact } from './compact';
 import { HeaderProvider, ScreenHeader } from './header';
 import { AppSidebar, TabBar } from './nav';
 import { ResizableSidebarProvider } from './sidebar-resize';
+import { useSidebarOpen } from './sidebar-open';
 import type { NavItem } from './nav';
 import { AppSheet } from './app-sheet';
 import { appShellText } from './text';
@@ -113,6 +114,9 @@ function Shell({ resizable, appId, compactNav, layout, rail, title, nav, agent, 
   // The header's slot for the screen on show (an embedded AgentWorkspace puts its bar's controls there).
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const active = nav.find(item => item.id === route.id) ?? nav[0];
+  // The left pane: the person's kept choice, else the first visit's default (D-1909). `rail="hover"` keeps its own reveal and today's default.
+  const today = rail !== 'hover' && layout === 'screen';
+  const paneOpen = useSidebarOpen(rail !== 'hover', { app: appId || title, person: account?.email }, today, Boolean(active?.sidebar));
   if (!active) return null;
   // A nav choice waits for an open detail's stack entry to go back, so the app's router can replace the URL without that Back restoring
   // the detail's. Choosing the screen already on show changes nothing and keeps the detail.
@@ -125,7 +129,7 @@ function Shell({ resizable, appId, compactNav, layout, rail, title, nav, agent, 
     </AppSheet>
   </> : null;
   // The structure is the same compact or expanded, so a resize never remounts a screen.
-  return <ResizableSidebarProvider data-testid="app-shell" resizable={resizable} app={appId || title} person={account?.email} defaultOpen={rail !== 'hover' && layout === 'screen'} className="app-shell h-dvh min-h-0 overflow-hidden">
+  return <ResizableSidebarProvider data-testid="app-shell" resizable={resizable} app={appId || title} person={account?.email} defaultOpen={today} {...paneOpen} className="app-shell h-dvh min-h-0 overflow-hidden">
     {(!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} title={title} items={nav} activeId={active.id} onChange={choose} agent={agent} account={account} improve={improve} text={text} />}
     <AgentDockLayout>
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-card">
