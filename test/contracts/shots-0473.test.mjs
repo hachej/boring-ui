@@ -111,6 +111,7 @@ test('resize handle: rest, hover, drag, min and max at 1280, light and dark', { 
   // Capture script only: a Chromium of its own that reports a mouse (hover + fine pointer) to CSS media queries, so Tailwind's `hover:` (inside `@media (hover: hover)`) can apply.
   const main = browser;
   browser = await launchBrowser('about:blank', { evidence: shots, args: ['--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'] });
+  pointerScript = null; // belongs to the other browser
   try { for (const mode of ['light', 'dark']) {
     const fresh = async () => {
       await open('', 1280, false, `${handle} !== null`, 'sidebar-resize'); await browser.evaluate(`localStorage.clear()`);
@@ -159,7 +160,7 @@ test('resize handle: rest, hover, drag, min and max at 1280, light and dark', { 
     // Rest and hover share a width and the hover line is a hairline: its computed colours are in the json beside the shots. The other four files must be distinct.
     const files = ['rest', 'drag', `min-${MIN}rem`, `max-${MAX}rem`].map(state => saved(`resize-handle-${state}-1280-${mode}`).toString('base64'));
     assert.equal(new Set(files).size, 4, `${mode}: the rest, drag, min and max shots are pairwise different`);
-  } } finally { await browser.close(); browser = main; }
+  } } finally { await browser.close(); browser = main; pointerScript = null; }
 });
 
 test('phone menu: the real AppShell nav sheet at 390 (touch) with the row « … » and a count, light and dark', { skip, timeout: 180000 }, async () => {
