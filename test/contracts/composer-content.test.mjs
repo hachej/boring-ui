@@ -148,12 +148,56 @@ test('1280, the default composer="dock" is unchanged: the one composer is in the
 
 test('390, composer=content: nothing changes, the peek drawer holds the one composer', { skip, timeout: 120000 }, async () => {
   await open(390, 'composer=content');
-  assert.equal(await count('[data-testid=agent-content-composer]'), 0, 'no content slot on a phone');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-content-composer]')?.childElementCount ?? 0`), 0, 'nothing drawn in the content slot on a phone');
   await browser.evaluate(`window.__layer.open('agent', 'peek')`);
   await browser.until('peek', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'peek'`);
   await wait(900);
   assert.equal(await count('[data-testid=composer]'), 1);
   assert.equal(await inside('[data-testid=composer]', '[data-testid=agent-layer]'), true, 'the composer is in the drawer');
+});
+
+const resize = async width => {
+  await browser.send('Emulation.setDeviceMetricsOverride', { width, height: width < 768 ? 844 : 800, deviceScaleFactor: 1, mobile: width < 768 });
+  await wait(600);
+};
+
+test('composer=content: a screen keeps its local state across the breakpoint, both ways', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'composer=content');
+  await browser.evaluate(`document.querySelector('[data-testid=counter]').click(); document.querySelector('[data-testid=counter]').click()`);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=counter]').textContent`), 'Count 2');
+  await resize(390);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=counter]')?.textContent`), 'Count 2', 'kept going to the phone');
+  await resize(1280);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=counter]')?.textContent`), 'Count 2', 'and coming back');
+  assert.equal(await count('[data-testid=composer]'), 1);
+});
+
+test('composer=content: the focused field keeps focus, its selection and its draft across the breakpoint', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'composer=content');
+  await type('Bread and cheese');
+  await browser.evaluate(`(() => { const input = document.querySelector('[data-testid=composer-input]'); input.setSelectionRange(6, 9); })()`);
+  await resize(390);
+  await browser.evaluate(`window.__layer.open('agent', 'peek')`);
+  await wait(900);
+  await resize(1280);
+  const kept = await browser.evaluate(`(() => { const input = document.querySelector('[data-testid=composer-input]'); return { focused: document.activeElement === input, value: input.value }; })()`);
+  assert.equal(kept.value, 'Bread and cheese', 'the draft survives');
+  // Focus is only carried when the field had it at the crossing: focus it in the drawer, then cross.
+  await browser.evaluate(`document.querySelector('[data-testid=composer-input]').focus(); document.querySelector('[data-testid=composer-input]').setSelectionRange(6, 9)`);
+  await resize(390);
+  await browser.evaluate(`window.__layer.open('agent', 'peek')`);
+  await wait(900);
+  await browser.evaluate(`(() => { const input = document.querySelector('[data-testid=composer-input]'); input.focus(); input.setSelectionRange(6, 9); })()`);
+  await resize(1280);
+  const crossed = await browser.evaluate(`(() => { const input = document.querySelector('[data-testid=composer-input]'); return { focused: document.activeElement === input, start: input.selectionStart, end: input.selectionEnd }; })()`);
+  assert.deepEqual(crossed, { focused: true, start: 6, end: 9 }, 'focus and selection carried across');
+});
+
+test('1280, composer=content: sending a voice message opens the dock like a typed one', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'composer=content&voice=1');
+  assert.equal(await state(), 'closed');
+  await browser.evaluate(`document.querySelector('[data-testid=fake-voice]').click()`);
+  await browser.until('dock open', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
 });
 
 for (const dark of [false, true]) {

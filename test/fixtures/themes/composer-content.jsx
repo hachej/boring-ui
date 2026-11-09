@@ -1,4 +1,4 @@
-import { useLayoutEffect } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppShell } from '../../../registry/app-shell/app-shell.tsx';
 import { useAgentLayer } from '../../../registry/app-shell/agent-layer.tsx';
@@ -34,13 +34,21 @@ const mentions = { search: async () => [], kinds: { meal: { label: path => path 
 const attachments = { upload: async files => files.map(file => ({ name: file.name, image: { mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' } })) };
 const Icon = ({ className }) => <svg className={className} viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="currentColor" /></svg>;
 const Probe = () => { const api = useAgentLayer(); useLayoutEffect(() => { window.__layer = api; }); return null; };
+// `?voice=1`: a fictional recorder whose button admits a voice message at once (what a finished recording does).
+const voiceMessage = params.get('voice') === '1' ? {
+  useRecorder: options => ({ canStart: true, phase: 'idle', seconds: 0, captureSequence: 0, problem: undefined, pending: [], start: () => options.admitted(), finish() {}, cancel() {} }),
+  Button: ({ voice }) => <button type="button" data-testid="fake-voice" onClick={() => voice.start()}>mic</button>,
+} : undefined;
+// Local state of a screen: it must survive the shell crossing the wide breakpoint.
+const Counter = () => { const [count, setCount] = useState(0); return <button type="button" data-testid="counter" onClick={() => setCount(count + 1)}>Count {count}</button>; };
 const Page = () => <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
   <Probe />
   <h1 className="text-lg font-medium">Week of the market walk</h1>
+  <Counter />
   {['Harbour timelapse', 'Market walk', 'Night train', 'Hill path', 'Bakery morning'].map(row => <p key={row} role="row" className="rounded-md border p-3">{row}</p>)}
 </div>;
 const nav = [{ id: 'week', label: 'Week', icon: Icon, render: () => <Page /> }];
 
 createRoot(document.getElementById('root')).render(
   <AppShell layout="screen" title="Visual" nav={nav} route={{ id: 'week', onChange() {} }} composer={params.get('composer') ?? 'dock'} rail="icon"
-    agent={{ controller, icon: Icon, label: 'Assistant', chatProps: { mentions, attachments, title: 'Assistant' } }} />);
+    agent={{ controller, icon: Icon, label: 'Assistant', chatProps: { mentions, attachments, title: 'Assistant', ...(voiceMessage ? { voiceMessage } : {}) } }} />);
