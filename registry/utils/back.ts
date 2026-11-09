@@ -17,32 +17,6 @@ let listening = false;
 let persisted: unknown = typeof window === 'undefined' || !window.history ? undefined : (window.history.state as { appShell?: unknown } | null)?.appShell;
 /** Layers that opened while our own `history.back()` was still pending: they push their entry once it has landed (a push in between cancels it). */
 const waiting: (() => void)[] = [];
-/** How long our own `history.back()` may take to land. Past it, the traversal counts as settled and the choices held behind it are dropped, never run ahead of it. */
-export const BACK_SETTLE_MS = 500;
-/** Our own `history.back()` calls still waiting for their `popstate`, oldest first. */
-const outstanding: { done: boolean }[] = [];
-/** Held choices (afterBack, afterStacksBack): dropped, not run, when a Back never lands. */
-const choices = new Set<() => void>();
-
-/** Starts our own `history.back()` and expects its `popstate`; if none arrives in time, it stops being waited for. */
-function backOnce(): void {
-  const entry = { done: false };
-  outstanding.push(entry);
-  ignored += 1;
-  setTimeout(() => {
-    if (entry.done) return;
-    outstanding.splice(outstanding.indexOf(entry), 1);
-    ignored -= 1;
-    if (ignored === 0) release(false);
-  }, BACK_SETTLE_MS);
-  window.history.back();
-}
-/** Starts what waited for the Backs: layers always, held choices only when the traversal really landed. */
-function release(landed: boolean): void {
-  for (const start of waiting.splice(0)) {
-    if (choices.delete(start)) { if (landed) start(); } else start();
-  }
-}
 
 /**
  * Runs `action` once the history entry of a sheet that is closing has really gone. A choice that navigates (the app's router replaces the
@@ -50,7 +24,7 @@ function release(landed: boolean): void {
  */
 export function afterBack(action: () => void): void {
   // The sheet's effect cleanup (which starts its `history.back()`) runs after this handler returns.
-  setTimeout(() => { if (ignored > 0) { choices.add(action); waiting.push(action); } else action(); }, 0);
+  setTimeout(() => { if (ignored > 0) waiting.push(action); else action(); }, 0);
 }
 
 /**
@@ -61,9 +35,8 @@ export function afterBack(action: () => void): void {
 export function afterStacksBack(action: () => void): void {
   const stacks = [...layers].filter(layer => layer.order === 'stack' && !layer.popped);
   if (!stacks.length) { action(); return; }
-  choices.add(action);
   waiting.push(action);
-  for (const layer of stacks) { layer.popped = true; layers.delete(layer); backOnce(); }
+  for (const layer of stacks) { layer.popped = true; layers.delete(layer); ignored += 1; window.history.back(); }
 }
 
 const topmost = (): Layer | undefined => [...layers].toSorted((a, b) => RANK[a.order] - RANK[b.order])[0];
@@ -71,9 +44,7 @@ const topmost = (): Layer | undefined => [...layers].toSorted((a, b) => RANK[a.o
 function onPopState(): void {
   if (ignored > 0) {
     ignored -= 1;
-    const entry = outstanding.shift();
-    if (entry) entry.done = true;
-    if (ignored === 0) release(true);
+    if (ignored === 0) for (const start of waiting.splice(0)) start();
     return;
   }
   const top = topmost();
@@ -119,7 +90,7 @@ export function useBackLayer(open: boolean, close: () => unknown, order: BackOrd
       if (at >= 0) waiting.splice(at, 1);
       if (!started) return;
       layers.delete(layer);
-      if (!layer.popped) backOnce();
+      if (!layer.popped) { ignored += 1; window.history.back(); }
     };
   }, [open, order]);
 }

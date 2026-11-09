@@ -9,7 +9,7 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupConte
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { afterBack, BACK_SETTLE_MS, useBackLayer } from '../utils/back';
+import { afterBack, useBackLayer } from '../utils/back';
 import { NavUser } from './account';
 import { useAgentLayer } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
@@ -124,10 +124,7 @@ export function ScreenSidebarSheet({ item, text }: { readonly item: NavItem; rea
   const [shown, setShown] = useState(false);
   const replaying = useRef(false);
   const choosing = useRef(false);
-  // The choice held behind the sheet's Back; unmounting or settling drops it.
-  const pending = useRef<object | null>(null);
-  useEffect(() => () => { pending.current = null; }, []);
-  const close = () => { pending.current = null; choosing.current = false; setOpen(false); setShown(false); };
+  const close = () => { choosing.current = false; setOpen(false); setShown(false); };
   useExclusiveSheet(open, close);
   useBackLayer(open, close, 'sheet');
   if (!item.sidebar) return null;
@@ -149,18 +146,10 @@ export function ScreenSidebarSheet({ item, text }: { readonly item: NavItem; rea
             // One choice at a time: a second tap while the sheet is closing is swallowed, so a navigating row navigates once.
             if (choosing.current) return;
             choosing.current = true;
-            const mine = {};
-            pending.current = mine;
             setOpen(false);
-            // A Back that never lands settles after a bounded wait: the choice is dropped (never run ahead of the traversal) and the sheet closes.
-            setTimeout(() => { if (pending.current !== mine) return; pending.current = null; choosing.current = false; setShown(false); }, BACK_SETTLE_MS);
             afterBack(() => {
-              if (pending.current !== mine) return;
-              pending.current = null;
-              if (target.isConnected) {
-                replaying.current = true;
-                try { target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); } finally { replaying.current = false; }
-              }
+              replaying.current = true;
+              try { target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); } finally { replaying.current = false; }
               choosing.current = false;
               setShown(false);
             });
