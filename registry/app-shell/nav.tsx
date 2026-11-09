@@ -14,7 +14,7 @@ import { useAgentLayer } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
 import type { AccountSpec } from './account';
 import { AppSheet, SHEET_ROW } from './app-sheet';
-import { useExclusiveSheet } from './use-exclusive-sheet';
+import { InsideNavSheet, useExclusiveSheet } from './use-exclusive-sheet';
 import type { AppShellText } from './text';
 import { ResizableRail } from './sidebar-resize';
 
@@ -129,12 +129,13 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
   // One layer at a time on a phone (D-1903): the sheet closes when the assistant or the PM opens, or when another sheet (the account's) opens.
   const covering = layer.state !== 'closed' ? layer.showing : null;
   useEffect(() => { if (covering) setOpenMobile(false); }, [covering, setOpenMobile]);
-  useExclusiveSheet(isMobile && openMobile, () => setOpenMobile(false));
+  useExclusiveSheet(isMobile && openMobile, () => setOpenMobile(false), true);
   const pressed = layer.state !== 'closed' && layer.showing === 'agent';
   const AgentIcon = agent?.icon ?? SparklesIcon;
   const agentLabel = agent?.label ?? agent?.chatProps?.labels?.title ?? text.assistant;
   const sidebar = <Sidebar collapsible="icon" variant="inset" data-testid="app-sidebar">
     {/* The phone sheet is portaled out of the shell root, so the `.app-shell` reset would not reach its buttons: this wrapper carries it (`contents`: no box of its own). */}
+    <InsideNavSheet.Provider value={true}>
     <div className="app-shell contents">
     {/* The one toggle: title and button expanded, the button alone on the icon rail, and « close » inside the phone sheet. The hover rail has none on a wide screen (it opens on hover and focus by itself, and a toggle would fight it), but keeps « close » in the sheet. */}
     <SidebarHeader className="flex-row items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center"><p data-testid="sidebar-title" className="m-0 min-w-0 truncate px-2 py-1 text-sm font-semibold group-data-[collapsible=icon]:hidden">{title}</p>{(rail !== 'hover' || isMobile) && <SidebarTrigger />}</SidebarHeader>
@@ -157,6 +158,7 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
     <SidebarFooter><NavUser account={account} improve={improve} text={text} /></SidebarFooter>
     <ResizableRail />
     </div>
+    </InsideNavSheet.Provider>
   </Sidebar>;
   if (rail !== 'hover') return sidebar;
   // Reserve the native inset icon gap even while the fixed sidebar reveals its labels over the page.
