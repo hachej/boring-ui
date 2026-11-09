@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent, ReactNode } from 'react';
 import { EllipsisIcon, SparklesIcon } from '../_shared/icons';
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarSeparator, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarSeparator, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { afterBack } from '../utils/back';
@@ -15,6 +15,7 @@ import type { AgentSpec } from './agent-layer';
 import type { AccountSpec } from './account';
 import { AppSheet, SHEET_ROW } from './app-sheet';
 import type { AppShellText } from './text';
+import { ResizableRail } from './sidebar-resize';
 
 export interface NavItem {
   readonly id: string;
@@ -149,7 +150,7 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
       </>}
     </SidebarContent>
     <SidebarFooter><NavUser account={account} improve={improve} text={text} /></SidebarFooter>
-    <SidebarRail />
+    <ResizableRail />
     </div>
   </Sidebar>;
   if (rail !== 'hover') return sidebar;

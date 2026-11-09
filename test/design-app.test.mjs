@@ -31,6 +31,7 @@ const EXPECTED = {
   'design-font-tokens': ['font.css', 'error'],
   'design-no-kit-restyle': ['restyle.css', 'error'],
   'design-no-important': ['important.css', 'error'],
+  'design-no-script-tokens': ['script-tokens.ts', 'error'],
   'design-hand-touch-size': ['hand-touch.tsx', 'error'],
   'design-border-width': ['border-width.tsx', 'error'],
   'design-literal-value': ['literal-value.css', 'error'],
@@ -252,6 +253,35 @@ test('round 9: design-no-important is one hit per line, and reads stylesheets an
   assert.equal(count('a.css', '.a { color: red !important; margin: 0 !important; }\n.b { top: 0 !important; }\n'), 2, 'two on one line are one hit');
   assert.equal(count('pick-frame.ts', "export const f = (el: HTMLElement) => { el.textContent = 'html * { cursor: x !important }'; };\n"), 0, 'css injected from script');
   assert.equal(count('real.css', 'a { color: red !important; }\n'), 1, 'a stylesheet still fails');
+});
+
+test('D-1898: design-no-script-tokens flags setProperty of the sidebar width tokens in app script, not other tokens, css, prose or the kit\'s own sidebar', () => {
+  const count = (name, source) => appFindings(name, source, 'design-no-script-tokens').count;
+  assert.equal(count('a.ts', 'el.style.setProperty("--sidebar-width", "20rem");\n'), 1, 'double quotes');
+  assert.equal(count('b.tsx', "export const f = (el: HTMLElement) => el.style.setProperty('--sidebar-width', '20rem');\n"), 1, 'single quotes');
+  assert.equal(count('c.js', 'wrapper.style.setProperty( `--sidebar-width-icon`, x );\n'), 1, 'a sibling token and a template literal');
+  assert.equal(count('d.ts', 'el.style.setProperty("--accent", "red");\nel.style.setProperty("--sidebar-width-x", "1");\n'), 0, 'another token');
+  assert.equal(count('e.css', '.a { --sidebar-width: 20rem; }\n'), 0, 'css custom property');
+  assert.equal(count('f.ts', '// setProperty("--sidebar-width", x) is forbidden\nexport const note = 1;\n'), 0, 'a comment');
+  assert.equal(count('g.ts', 'export const help = `Do not call el.style.setProperty("--sidebar-width", x) yourself.`;\n'), 0, 'a call written inside a template literal');
+  assert.equal(count('h.ts', "export const help = 'el.style.setProperty(\"--sidebar-width\", x)';\n"), 0, 'a call written inside a string');
+  assert.equal(count('i.ts', 'const help = `use ${name}`;\nel.style.setProperty("--sidebar-width", `${rem}rem`);\n'), 1, 'the real call after a template literal still fails');
+  assert.equal(count('j.ts', 'el.style.setProperty(`--sidebar-width`, `${rem}rem`);\n'), 1, 'a template literal as the token name still fails');
+  assert.equal(count('k.ts', 'el.style.setProperty\n  ("--sidebar-width", x);\n'), 1, 'a newline between setProperty and the parenthesis');
+  assert.equal(count('l.ts', 'el.style.setProperty ("--sidebar-width", x);\n'), 1, 'a space before the parenthesis');
+  assert.equal(count('m.ts', 'const label = "\u{1F600}";\nel.style.setProperty("--sidebar-width", x);\n'), 1, 'after an emoji (UTF-16 offsets unchanged)');
+  assert.equal(count('n.ts', 'const label = "\u{1F600}\u{1F600}";\nconst help = `el.style.setProperty("--sidebar-width", x)`;\n'), 0, 'a help string after an emoji');
+  assert.equal(count('o.ts', 'pane.style.setProperty?.("--sidebar-width", "20rem");\n'), 1, 'the optional-call form');
+  assert.equal(count('p.ts', 'pane.style.setProperty ?. ("--sidebar-width", "20rem");\n'), 1, 'the optional-call form, spaced');
+  assert.equal(count('s.ts', 'const half = a / b; el.style.setProperty("--sidebar-width", x / 2);\n'), 1, 'a real call after a division');
+  // The shared mask does not guess regex literals: a guess hides real findings in every design rule. A regex literal that holds the call is a false positive we accept.
+  const touch = (name, source) => appFindings(name, source, 'design-hand-touch-size').count;
+  assert.equal(touch('t.tsx', 'let a = 1, b = 2;\na++ / b; <Button className="h-11" />;\n'), 1, 'postfix ++ before a slash, same line');
+  assert.equal(touch('u.tsx', 'let a = 1, b = 2;\na++\n/ b; <Button className="h-11" />;\n'), 1, 'postfix ++ before a slash, next line');
+  assert.equal(touch('v.tsx', 'export const A = () => <div>\n / <Button className="h-11">hello</Button> /\n</div>;\n'), 1, 'a slash in JSX text');
+  assert.equal(count('w.ts', '/* c */ /"/;\nel.style.setProperty("--sidebar-width", x);\n'), 1, 'a stray slash and quote after a comment');
+  const kit = readFileSync(join(root, 'shadcn/ui/sidebar.tsx'), 'utf8');
+  assert.equal(count('sidebar.tsx', kit), 0, 'the kit\'s SidebarProvider sets the width through React style, never setProperty');
 });
 
 const appFindings = (name, source, rule) => {
