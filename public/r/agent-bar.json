@@ -52,11 +52,11 @@
         "background-color": "var(--agent-question, var(--accent))",
         "color": "var(--agent-question-foreground, var(--accent-foreground))"
       },
-      "[data-slot=\"agent-bar\"][data-part=\"question\"] [data-choice][data-slot=\"button\"]": {
+      "[data-slot=\"agent-bar\"][data-part=\"question\"] [data-agent-bar][data-choice][data-slot=\"button\"]": {
         "background-color": "color-mix(in oklab, var(--agent-question-foreground, var(--accent-foreground)) 10%, transparent)",
         "color": "var(--agent-question-foreground, var(--accent-foreground))"
       },
-      "[data-slot=\"agent-bar\"][data-part=\"question\"] [data-choice][data-selected][data-slot=\"button\"]": {
+      "[data-slot=\"agent-bar\"][data-part=\"question\"] [data-agent-bar][data-choice][data-selected][data-slot=\"button\"]": {
         "background-color": "var(--foreground)",
         "color": "var(--background)"
       }

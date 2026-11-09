@@ -394,6 +394,7 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     // Speech answers too: hold the mic, release; the transcript goes to onAnswer.
     if (theme === 'dark') return;
     await open(width, theme, 'question=1');
+    await browser.evaluate(`document.querySelector('[data-testid=agent-bar]').scrollIntoView({ block: 'end' })`);
     const gesture = await hold(label('Parler'));
     await gesture.up(0, 0);
     await browser.until('spoken answer', `window.__answered.length === 1`);
