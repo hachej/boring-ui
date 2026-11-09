@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`feedback:voice-sync` tool moved (no behaviour change; `@hachej/boring-ui-kit`, `@hachej/boring-feedback`; D-2019).** The measurement script is now `scripts/feedback-voice-sync.mjs` (was `tools/`); `npm run feedback:voice-sync` is unchanged. Two source comments name the new path. Nothing to do.
+
 # Migrating to 0.4.75
 
 - **Phone nav sheet: the count and the « … » are centred on their row (`shadcn/ui/sidebar.tsx`; D-1972).** `--sidebar-row` was defined only on the `SidebarProvider` wrapper, but on a phone the `Sidebar` renders in a `Sheet` portaled to body, outside it, so `SidebarMenuBadge` and `SidebarMenuAction` (`pointer-coarse:h-(--sidebar-row)`) resolved to nothing and floated above or below their row. The sheet content now defines the same token (one shared constant with the wrapper). Fine-pointer and D-1904 layouts are unchanged. Re-sync `sidebar` if you carry a copy. Test: `test/contracts/sidebar-menu-action.test.mjs` (`390-touch-sheet`).
