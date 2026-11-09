@@ -191,10 +191,10 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
     setOpen(next || Boolean(el && (el.matches(':hover') || el.contains(document.activeElement))));
   };
   const toggle = useRef(togglePin);
-  toggle.current = togglePin;
+  useEffect(() => { toggle.current = togglePin; });
   useEffect(() => { if (pinned) setOpen(true); }, [pinned, setOpen]);
   // A dialog, menu or popover opened from the pane lives in a portal outside it: the pointer and focus leave the pane while it is open. Its trigger says so; the pane waits.
-  const layerOpen = () => Boolean(wrapper.current?.querySelector('[aria-haspopup][aria-expanded="true"], [data-popup-open], [aria-haspopup][data-state="open"]'));
+  const layerOpen = () => Boolean(wrapper.current?.querySelector('[aria-haspopup][aria-expanded="true"], [aria-haspopup][data-popup-open], [aria-haspopup][data-state="open"]'));
   const settled = () => {
     const el = wrapper.current;
     try { return Boolean(el) && !el!.matches(':hover') && !(el!.contains(document.activeElement) && document.activeElement!.matches(':focus-visible')); } catch { return false; }
