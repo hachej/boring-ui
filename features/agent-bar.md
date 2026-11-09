@@ -12,6 +12,8 @@ The voice-first bar of an agent that works in the background (Coach Max): a pill
 - `agent-bar-quoted` `quoted={{ label, onClear }}` shows a chip « ↪ label » above the bar, outlines the bar and puts `quoted: label` in the next `onSend`. ✕ Retirer la citation calls `onClear`; the app removes the chip.
 - `agent-bar-partial` `partial` is text shown after the final transcript, dimmed: the slot for live partial words (a later slice).
 - `agent-status` `AgentStatus` `{ state: 'working' | 'done', text, onCancel? }`: a spinner and the sentence, with « Annuler » only while working and when `onCancel` is given; a check and the result when done.
+- `agent-question` `AgentBar question={{ title, step?, answered?, note?, choices, preselected?, submit?, onAnswer, onLater? }}` puts a card above the bar in the kit's `accent` colours (a host sets `--accent` for another fill): the step line, the title, the choices as chips with `preselected` on, « ou réponds avec tes mots, dans la barre ↓ », « Plus tard » (with `onLater`) and « Suivant » (`submit` sets the word, e.g. « Valider »). Suivant calls `onAnswer({ text: <selected>, source: 'choice' })`. `submit: null` drops the confirm button: a tap on a choice answers at once. `answered` shows the previous step's answer with a check. The card is also exported alone (`AgentQuestion`, `hint={false}`) for an answer card with `details` rows and a `footnote`.
+- `agent-question-bar` while a question is open the field reads « Ou réponds ici » (`labels.answerHere`) and text typed or spoken (tap, hold) goes to `question.onAnswer({ text, source: 'bar' })`, never `onSend`; closing the question restores the placeholder.
 - `agent-bar-labels` every word is a `labels` key with a French default (`agentBarLabels`), including the microphone problems; icon buttons carry their label as `aria-label` and are 44px on touch.
 
 ## How to get to it (user POV)
@@ -29,6 +31,7 @@ Preconditions: `CHROMIUM` set (CI sets it); `node_modules` installed.
 - **Review proofs.** `agent-bar-hold`, `agent-bar-cancel`, `agent-bar-focus`: `?deny=1` refuses the microphone (tap `Parler`: `data-state` stays `rest`, the alert shows); `?slow=1` makes transcription take 1.5s (hold, release, press `Annuler` or Escape: nothing sent); a 1px `move` during a hold keeps `holding`; after `Arrêter` or `Annuler` the active element is `agent-bar-input`.
 - **Quoted.** `agent-bar-quoted`: `?quoted=1`, send (the payload has `quoted`), press `Retirer la citation` (`window.__cleared`).
 - **Status.** `agent-status`: `?status=working` shows `agent-status-spinner` and `Annuler` (`window.__cancelled`); `?status=done` shows `agent-status-check` and no button.
+- **Question.** `agent-question`, `agent-question-bar`: `?question=1` (tap `Maison`, `Plus tard`, `Suivant`; step 2 shows the answered line and `Valider`; type in the bar and press `Envoyer`: `window.__answered` has `source: 'bar'`, `window.__sent` stays empty), `?question=3` (a tap answers at once), `?question=info` (answer card, no hint).
 - **Labels.** `agent-bar-labels`: the same test reads every `aria-label` and measures the 44px targets at 390.
 - **Partial.** `agent-bar-partial`: pass `partial="de la crème"` in the fixture and read `agent-bar-transcript`.
 - The shots land in `.cache/evidence/agent-bar` (CI artifact `agent-bar-shots`).
@@ -39,4 +42,4 @@ Preconditions: `CHROMIUM` set (CI sets it); `node_modules` installed.
 - The waveform needs the Web Audio path (levels); the MediaRecorder fallback shows quiet dots.
 - The block's CSS targets only its own parts (`data-agent-bar` on its buttons and field), never every shadcn Button or Input, so a host's are never restyled.
 - On a fine pointer the icon buttons are the kit's 36px; the 44px floor applies on touch.
-- The hint under the bar (« Glisse un repas vers la droite… ») and the question card above it (slice 2, field « Ou réponds ici ») are the app's or later slices.
+- The hint under the bar (« Glisse un repas vers la droite… ») is the app's. The history-arrow dot of the answer board is not built.

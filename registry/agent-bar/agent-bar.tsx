@@ -3,7 +3,7 @@
 // D-1978 slice 1: the agent bar (a pill with a history arrow, the field, the mic and send) and the status line that sits above it. Voice is the kit's:
 // `useDictation` records and hands the audio to the app's `transcribe`, `useHoldToRecord` is the hold gesture and its cancel policy (slide off, Escape,
 // blur, a hidden page). One tap on the mic listens (stop puts the text in the field, send sends it); a press held past TAP_MS talks and sends on release.
-// Slice 2 puts a question card above the bar and swaps `placeholder` for « Ou réponds ici »; slice 4 feeds `partial` live. Neither is built here.
+// Slice 2 (`question`, agent-question.tsx) puts a question card above the bar and swaps `placeholder` for « Ou réponds ici »; slice 4 feeds `partial` live.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useDictation, type DictationLabels } from '@hachej/boring-ui-kit/chat-react/voice';
 import { ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, CornerDownRightIcon, MicIcon, SquareIcon, XIcon } from '../_shared/icons';
@@ -12,8 +12,9 @@ import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '../utils/utils';
 import { useHoldToRecord } from '../pi-chat-voice/use-hold-to-record';
+import { AgentQuestion, agentQuestionLabels, type AgentQuestionData, type AgentQuestionLabels } from './agent-question';
 
-export interface AgentBarLabels extends DictationLabels {
+export interface AgentBarLabels extends DictationLabels, AgentQuestionLabels {
   readonly placeholder: string;
   readonly history: string;
   readonly speak: string;
@@ -37,6 +38,7 @@ export const agentBarLabels: AgentBarLabels = {
   transcribing: 'Transcription…',
   removeQuote: 'Retirer la citation',
   working: 'En cours',
+  ...agentQuestionLabels,
   voiceDenied: 'Le micro est refusé. Autorise-le dans les réglages du navigateur.',
   voiceNoMicrophone: 'Aucun micro trouvé.',
   voiceBusy: 'Le micro est utilisé par une autre application.',
@@ -57,6 +59,8 @@ export interface AgentBarProps {
   /** Shows the history arrow; it flips with `historyOpen`. */
   readonly onHistory?: () => void;
   readonly historyOpen?: boolean;
+  /** A question the agent asks, shown as a card above the bar. While it is open the field reads « Ou réponds ici » and text sent from the bar goes to `question.onAnswer({ text, source: 'bar' })`, not `onSend`. */
+  readonly question?: AgentQuestionData;
   readonly placeholder?: string;
   /** Not-yet-final words, shown dimmed after the final transcript above the bar (live partials arrive in a later slice). */
   readonly partial?: string;
@@ -82,7 +86,7 @@ function Wave({ levels }: { readonly levels: readonly number[] }) {
   </div>;
 }
 
-export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = false, placeholder, partial, labels, disabled = false, className }: AgentBarProps) {
+export function AgentBar({ onSend, transcribe, quoted, question, onHistory, historyOpen = false, placeholder, partial, labels, disabled = false, className }: AgentBarProps) {
   const words = { ...agentBarLabels, ...labels };
   const [text, setText] = useState('');
   const [transcript, setTranscript] = useState('');
@@ -97,12 +101,15 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
   // Set while listening; the next rest gives the focus back to the field (a tap on the mic unmounts the focused element).
   const fromListen = useRef(false);
   const quote = useRef(quoted?.label);
-  useLayoutEffect(() => { field.current = text; quote.current = quoted?.label; });
+  const asked = useRef(question);
+  useLayoutEffect(() => { field.current = text; quote.current = quoted?.label; asked.current = question; });
+  const hint = question ? words.answerHere : (placeholder ?? words.placeholder);
 
   const deliver = (body: string) => {
     const clean = body.trim();
     if (!clean) return;
-    onSend(quote.current === undefined ? { text: clean } : { text: clean, quoted: quote.current });
+    if (asked.current) asked.current.onAnswer({ text: clean, source: 'bar' });
+    else onSend(quote.current === undefined ? { text: clean } : { text: clean, quoted: quote.current });
     setText(''); setTranscript('');
   };
   const dictation = useDictation({
@@ -174,6 +181,7 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
   };
 
   return <div ref={root} data-slot="agent-bar" className={cn('mx-auto flex w-full max-w-xl flex-col gap-2', className)}>
+    {question ? <AgentQuestion key={`${question.step ?? ''}|${question.title}`} question={question} labels={words} /> : null}
     {shown}
     {dictation.problem ? <p role="alert" className="px-3 text-sm text-destructive">{dictation.problem}</p> : null}
     {quoted ? <div data-testid="agent-bar-quoted" className="flex items-center gap-1 rounded-(--radius-xl) bg-primary/10 py-0.5 pr-0.5 pl-3 text-sm font-semibold text-primary">
@@ -196,7 +204,7 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
               <Button key="cancel" type="button" variant="secondary" size="icon" data-agent-bar="" aria-label={words.cancel} onClick={abandon}><XIcon /></Button>
               <span className="flex min-w-0 flex-1 items-center gap-2 px-2 text-sm text-muted-foreground"><span className="text-primary"><Spinner aria-label={words.transcribing} /></span>{words.transcribing}</span>
             </>
-            : <Input data-testid="agent-bar-input" value={text} disabled={disabled} placeholder={placeholder ?? words.placeholder} aria-label={placeholder ?? words.placeholder}
+            : <Input data-testid="agent-bar-input" value={text} disabled={disabled} placeholder={hint} aria-label={hint}
                 data-agent-bar="" className="min-w-0 flex-1" enterKeyHint="send"
                 onChange={event => { setText(event.target.value); setTranscript(''); }}
                 onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />}
@@ -227,3 +235,5 @@ export function AgentStatus({ state, text, onCancel, labels, className }: AgentS
     {state === 'working' && onCancel ? <Button type="button" variant="link" onClick={onCancel}>{words.cancel}</Button> : null}
   </div>;
 }
+
+export { AgentQuestion, agentQuestionLabels, type AgentAnswer, type AgentQuestionData, type AgentQuestionLabels, type AgentQuestionProps } from './agent-question';

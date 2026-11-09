@@ -42,7 +42,7 @@ before(async () => {
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
   const vars = item('theme').cssVars;
-  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}--cta: oklch(0.92 0.19 122); --cta-foreground: oklch(0.2 0 0);}\n.dark {${block(vars.dark)}--cta: oklch(0.92 0.19 122); --cta-foreground: oklch(0.2 0 0);}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${['theme', 'agent-bar'].map(name => registryCss(item(name))).join('\n')}`;
+  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${['theme', 'agent-bar'].map(name => registryCss(item(name))).join('\n')}`;
   const compiler = await compile(cssSource, { base: root, loadStylesheet: async id => {
     const path = require.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id);
     return { path, base: dirname(path), content: readFileSync(path, 'utf8') };
@@ -325,10 +325,10 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     assert.equal(await browser.evaluate(`${byText('Maison')}.getAttribute('aria-pressed')`), 'false');
     // The field reads « Ou réponds ici » while the question is open.
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-input]').placeholder`), 'Ou réponds ici');
-    // The card is the host's --cta, never a literal, and sits above the bar.
-    const look = await browser.evaluate(`(() => { const probe = document.createElement('i'); probe.style.backgroundColor = 'var(--cta)'; document.body.append(probe); const cta = getComputedStyle(probe).backgroundColor; probe.remove();
+    // The card is the kit's accent token, never a literal, and sits above the bar.
+    const look = await browser.evaluate(`(() => { const probe = document.createElement('i'); probe.style.backgroundColor = 'var(--accent)'; document.body.append(probe); const cta = getComputedStyle(probe).backgroundColor; probe.remove();
       const style = getComputedStyle(${card}); return { cta, bg: style.backgroundColor, radius: style.borderTopLeftRadius, shadow: style.boxShadow, ink: getComputedStyle(${byText('Boulangerie')}).backgroundColor, quiet: getComputedStyle(${byText('Maison')}).backgroundColor }; })()`);
-    assert.equal(look.bg, look.cta, `the card takes the --cta role: ${JSON.stringify(look)}`);
+    assert.equal(look.bg, look.cta, `the card takes the accent role: ${JSON.stringify(look)}`);
     assert.equal(parseFloat(look.radius) > 12, true, `the card is rounded: ${look.radius}`);
     assert.notEqual(look.shadow, 'none', 'the card has a shadow');
     assert.notEqual(look.ink, look.quiet, 'the selected choice differs from the others');

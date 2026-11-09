@@ -957,7 +957,7 @@
       "name": "agent-bar",
       "type": "registry:block",
       "title": "Agent bar",
-      "description": "The voice-first bar for an agent that works in the background: a pill with a history arrow, the field, a mic (tap to listen, hold to talk and release to send) and send, an optional quoted-row chip, and AgentStatus, the one-line spinner or check above it. Dictation and the hold gesture are the kit's; the app supplies `transcribe` and `onSend`.",
+      "description": "The voice-first bar for an agent that works in the background: a pill with a history arrow, the field, a mic (tap to listen, hold to talk and release to send) and send, an optional quoted-row chip, AgentStatus, the one-line spinner or check above it, and the question card the agent asks above the bar (`question`: choices with one preselected, answered by a tap or from the bar). Dictation and the hold gesture are the kit's; the app supplies `transcribe` and `onSend`.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.75",
         "react@^19.0.0"
@@ -972,6 +972,11 @@
           "path": "registry/agent-bar/agent-bar.tsx",
           "type": "registry:component",
           "target": "components/agent-bar/agent-bar.tsx"
+        },
+        {
+          "path": "registry/agent-bar/agent-question.tsx",
+          "type": "registry:component",
+          "target": "components/agent-bar/agent-question.tsx"
         }
       ],
       "css": {
@@ -993,6 +998,18 @@
             "color": "var(--primary)"
           },
           "[data-slot=\"agent-bar\"] [data-testid=\"agent-bar-mic\"][data-held]": {
+            "background-color": "var(--foreground)",
+            "color": "var(--background)"
+          },
+          "[data-slot=\"agent-bar\"][data-part=\"question\"]": {
+            "background-color": "var(--accent)",
+            "color": "var(--accent-foreground)"
+          },
+          "[data-slot=\"agent-bar\"][data-part=\"question\"] [data-choice][data-slot=\"button\"]": {
+            "background-color": "color-mix(in oklab, var(--accent-foreground) 10%, transparent)",
+            "color": "var(--accent-foreground)"
+          },
+          "[data-slot=\"agent-bar\"][data-part=\"question\"] [data-choice][data-selected][data-slot=\"button\"]": {
             "background-color": "var(--foreground)",
             "color": "var(--background)"
           }
