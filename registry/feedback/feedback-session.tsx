@@ -119,6 +119,14 @@ export function pointBarInset(document: Document): number {
  * point and flips to its left near the surface's right edge, opens below it and flips above near the bottom, so it never lands on the
  * pane beside the surface or on the app's header. `within: 'viewport'` keeps the viewport as the only bound.
  */
+/** Every field of a placement (left, top, width, ...) is compared: a surface that shrinks changes the width, not only the corner. */
+function samePlace(a: CSSProperties, b: CSSProperties): boolean {
+  const left = a as Record<string, unknown>, right = b as Record<string, unknown>;
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) if (left[key] !== right[key]) return false;
+  return true;
+}
+
 function bubblePlace(element: Element, size = 120, point?: { readonly x: number; readonly y: number }, within: BubbleWithin = 'surface'): CSSProperties {
   const view = element.ownerDocument.defaultView;
   const width = view?.innerWidth ?? 1024, height = (view?.innerHeight ?? 768) - pointBarInset(element.ownerDocument);
@@ -234,7 +242,7 @@ export function NoteBubble({ session, labels, transcribe, within = 'surface' }: 
   useLayoutEffect(() => {
     if (!bubble || !place || !box.current) return;
     const next = bubblePlace(bubble.element, naturalHeight(box.current), bubble.point, within);
-    if (next.top !== place.top || next.left !== place.left) setPlace(next);
+    if (!samePlace(next, place)) setPlace(next);
   });
   useEffect(() => { if (noteId !== undefined) field.current?.focus({ preventScroll: true }); }, [noteId]);
   useEffect(() => {
@@ -243,7 +251,10 @@ export function NoteBubble({ session, labels, transcribe, within = 'surface' }: 
     const follow = () => { setPlace(bubblePlace(element, naturalHeight(box.current), point, within)); redraw(value => value + 1); };
     view?.addEventListener('scroll', follow, { capture: true, passive: true });
     view?.addEventListener('resize', follow);
-    return () => { view?.removeEventListener('scroll', follow, { capture: true }); view?.removeEventListener('resize', follow); };
+    // The surface (or the picked element) changes size without a window resize: follow it.
+    const watch = typeof ResizeObserver === 'function' ? new ResizeObserver(follow) : undefined;
+    watch?.observe(element);
+    return () => { view?.removeEventListener('scroll', follow, { capture: true }); view?.removeEventListener('resize', follow); watch?.disconnect(); };
   }, [noteId, element, point, within]);
   // A polite live region outlives the bubble, so the cancellation is heard even though the dialog is gone.
   const cancel = (): void => { session.cancelSelection(); setAnnounce(words.selectionCancelled); };
