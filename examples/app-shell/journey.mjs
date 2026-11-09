@@ -374,7 +374,7 @@ try {
     await live();
   });
 
-  await step('E3 « Plus » keeps the dot of another hidden badged item while an overflow item is on show (D-2037), heard in its name, light and dark at 390 touch', async () => {
+  await step('E3 « Plus » keeps the dot of another hidden badged item and its own name while an overflow item is on show (D-2037, D-2040), heard in its name, light and dark at 390 touch', async () => {
     await browser.send('Page.navigate', { url: `${app.url}?app=fitness&nav=6` });
     await live();
     const plusDots = `[...document.querySelectorAll('[data-testid=tab-plus] [role=img][data-testid=nav-badge]')].map(e => e.getAttribute('aria-label'))`;
@@ -390,7 +390,7 @@ try {
     await browser.until('the Plus sheet', `${openSheets} === 1 && !!${q('[data-testid=plus-objectifs]')}`);
     await pause(700);
     await tap('[data-testid=plus-objectifs]');
-    await browser.until('Objectifs on show', `${q('[data-testid=tab-plus]')}.textContent.trim() === 'Objectifs' && ${openSheets} === 0`);
+    await browser.until('Objectifs on show', `${q('[data-testid=header-title]')}.textContent === 'Objectifs' && ${q('[data-testid=tab-plus]')}.getAttribute('aria-selected') === 'true' && ${openSheets} === 0`);
     await pause(800);
     const infoToken = `(() => { const p = document.createElement('span'); p.style.backgroundColor = 'var(--info)'; document.body.append(p); const c = getComputedStyle(p).backgroundColor; p.remove(); return c; })()`;
     for (const theme of ['light', 'dark']) {
@@ -399,7 +399,11 @@ try {
       assert.deepEqual(await browser.evaluate(plusDots), ['Nuit à noter'], `${theme}: Objectifs on show, « Plus » still shows Sommeil's dot`);
       const names = await plusNames();
       assert.equal(names.length, 1, `${theme}: one tab carries the hidden label in its name`);
-      assert.match(names[0], /Objectifs/, `${theme}: and still names the screen on show`);
+      assert.match(names[0], /^Plus\b/, `${theme}: and is named « Plus » (« Plus, Nuit à noter »), not the screen on show`);
+      // A dot belongs to the label it sits next to: every dotted tab reads « Plus » or the badged item's own label (its own tab).
+      const dotted = await browser.evaluate(`[...document.querySelectorAll('[data-testid=tabbar] [role=tab]')].filter(e => e.querySelector('[data-testid=nav-badge]')).map(e => [e.dataset.testid, e.textContent.trim()])`);
+      assert.deepEqual(dotted, [['tab-plus', 'Plus']], `${theme}: the dotted tab's visible label is « Plus »`);
+      assert.equal(await browser.evaluate(`${q('[data-testid=tab-plus]')}.getAttribute('aria-selected')`), 'true', `${theme}: and « Plus » is the selected tab`);
       assert.equal(await browser.evaluate(`getComputedStyle(${q('[data-testid=tab-plus] [data-testid=nav-badge]')}).backgroundColor === ${infoToken}`), true, `${theme}: the info token`);
       await inter('[data-testid=tab-plus]', `plus ${theme}`);
       await browser.screenshot(`nav-dot-plus-other-active-${theme}.png`);
@@ -416,8 +420,9 @@ try {
     }
     await browser.evaluate(`document.documentElement.classList.remove('dark')`);
     await tap('[data-testid=plus-sommeil]');
-    await browser.until('Sommeil on show', `${q('[data-testid=tab-plus]')}.textContent.trim() === 'Sommeil' && ${openSheets} === 0`);
+    await browser.until('Sommeil on show', `${q('[data-testid=header-title]')}.textContent === 'Sommeil' && ${openSheets} === 0`);
     await pause(800);
+    assert.equal(await browser.evaluate(`${q('[data-testid=tab-plus]')}.textContent.trim()`), 'Plus', '« Plus » keeps its name with Sommeil on show');
     assert.deepEqual(await browser.evaluate(plusDots), [], 'the only badged hidden item is the one on show: no dot on « Plus »');
     await browser.send('Page.navigate', { url: app.url });
     await live();
