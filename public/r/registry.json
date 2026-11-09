@@ -988,9 +988,13 @@
           "[data-slot=\"agent-bar\"] [data-slot=\"input\"]:focus-visible": {
             "box-shadow": "none"
           },
-          "[data-testid=\"agent-bar-quoted\"] [data-slot=\"button\"]": {
+          "[data-slot=\"agent-bar\"] [data-testid=\"agent-bar-quoted\"] [data-slot=\"button\"]": {
             "border-radius": "var(--radius-3xl)",
             "color": "var(--primary)"
+          },
+          "[data-slot=\"agent-bar\"] [data-testid=\"agent-bar-mic\"][data-held]": {
+            "background-color": "var(--foreground)",
+            "color": "var(--background)"
           }
         }
       }

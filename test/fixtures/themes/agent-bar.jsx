@@ -16,7 +16,8 @@ Object.defineProperty(window, 'AudioContext', { configurable: true, value: undef
 Object.defineProperty(window, 'webkitAudioContext', { configurable: true, value: undefined });
 Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
   window.__tracks.opened += 1;
-  const track = { stop() { window.__tracks.released += 1; } };
+  let stopped = false;
+  const track = { stop() { if (!stopped) { stopped = true; window.__tracks.released += 1; } } };
   return { getTracks: () => [track], getAudioTracks: () => [track] };
 } } });
 class FakeRecorder extends EventTarget {
