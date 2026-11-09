@@ -20,6 +20,7 @@
 - `workspace-documents` `documents`: the Library, a file and its revisions; `DocumentSheet`. `registry/documents/`.
 - `workspace-documents-live` Documents follows the provider's change feed like the workspace Library (`useWorkspaceChangeFeed` from `@hachej/boring-ui-kit/file-tree-view`: 150 ms settle, no connection while the page is hidden, resumes with `since` when shown, so an edit made while hidden shows on return without a reload); `[data-testid=documents]` carries `data-live`. `packages/ui/src/workspace-change-feed.ts`. Drive: `node --test test/contracts/documents-render.impl.mjs`.
 - `workspace-windows` floating utility windows and launcher. `registry/windows/`.
+- `workspace-bar-host-panel` `command={{ kind: '<panel id>', n }}` (D-1930): any `kind` other than `history`/`library`/`new` names one of the host `panels`; it opens like a click (`onOpenChange(true)`, `onOpen` once) and the same id requested again (new `n`) while shown closes it back to the chat; an unknown id does nothing; works with `hidden`. Drive: `node --test test/ui/workspace-bar-command.test.mjs`. `registry/pi-app/workspace-bar.tsx`.
 - `workspace-bar-host` `barOptions={{ hidden, command }}` (embedded): the host draws the one bar; `command={{ kind: 'history' | 'library' | 'new', n }}` still opens History or the Library, or starts a conversation (a new `n` per request). `registry/pi-app/workspace-bar.tsx`.
 
 ## How to get to it (user POV)
