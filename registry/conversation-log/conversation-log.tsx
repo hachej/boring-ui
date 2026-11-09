@@ -3,7 +3,7 @@
 // D-1978 part 3: the conversation log sheet of the agent bar. The bar's history arrow (`onHistory`) opens it; it is a shadcn Drawer that is not modal, so the bar stays
 // usable under it (the arrow flips and closes it again) and there is no overlay. Focus moves to the close button on open and back to what had it (the arrow)
 // on close; Escape closes. The app owns the data and every word (title, entries, status labels): it passes `entries` and `labels`, the kit draws them.
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import { CheckIcon, ChevronDownIcon } from '../_shared/icons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -76,7 +76,7 @@ export function ConversationLog({ open, onOpenChange, entries, labels, top = '4r
 
   return <Drawer open={open} onOpenChange={onOpenChange} modal={false} disablePointerDismissal showSwipeHandle>
     <DrawerContent data-conversation-log="" initialFocus={() => document.querySelector<HTMLElement>('[data-testid="conversation-log-close"]')} finalFocus={() => opener.current}
-      style={{ bottom: clearance, height: `calc(100dvh - ${top} - ${clearance})`, maxHeight: 'none' }}>
+      style={{ '--bleed': '0px', bottom: clearance, height: `calc(100dvh - ${top} - ${clearance})`, maxHeight: 'none' } as CSSProperties}>
       <div className="flex items-center justify-between gap-2 px-4 py-3">
         <DrawerTitle>{words.title}</DrawerTitle>
         <DrawerClose render={<Button type="button" variant="secondary" size="icon" data-conversation-log="" data-testid="conversation-log-close" aria-label={words.close} />}><ChevronDownIcon /></DrawerClose>

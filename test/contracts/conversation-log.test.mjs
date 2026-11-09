@@ -108,6 +108,7 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     assert.equal(popup.y >= 40 && popup.y <= 90, true, `the day header stays above the sheet: ${popup.y}`);
     const arrow = await rectOf(label('Historique'));
     assert.equal(await browser.evaluate(`document.elementFromPoint(${arrow.x + arrow.w / 2}, ${arrow.y + arrow.h / 2}) === ${label('Historique')}`), true, 'nothing covers the arrow');
+    for (const name of ['Parler', 'Envoyer']) { const r = await rectOf(label(name)); assert.equal(await browser.evaluate(`document.elementFromPoint(${r.x + r.w / 2}, ${r.y + r.h / 2}) === ${label(name)} || ${label(name)}.contains(document.elementFromPoint(${r.x + r.w / 2}, ${r.y + r.h / 2}))`), true, `nothing covers ${name} (the sheet's bleed stays off the bar)`); }
     const close = await rectOf(label('Fermer l’historique'));
     assert.equal(close.w >= floor && close.h >= floor, true, `the close button is ${close.w}x${close.h}`);
 
