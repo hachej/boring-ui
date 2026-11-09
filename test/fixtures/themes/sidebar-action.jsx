@@ -32,7 +32,7 @@ const Sub = () => <SidebarMenuSub>{['2025', '2024'].map(year => <SidebarMenuSubI
 // D-1960 round 2: a parent's pairing looks at its own children only: a child row's count or action, in an open sub-list, must not hide the parent's action or count.
 const SubWith = ({ kind }) => <SidebarMenuSub><SidebarMenuSubItem><SidebarMenuSubButton href="#"><span>2025</span></SidebarMenuSubButton>{kind === 'badge' ? <SidebarMenuBadge>2</SidebarMenuBadge> : <More />}</SidebarMenuSubItem></SidebarMenuSub>;
 
-createRoot(document.getElementById('root')).render(<>{tap ? <SidebarTrigger /> : null}<SidebarProvider defaultOpen={!collapsed} style={tall ? { '--sidebar-row': '3.5rem' } : undefined}><Sidebar collapsible={collapsed ? 'icon' : sheet ? 'offcanvas' : 'none'} className={collapsed || sheet ? undefined : 'w-full'}>{sheet && !tap ? <OpenSheet /> : null}<SidebarContent><SidebarMenu>
+createRoot(document.getElementById('root')).render(<SidebarProvider defaultOpen={!collapsed} style={tall ? { '--sidebar-row': '3.5rem' } : undefined}>{tap ? <SidebarTrigger /> : null}<Sidebar collapsible={collapsed ? 'icon' : sheet ? 'offcanvas' : 'none'} className={collapsed || sheet ? undefined : 'w-full'}>{sheet && !tap ? <OpenSheet /> : null}<SidebarContent><SidebarMenu>
   {rows.map(([id, label, action, count, child]) => <SidebarMenuItem key={id} data-row={id}>
     <SidebarMenuButton className={tall ? 'h-14' : undefined}>{collapsed ? <Dot /> : null}<span>{label}</span>{id === 'dot' ? <Badge aria-hidden="true" className="ml-auto group-data-[collapsible=icon]:hidden" /> : null}</SidebarMenuButton>
     {action ? <More /> : null}
@@ -42,4 +42,4 @@ createRoot(document.getElementById('root')).render(<>{tap ? <SidebarTrigger /> :
     {child ? <SubWith kind={child} /> : null}
   </SidebarMenuItem>)}
   {tap ? Array.from({ length: 8 }, (_, n) => <SidebarMenuItem key={n}><SidebarMenuButton><span>Archive {n + 1}</span></SidebarMenuButton></SidebarMenuItem>) : null}
-</SidebarMenu></SidebarContent></Sidebar></SidebarProvider></>);
+</SidebarMenu></SidebarContent></Sidebar></SidebarProvider>);
