@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { AccountAvatar, AccountChoices } from './account';
 import type { AccountSpec } from './account';
 import { AgentDockLayout, AgentLayer, AgentLayerProvider } from './agent-layer';
+import type { AgentComposer } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
 import { NoPanelLayout } from './shell-panel';
 import type { ShellPanel } from './shell-panel';
@@ -38,6 +39,8 @@ export interface AppShellProps {
   /** Phone navigation: `tabs` (default) is the bottom tab bar; `sheet` has no bar, the header's leading button opens the sidebar (the nav items, a screen's `sidebar` content and the account) as a sheet. */
   readonly compactNav?: 'tabs' | 'sheet';
   readonly agent?: AgentSpec;
+  /** Where the assistant's field sits on a wide screen: `dock` (default) in the dock under the thread; `content` pinned under the page content, at the content's width, with the dock holding only the thread (a send, or `talkAbout`, opens it). A phone keeps the peek drawer either way. */
+  readonly composer?: AgentComposer;
   /** Consume agent/open/input launch parameters on mount (default). `false` leaves the URL and layer untouched. */
   readonly agentLink?: false;
   /** A panel beside the app, opened from the account menu. The product manager is `pmPanel` from the Factory's `platform-ui/pm-panel`. */
@@ -153,7 +156,7 @@ export function AppShell(props: AppShellProps) {
   useOverlayBlur(props.overlayBlur ?? false);
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;
-  return <AgentLayerProvider agent={agent} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title}>
+  return <AgentLayerProvider agent={agent} composer={props.composer} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title}>
     <HeaderProvider><Shell resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
 }

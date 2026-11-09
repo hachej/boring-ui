@@ -15,7 +15,7 @@ export { ScreenHeader, useScreenHeader } from './header';
 export type { ScreenHeaderSpec } from './header';
 export { useIsCompact } from './compact';
 export { AgentDockLayout, AgentLayer, AgentTrigger, useAgentLayer, useAgentLoan } from './agent-layer';
-export type { AgentLoan, AgentSpec } from './agent-layer';
+export type { AgentComposer, AgentLoan, AgentSpec } from './agent-layer';
 export { readAgentContext, useAgentContext } from './agent-context';
 export { agentLink, parseAgentLink } from './agent-link';
 export type { AgentLink } from './agent-link';
