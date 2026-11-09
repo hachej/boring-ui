@@ -63,6 +63,7 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
         labelDisplay: getComputedStyle(label).display, labelClip: getComputedStyle(label).overflow, labelText: label.textContent,
         actionOpacity: Number(getComputedStyle(row.querySelector(':scope > [data-sidebar=menu-action]') ?? row).opacity), badgeOpacity: badge ? Number(getComputedStyle(badge).opacity) : null,
         buttonFont: getComputedStyle(row.querySelector('[data-sidebar=menu-button]')).fontSize, subFont: row.querySelector('[data-sidebar=menu-sub-button]') ? getComputedStyle(row.querySelector('[data-sidebar=menu-sub-button]')).fontSize : null,
+        childActionOpacity: row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-action]') ? Number(getComputedStyle(row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-action]')).opacity) : null, childBadgeOpacity: row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-badge]') ? Number(getComputedStyle(row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-badge]')).opacity) : null,
         labelTruncates: label.scrollWidth > label.clientWidth, badgeClipped: badge ? badge.scrollWidth > badge.clientWidth : false };
     }
     return { rows: out, rail: box(document.querySelector('[data-slot=sidebar-container]')), overflowX: document.documentElement.scrollWidth > innerWidth };
@@ -143,7 +144,13 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
           }
           await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
           // D-1960 round 2: a child's count does not hide a parent's action at rest; a child's action does not hide a parent's count on hover.
+          check(m.rows.subaction.childActionOpacity === 1, `subaction at rest: the child's own action-only « … » stays shown (${m.rows.subaction.childActionOpacity})`);
+          check(m.rows.subbadge.childBadgeOpacity === 1, `subbadge at rest: the child's count stays shown (${m.rows.subbadge.childBadgeOpacity})`);
           check(m.rows.subbadge.actionOpacity === 1, `subbadge at rest: the parent's action (no count of its own) stays shown (${m.rows.subbadge.actionOpacity})`);
+          await browser.hover(`document.querySelector('[data-row=subbadge] > [data-sidebar=menu-button]')`);
+          await new Promise(done => setTimeout(done, 250));
+          const sb = (await measure()).rows.subbadge;
+          check(sb.childBadgeOpacity === 1 && sb.actionOpacity === 1, `subbadge, parent hovered: the child's count stays shown (${sb.childBadgeOpacity}) and the parent's action too (${sb.actionOpacity})`);
           await browser.hover(`document.querySelector('[data-row=subaction] > [data-sidebar=menu-button]')`);
           await new Promise(done => setTimeout(done, 250));
           const sa = (await measure()).rows.subaction;
