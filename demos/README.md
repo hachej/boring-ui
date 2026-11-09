@@ -6,3 +6,4 @@ Run a demo from its folder as that README says. Every demo uses fictional data a
 Single-block and integration recipes live in [`examples/`](../examples/README.md), not here.
 
 - [`workspace`](workspace/README.md): an accounts-payable week with an agent beside the page: placement, screens built from cells, approvals with receipts.
+- [`gallery`](gallery/README.md): the kit in its default style on one page to click through (bases, blocks, chat, shell); `npm run gallery:build` writes one self-contained file.

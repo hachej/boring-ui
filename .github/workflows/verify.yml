@@ -87,6 +87,23 @@ jobs:
         env:
           SIDEBAR_RESIZE_EVIDENCE: ${{ runner.temp }}/evidence/sidebar-resize
           SIDEBAR_OPEN_EVIDENCE: ${{ runner.temp }}/evidence/sidebar-open
+      - name: Build the kit gallery (D-2012)
+        run: npm run gallery:build
+      - name: Kit gallery (one self-contained page)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kit-gallery
+          path: .cache/gallery
+          retention-days: 14
+          if-no-files-found: error
+      - name: Kit gallery shots (light and dark)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kit-gallery-shots
+          path: .cache/evidence/gallery
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Resizable left pane shots (1280, light and dark)
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

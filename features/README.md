@@ -29,3 +29,4 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Pattern blocks | KPI stat, list row, empty state, page header, data table | [patterns.md](patterns.md) |
 | Space overview blocks | SpaceCard and WiringChips | [space-overview.md](space-overview.md) |
 | Atlas | the screens-and-states manifest, its schema and `atlas --check` | [atlas.md](atlas.md) |
+| Kit gallery | the single-file demo of the kit: sections, switches, phone frame | [gallery.md](gallery.md) |
