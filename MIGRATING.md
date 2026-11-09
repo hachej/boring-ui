@@ -1,6 +1,7 @@
 # Unreleased
 
 - **`feedback:voice-sync` tool moved (no behaviour change; `@hachej/boring-ui-kit`, `@hachej/boring-feedback`; D-2019).** The measurement script is now `scripts/feedback-voice-sync.mjs` (was `tools/`); `npm run feedback:voice-sync` is unchanged. Two source comments name the new path. Nothing to do.
+- **Sidebar sub-rows, empty counts, phone sheet (`shadcn/ui/sidebar.tsx`; D-2020).** A `SidebarMenuBadge` or `SidebarMenuAction` in a `SidebarMenuSubItem` now shares the parent's right column and its own row's centre (it sat between rows on a fine pointer and about 8px low and inset on touch). On a fine pointer the count and the « … » swap on the hover or focus of the row's own button, not of the whole item: hovering a sub-row no longer swaps the parent's count. A `SidebarMenuBadge` whose children are `0`, `''`, `false`, `null` or `undefined` renders nothing, and one that only wraps an empty `Badge` is hidden with it (the global `Badge`, an empty status dot included, is unchanged). In the phone nav sheet, focus still moves into the sheet on open; after a touch or pointer open it lands on the sheet itself (no ring), after a keyboard open on the first item with its ring (`initialFocus`), and `SidebarContent` hides its scrollbar on a coarse pointer (scrolling still works). Re-sync `sidebar` if you carry a copy. Test: `test/contracts/sidebar-menu-action.test.mjs`.
 
 # Migrating to 0.4.75
 
