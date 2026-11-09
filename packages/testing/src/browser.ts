@@ -26,11 +26,30 @@ export interface LaunchOptions {
   readonly args?: readonly string[];
 }
 
+/** The kit's default sans (D-1974), the face a page without its own `--font-sans` is measured in. */
+export const FONT_FAMILY = 'Inter Variable';
+/**
+ * In the page: after document.fonts.ready, the first family of :root's --font-sans (quotes stripped; FONT_FAMILY when the page declares
+ * none) must have a loaded @font-face and pass document.fonts.check. Returns '' or the reason. Note check() alone is true for a family
+ * nothing declares, so a loaded face is required too.
+ */
+const FONT_CHECK = `(async () => {
+  await document.fonts.ready;
+  const declared = getComputedStyle(document.documentElement).getPropertyValue('--font-sans').split(',')[0].trim().replace(/^["']|["']$/g, '');
+  const family = declared || ${JSON.stringify(FONT_FAMILY)};
+  const loaded = [...document.fonts].some(face => face.family.replace(/["']/g, '') === family && face.status === 'loaded');
+  if (!loaded) return 'no loaded @font-face for "' + family + '" (--font-sans of the page): it would be measured in a fallback font';
+  if (!document.fonts.check('14px "' + family + '"')) return "document.fonts.check('14px \\"" + family + "\\"') is false";
+  return '';
+})()`;
+
 export interface PageSession {
   /** The value of a page expression (awaited, by value). */
   evaluate(expression: string): Promise<any>;
   /** Polls `expression` until it is truthy and returns it; on timeout throws with `label`, the page text and the page's errors. */
   until(label: string, expression: string, timeout?: number): Promise<any>;
+  /** Awaits document.fonts.ready and throws unless the page's --font-sans face is loaded. `until` and `screenshot` call it, so no shot or measurement runs in a fallback font. */
+  fontReady(): Promise<void>;
 }
 
 export interface Tab extends PageSession {
@@ -103,14 +122,18 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
       const deadline = Date.now() + timeout;
       for (;;) {
         const value = await evaluate(expression).catch(() => undefined);
-        if (value) return value;
+        if (value) { await fontReady(); return value; }
         if (Date.now() > deadline) throw new Error(`Timed out: ${label}\n${String(await evaluate('document.body.innerText').catch(() => '')).slice(0, 3000)}\n${problems.join('\n')}`);
         await pause(150);
       }
     };
-    return { evaluate, until };
+    const fontReady = async () => {
+      const problem = await evaluate(FONT_CHECK);
+      if (problem) throw new Error(`Font not ready: ${problem}`);
+    };
+    return { evaluate, until, fontReady };
   };
-  const { evaluate, until } = inspect(send);
+  const { evaluate, until, fontReady } = inspect(send);
   /** Another tab of the same browser profile (same origin storage). Close it with `close()`. */
   const openTab = async (url: string, { hidden = false } = {}): Promise<Tab> => {
     const created = await sendTo(undefined, 'Target.createTarget', { url: 'about:blank' });
@@ -220,8 +243,8 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
   };
   const wheel = (x: number, y: number, deltaY: number) => send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY });
   return {
-    evaluate, frameEvaluate, until, openTab, click, tap, emulate, type, press, drag, hover, attachFiles, wheel, send, problems,
-    screenshot: async (name: string) => writeFileSync(join(evidence, name), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64')),
+    evaluate, frameEvaluate, until, fontReady, openTab, click, tap, emulate, type, press, drag, hover, attachFiles, wheel, send, problems,
+    screenshot: async (name: string) => { await fontReady(); writeFileSync(join(evidence, name), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64')); },
     reload: () => send('Page.reload'),
     close: async () => { socket.close(); child.kill('SIGKILL'); await new Promise(resolve => child.once('exit', resolve)); try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* Chromium may still be flushing its throwaway profile */ } },
   };
