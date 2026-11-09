@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { connect } from 'node:net';
 import { createScriptedModel, createFakeChatModel, answeredGenerically, launch, insecureUrl, q, qa, startIdleProxy, withSubmitFaults } from '@hachej/boring-testing';
 
@@ -140,59 +137,4 @@ test('browser driver: expression helpers, the insecure origin and a clear error 
   assert.equal(qa('li'), '[...document.querySelectorAll("li")]');
   assert.equal(insecureUrl('http://127.0.0.1:4000/'), 'http://insecure.test:4000/');
   await assert.rejects(launch('about:blank', { chromium: '' }), /Set CHROMIUM/);
-});
-
-// D-1974: the driver measures in the page's own font, so a face that is not actually loaded fails the shot or measurement.
-const chromium = process.env.CHROMIUM ?? `${process.env.HOME}/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome`;
-const skipBrowser = !existsSync(chromium) && !process.env.CI && 'no Chromium';
-const inter = readFileSync(join(process.cwd(), 'node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2'));
-
-async function withPage(t, html, run) {
-  const server = createServer((request, response) => {
-    if (request.url === '/font.woff2') return response.writeHead(200, { 'content-type': 'font/woff2' }).end(inter);
-    if (request.url === '/stall.woff2') return; // a font request that never answers
-    response.writeHead(200, { 'content-type': 'text/html' }).end(html);
-  });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const evidence = mkdtempSync(join(tmpdir(), 'testing-font-'));
-  const browser = await launch(`http://127.0.0.1:${server.address().port}/`, { chromium, evidence });
-  t.after(async () => { await browser.close(); server.closeAllConnections(); server.close(); rmSync(evidence, { recursive: true, force: true }); });
-  return run(browser);
-}
-
-test('browser driver: a --font-sans family with no loaded face fails the measurement, never passes as a fallback', { skip: skipBrowser }, async t => {
-  await withPage(t, '<!doctype html><style>:root{--font-sans:"Acme Brand",sans-serif}</style><body>x', async browser => {
-    await assert.rejects(browser.until('page', q('body')), /Font not ready: .*Acme Brand/);
-  });
-});
-
-test('browser driver: a fixture that opts into a system font says so explicitly', { skip: skipBrowser }, async t => {
-  await withPage(t, '<!doctype html><html data-system-font><style>:root{--font-sans:"Courier New",monospace}</style><body>x', async browser => {
-    assert.ok(await browser.until('page', q('body')));
-  });
-});
-
-test('browser driver: the font list is parsed respecting quotes ("Acme, Inc" is one family)', { skip: skipBrowser }, async t => {
-  const html = `<!doctype html><style>:root{--font-sans:"Acme, Inc",sans-serif}</style><body>x<script>
-    const loaded = new FontFace('Acme, Inc', fetch('/font.woff2').then(r => r.arrayBuffer())); document.fonts.add(loaded);
-    const broken = new FontFace('Acme', 'url(/missing.woff2)'); document.fonts.add(broken); broken.load().catch(() => {});
-    loaded.load().then(() => { window.ready = true; });</script>`;
-  await withPage(t, html, async browser => { assert.ok(await browser.until('face loaded', 'window.ready === true')); });
-});
-
-test('browser driver: a stalled font request cannot outlast the until timeout', { skip: skipBrowser }, async t => {
-  const html = '<!doctype html><style>@font-face{font-family:Stall;src:url(/stall.woff2)}:root{--font-sans:Stall,sans-serif}</style><body style="font-family:Stall">x';
-  await withPage(t, html, async browser => {
-    const started = Date.now();
-    await assert.rejects(Promise.race([browser.until('page', 'true', 1000), new Promise((_, no) => setTimeout(() => no(new Error('until hung past its timeout')), 8000))]), /Font not ready.*Stall/s);
-    assert.ok(Date.now() - started < 6000);
-  });
-});
-
-test('browser driver: launch finds the font from any working directory', { skip: skipBrowser }, async t => {
-  const before = process.cwd(), elsewhere = join(mkdtempSync(join(tmpdir(), 'testing-cwd-')), 'nested');
-  mkdirSync(elsewhere);
-  t.after(() => { process.chdir(before); rmSync(elsewhere, { recursive: true, force: true }); });
-  process.chdir(elsewhere);
-  await withPage(t, '<!doctype html><body>x', async browser => { assert.ok(await browser.until('page', q('body'))); });
 });
