@@ -42,7 +42,7 @@ export interface AppShellProps {
   /** A panel beside the app, opened from the account menu. The product manager is `pmPanel` from the Factory's `platform-ui/pm-panel`. */
   readonly panel?: ShellPanel;
   readonly account?: AccountSpec;
-  /** The language of the shell's own words and the layer's (« Se déconnecter », « Plus », « Ouvrir l’assistant »…). The agent's `chatProps.locale` wins when it sets one; else this; else English. */
+  /** The language of the shell's own words and the layer's (« Se déconnecter », « Plus », « Ouvrir l’assistant »…). When set it wins over the agent's `chatProps.locale` and the panel's; without it `chatProps.locale`, then the panel's, then English. */
   readonly locale?: AppShellLocale;
   /** The app's router owns the URL; the shell only reports the choice. */
   readonly route: { readonly id: string; readonly onChange: (id: string) => void };
@@ -145,7 +145,7 @@ const never = () => () => {};
 export function AppShell(props: AppShellProps) {
   const { layout, rail = 'icon', compactNav = 'tabs', agent, panel, title, nav, account, route } = props;
   if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `panel` for the product manager)');
-  const text = appShellText(agent?.chatProps?.locale ?? (panel?.locale as AppShellLocale | undefined) ?? props.locale);
+  const text = appShellText(props.locale ?? agent?.chatProps?.locale ?? (panel?.locale as AppShellLocale | undefined));
   useOverlayBlur(props.overlayBlur ?? false);
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;

@@ -4,21 +4,21 @@
   "title": "Documents: the Library, a file and its revisions",
   "description": "The workspace's Library as the list, the chosen file in its viewer and its retained revisions beside it (an older one opens read-only). DocumentSheet opens one document over the app for a host's « Voir la fiche », with an optional « Toutes les fiches ». Every read goes through one revisionProvider binding.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.71",
-    "@hachej/boring-files@^0.4.71",
+    "@hachej/boring-ui-kit@^0.4.72",
+    "@hachej/boring-files@^0.4.72",
     "react@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.71/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.71/r/button.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.71/r/pi-artifacts.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.71/r/pi-app.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.71/r/pi-app-kinds.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.71/r/app-shell.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.71/r/file-tree.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.71/r/viewer-frame.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.71/r/viewer-image.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.71/r/viewer-pdf.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.72/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.72/r/button.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.72/r/pi-artifacts.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.72/r/pi-app.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.72/r/pi-app-kinds.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.72/r/app-shell.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.72/r/file-tree.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.72/r/viewer-frame.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.72/r/viewer-image.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.72/r/viewer-pdf.json"
   ],
   "files": [
     {
