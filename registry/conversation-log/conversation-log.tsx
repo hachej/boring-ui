@@ -7,7 +7,7 @@ import { useEffect, useRef, type RefObject } from 'react';
 import { CheckIcon, ChevronDownIcon } from '../_shared/icons';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Drawer, DrawerClose, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
+import { Drawer, DrawerClose, DrawerContent, DrawerTitle } from '@/components/ui/drawer';
 
 /** One row of the log. `id` is the app's stable key. */
 export type ConversationLogEntry =
@@ -78,11 +78,11 @@ export function ConversationLog({ open, onOpenChange, entries, labels, top = '4r
   return <Drawer open={open} onOpenChange={onOpenChange} modal={false} disablePointerDismissal showSwipeHandle>
     <DrawerContent data-conversation-log="" initialFocus={close} finalFocus={opener as RefObject<HTMLElement | null>}
       style={{ bottom: bottom ?? gap.current, height: `calc(100dvh - ${top} - ${bottom ?? gap.current})`, maxHeight: 'none' }}>
-      <DrawerHeader className="flex-row items-center justify-between border-b">
+      <div className="flex items-center justify-between gap-2 px-4 py-3">
         <DrawerTitle>{words.title}</DrawerTitle>
         <DrawerClose render={<Button type="button" variant="secondary" size="icon" data-conversation-log="" data-testid="conversation-log-close" aria-label={words.close} ref={close} />}><ChevronDownIcon /></DrawerClose>
-      </DrawerHeader>
-      <div ref={list} data-testid="agent-log" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+      </div>
+      <div ref={node => { list.current = node; if (node) node.scrollTop = node.scrollHeight; }} data-testid="agent-log" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
         {entries.length ? entries.map(entry => <Row key={entry.id} entry={entry} />) : <p className="m-auto text-sm text-muted-foreground">{words.empty}</p>}
       </div>
     </DrawerContent>
