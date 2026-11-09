@@ -58,7 +58,7 @@ export interface ReportView {
   readonly title: string;
   readonly said: string;
   /** The report's notes, each with the fallback of the anchor it is about (none for a general note). */
-  readonly notes: readonly { readonly number: number; readonly text: string; readonly anchor?: number; readonly fallback?: string; readonly voice: boolean }[];
+  readonly notes: readonly { readonly number: number; readonly text: string; readonly anchor?: number; readonly point?: { readonly x: number; readonly y: number }; readonly fallback?: string; readonly voice: boolean }[];
   readonly status: FeedbackStatus;
   readonly author?: string;
   readonly created: string;
@@ -76,7 +76,7 @@ export function reportView(report: FeedbackReport, placeable: (kind: string) => 
   const title = reportTitle(report) || '(no text)';
   const notes = (report.notes ?? []).map((note, index) => {
     const fallback = note.anchor !== undefined ? report.anchors[note.anchor]?.fallback : undefined;
-    return Object.freeze({ number: index + 1, text: note.text, ...(note.anchor !== undefined ? { anchor: note.anchor } : {}), ...(fallback !== undefined ? { fallback } : {}), voice: note.from === 'voice' });
+    return Object.freeze({ number: index + 1, text: note.text, ...(note.anchor !== undefined ? { anchor: note.anchor } : {}), ...(note.point ? { point: note.point } : {}), ...(fallback !== undefined ? { fallback } : {}), voice: note.from === 'voice' });
   });
   return Object.freeze({
     id: report.id, title, said: report.said, notes: Object.freeze(notes), status: report.status, created: report.created,
