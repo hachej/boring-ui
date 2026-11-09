@@ -41,6 +41,8 @@ type SidebarContextProps = {
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
+// The provider's wrapper element, so the portaled phone Sheet can read the --sidebar-row the wrapper resolved (its default, or a consumer's override in style or className).
+const SidebarWrapperContext = React.createContext<React.RefObject<HTMLDivElement | null> | null>(null)
 
 function useSidebar() {
   const context = React.useContext(SidebarContext)
@@ -124,9 +126,13 @@ function SidebarProvider({
     [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
   )
 
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null)
+
   return (
     <SidebarContext.Provider value={contextValue}>
+      <SidebarWrapperContext.Provider value={wrapperRef}>
       <div
+        ref={wrapperRef}
         data-slot="sidebar-wrapper"
         style={style}
         className={cn(
@@ -138,6 +144,7 @@ function SidebarProvider({
       >
         {children}
       </div>
+      </SidebarWrapperContext.Provider>
     </SidebarContext.Provider>
   )
 }
@@ -156,6 +163,13 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const wrapperRef = React.useContext(SidebarWrapperContext)
+  // The sheet portals outside the wrapper: carry the wrapper's resolved --sidebar-row into it (falls back to SIDEBAR_ROW).
+  const [sheetRow, setSheetRow] = React.useState<string | undefined>()
+  React.useLayoutEffect(() => {
+    if (!isMobile || !openMobile || !wrapperRef?.current) return
+    setSheetRow(getComputedStyle(wrapperRef.current).getPropertyValue("--sidebar-row").trim() || undefined)
+  }, [isMobile, openMobile, wrapperRef])
 
   if (collapsible === "none") {
     return (
@@ -181,6 +195,7 @@ function Sidebar({
           data-slot="sidebar"
           data-mobile="true"
           className={cn(SIDEBAR_ROW, "data-[side=left]:w-[var(--sidebar-width-mobile,75%)] data-[side=right]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden")}
+          style={sheetRow ? ({ "--sidebar-row": sheetRow } as React.CSSProperties) : undefined}
           side={side}
         >
           <SheetHeader className="sr-only">
