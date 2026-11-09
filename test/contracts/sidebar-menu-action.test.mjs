@@ -50,14 +50,20 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   await build({ entryPoints: [join(root, 'packages/testing/src/browser.ts')], bundle: true, platform: 'node', format: 'esm', outfile: join(work, 'browser.mjs') });
   const { launch } = await import(pathToFileURL(join(work, 'browser.mjs')));
-  const browser = await launch('about:blank', { evidence: shots ?? work });
+  // A mouse (hover and fine pointer) for CSS media queries, as shots-0473.test.mjs does: a headless Chromium reports neither, so Tailwind's `hover:` and `pointer-fine:` would never apply. Touch runs in a default Chromium with mobile emulation (the coarse pointer).
+  const fineBrowser = await launch('about:blank', { evidence: shots ?? work, args: ['--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'] });
+  const touchBrowser = await launch('about:blank', { evidence: shots ?? work });
+  let browser = fineBrowser;
   const measure = () => browser.evaluate(`(() => {
     const box = el => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom, cy: r.y + r.height / 2 }; };
     const out = {};
     for (const row of document.querySelectorAll('[data-row]')) {
-      const label = row.querySelector('[data-sidebar=menu-button] > span:not([data-slot=badge])'), badge = row.querySelector('[data-sidebar=menu-badge]');
-      out[row.dataset.row] = { row: box(row), button: box(row.querySelector('[data-sidebar=menu-button]')), sub: box(row.querySelector('[data-sidebar=menu-sub]')), action: box(row.querySelector('[data-sidebar=menu-action]')), badge: box(badge), label: box(label), icon: box(row.querySelector('[data-sidebar=menu-button] > svg')),
+      const label = row.querySelector('[data-sidebar=menu-button] > span:not([data-slot=badge])'), badge = row.querySelector(':scope > [data-sidebar=menu-badge]');
+      out[row.dataset.row] = { row: box(row), button: box(row.querySelector('[data-sidebar=menu-button]')), sub: box(row.querySelector('[data-sidebar=menu-sub]')), action: box(row.querySelector(':scope > [data-sidebar=menu-action]')), badge: box(badge), label: box(label), icon: box(row.querySelector('[data-sidebar=menu-button] > svg')),
         labelDisplay: getComputedStyle(label).display, labelClip: getComputedStyle(label).overflow, labelText: label.textContent,
+        actionOpacity: Number(getComputedStyle(row.querySelector(':scope > [data-sidebar=menu-action]') ?? row).opacity), badgeOpacity: badge ? Number(getComputedStyle(badge).opacity) : null,
+        buttonFont: getComputedStyle(row.querySelector('[data-sidebar=menu-button]')).fontSize, subFont: row.querySelector('[data-sidebar=menu-sub-button]') ? getComputedStyle(row.querySelector('[data-sidebar=menu-sub-button]')).fontSize : null,
+        childActionOpacity: row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-action]') ? Number(getComputedStyle(row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-action]')).opacity) : null, childBadgeOpacity: row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-badge]') ? Number(getComputedStyle(row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-badge]')).opacity) : null,
         labelTruncates: label.scrollWidth > label.clientWidth, badgeClipped: badge ? badge.scrollWidth > badge.clientWidth : false };
     }
     return { rows: out, rail: box(document.querySelector('[data-slot=sidebar-container]')), overflowX: document.documentElement.scrollWidth > innerWidth };
@@ -66,11 +72,12 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
   const report = [], problems = [];
   try {
     for (const [name, width, touch, mode] of [['390-touch', 390, true, ''], ['1280-fine', 1280, false, ''], ['390-fine', 390, false, ''], ['1024-touch-collapsed', 1024, true, 'collapsed'], ['1280-fine-collapsed', 1280, false, 'collapsed']]) {
+      browser = touch ? touchBrowser : fineBrowser;
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 560, deviceScaleFactor: 1, mobile: touch });
       await browser.send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: 5 });
       for (const theme of ['light', 'dark']) {
         await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?theme=${theme}&mode=${mode}` });
-        await browser.until('fixture mounted', `document.querySelectorAll('[data-row]').length === 6 && document.readyState === 'complete'`);
+        await browser.until('fixture mounted', `document.querySelectorAll('[data-row]').length === 8 && document.readyState === 'complete'`);
         await new Promise(done => setTimeout(done, 250));
         const m = await measure();
         const tree = await browser.send('Accessibility.getFullAXTree');
@@ -91,6 +98,8 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
           check(!m.overflowX, 'the page does not scroll sideways');
           continue;
         }
+        // D-1961: a sub-row reads at the same size as its parent row, on fine and touch.
+        check(nested.subFont !== null && nested.subFont === nested.buttonFont, `the sub-row font-size ${nested.subFont} is its parent row's ${nested.buttonFont}`);
         const heights = [action, badge, folder].map(r => r.row.h);
         check(heights.every(h => h === plain.row.h), `every row is as tall as the plain row: ${heights}`);
         check(nested.button.h === plain.row.h, `the parent button is as tall as the plain row: ${nested.button.h}`);
@@ -116,11 +125,42 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
           for (const [id, r] of Object.entries({ badge, folder, nested })) {
             check(r.badge.h === 20 && r.badge.y - r.row.y === 6 && r.row.right - r.badge.right === 4, `${id}: the fine-pointer count is unchanged (20 high, top 6, right 4): ${JSON.stringify(r.badge)} in ${JSON.stringify(r.row)}`);
           }
+          // D-1960: at rest the count shows and the action waits; hovered, the action takes the count's place (the count hides). What is drawn never overlaps.
+          const drawn = (r, what) => r[`${what}Opacity`] > 0 ? r[what] : null;
+          const overlap = r => drawn(r, 'badge') !== null && drawn(r, 'action') !== null && intersects(r.badge, r.action);
+          for (const [id, r] of Object.entries({ folder, nested })) {
+            check(r.badgeOpacity === 1 && r.actionOpacity === 0, `${id} at rest: the count is shown (${r.badgeOpacity}) and the action is not (${r.actionOpacity})`);
+            check(!overlap(r), `${id} at rest: the drawn count and action do not overlap`);
+          }
+          check(action.actionOpacity === 1, `a row with an action and no count keeps its action shown at rest (${action.actionOpacity})`);
+          for (const id of ['folder', 'nested']) {
+            await browser.hover(`document.querySelector('[data-row=${id}]')`);
+            await new Promise(done => setTimeout(done, 250));
+            const h = (await measure()).rows[id];
+            if (shots && id === 'nested') await browser.screenshot(`sidebar-action-${name}-${theme}-hover.png`);
+            check(h.actionOpacity === 1 && h.badgeOpacity === 0, `${id} hovered: the action is shown (${h.actionOpacity}) and the count hidden (${h.badgeOpacity})`);
+            check(!overlap(h), `${id} hovered: the drawn count and action boxes ${JSON.stringify(drawn(h, 'badge'))} and ${JSON.stringify(drawn(h, 'action'))} do not overlap`);
+            check(h.action.w === 20 && h.action.y - h.row.y === 6 && h.row.right - h.action.right === 4, `${id} hovered: the action sits where the count was`);
+          }
+          await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+          // D-1960 round 2: a child's count does not hide a parent's action at rest; a child's action does not hide a parent's count on hover.
+          check(m.rows.subaction.childActionOpacity === 1, `subaction at rest: the child's own action-only « … » stays shown (${m.rows.subaction.childActionOpacity})`);
+          check(m.rows.subbadge.childBadgeOpacity === 1, `subbadge at rest: the child's count stays shown (${m.rows.subbadge.childBadgeOpacity})`);
+          check(m.rows.subbadge.actionOpacity === 1, `subbadge at rest: the parent's action (no count of its own) stays shown (${m.rows.subbadge.actionOpacity})`);
+          await browser.hover(`document.querySelector('[data-row=subbadge] > [data-sidebar=menu-button]')`);
+          await new Promise(done => setTimeout(done, 250));
+          const sb = (await measure()).rows.subbadge;
+          check(sb.childBadgeOpacity === 1 && sb.actionOpacity === 1, `subbadge, parent hovered: the child's count stays shown (${sb.childBadgeOpacity}) and the parent's action too (${sb.actionOpacity})`);
+          await browser.hover(`document.querySelector('[data-row=subaction] > [data-sidebar=menu-button]')`);
+          await new Promise(done => setTimeout(done, 250));
+          const sa = (await measure()).rows.subaction;
+          check(sa.badgeOpacity === 1, `subaction hovered: the parent's count (no action of its own) stays shown (${sa.badgeOpacity})`);
+          await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
         }
       }
     }
     if (shots) writeFileSync(join(shots, 'sidebar-action-measurements.json'), JSON.stringify(report, null, 1));
     assert.deepEqual(problems, []);
-    assert.deepEqual(browser.problems, []);
-  } finally { await browser.close(); await new Promise(done => server.close(done)); }
+    assert.deepEqual([...fineBrowser.problems, ...touchBrowser.problems], []);
+  } finally { await fineBrowser.close(); await touchBrowser.close(); await new Promise(done => server.close(done)); }
 });
