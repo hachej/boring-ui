@@ -54,9 +54,10 @@ function fontInstallScript(file: string): string {
 /**
  * In the page: the first family of :root's --font-sans (list parsed respecting quotes; FONT_FAMILY when the page declares none) must
  * have a loaded @font-face in document.fonts and pass document.fonts.check (check() alone is true for a family nothing declares).
- * A fixture that deliberately uses a system face says so with a `data-system-font` attribute on <html>; only then is a missing face
+ * A stack starting with a system keyword or CSS generic (-apple-system, system-ui, sans-serif...) needs no face. A fixture that deliberately uses another system face says so with a `data-system-font` attribute on <html>; only then is a missing face
  * accepted. Returns '' or the reason. Waits for document.fonts.ready, giving up when `deadline` (epoch ms) passes.
  */
+const SYSTEM_FAMILIES = ['-apple-system', 'blinkmacsystemfont', 'system-ui', 'sans-serif', 'serif', 'monospace', 'ui-sans-serif', 'ui-serif', 'ui-monospace', 'ui-rounded', 'cursive', 'fantasy', 'math', 'emoji', 'fangsong'];
 const fontCheck = (deadline: number) => `(async () => {
   const waited = await Promise.race([document.fonts.ready.then(() => true), new Promise(done => setTimeout(() => done(false), Math.max(0, ${deadline} - Date.now())))]);
   const list = getComputedStyle(document.documentElement).getPropertyValue('--font-sans');
@@ -79,6 +80,8 @@ const fontCheck = (deadline: number) => `(async () => {
   const same = name => parseFamily(name).toLowerCase() === family.toLowerCase();
   if (!waited) return 'document.fonts.ready did not settle before the timeout (a font request is stalled?) for "' + family + '"';
   if (document.documentElement.hasAttribute('data-system-font')) return '';
+  // A stack that starts with a system font keyword or a CSS generic has no face to load: not a gap.
+  if (${JSON.stringify(SYSTEM_FAMILIES)}.includes(family.toLowerCase())) return '';
   const loaded = [...document.fonts].some(face => same(face.family) && face.status === 'loaded');
   if (!loaded) return 'no loaded @font-face for "' + family + '" (--font-sans of the page): it would be measured in a fallback font; load the face or set data-system-font on <html>';
   if (!document.fonts.check('14px "' + family.replace(/["\\\\]/g, '\\\\$&') + '"')) return 'document.fonts.check is false for "' + family + '"';

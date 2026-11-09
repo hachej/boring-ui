@@ -62,6 +62,14 @@ test('the font list is parsed respecting quotes ("Acme, Inc" is one family)', { 
   await withPage(t, html, async browser => { assert.ok(await browser.until('face loaded', 'window.ready === true')); });
 });
 
+test('a stack that starts with a system keyword or generic needs no face', { skip }, async t => {
+  for (const stack of ['-apple-system, BlinkMacSystemFont, sans-serif', 'System-UI, sans-serif', 'monospace']) {
+    await withPage(t, `<!doctype html><style>:root{--font-sans:${stack}}</style><body>x`, async browser => {
+      assert.ok(await browser.until(stack, 'document.body.innerText === "x"'));
+    });
+  }
+});
+
 test('family names compare case-insensitively, as CSS does', { skip }, async t => {
   await withPage(t, '<!doctype html><style>:root{--font-sans:"inter variable",sans-serif}</style><body>x', async browser => {
     assert.ok(await browser.until('page', 'document.body.innerText === "x"'));
