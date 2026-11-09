@@ -846,7 +846,12 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
             // reply as a single truncated line above it.
             peek && ['[&_[data-boring=pi-chat]>.relative]:overflow-hidden [&_[data-boring=pi-chat]>.relative>.pointer-events-none]:hidden',
               '[&_[data-boring=pi-chat]>footer]:px-2 [&_[data-boring=pi-chat]>footer]:pt-1 [&_[data-boring=pi-chat]>footer]:pb-2',
-              '[&_[data-testid=transcript]]:gap-0 [&_[data-testid=transcript]]:p-0 [&_[data-testid=transcript]]:px-3 [&_[data-testid=transcript]>*]:max-h-5 [&_[data-testid=transcript]>*]:truncate [&_[data-testid=transcript]_button]:hidden',
+              '[&_[data-testid=transcript]]:gap-0 [&_[data-testid=transcript]]:p-0 [&_[data-testid=transcript]]:px-3 [&_[data-testid=transcript]_button]:hidden',
+              // D-2021: the last lines sit right above the field (no padding under them, bottom-aligned), whole, with the top edge faded by a token mask instead of a hard clip; no scrollbar on the peek.
+              '[&_[data-testid=conversation-content]]:flex [&_[data-testid=conversation-content]]:flex-col [&_[data-testid=conversation-content]]:justify-end',
+              '[&_[data-testid=transcript-scroll]]:flex-none [&_[data-testid=transcript-scroll]]:max-h-full [&_[data-testid=transcript-scroll]]:overflow-hidden',
+              '[&_[data-testid=transcript-scroll]]:[mask-image:linear-gradient(to_bottom,transparent,var(--foreground)_1rem)] [&_[data-testid=transcript-scroll]]:[scrollbar-width:none] [&_[data-testid=transcript-scroll]::-webkit-scrollbar]:hidden',
+              '[&_[data-testid=transcript-scroll]_.mx-auto]:py-0',
               '[&_[data-testid=composer]_[data-slot=input-group]]:flex-row! [&_[data-testid=composer]_[data-slot=input-group]]:items-center',
               '[&_[data-testid=composer-input]]:min-h-11 [&_[data-testid=composer-input]]:max-h-11 [&_[data-testid=composer-input]]:flex-1 [&_[data-testid=composer-input]]:px-4 [&_[data-testid=composer-input]]:py-2.5',
               voice.phase !== 'starting' && voice.phase !== 'recording' && '[&_[data-testid=composer-controls]]:w-auto [&_[data-testid=composer-controls]]:shrink-0 [&_[data-testid=composer-controls]]:py-0 [&_[data-testid=composer-controls]>span.flex-1]:hidden',
@@ -970,8 +975,7 @@ function ContentTray() {
   const DockIcon = side === 'left' ? PanelLeftIcon : PanelRightIcon;
   const dockLabel = side === 'left' ? text.dockLeft : text.dockRight;
   return <section data-testid="agent-tray" aria-label={title} style={grown ? undefined : { height: `min(35%, ${TRAY_MAX}px)` }}
-    className={cn('relative flex min-h-0 min-w-0 flex-col bg-card px-4 text-card-foreground', grown ? 'flex-1' : 'shrink-0')}>
-    <Separator className="absolute inset-x-0 top-0" />
+    className={cn('relative flex min-h-0 min-w-0 flex-col border-t border-border bg-popover px-4 text-popover-foreground shadow-md', grown ? 'flex-1' : 'shrink-0')}>
     <div data-testid="agent-tray-body" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
       <div data-testid="agent-tray-header" className="flex shrink-0 items-center gap-1 pt-1">
         <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{title}</h2>
