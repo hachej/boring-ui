@@ -60,13 +60,28 @@ function fontInstallScript(file: string): string {
 const fontCheck = (deadline: number) => `(async () => {
   const waited = await Promise.race([document.fonts.ready.then(() => true), new Promise(done => setTimeout(() => done(false), Math.max(0, ${deadline} - Date.now())))]);
   const list = getComputedStyle(document.documentElement).getPropertyValue('--font-sans');
-  const first = (list.match(/^\\s*(?:"([^"]*)"|'([^']*)'|([^,]*))/) || []).slice(1).find(part => part !== undefined) ?? '';
-  const family = first.trim() || ${JSON.stringify(FONT_FAMILY)};
+  // The first family of a font list as CSS reads it: quoted or not, escapes decoded (\\20 , \\"), ending at the closing quote or the comma.
+  const parseFamily = text => {
+    const s = text.trim(); let out = '', i = 0;
+    const quote = s[0] === '"' || s[0] === "'" ? s[i++] : '';
+    while (i < s.length) {
+      const c = s[i];
+      if (c === '\\\\') {
+        const hex = /^[0-9a-fA-F]{1,6}/.exec(s.slice(i + 1));
+        if (hex) { const code = parseInt(hex[0], 16); out += code && code <= 0x10FFFF ? String.fromCodePoint(code) : '\\uFFFD'; i += 1 + hex[0].length; if (/\\s/.test(s[i] || '')) i++; }
+        else { out += s[i + 1] ?? ''; i += 2; }
+      } else if (quote ? c === quote : c === ',') break;
+      else { out += c; i++; }
+    }
+    return quote ? out : out.trim();
+  };
+  const family = parseFamily(list) || ${JSON.stringify(FONT_FAMILY)};
+  const same = name => parseFamily(name).toLowerCase() === family.toLowerCase();
   if (!waited) return 'document.fonts.ready did not settle before the timeout (a font request is stalled?) for "' + family + '"';
   if (document.documentElement.hasAttribute('data-system-font')) return '';
-  const loaded = [...document.fonts].some(face => face.family.replace(/^["']|["']$/g, '') === family && face.status === 'loaded');
+  const loaded = [...document.fonts].some(face => same(face.family) && face.status === 'loaded');
   if (!loaded) return 'no loaded @font-face for "' + family + '" (--font-sans of the page): it would be measured in a fallback font; load the face or set data-system-font on <html>';
-  if (!document.fonts.check('14px "' + family + '"')) return 'document.fonts.check is false for "' + family + '"';
+  if (!document.fonts.check('14px "' + family.replace(/["\\\\]/g, '\\\\$&') + '"')) return 'document.fonts.check is false for "' + family + '"';
   return '';
 })()`;
 
