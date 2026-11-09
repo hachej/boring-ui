@@ -1000,6 +1000,32 @@
       }
     },
     {
+      "name": "conversation-log",
+      "type": "registry:block",
+      "title": "Conversation log",
+      "description": "The conversation log sheet of the agent bar: opened by the bar's history arrow, a non-modal shadcn Drawer above the bar with the entries the app passes (time markers, message bubbles, status lines with a done chip, question and answer pairs, suggestions with buttons). Focus moves into the sheet and back to the arrow; Escape closes. The app supplies the title and every word.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/_shared"
+      ],
+      "files": [
+        {
+          "path": "registry/conversation-log/conversation-log.tsx",
+          "type": "registry:component",
+          "target": "components/conversation-log/conversation-log.tsx"
+        }
+      ],
+      "css": {
+        "@layer utilities": {
+          "[data-conversation-log][data-slot=\"button\"]": {
+            "border-radius": "var(--radius-3xl)"
+          }
+        }
+      }
+    },
+    {
       "name": "pi-chat-attachments",
       "type": "registry:block",
       "title": "Pi chat camera",
