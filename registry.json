@@ -2348,6 +2348,11 @@
           "target": "components/app-shell/sidebar-resize.tsx"
         },
         {
+          "path": "registry/app-shell/sidebar-open.ts",
+          "type": "registry:hook",
+          "target": "components/app-shell/sidebar-open.ts"
+        },
+        {
           "path": "registry/app-shell/index.ts",
           "type": "registry:lib",
           "target": "components/app-shell/index.ts"
