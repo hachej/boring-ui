@@ -395,7 +395,7 @@ test('shots at 1280 light and dark (collapsed, revealed on hover, the pin focuse
     await browser.screenshot(`sidebar-pin.390.${mode}.closed.png`);
     await browser.tap(`document.querySelector('[data-slot=sidebar-trigger]')`);
     await wait(700);
-    assert.equal(await browser.evaluate(`document.querySelector('[data-slot=sheet-content]') !== null`), true, 'the phone sheet opens');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-mobile=true]') !== null`), true, 'the phone sheet opens');
     await browser.screenshot(`sidebar-pin.390.${mode}.sheet.png`);
   }
   assert.deepEqual(browser.problems, []);
