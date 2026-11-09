@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 // D-2010: the real AppShell with `rail="hover"` (fictional data). ?app=<name>, ?appid=<id> and ?user=<email> name the app, its stable id and the signed-in person;
 // ?dialog=1 gives the first screen its own sidebar content (rendered only while expanded) with a button that opens a portaled Dialog;
 // ?editor=1 puts a textarea and a contenteditable in the page;
+// ?sheet=1 sets compactNav="sheet" (the phone opens the sidebar as a sheet);
 // ?plain=1 uses the default icon rail; ?throw=1 makes every localStorage access throw before the shell mounts.
 const query = new URLSearchParams(location.search);
 if (query.get('throw')) for (const method of ['getItem', 'setItem', 'removeItem']) Storage.prototype[method] = () => { throw new Error('storage unavailable'); };
@@ -18,7 +19,7 @@ const nav = ['Comptes', 'Écritures', 'Bilan'].map(label => ({ id: label, label,
 
 function App() {
   const account = query.get('user') ? { name: 'Personne fictive', email: query.get('user'), menu: [] } : undefined;
-  return <AppShell layout="screen" rail={query.get('plain') ? undefined : 'hover'} title={query.get('app') ?? 'Compta'} appId={query.get('appid') ?? undefined} nav={nav} account={account} route={{ id: 'Comptes', onChange() {} }} locale="fr" />;
+  return <AppShell layout="screen" rail={query.get('plain') ? undefined : 'hover'} compactNav={query.get('sheet') ? 'sheet' : undefined} title={query.get('app') ?? 'Compta'} appId={query.get('appid') ?? undefined} nav={nav} account={account} route={{ id: 'Comptes', onChange() {} }} locale="fr" />;
 }
 
 createRoot(document.getElementById('root')).render(<App />);

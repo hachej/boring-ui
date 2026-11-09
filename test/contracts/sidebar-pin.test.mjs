@@ -85,8 +85,8 @@ const SIDEBAR = '[data-slot=sidebar]';
 const state = () => browser.evaluate(`document.querySelector('${SIDEBAR}').getAttribute('data-state')`);
 const left = () => browser.evaluate(`document.querySelector('[data-testid=screen-Comptes]').getBoundingClientRect().left`);
 const pin = prop => browser.evaluate(`(() => { const e = document.querySelector('${PIN}'); return e && ${prop}; })()`);
-const away = async () => { await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 900, y: 500 }); await wait(400); };
-const over = async () => { await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 40, y: 400 }); await wait(400); };
+const away = async () => { await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 900, y: 500 }); await wait(800); };
+const over = async () => { await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 40, y: 400 }); await wait(800); };
 const stored = () => browser.evaluate(`(() => { const k = Object.keys(localStorage).find(k => k.startsWith('${KEY}')); return k ? localStorage.getItem(k) : null; })()`);
 const ctrlB = async () => { for (const type of ['rawKeyDown', 'keyUp']) await browser.send('Input.dispatchKeyEvent', { type, key: 'b', code: 'KeyB', windowsVirtualKeyCode: 66, modifiers: 2 }); await wait(400); };
 const tab = async () => { await browser.press('Tab'); await wait(400); };
@@ -300,15 +300,103 @@ for (const editor of ['editor-area', 'editor-rich']) test(`Ctrl+B inside ${edito
   assert.equal(await state(), 'expanded');
 });
 
-test('shots at 1280 light and dark: hover-open unpinned, then pinned', { skip, timeout: 120000 }, async () => {
+// D-2010 hover intent: the pane opens after HOVER_REVEAL_MS (150) with the pointer on the rail and folds HOVER_FOLD_MS (300) after it left.
+const watchState = () => browser.evaluate(`(() => { const el = document.querySelector('${SIDEBAR}'); window.__seen = []; new MutationObserver(() => window.__seen.push(el.getAttribute('data-state'))).observe(el, { attributes: true, attributeFilter: ['data-state'] }); })()`);
+const seen = () => browser.evaluate(`window.__seen`);
+const move = (x, y) => browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+const rect = selector => browser.evaluate(`(() => { const r = document.querySelector('${selector}').getBoundingClientRect(); return { left: r.left, width: r.width, height: r.height }; })()`);
+
+test('a pointer passing over the rail for under 150ms does not open the pane; held for 150ms or more it does; it folds 300ms after leaving', { skip, timeout: 120000 }, async () => {
+  await mount();
+  await away();
+  await watchState();
+  await move(40, 400);
+  await wait(60);
+  await move(900, 500);
+  await wait(900);
+  assert.equal((await seen()).includes('expanded'), false, 'a passing pointer never opened it: ' + JSON.stringify(await seen()));
+  await move(40, 400);
+  await wait(30);
+  assert.equal(await state(), 'collapsed', 'not yet: the intent is still being read');
+  await wait(500);
+  assert.equal(await state(), 'expanded', 'held: open');
+  await move(900, 500);
+  await wait(100);
+  assert.equal(await state(), 'expanded', 'just left: not folded yet');
+  await wait(800);
+  assert.equal(await state(), 'collapsed', 'folded after the pointer stayed away');
+});
+
+test('keyboard focus opens the pane at once, not after the hover delay', { skip, timeout: 120000 }, async () => {
+  await mount();
+  await away();
+  await browser.press('Tab');
+  await wait(60);
+  assert.equal(await state(), 'expanded');
+});
+
+test('unpinned, the hover reveal floats over the page on the sidebar surface with a shadow; pinned, the page sits beside the pane', { skip, timeout: 120000 }, async () => {
+  await mount();
+  await away();
+  const folded = await rect('[data-testid=screen-Comptes]');
+  await over();
+  assert.equal(await state(), 'expanded');
+  assert.deepEqual(await rect('[data-testid=screen-Comptes]'), folded, 'the page keeps its left and width while the pane floats over it');
+  const inner = prop => browser.evaluate(`getComputedStyle(document.querySelector('${SIDEBAR} [data-slot=sidebar-inner]')).${prop}`);
+  assert.notEqual(await inner('boxShadow'), 'none', 'a shadow lifts the floating pane');
+  assert.notEqual(await inner('backgroundColor'), 'rgba(0, 0, 0, 0)', 'on the sidebar surface');
+  await browser.click(`document.querySelector('${PIN}')`);
+  await away();
+  const pinned = await rect('[data-testid=screen-Comptes]');
+  assert.ok(pinned.left > folded.left + 100 && pinned.width < folded.width - 100, 'pinned: the page reflows beside the pane');
+  assert.equal(await inner('boxShadow'), 'none', 'pinned: no floating shadow');
+});
+
+test('the pin shows pressed, keeps the collapse toggle\'s footprint and its tooltip names the shortcut', { skip, timeout: 120000 }, async () => {
+  await mount();
+  await over();
+  const unpressed = await pin('getComputedStyle(e).backgroundColor');
+  const box = await pin('(r => ({ width: r.width, height: r.height }))(e.getBoundingClientRect())');
+  assert.equal(await pin('e.title'), 'Épingler le volet · Ctrl+B');
+  await browser.click(`document.querySelector('${PIN}')`);
+  await away();
+  assert.equal(await pressed(), 'true');
+  assert.notEqual(await pin('getComputedStyle(e).backgroundColor'), unpressed, 'pinned looks pressed, not only through aria-pressed');
+  assert.equal(await pin('e.title'), 'Désépingler le volet · Ctrl+B');
+  assert.equal(await name(), 'Épingler le volet', 'the visible name stays');
+  await mount('plain=1');
+  const toggle = await rect('[data-slot=sidebar-trigger]');
+  assert.ok(Math.abs(toggle.width - box.width) <= 1 && Math.abs(toggle.height - box.height) <= 1, `same box as the collapse toggle: ${JSON.stringify(box)} vs ${JSON.stringify(toggle)}`);
+});
+
+test('shots at 1280 light and dark (collapsed, revealed on hover, the pin focused, pinned) and at 390 touch (no hover reveal, the phone sheet opens)', { skip, timeout: 180000 }, async () => {
   for (const mode of ['light', 'dark']) {
     await mount('');
     await browser.evaluate(`document.documentElement.classList.toggle('dark', ${mode === 'dark'})`);
-    await over();
-    await browser.screenshot(`sidebar-pin.1280.${mode}.unpinned.png`);
-    await browser.click(`document.querySelector('${PIN}')`);
     await away();
+    await browser.screenshot(`sidebar-pin.1280.${mode}.collapsed.png`);
+    await over();
+    await browser.screenshot(`sidebar-pin.1280.${mode}.hover.png`);
+    await away();
+    await tab();
+    assert.equal(await browser.evaluate(`document.activeElement === document.querySelector('${PIN}')`), true);
+    await browser.screenshot(`sidebar-pin.1280.${mode}.focused.png`);
+    await browser.press(' ');
+    await wait(400);
+    await browser.evaluate(`document.activeElement.blur()`);
+    await away();
+    assert.equal(await pressed(), 'true');
     await browser.screenshot(`sidebar-pin.1280.${mode}.pinned.png`);
+  }
+  for (const mode of ['light', 'dark']) {
+    await mount('sheet=1&dialog=1', { width: 390, touch: true });
+    await browser.evaluate(`document.documentElement.classList.toggle('dark', ${mode === 'dark'})`);
+    assert.equal(await browser.evaluate(`document.querySelector('[data-rail=hover]') === null && document.querySelector('${PIN}') === null`), true, 'a phone has no hover rail and no pin');
+    await browser.screenshot(`sidebar-pin.390.${mode}.closed.png`);
+    await browser.tap(`document.querySelector('[data-slot=sidebar-trigger]')`);
+    await wait(700);
+    assert.equal(await browser.evaluate(`document.querySelector('[data-slot=sheet-content]') !== null`), true, 'the phone sheet opens');
+    await browser.screenshot(`sidebar-pin.390.${mode}.sheet.png`);
   }
   assert.deepEqual(browser.problems, []);
 });
