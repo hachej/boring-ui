@@ -18,7 +18,7 @@ Docs only. Searched on origin/main (f220d51ee) in this repo, `boring-factory/mai
 | `public/` | `r/`: 62 generated shadcn registry JSON files (`registry.json` + one per item), committed; `build-registry` writes them, `release-version` rewrites their pins; `packages/ui` ships them as `r/*.json` | apps run `shadcn add <url>/r/<item>.json` and `boring-ui-blocks`; factory resolves `boring-ui-kit/r/<item>.json` | keep, never touch without a registry build diff |
 | `registry/` | source of the 204 registry blocks (`registry.json` lists the files) | shadcn CLI build, factory bundle (`@boring/ui/blocks/*`), apps copy it | keep |
 | `registry.json` | root registry manifest | `build-registry`, shadcn CLI | keep (shadcn requires it at the root) |
-| `scripts/` | 80 files: build, release, checks, 27 browser journeys and consumer tests, a few probes | `package.json`, CI, tests; factory uses `css-stub-register.mjs` | keep, prune 4 dead files (no caller), then group into subfolders only where no outside path is pinned |
+| `scripts/` | 80 files: build, release, checks, 27 browser journeys and consumer tests, a few probes | `package.json`, CI, tests; factory uses `css-stub-register.mjs` | keep. No file is dead: a whole-repo search for each name finds a caller or a doc that names it (4 files have no `package.json`/CI/test caller: `trace-journey` is imported by lab and examples journeys; `migrate-default-icons` is the documented icon guard; the two `probe-*` are the commands `docs/stress-tests/BASELINE.md` records). Grouping into subfolders is possible only where no outside path is pinned |
 | `shadcn/ui/` | 48 bundled shadcn primitive sources (Base UI recipes, compact defaults) | factory bundle (`@boring/ui/shadcn/*` and `@/components/ui/*` map to `shadcn/ui`), `check-mono`, 20+ contract tests, `registry/README.md` | keep (consumer-pinned). It is not the shadcn CLI: it is the kit's own primitives. Explain in README; only the empty-looking parent `shadcn/` has one child |
 | `shared/` | 15 host helpers (standard agent, workspace/MCP tools, SQLite workspaces, canvas transport) imported by relative path | 20 examples, demos, 8 fixtures, lab; factory reads `shared/local-host.mjs` | keep; not a package, README already says so. Rename would break the factory |
 | `skills/` | 6 agent skills shipped for people who build apps with the kit: `boring-ui` (entry point), `build-agent-app`, `add-blocks`, `app-layout-and-agent`, `agent-capabilities`, `boring-design-system` | factory `build-app` and `boring-app-template` skills load or copy them; `skills/boring-ui` links MIGRATING.md | keep; add `skills/README.md` with one line each |
@@ -35,15 +35,15 @@ Docs only. Searched on origin/main (f220d51ee) in this repo, `boring-factory/mai
 - shared/: host helpers for examples and the factory's local host. Keep.
 - skills/: shipped, factory-loaded. Keep; add the index.
 - tools/: one script, fold into scripts/.
-- scripts/: 4 files with no caller (`migrate-default-icons`, `probe-jev-live`, `probe-json-render`, `trace-journey`); the rest is called.
+- scripts/: no dead file found (see the row above); it has drifted in size, not in dead code. Grouping is the only tidy-up left, and it is low value.
 - .agent-handoff: finished-task leftovers. Delete.
 - registry/: source of public/r; nothing to move.
 
 ## Slices (one PR each, safest first)
 
 1. Delete `.agent-handoff/` (+ FEATURES.md sentence, verify-repo allowed list).
-2. Delete 4 caller-less scripts (re-check callers incl. factory first; `trace-journey` helper, `migrate-default-icons` a finished one-off, two spike probes).
-3. README: one line per top-level folder; `skills/README.md`, `shadcn/README.md`, lab/examples/demos wording. Docs only.
+2. (Dropped: the fresh search found no dead script.)
+3. READMEs: `skills/README.md`, `shadcn/README.md`; then, after #2137 merges (it edits root `README.md` and `demos/`), one line per top-level folder in the root README. Docs only.
 4. MIGRATING.md: move old released sections to `docs/migrating/ARCHIVE.md`, with the release scripts still passing (check `check-release-notes` on the diff).
 5. Merge `demos/` into `examples/` (touches `package.json`, `verify.yml`, tests, `.gitignore`; wait for open PRs, #2137 touches the demo).
 6. `tools/` into `scripts/` (comment-only edits in `packages/ui`, `packages/feedback` need an Unreleased line).
