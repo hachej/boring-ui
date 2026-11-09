@@ -72,7 +72,8 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
       const s = getComputedStyle(node); if (s.display === 'none' || s.visibility === 'hidden') continue;
       if (px(s.fontSize) < 13) small.push({ tag: node.tagName, testid: node.getAttribute('data-testid') ?? node.getAttribute('data-slot'), text: node.textContent.trim().slice(0, 30), size: px(s.fontSize) });
     }
-    return { token, small, title: size('header h2'), userProse: size('[data-role=user] [data-slot=bubble-content]'), prose: size('[data-role=assistant] [data-slot=bubble-content]'),
+    const icon = selector => { const svg = document.querySelector(selector + ' svg'); const button = document.querySelector(selector); if (!svg || !button) return null; const r = svg.getBoundingClientRect(), b = button.getBoundingClientRect(); return { w: r.width, h: r.height, boxW: b.width, boxH: b.height }; };
+    return { token, small, headerMore: icon('[data-testid=chat-action-more]'), replyMore: icon('[data-testid=reply-action-more]'), title: size('header h2'), userProse: size('[data-role=user] [data-slot=bubble-content]'), prose: size('[data-role=assistant] [data-slot=bubble-content]'),
       li: size('[data-role=assistant] li'), cell: size('[data-role=assistant] td'), codespan: size('[data-role=assistant] p code'), codeblock: size('[data-testid=code-block] pre'),
       composer: size('[data-testid=composer-input]'), empty: size('[data-slot=empty-description]'), line: size('[data-slot=trace-line]'), time: size('[data-testid=message-time]'), answered: size('[data-testid=answered-by]'), question: size('[data-testid=question-text]'), questionInput: size('[data-testid=question-input]'), approval: size('[data-testid=approval-card] [data-slot=item-title]'), titleButton: size('header h2 button'), plusItem: size('[data-testid=composer-plus-menu] [role=menuitem]'), headerItem: size('[data-testid=chat-action-more-list] [role=menuitem]'), replyItem: size('[data-testid=reply-action-more-list] [role=menuitem]'), modelItem: size('[data-testid=composer-model-menu] [role=menuitemradio], [data-testid=composer-model-menu] [role=menuitem]') };
   })()`);
@@ -124,7 +125,17 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
         }
         if (state === 'thought') { near(m.line?.size ?? null, prose * 0.93, `${label}: thought and tool rows`); assert.equal(m.line.color, m.token.muted, `${label}: meta rows are muted-foreground`); }
         if (state === 'question') { near(m.question?.size ?? null, prose, `${label}: question text`); near(m.questionInput?.size ?? null, prose, `${label}: question input`); }
-        if (state === 'approval') near(m.approval?.size ?? null, prose, `${label}: approval card title`);
+        if (state === 'reply') { // D-1905: the header "..." is the same size as the reply actions' icons, and its touch target is not reduced
+          assert.ok(m.headerMore && m.replyMore, `${label}: both overflow triggers render`);
+          near(m.headerMore.w, m.replyMore.w, `${label}: header "..." icon width equals the reply actions' icon`); near(m.headerMore.h, m.replyMore.h, `${label}: header "..." icon height equals the reply actions' icon`);
+          if (mobile) assert.ok(m.headerMore.boxW >= 44 && m.headerMore.boxH >= 44, `${label}: the header "..." keeps its 44px touch target (${m.headerMore.boxW}x${m.headerMore.boxH})`);
+        }
+        if (state === 'approval') { near(m.approval?.size ?? null, prose, `${label}: approval card title`);
+          // D-1905: one coherent state: a pending approval, not "Not decided: the run was stopped" beside a working run.
+          const text = await browser.evaluate(`document.querySelector('[data-testid=approval-card]')?.textContent ?? ''`);
+          assert.ok(!/run was stopped/.test(text), `${label}: the approval is pending while the run is live, not stopped (${text.slice(0, 80)})`);
+          assert.equal(await browser.evaluate(`document.querySelector('[data-testid=approval-card]')?.getAttribute('data-state')`), 'pending', `${label}: approval state`);
+        }
         if (state === 'plus') assert.ok(m.plusItem && m.plusItem.size >= 13, `${label}: the + menu is sized by the chat (${m.plusItem?.size}px)`);
         if (state === 'model') assert.ok(m.modelItem && m.modelItem.size >= 13, `${label}: the model menu is sized by the chat (${m.modelItem?.size}px)`);
         if (state === 'header-menu') assert.ok(m.headerItem && m.headerItem.size >= 13, `${label}: the header overflow menu is sized by the chat (${m.headerItem?.size}px)`);
