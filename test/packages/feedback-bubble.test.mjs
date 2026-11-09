@@ -66,7 +66,7 @@ test('the note bubble stays in the surface, flips at its edges, is a sheet on a 
     if (!phone) await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
     await browser.send('Page.navigate', { url: `http://127.0.0.1:${port}/?pins=host&bubble=1&${query}` });
     await browser.until('the fixture loads', `document.getElementById('plate')?.complete && window.fixture`);
-    await browser.evaluate('window.fixture.session.start()');
+    await browser.evaluate(phone ? `window.fixture.session.start({ mode: 'point' })` : 'window.fixture.session.start()');
     await browser.until('comment mode is on', `window.fixture.session.getSnapshot().phase === 'active'`);
   };
   const pinAt = async (fx, fy, { touch = false } = {}) => {
@@ -124,27 +124,33 @@ test('the note bubble stays in the surface, flips at its edges, is a sheet on a 
       await browser.press('Escape');
     }
 
+    const failures = [];
     // The normal CommentBanner (fixed, z-index 2147483000, bottom on a phone) is mounted too: the sheet sits above it, so its Add note button is the hit at its centre.
-    await open('size=350x240&at=20,120&banner=1', { phone: true });
-    await browser.until('the banner is up', `!!document.querySelector('[data-testid="feedback-point-bar"]')`);
-    await pinAt(0.6, 0.4, { touch: true });
-    await browser.until('the sheet rests', `(() => { const n = document.querySelector('[data-testid="feedback-bubble"]'); return !!n && Math.abs(n.getBoundingClientRect().bottom - innerHeight) <= 2; })()`, 5000).catch(() => undefined);
-    const hit = await browser.evaluate(`(() => { const b = document.querySelector('[data-testid="feedback-bubble-save"]'), r = b.getBoundingClientRect(), top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      const bar = document.querySelector('[data-testid="feedback-point-bar"]').getBoundingClientRect(); return { button: !!top && b.contains(top), overlaps: r.top < bar.bottom && r.bottom > bar.top, label: top ? top.outerHTML.slice(0, 80) : null }; })()`);
-    assert.ok(hit.button, `with the banner mounted, the Add note button is the hit at its centre (got ${hit.label}; overlaps the banner: ${hit.overlaps})`);
-    await browser.screenshot('note-bubble.390.banner.png');
-    await browser.press('Escape');
+    try {
+      await open('size=350x240&at=20,120&banner=1', { phone: true });
+      await browser.until('the banner is up', `!!document.querySelector('[data-testid="feedback-point-bar"]')`);
+      await pinAt(0.6, 0.4, { touch: true });
+      await browser.until('the sheet rests', `(() => { const n = document.querySelector('[data-testid="feedback-bubble"]'); return !!n && Math.abs(n.getBoundingClientRect().bottom - innerHeight) <= 2; })()`, 5000).catch(() => undefined);
+      const hit = await browser.evaluate(`(() => { const b = document.querySelector('[data-testid="feedback-bubble-save"]'), r = b.getBoundingClientRect(), top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        const bar = document.querySelector('[data-testid="feedback-point-bar"]').getBoundingClientRect(); return { button: !!top && b.contains(top), overlaps: r.top < bar.bottom && r.bottom > bar.top, label: top ? top.outerHTML.slice(0, 80) : null }; })()`);
+      assert.ok(hit.button, `with the banner mounted, the Add note button is the hit at its centre (got ${hit.label}; overlaps the banner: ${hit.overlaps})`);
+      await browser.screenshot('note-bubble.390.banner.png');
+      await browser.press('Escape');
+    } catch (error) { failures.push(`banner: ${error.message}`); await browser.press('Escape').catch(() => undefined); }
 
     // The surface shrinks (640 to 200 wide) with no window resize, and the host calls session.reposition(): the bubble follows, it does not keep its 280px width.
-    await open('size=640x420&at=100,120');
-    await pinAt(0.2, 0.4);
-    await browser.evaluate(`(() => { document.getElementById('plate').style.width = '200px'; window.fixture.session.reposition(); })()`);
-    await frames(); await frames();
-    const shrunk = await boxes();
-    inside(shrunk, 'after the surface shrank to 200px wide');
-    assert.ok(shrunk.bubble.right - shrunk.bubble.left <= 200 + 1, `the bubble is narrower than the shrunken surface (${shrunk.bubble.right - shrunk.bubble.left}px)`);
-    await browser.press('Escape');
+    try {
+      await open('size=640x420&at=100,120');
+      await pinAt(0.2, 0.4);
+      await browser.evaluate(`(() => { document.getElementById('plate').style.width = '200px'; window.fixture.session.reposition(); })()`);
+      await frames(); await frames();
+      const shrunk = await boxes();
+      inside(shrunk, 'after the surface shrank to 200px wide');
+      assert.ok(shrunk.bubble.right - shrunk.bubble.left <= 200 + 1, `the bubble is narrower than the shrunken surface (${shrunk.bubble.right - shrunk.bubble.left}px)`);
+      await browser.press('Escape');
+    } catch (error) { failures.push(`shrink: ${error.message}`); await browser.press('Escape').catch(() => undefined); }
 
+    assert.deepEqual(failures, [], 'the sheet is above the banner and the bubble follows a shrunk surface');
     // The shipped stylesheet alone (no Tailwind, no kit utility classes): the bubble is a popover surface.
     await open('size=640x420&at=100,120&css=shipped');
     await pinAt(0.6, 0.4);
