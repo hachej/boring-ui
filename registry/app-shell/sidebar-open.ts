@@ -62,3 +62,18 @@ export function useSidebarOpen(enabled: boolean, identity: { readonly app?: stri
   }, [key]);
   return enabled ? { open, onOpenChange } : undefined;
 }
+
+/**
+ * The pin of the hover rail (D-2010): kept open whatever the pointer and focus do. Stored under `sidebarKey('pin', app, person)` ("1" or "0", anything else ignored),
+ * read at mount and when the person changes, written on a change only. `enabled` is false off the hover rail: never pinned, nothing read or written.
+ */
+export function useSidebarPin(enabled: boolean, identity: { readonly app?: string | undefined; readonly person?: string | undefined }) {
+  const key = sidebarKey('pin', identity.app, identity.person);
+  const [pinned, setPinned] = useState(false);
+  useIsoLayoutEffect(() => { setPinned(enabled && readOpen(key) === true); }, [enabled, key]);
+  const set = useCallback((next: boolean) => {
+    setPinned(next);
+    writeOpen(key, next);
+  }, [key]);
+  return { pinned: enabled && pinned, set };
+}

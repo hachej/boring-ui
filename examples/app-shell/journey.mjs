@@ -1207,7 +1207,9 @@ try {
     assert.deepEqual(await browser.evaluate(rect(page)), before);
     assert.equal(await browser.evaluate(labelsVisible), false);
     await browser.press('Tab');
-    await browser.until('Tab enters the rail', `document.activeElement === ${q('[data-testid=nav-dashboard]')} && ${state} === 'expanded' && ${labelsVisible}`);
+    await browser.until('Tab enters the rail on the pin', `document.activeElement === ${q('[data-testid=sidebar-pin]')} && ${state} === 'expanded' && ${labelsVisible}`);
+    await browser.press('Tab');
+    await browser.until('Tab reaches the first item', `document.activeElement === ${q('[data-testid=nav-dashboard]')} && ${state} === 'expanded' && ${labelsVisible}`);
     assert.deepEqual(await browser.evaluate(rect(page)), before, 'focus does not move or resize the page');
     await browser.press('Escape');
     await browser.until('Escape collapses', `${state} === 'collapsed'`);

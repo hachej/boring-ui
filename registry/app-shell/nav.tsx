@@ -4,7 +4,7 @@
 // expanded. Choosing an item only calls `route.onChange`: the app's router owns the URL, and the shell adds no history entry.
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent, ReactNode } from 'react';
-import { EllipsisIcon, SparklesIcon } from '../_shared/icons';
+import { EllipsisIcon, PinIcon, SparklesIcon } from '../_shared/icons';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarSeparator, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -17,6 +17,7 @@ import { AppSheet, SHEET_ROW } from './app-sheet';
 import { InsideNavSheet, useExclusiveSheet } from './use-exclusive-sheet';
 import type { AppShellText } from './text';
 import { ResizableRail } from './sidebar-resize';
+import { useSidebarPin } from './sidebar-open';
 
 export interface NavBadge {
   readonly tone: 'info' | 'success' | 'warning' | 'destructive';
@@ -181,15 +182,72 @@ export function ScreenSidebarSheet({ item, text }: { readonly item: NavItem; rea
   </>;
 }
 
+/** Hover intent of the hover rail, in ms: the pointer must stay this long to reveal the pane, and be gone this long (focus too) to fold it. */
+const HOVER_REVEAL_MS = 150;
+const HOVER_FOLD_MS = 300;
+
 /** The expanded sidebar: the app title, the nav items (none with one item) and the account in the footer. */
-export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, agent, account, improve, text }: {
-  readonly rail?: 'icon' | 'hover'; readonly title: string; readonly items: readonly NavItem[]; readonly activeId: string; readonly onChange: (id: string) => void;
+export function AppSidebar({ rail = 'icon', identity, title, items, activeId, onChange, agent, account, improve, text }: {
+  readonly rail?: 'icon' | 'hover'; readonly identity?: { readonly app?: string | undefined; readonly person?: string | undefined }; readonly title: string; readonly items: readonly NavItem[]; readonly activeId: string; readonly onChange: (id: string) => void;
   readonly agent: AgentSpec | undefined; readonly account: AccountSpec | undefined; readonly improve: string | undefined; readonly text: AppShellText;
 }) {
   const { setOpen, openMobile, setOpenMobile, state, isMobile } = useSidebar();
+  // The hover rail's pin (D-2010): on a wide screen only. Pinned, the pane is open whatever the pointer and focus do and the page sits beside it.
+  const hover = rail === 'hover' && !isMobile;
+  const { pinned, set: setPinned } = useSidebarPin(hover, identity ?? {});
+  const wrapper = useRef<HTMLDivElement>(null);
+  // A dialog, menu or popover opened from the pane lives in a portal outside it: the pointer and focus leave the pane while it is open. Its trigger says so; the pane waits.
+  const layerOpen = () => Boolean(wrapper.current?.querySelector('[aria-haspopup][aria-expanded="true"], [aria-haspopup][data-popup-open], [aria-haspopup][data-state="open"]'));
+  const togglePin = () => {
+    const next = !pinned;
+    setPinned(next);
+    // Unpinning folds unless the pointer or focus is still in the pane (then leaving does).
+    const el = wrapper.current;
+    setOpen(next || layerOpen() || Boolean(el && (el.matches(':hover') || el.contains(document.activeElement))));
+  };
+  const toggle = useRef(togglePin);
+  useEffect(() => { toggle.current = togglePin; });
+  useEffect(() => { if (pinned && state === 'collapsed') setOpen(true); }, [pinned, state, setOpen]);
+  const settled = () => {
+    const el = wrapper.current;
+    try { return Boolean(el) && !el!.matches(':hover') && !(el!.contains(document.activeElement) && document.activeElement!.matches(':focus-visible')); } catch { return false; }
+  };
+  // Keyboard focus inside the pane (a mouse click leaves none to keep it open) and the pointer over it each keep it open: it folds when both have gone.
+  const focusIn = () => { const el = wrapper.current; try { return Boolean(el && el.contains(document.activeElement) && document.activeElement!.matches(':focus-visible')); } catch { return false; } };
+  const pointerIn = () => { try { return Boolean(wrapper.current?.matches(':hover')); } catch { return false; } };
+  const fold = () => { if (!pinned && !layerOpen() && !pointerIn() && !focusIn()) setOpen(false); };
+  // Hover intent: the pane opens once the pointer has stayed HOVER_REVEAL_MS on the rail and folds HOVER_FOLD_MS after pointer and focus left, so a pointer passing by flashes nothing. Keyboard focus opens it at once.
+  const intent = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const latestFold = useRef(fold);
+  useEffect(() => { latestFold.current = fold; });
+  useEffect(() => () => clearTimeout(intent.current), []);
+  const foldLater = () => { clearTimeout(intent.current); intent.current = setTimeout(() => latestFold.current(), HOVER_FOLD_MS); };
+  // When that layer closes, the pane folds if the pointer and focus are outside (the trigger gets focus back after a pause).
+  useEffect(() => {
+    const el = wrapper.current;
+    if (!hover || !el || pinned) return undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const observer = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(() => { if (!layerOpen() && settled()) setOpen(false); }, 60); });
+    observer.observe(el, { subtree: true, attributes: true, attributeFilter: ['aria-expanded', 'data-popup-open'] });
+    return () => { observer.disconnect(); clearTimeout(timer); };
+  }, [hover, pinned, setOpen]);
+  // Ctrl+B toggles the pin here, ahead of the provider's own listener (which would fold the pane under the pointer).
+  useEffect(() => {
+    if (!hover) return undefined;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'b' || !(event.metaKey || event.ctrlKey)) return;
+      // A text field or editor keeps its own Ctrl+B (bold, say).
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggle.current();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [hover]);
   // In the phone sheet, choosing a screen closes it.
   const choose = (id: string) => { setOpenMobile(false); onChange(id); };
-  const own = items.find(item => item.id === activeId)?.sidebar?.({ collapsed: state === 'collapsed' && !isMobile });
+  const own = items.find(item => item.id === activeId)?.sidebar?.({ collapsed: state === 'collapsed' && !isMobile && !pinned });
   const { before, after } = placeNav(items);
   const navGroup = (group: readonly NavItem[], className?: string, testId?: string) => group.length > 0 && <SidebarGroup className={className} data-testid={testId}><SidebarGroupContent><SidebarMenu>
     {group.map(item => <SidebarMenuItem key={item.id}>
@@ -208,12 +266,15 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
   const pressed = layer.state !== 'closed' && layer.showing === 'agent';
   const AgentIcon = agent?.icon ?? SparklesIcon;
   const agentLabel = agent?.label ?? agent?.chatProps?.labels?.title ?? text.assistant;
-  const sidebar = <Sidebar collapsible="icon" variant="inset" data-testid="app-sidebar">
+  // Hover-revealed and unpinned, the pane floats over the page: a shadow on its sidebar surface lifts it (pinned, it sits beside the page).
+  const sidebar = <Sidebar collapsible="icon" variant="inset" data-testid="app-sidebar" data-float={hover && !pinned && state === 'expanded' ? 'true' : undefined}>
     {/* The phone sheet is portaled out of the shell root, so the `.app-shell` reset would not reach its buttons: this wrapper carries it (`contents`: no box of its own). */}
     <InsideNavSheet.Provider value={true}>
     <div className="app-shell contents">
-    {/* The one toggle: title and button expanded, the button alone on the icon rail, and « close » inside the phone sheet. The hover rail has none on a wide screen (it opens on hover and focus by itself, and a toggle would fight it), but keeps « close » in the sheet. */}
-    <SidebarHeader className="flex-row items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center"><p data-testid="sidebar-title" className="m-0 min-w-0 truncate px-2 py-1 text-sm font-semibold group-data-[collapsible=icon]:hidden">{title}</p>{(rail !== 'hover' || isMobile) && <SidebarTrigger />}</SidebarHeader>
+    {/* The one toggle: title and button expanded, the button alone on the icon rail, and « close » inside the phone sheet. The hover rail has no toggle on a wide screen (it opens on hover and focus by itself) but a pin (D-2010) that keeps it open, and keeps « close » in the sheet. */}
+    <SidebarHeader className="flex-row items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center"><p data-testid="sidebar-title" className="m-0 min-w-0 truncate px-2 py-1 text-sm font-semibold group-data-[collapsible=icon]:hidden">{title}</p>{(rail !== 'hover' || isMobile) && <SidebarTrigger />}
+      {hover && <Button type="button" variant="ghost" size="icon-sm" data-testid="sidebar-pin" aria-pressed={pinned} aria-label={text.pin} title={`${pinned ? text.unpin : text.pin} · Ctrl+B`} onClick={togglePin}
+        className="group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:pointer-coarse:pointer-events-auto group-data-[collapsible=icon]:pointer-coarse:opacity-100"><PinIcon aria-hidden="true" data-pinned={pinned ? 'true' : 'false'} weight={pinned ? 'fill' : 'regular'} /></Button>}</SidebarHeader>
     <SidebarContent>
       {/* Without the screen's own content, one group in placed order; with it, the before items above it and the rest below. */}
       {items.length > 1 && own != null && navGroup(before, 'shrink-0', 'nav-before')}
@@ -237,12 +298,12 @@ export function AppSidebar({ rail = 'icon', title, items, activeId, onChange, ag
   </Sidebar>;
   if (rail !== 'hover') return sidebar;
   // Reserve the native inset icon gap even while the fixed sidebar reveals its labels over the page.
-  return <div data-rail="hover" className="relative z-20 w-[calc(var(--sidebar-w-icon)+(--spacing(4)))] shrink-0"
-    onPointerEnter={event => { if (event.pointerType === 'mouse' || event.pointerType === 'pen') setOpen(true); }}
-    onPointerLeave={() => setOpen(false)}
-    onFocusCapture={event => { if (event.target.matches(':focus-visible')) setOpen(true); }}
-    onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}
-    onKeyDownCapture={event => { if (event.key === 'Escape' && event.target instanceof Node && event.currentTarget.contains(event.target)) { event.preventDefault(); event.stopPropagation(); setOpen(false); } }}>
+  return <div ref={wrapper} data-rail="hover" data-pinned={pinned} className={pinned ? 'relative z-20 shrink-0' : 'relative z-20 w-[calc(var(--sidebar-w-icon)+(--spacing(4)))] shrink-0'}
+    onPointerEnter={event => { if (event.pointerType === 'mouse' || event.pointerType === 'pen') { clearTimeout(intent.current); intent.current = setTimeout(() => setOpen(true), HOVER_REVEAL_MS); } }}
+    onPointerLeave={foldLater}
+    onFocusCapture={event => { if (event.target.matches(':focus-visible')) { clearTimeout(intent.current); setOpen(true); } }}
+    onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) foldLater(); }}
+    onKeyDownCapture={event => { if (!pinned && event.key === 'Escape' && event.target instanceof Node && event.currentTarget.contains(event.target)) { event.preventDefault(); event.stopPropagation(); clearTimeout(intent.current); setOpen(false); } }}>
     {sidebar}
   </div>;
 }
