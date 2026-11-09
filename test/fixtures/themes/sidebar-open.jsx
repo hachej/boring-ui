@@ -9,7 +9,7 @@ const query = new URLSearchParams(location.search);
 if (query.get('throw')) for (const method of ['getItem', 'setItem', 'removeItem']) Storage.prototype[method] = () => { throw new Error('storage unavailable'); };
 const Dot = ({ className }) => <svg className={className} viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="currentColor" /></svg>;
 const nav = [
-  { id: 'Liste', label: 'Liste', icon: Dot, sidebar: () => <p data-testid="own-sidebar">Dossiers fictifs de la société Exemple</p>, render: () => <p>Écritures fictives</p> },
+  { id: 'Liste', label: 'Liste', icon: Dot, sidebar: ({ collapsed }) => collapsed ? null : <p data-testid="own-sidebar">Dossiers fictifs de la société Exemple</p>, render: () => <p>Écritures fictives</p> },
   { id: 'Notes', label: 'Notes', icon: Dot, render: () => <p>Notes fictives</p> },
 ];
 
