@@ -296,7 +296,7 @@ function report(results) {
   const md = [
     '# Feedback voice: clock alignment in Chromium',
     '',
-    `Measured by \`npm run feedback:voice-sync\` (tools/feedback-voice-sync.mjs) on ${new Date().toISOString().slice(0, 10)}: ${results.length} runs, ${BEEPS.length} beeps per run (${BEEPS.join(', ')} s into a generated WAV fed as the fake microphone), headless Chromium ${chromium.includes('chromium-1243') ? '153 (Playwright chromium-1243)' : chromium}, on a shared VM under load.`,
+    `Measured by \`npm run feedback:voice-sync\` (scripts/feedback-voice-sync.mjs) on ${new Date().toISOString().slice(0, 10)}: ${results.length} runs, ${BEEPS.length} beeps per run (${BEEPS.join(', ')} s into a generated WAV fed as the fake microphone), headless Chromium ${chromium.includes('chromium-1243') ? '153 (Playwright chromium-1243)' : chromium}, on a shared VM under load.`,
     '',
     'Error = the beep onset found in the recorded blob, put on the page clock with the strategy, minus the ground truth: the same beep on a second reader of the microphone (MediaStreamTrackProcessor on a cloned track), at its frame timestamp plus the onset sample (frame timestamps are on the page clock: they precede the frame\'s arrival in the page by a few ms when the page is idle). Positive = speech placed later than it was heard. Cells: mean abs / max abs / signed mean, ms.',
     '',

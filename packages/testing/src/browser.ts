@@ -1,9 +1,10 @@
 // Minimal headless-Chromium driver over the DevTools protocol (no extra dependency): real pointer, touch and keyboard input, waits on
 // what the page shows, screenshots, device emulation and extra tabs. Expressions are JavaScript evaluated in the page; `q`/`qa` build them.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /** An expression for the first element matching `selector`. */
 export const q = (selector: string): string => `document.querySelector(${JSON.stringify(selector)})`;
@@ -26,11 +27,87 @@ export interface LaunchOptions {
   readonly args?: readonly string[];
 }
 
+/** The kit's default sans (D-1974), the face a page without its own `--font-sans` is measured in. */
+export const FONT_FAMILY = 'Inter Variable';
+const FONT_FILE = 'node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2';
+/** The pinned font file, found from this module first (an isolated consumer's install), then from the working directory (a bundled copy of this file). */
+function fontFile(): string {
+  const starts = [dirname(fileURLToPath(import.meta.url)), process.cwd()];
+  for (const start of starts) for (let at = start; ; at = dirname(at)) {
+    if (existsSync(join(at, FONT_FILE))) return join(at, FONT_FILE);
+    if (dirname(at) === at) break;
+  }
+  throw new Error(`Font file missing: ${FONT_FILE} (@fontsource-variable/inter is a dependency of @hachej/boring-testing; install it) searched from ${starts.join(' and ')}`);
+}
+/**
+ * Registers the pinned @fontsource-variable/inter file (local node_modules, no network) as `Inter Variable` in every document, from
+ * bytes so a page's CSP cannot refuse it. Read before Chromium is spawned, so a missing file leaks nothing.
+ */
+function fontInstallScript(file: string): string {
+  return `(() => {
+    const bytes = Uint8Array.from(atob(${JSON.stringify(readFileSync(file).toString('base64'))}), c => c.charCodeAt(0));
+    const face = new FontFace(${JSON.stringify(FONT_FAMILY)}, bytes.buffer, { weight: '100 900', style: 'normal' });
+    document.fonts.add(face);
+    face.load().catch(error => console.error('font load failed: ' + error));
+  })()`;
+}
+/**
+ * In the page: the first family of :root's --font-sans (list parsed respecting quotes; FONT_FAMILY when the page declares none) must
+ * have a loaded @font-face in document.fonts and pass document.fonts.check (check() alone is true for a family nothing declares).
+ * A stack starting with a system keyword or CSS generic (-apple-system, system-ui, sans-serif...) needs no face. A fixture that deliberately uses another system face says so with a `data-system-font` attribute on <html>; only then is a missing face
+ * accepted. Returns '' or the reason. Waits for document.fonts.ready, giving up when `deadline` (epoch ms) passes.
+ */
+const SYSTEM_FAMILIES = ['-apple-system', 'blinkmacsystemfont', 'system-ui', 'sans-serif', 'serif', 'monospace', 'ui-sans-serif', 'ui-serif', 'ui-monospace', 'ui-rounded', 'cursive', 'fantasy', 'math', 'emoji', 'fangsong'];
+const fontCheck = (deadline: number) => `(async () => {
+  const waited = await Promise.race([document.fonts.ready.then(() => true), new Promise(done => setTimeout(() => done(false), Math.max(0, ${deadline} - Date.now())))]);
+  const list = getComputedStyle(document.documentElement).getPropertyValue('--font-sans');
+  // The first family of a font list as CSS reads it: quoted or not, escapes decoded (\\20 , \\"), ending at the closing quote or the comma.
+  const parseFamily = text => {
+    const s = text.trim(); let out = '', i = 0;
+    const quote = s[0] === '"' || s[0] === "'" ? s[i++] : '';
+    while (i < s.length) {
+      const c = s[i];
+      if (c === '\\\\') {
+        const hex = /^[0-9a-fA-F]{1,6}/.exec(s.slice(i + 1));
+        if (hex) { const code = parseInt(hex[0], 16); out += code && code <= 0x10FFFF ? String.fromCodePoint(code) : '\\uFFFD'; i += 1 + hex[0].length; if (/\\s/.test(s[i] || '')) i++; }
+        else { out += s[i + 1] ?? ''; i += 2; }
+      } else if (quote ? c === quote : c === ',') break;
+      else { out += c; i++; }
+    }
+    return quote ? out : out.trim();
+  };
+  const family = parseFamily(list) || ${JSON.stringify(FONT_FAMILY)};
+  // FontFace.family is one family name, which the browser may hand back quoted or bare ("Acme, Inc" bare would parse as "Acme"): compare both readings.
+  const same = name => [parseFamily(name), name.trim().replace(/^(["'])(.*)\\1$/, '$2')].some(candidate => candidate.toLowerCase() === family.toLowerCase());
+  if (!waited) return 'document.fonts.ready did not settle before the timeout (a font request is stalled?) for "' + family + '"';
+  if (document.documentElement.hasAttribute('data-system-font')) return '';
+  // A stack that starts with a system font keyword or a CSS generic has no face to load: not a gap.
+  if (${JSON.stringify(SYSTEM_FAMILIES)}.includes(family.toLowerCase())) return '';
+  // document.fonts.ready only covers loads already in flight when it was read: a face of this family that is still loading (or added
+  // just before) is awaited here through its own promise, bounded by the same deadline, then the set is read again.
+  const left = () => Math.max(0, ${deadline} - Date.now());
+  for (let round = 0; round < 8; round++) {
+    const mine = [...document.fonts].filter(face => same(face.family));
+    if (mine.some(face => face.status === 'loaded')) break;
+    const pending = mine.filter(face => face.status === 'loading' || face.status === 'unloaded');
+    if (!pending.length) break;
+    await Promise.race([Promise.allSettled(pending.map(face => face.load())), new Promise(done => setTimeout(done, left()))]);
+    if (!left()) break;
+  }
+  const faces = [...document.fonts].map(face => face.family + ' [' + face.status + ']').join(', ');
+  const loaded = [...document.fonts].some(face => same(face.family) && face.status === 'loaded');
+  if (!loaded) return 'no loaded @font-face for "' + family + '" (--font-sans of the page; faces in document.fonts: ' + (faces || 'none') + '): it would be measured in a fallback font; load the face or set data-system-font on <html>';
+  if (!document.fonts.check('14px "' + family.replace(/["\\\\]/g, '\\\\$&') + '"')) return 'document.fonts.check is false for "' + family + '"';
+  return '';
+})()`;
+
 export interface PageSession {
   /** The value of a page expression (awaited, by value). */
   evaluate(expression: string): Promise<any>;
   /** Polls `expression` until it is truthy and returns it; on timeout throws with `label`, the page text and the page's errors. */
   until(label: string, expression: string, timeout?: number): Promise<any>;
+  /** Awaits document.fonts.ready (until `deadline`, epoch ms, default 20 s) and throws unless the page's --font-sans face is loaded (or the page sets `data-system-font` on <html>). `until` and `screenshot` call it, so no shot or measurement runs in a fallback font. */
+  fontReady(deadline?: number, label?: string): Promise<void>;
 }
 
 export interface Tab extends PageSession {
@@ -63,6 +140,7 @@ export interface Browser extends PageSession {
 /** Opens `url` in a fresh headless Chromium with a throwaway profile. */
 export async function launch(url: string, { chromium = process.env.CHROMIUM, evidence = '.', args = [] }: LaunchOptions = {}): Promise<Browser> {
   if (!chromium) throw new Error('Set CHROMIUM to a Chromium or chrome-headless-shell binary');
+  const fontScript = fontInstallScript(fontFile());
   const profile = mkdtempSync(join(tmpdir(), 'boring-testing-profile-'));
   const child = spawn(chromium, ['--headless', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1500,950', '--host-resolver-rules=MAP insecure.test 127.0.0.1', ...args, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
   const endpoint = await new Promise<string>((resolve, reject) => {
@@ -91,6 +169,7 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
   const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
   ({ sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }));
   await send('Runtime.enable'); await send('Page.enable');
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: fontScript });
   await send('Page.navigate', { url });
   // evaluate / until over one page session (the first page, or another tab of the same profile).
   const inspect = (sendFn: Send): PageSession => {
@@ -103,20 +182,25 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
       const deadline = Date.now() + timeout;
       for (;;) {
         const value = await evaluate(expression).catch(() => undefined);
-        if (value) return value;
+        if (value) { await fontReady(deadline, label); return value; }
         if (Date.now() > deadline) throw new Error(`Timed out: ${label}\n${String(await evaluate('document.body.innerText').catch(() => '')).slice(0, 3000)}\n${problems.join('\n')}`);
         await pause(150);
       }
     };
-    return { evaluate, until };
+    const fontReady = async (deadline = Date.now() + 20000, label = 'page') => {
+      const problem = await evaluate(fontCheck(deadline));
+      if (problem) throw new Error(`Font not ready (${label}): ${problem}\n${problems.join('\n')}`);
+    };
+    return { evaluate, until, fontReady };
   };
-  const { evaluate, until } = inspect(send);
+  const { evaluate, until, fontReady } = inspect(send);
   /** Another tab of the same browser profile (same origin storage). Close it with `close()`. */
   const openTab = async (url: string, { hidden = false } = {}): Promise<Tab> => {
     const created = await sendTo(undefined, 'Target.createTarget', { url: 'about:blank' });
     const { sessionId: tabSession } = await sendTo(undefined, 'Target.attachToTarget', { targetId: created.targetId, flatten: true });
     const tabSend: Send = (method, params = {}) => sendTo(tabSession, method, params);
     await tabSend('Runtime.enable'); await tabSend('Page.enable');
+    await tabSend('Page.addScriptToEvaluateOnNewDocument', { source: fontScript });
     // Headless Chromium has no window stack, so every tab reports visible. `hidden` makes the tab report what a background tab does
     // (document.hidden and visibilityState, with visibilitychange) from before its first script; `setVisible` flips it later.
     await tabSend('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
@@ -220,8 +304,8 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
   };
   const wheel = (x: number, y: number, deltaY: number) => send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY });
   return {
-    evaluate, frameEvaluate, until, openTab, click, tap, emulate, type, press, drag, hover, attachFiles, wheel, send, problems,
-    screenshot: async (name: string) => writeFileSync(join(evidence, name), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64')),
+    evaluate, frameEvaluate, until, fontReady, openTab, click, tap, emulate, type, press, drag, hover, attachFiles, wheel, send, problems,
+    screenshot: async (name: string) => { await fontReady(); writeFileSync(join(evidence, name), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64')); },
     reload: () => send('Page.reload'),
     close: async () => { socket.close(); child.kill('SIGKILL'); await new Promise(resolve => child.once('exit', resolve)); try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch { /* Chromium may still be flushing its throwaway profile */ } },
   };

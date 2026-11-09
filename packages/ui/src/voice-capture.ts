@@ -7,7 +7,7 @@
 // owns microphone policy passes its own. `npm run check` (scripts/check-platform-apis.mjs) allowlists this file on that condition.
 //
 // The clock. MediaRecorder hands audio over late and in chunks, so neither its `start` event nor a chunk's arrival says when the
-// first recorded sample was heard. `npm run feedback:voice-sync` (tools/feedback-voice-sync.mjs) measured seven candidate
+// first recorded sample was heard. `npm run feedback:voice-sync` (scripts/feedback-voice-sync.mjs) measured seven candidate
 // strategies in Chromium against an independent reader of the same microphone; the page time read immediately before
 // `MediaRecorder.start()` was the most accurate (2–4 ms mean, under 9 ms max over three batches, with the fake device's dropped
 // time removed), while the `start` event is about 60 ms late (up to 125 ms) and stop-minus-duration 30–40 ms late. So
