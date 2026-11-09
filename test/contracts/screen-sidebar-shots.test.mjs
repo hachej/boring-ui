@@ -135,6 +135,32 @@ test('a field inside a row, and anything under data-keep-sheet, keeps the sheet 
   assert.equal(await has('[data-testid=screen-sidebar-sheet]'), true, 'a button under data-keep-sheet keeps the sheet');
 });
 
+test('a modified click on a row is not a choice: the original event goes through and the sheet stays open', { skip, timeout: 120000 }, async () => {
+  await open('library');
+  await click('[data-testid=screen-sidebar-button]');
+  await browser.until('rows', `!!document.querySelector('[data-testid=row-1]')`);
+  await browser.evaluate(`document.querySelector('[data-testid=row-1]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))`);
+  await wait(600);
+  assert.deepEqual(await browser.evaluate(`window.__clicks`), [{ row: 1, meta: true }], 'the row saw the original meta click, once, and no replayed plain click');
+  assert.equal(await has('[data-testid=screen-sidebar-sheet]'), true, 'the sheet stays open');
+  await browser.evaluate(`document.querySelector('[data-testid=row-1]').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 1 }))`);
+  await wait(600);
+  assert.equal(await has('[data-testid=screen-sidebar-sheet]'), true, 'a middle click keeps the sheet open too');
+});
+
+test('a double tap on a navigating row navigates once', { skip, timeout: 120000 }, async () => {
+  await open('library');
+  await click('[data-testid=screen-sidebar-button]');
+  await browser.until('rows', `!!document.querySelector('[data-testid=row-2]')`);
+  const before = await browser.evaluate(`history.length`);
+  await browser.evaluate(`(() => { const row = document.querySelector('[data-testid=row-2]'); row.click(); row.click(); })()`);
+  await browser.until('sheet closed', `!document.querySelector('[data-testid=screen-sidebar-sheet]')`);
+  await wait(800);
+  assert.equal((await browser.evaluate(`window.__clicks`)).length, 1, 'the row handler ran once');
+  assert.equal(await browser.evaluate(`history.length`), before + 1, 'one history entry was added');
+  assert.equal(await browser.evaluate(`location.pathname`), '/x');
+});
+
 test('Escape closes the sheet and returns focus to the header button', { skip, timeout: 120000 }, async () => {
   await open('library');
   await browser.evaluate(`document.querySelector('[data-testid=screen-sidebar-button]').focus()`);
