@@ -71,7 +71,7 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
   const intersects = (a, b) => a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom;
   const report = [], problems = [];
   try {
-    for (const [name, width, touch, mode] of [['390-touch', 390, true, ''], ['1280-fine', 1280, false, ''], ['390-fine', 390, false, ''], ['1024-touch-collapsed', 1024, true, 'collapsed'], ['1280-fine-collapsed', 1280, false, 'collapsed'], ['390-touch-sheet', 390, true, 'sheet']]) {
+    for (const [name, width, touch, mode] of [['390-touch', 390, true, ''], ['1280-fine', 1280, false, ''], ['390-fine', 390, false, ''], ['1024-touch-collapsed', 1024, true, 'collapsed'], ['1280-fine-collapsed', 1280, false, 'collapsed'], ['390-touch-sheet', 390, true, 'sheet'], ['390-touch-sheet-row', 390, true, 'sheet-row']]) {
       browser = touch ? touchBrowser : fineBrowser;
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 560, deviceScaleFactor: 1, mobile: touch });
       await browser.send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: 5 });
@@ -86,13 +86,14 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
         if (shots && name !== '390-fine') await browser.screenshot(`sidebar-action-${name}-${theme}.png`);
         const check = (ok, message) => { if (!ok) problems.push(`${name} ${theme}: ${message}`); };
         const { plain, action, badge, folder, nested } = m.rows;
-        if (mode === 'sheet') {
+        if (mode === 'sheet' || mode === 'sheet-row') {
           // D-1972: in the real phone sheet (portaled outside the SidebarProvider wrapper) the count and the « … » are as tall as their row button and start at its top.
           check(await browser.evaluate(`document.querySelector('[data-mobile=true]')?.closest('[data-slot=sidebar-wrapper]') === null`), 'the rows are in the portaled sheet, outside the provider wrapper');
           for (const [id, r] of Object.entries(m.rows)) for (const what of ['badge', 'action']) {
             if (!r[what]) continue;
             check(Math.abs(r[what].y - r.button.y) <= 1 && Math.abs(r[what].h - r.button.h) <= 1, `${id}: the ${what} (top ${r[what].y}, ${r[what].h} high) matches its row button (top ${r.button.y}, ${r.button.h} high)`);
           }
+          if (mode === 'sheet-row') for (const [id, r] of Object.entries(m.rows)) for (const what of ['button', 'badge', 'action']) if (r[what]) check(r[what].h === 56, `${id}: the ${what} follows the provider's --sidebar-row of 3.5rem in the sheet (${r[what].h}px, expected 56)`);
           continue;
         }
         if (mode === 'collapsed') {
