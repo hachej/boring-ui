@@ -1,5 +1,6 @@
 {
   "exceptions": [
+    { "id": "state-dot-shape", "reason": "A state dot is round by meaning (a mark, not a control skin): a fixed 8px circle on bg-primary that signals something waits. The control it sits on keeps the kit's shape." },
     { "id": "mockup-compiler-input", "reason": "Pinned upstream Tailwind CSS is compiler input for opaque sandbox documents only, never a host stylesheet or control skin. build-tailwind.mjs reproduces this exact generated file; host theme values still come from computed CSS variables." },
     { "id": "editor-document", "reason": "Markdown document typography, syntax and proposal diff presentation are content, not shadcn controls. Editor toolbars and menus are not exempt." },
     { "id": "pdf-document", "reason": "The browser PDF renderer owns the embedded document's appearance. The pane's toolbar and frame are not exempt." },
@@ -10,6 +11,7 @@
     { "id": "inline-text-link", "reason": "A link inside a sentence is text, not a control box: a plain anchor without padding or height breaks across lines like the text around it (D-1715, D-1696). Only StatusNarrative's link parts may do this, and only for the focus ring radius (rounded-sm)." }
   ],
   "allow": [
+    { "file": "registry/agent-bar/agent-bar.tsx", "rules": ["radius"], "pattern": "^rounded-full$", "exception": "state-dot-shape" },
     { "file": "registry/status-narrative/status-narrative.tsx", "rules": ["radius"], "pattern": "^rounded-sm$", "exception": "inline-text-link" },
     { "file": "registry/mockup-viewer/mockup-tailwind.ts", "rules": ["color", "font", "motion", "radius"], "pattern": ".*", "exception": "mockup-compiler-input" },
     { "file": "registry.json#theme", "rules": ["color", "radius", "font", "shadow", "border-width", "motion"], "pattern": ".*", "exception": "theme-definition" },

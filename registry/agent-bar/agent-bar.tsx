@@ -59,6 +59,8 @@ export interface AgentBarProps {
   /** Shows the history arrow; it flips with `historyOpen`. */
   readonly onHistory?: () => void;
   readonly historyOpen?: boolean;
+  /** Puts an 8px dot (`bg-primary`) on the history arrow, e.g. while a question waits; `label` is its accessible name. */
+  readonly historyBadge?: { readonly label: string };
   /** A question the agent asks, shown as a card above the bar. While it is open the field reads « Ou réponds ici » and text sent from the bar goes to `question.onAnswer({ text, source: 'bar' })`, not `onSend`. */
   readonly question?: AgentQuestionData;
   readonly placeholder?: string;
@@ -86,7 +88,7 @@ function Wave({ levels }: { readonly levels: readonly number[] }) {
   </div>;
 }
 
-export function AgentBar({ onSend, transcribe, quoted, question, onHistory, historyOpen = false, placeholder, partial, labels, disabled = false, className }: AgentBarProps) {
+export function AgentBar({ onSend, transcribe, quoted, question, onHistory, historyOpen = false, historyBadge, placeholder, partial, labels, disabled = false, className }: AgentBarProps) {
   const words = { ...agentBarLabels, ...labels };
   const [text, setText] = useState('');
   const [transcript, setTranscript] = useState('');
@@ -196,7 +198,7 @@ export function AgentBar({ onSend, transcribe, quoted, question, onHistory, hist
         <Button key="stop" type="button" variant="secondary" size="icon" data-agent-bar="" aria-label={words.stop} data-testid="agent-bar-stop" onClick={() => stopListening(false)}><SquareIcon /></Button>
       </> : <>
         {/* Keyed so the stop button of the listening layout is never the mic node reused (its touchstart guard would swallow the tap). One flat list from rest to hold: the pressed mic must stay mounted, or the browser never delivers its pointer-up. */}
-        {onHistory && state !== 'holding' ? <Button type="button" variant="secondary" size="icon" data-agent-bar="" aria-label={words.history} aria-expanded={historyOpen} onClick={onHistory}>{historyOpen ? <ChevronDownIcon /> : <ChevronUpIcon />}</Button> : null}
+        {onHistory && state !== 'holding' ? <Button type="button" variant="secondary" size="icon" data-agent-bar="" aria-label={words.history} aria-expanded={historyOpen} onClick={onHistory} className="relative">{historyOpen ? <ChevronDownIcon /> : <ChevronUpIcon />}{historyBadge ? <span role="img" aria-label={historyBadge.label} data-testid="agent-bar-history-badge" className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary" /> : null}</Button> : null}
         {state === 'holding'
           ? <div className="flex min-w-0 flex-1 items-center gap-2 px-2"><span data-testid="agent-bar-hold-label" className="min-w-0 truncate text-sm font-medium">{words.releaseToSend}</span><Wave levels={dictation.levels} /></div>
           : state === 'transcribing'
