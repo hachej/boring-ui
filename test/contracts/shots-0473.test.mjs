@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after, before } from 'node:test';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -21,7 +21,7 @@ const skip = !process.env.CHROMIUM && !process.env.CI;
 const shots = process.env.SHOTS_0473_EVIDENCE ?? join(root, '.cache/evidence/shots-0473');
 const RAIL = '[data-slot=sidebar-rail]';
 
-let server, browser, port;
+let server, browser, port, launchBrowser;
 before(async () => {
   if (skip) return;
   assert.ok(process.env.CHROMIUM, 'CHROMIUM must be set when CI is set');
@@ -62,6 +62,7 @@ before(async () => {
   port = server.address().port;
   await build({ entryPoints: [join(root, 'packages/testing/src/browser.ts')], bundle: true, platform: 'node', format: 'esm', outfile: join(work, 'browser.mjs') });
   const { launch } = await import(pathToFileURL(join(work, 'browser.mjs')));
+  launchBrowser = launch;
   browser = await launch('about:blank', { evidence: shots });
 });
 after(async () => { await browser?.close(); await new Promise(done => server ? server.close(done) : done()); });
@@ -107,7 +108,10 @@ test('resize handle: rest, hover, drag, min and max at 1280, light and dark', { 
   const centre = () => browser.evaluate(`(() => { const r = ${handle}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   const gap = () => browser.evaluate(`document.querySelector('[data-slot=sidebar-gap]').getBoundingClientRect().width`);
   const saved = name => readFileSync(join(shots, `${name}.png`));
-  for (const mode of ['light', 'dark']) {
+  // Capture script only: a Chromium of its own that reports a mouse (hover + fine pointer) to CSS media queries, so Tailwind's `hover:` (inside `@media (hover: hover)`) can apply.
+  const main = browser;
+  browser = await launchBrowser('about:blank', { evidence: shots, args: ['--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'] });
+  try { for (const mode of ['light', 'dark']) {
     const fresh = async () => {
       await open('', 1280, false, `${handle} !== null`, 'sidebar-resize'); await browser.evaluate(`localStorage.clear()`);
       await open('', 1280, false, `${handle} !== null`, 'sidebar-resize'); await browser.evaluate(`document.documentElement.classList.toggle('dark', ${mode === 'dark'})`); await wait(200);
@@ -133,6 +137,15 @@ test('resize handle: rest, hover, drag, min and max at 1280, light and dark', { 
     const held = await browser.drag(handle, (await centre()).x + 64, { release: false }); await wait(300);
     style.drag = await line();
     await take('drag', 320);
+    if (style.cssHoverMedia) {
+      assert.notEqual(style.hover, 'rgba(0, 0, 0, 0)', `${mode}: the hover hairline is drawn`);
+      assert.notEqual(style.drag, 'rgba(0, 0, 0, 0)', `${mode}: the hairline is drawn while dragging`);
+      assert.notEqual(saved(`resize-handle-hover-1280-${mode}`).toString('base64'), saved(`resize-handle-rest-1280-${mode}`).toString('base64'), `${mode}: the hover shot differs from rest`);
+    } else {
+      // Do not claim a state the shot does not show.
+      style.note = 'hover state not capturable in CI headless Chromium: (hover: hover) never matches';
+      unlinkSync(join(shots, `resize-handle-hover-1280-${mode}.png`));
+    }
     writeFileSync(join(shots, `resize-handle-hover-style-${mode}.json`), JSON.stringify(style));
     await held.release();
     await fresh();
@@ -146,7 +159,7 @@ test('resize handle: rest, hover, drag, min and max at 1280, light and dark', { 
     // Rest and hover share a width and the hover line is a hairline: its computed colours are in the json beside the shots. The other four files must be distinct.
     const files = ['rest', 'drag', `min-${MIN}rem`, `max-${MAX}rem`].map(state => saved(`resize-handle-${state}-1280-${mode}`).toString('base64'));
     assert.equal(new Set(files).size, 4, `${mode}: the rest, drag, min and max shots are pairwise different`);
-  }
+  } } finally { await browser.close(); browser = main; }
 });
 
 test('phone menu: the real AppShell nav sheet at 390 (touch) with the row « … » and a count, light and dark', { skip, timeout: 180000 }, async () => {
