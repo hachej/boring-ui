@@ -196,7 +196,7 @@ function Sidebar({
           data-slot="sidebar"
           data-mobile="true"
           ref={sheetRef}
-          initialFocus={(openType) => (openType === "keyboard" ? true : sheetRef)}
+          initialFocus={(openType) => (openType === "keyboard" ? true : sheetRef.current)}
           className={cn(SIDEBAR_ROW, "data-[side=left]:w-[var(--sidebar-width-mobile,75%)] data-[side=right]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground outline-none [&>button]:hidden")}
           style={sheetRow ? ({ "--sidebar-row": sheetRow } as React.CSSProperties) : undefined}
           side={side}
@@ -248,7 +248,7 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex size-full flex-col bg-sidebar in-data-[float=true]:shadow-lg group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
+          className="flex size-full flex-col bg-sidebar in-data-[float=true]:shadow-lg in-data-[float=true]:border-r in-data-[float=true]:border-sidebar-border group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
         >
           {children}
         </div>
