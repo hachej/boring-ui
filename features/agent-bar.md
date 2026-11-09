@@ -10,7 +10,8 @@ The voice-first bar of an agent that works in the background (Coach Max): a pill
 - `agent-bar-cancel` ✕ Annuler (and Escape) stay available while the audio is transcribed; a cancel then sends nothing and puts nothing in the field.
 - `agent-bar-focus` entering listening moves focus to ■ Arrêter; stop, cancel or send give it back to the field.
 - `agent-bar-quoted` `quoted={{ label, onClear }}` shows a chip « ↪ label » above the bar, outlines the bar and puts `quoted: label` in the next `onSend`. ✕ Retirer la citation calls `onClear`; the app removes the chip.
-- `agent-bar-partial` `partial` is text shown after the final transcript, dimmed: the slot for live partial words (a later slice).
+- `agent-bar-partial` `partial` is text shown after the final transcript, dimmed (the app's own extra not-yet-final words; `stream` feeds the same slot itself).
+- `agent-bar-live` `stream={async (sink, signal) => ({ stop, cancel })}` replaces `transcribe`: while listening or held the bar shows the words as they come above it, final words in the text colour and not-yet-final words dimmed (`text-muted-foreground`). The stream calls `sink.partial(text)` (replaces the dimmed tail), `sink.final(text)` (appends, clears the tail), optionally `sink.level(0..1)` for the waveform and `sink.fail(problem?)`; `stop()` resolves once the last finals are delivered. Stop puts only the final words in the field; release (hold) and send use them; Annuler calls `cancel()` and sends nothing. `useLiveDictation` is the hook underneath.
 - `agent-status` `AgentStatus` `{ state: 'working' | 'done', text, onCancel? }`: a spinner and the sentence, with « Annuler » only while working and when `onCancel` is given; a check and the result when done.
 - `agent-bar-labels` every word is a `labels` key with a French default (`agentBarLabels`), including the microphone problems; icon buttons carry their label as `aria-label` and are 44px on touch.
 
@@ -30,6 +31,7 @@ Preconditions: `CHROMIUM` set (CI sets it); `node_modules` installed.
 - **Quoted.** `agent-bar-quoted`: `?quoted=1`, send (the payload has `quoted`), press `Retirer la citation` (`window.__cleared`).
 - **Status.** `agent-status`: `?status=working` shows `agent-status-spinner` and `Annuler` (`window.__cancelled`); `?status=done` shows `agent-status-check` and no button.
 - **Labels.** `agent-bar-labels`: the same test reads every `aria-label` and measures the 44px targets at 390.
+- **Live.** `agent-bar-live`: `?live=1`; tap `Parler`, call `window.__sink.partial('...')` then `.final('...')` and read `agent-bar-transcript` (the dimmed span is the partial); press `Arrêter` and read the field; `window.__stream` counts opened, stopped, cancelled.
 - **Partial.** `agent-bar-partial`: pass `partial="de la crème"` in the fixture and read `agent-bar-transcript`.
 - The shots land in `.cache/evidence/agent-bar` (CI artifact `agent-bar-shots`).
 

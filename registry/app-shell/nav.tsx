@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { ComponentType, KeyboardEvent, ReactNode } from 'react';
 import { EllipsisIcon, PinIcon, SparklesIcon } from '../_shared/icons';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarSeparator, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { afterBack, BACK_SETTLE_MS, useBackLayer } from '../utils/back';
@@ -20,11 +19,17 @@ import type { AppShellText } from './text';
 import { ResizableRail } from './sidebar-resize';
 import { useSidebarPin } from './sidebar-open';
 
+export interface NavBadge {
+  readonly tone: 'info' | 'success' | 'warning' | 'destructive';
+  readonly label: string;
+}
+
 export interface NavItem {
   readonly id: string;
   readonly label: string;
   readonly icon: ComponentType<{ className?: string }>;
-  readonly badge?: boolean;
+  /** A state dot on the item. Both are required, so the dot always means something: `tone` picks the colour (info, success, warning, destructive tokens), `label` is its accessible name (« Nuit à noter »). No dot, no state: leave it out. */
+  readonly badge?: NavBadge;
   readonly render: () => ReactNode;
   /** The screen's own content inside the shell's sidebar (its list, say) while this item is on show: above the nav items, which move below it. `collapsed` is true on the icon rail, so the content can fold with it. */
   readonly sidebar?: (state: { readonly collapsed: boolean }) => ReactNode;
@@ -47,8 +52,10 @@ export function splitNav<T>(items: readonly T[]): { readonly tabs: readonly T[];
   return items.length <= MAX_TABS ? { tabs: items, overflow: [] } : { tabs: items.slice(0, MAX_TABS - 1), overflow: items.slice(MAX_TABS - 1) };
 }
 
-/** The host's Badge marks a screen with news. Its classes only place it. */
-const Dot = ({ className }: { readonly className?: string }) => <Badge aria-hidden="true" data-testid="nav-badge" className={className} />;
+const DOT_TONE = { info: 'bg-info', success: 'bg-success', warning: 'bg-warning', destructive: 'bg-destructive' } as const;
+
+/** A state dot: a plain 8px span in the tone's token, named by its label. Its classes only place it. */
+const Dot = ({ badge, className }: { readonly badge: NavBadge; readonly className?: string }) => <span role="img" aria-label={badge.label} data-testid="nav-badge" className={`inline-block size-2 shrink-0 rounded-full ${DOT_TONE[badge.tone]} ${className ?? ''}`} />;
 
 /** Publishes the bar's measured height as `--app-shell-tabbar` on the document root (the drawer is portaled, so the shell root is too high up to reach it). */
 function useTabbarHeight(bar: { readonly current: HTMLElement | null }, shown: boolean): void {
@@ -87,9 +94,11 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
   const { before, after } = placeNav(items);
   const { tabs, overflow } = splitNav([...before, ...after]);
   const inOverflow = overflow.find(item => item.id === activeId);
+  /** « Plus » stands for the hidden items: it shows the first one's dot. */
+  const hidden = overflow.find(item => item.badge)?.badge;
   const tab = (item: NavItem) => <Button key={item.id} variant={item.id === activeId ? 'secondary' : 'ghost'} role="tab" data-testid={`tab-${item.id}`} aria-selected={item.id === activeId} tabIndex={item.id === activeId ? 0 : -1}
     onClick={() => onChange(item.id)} className={TAB}>
-    <item.icon />{item.label}{item.badge && <Dot className="absolute top-1 left-1/2 ml-2" />}
+    <item.icon />{item.label}{item.badge && <Dot badge={item.badge} className="absolute top-1 left-1/2 ml-2" />}
   </Button>;
   const Plus = overflow.length ? (inOverflow?.icon ?? EllipsisIcon) : undefined;
   return <nav ref={bar} role="tablist" aria-label={text.tabs} data-testid="tabbar" data-feedback-ignore="" onKeyDown={arrows}
@@ -98,12 +107,12 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
     {Plus && <>
       <Button variant={inOverflow ? 'secondary' : 'ghost'} role="tab" data-testid="tab-plus" aria-selected={Boolean(inOverflow)} aria-haspopup="dialog" tabIndex={inOverflow ? 0 : -1} onClick={() => setPlusOpen(true)}
         className={TAB}>
-        <Plus />{inOverflow?.label ?? text.more}{!inOverflow && overflow.some(item => item.badge) && <Dot className="absolute top-1 left-1/2 ml-2" />}
+        <Plus />{inOverflow?.label ?? text.more}{!inOverflow && hidden && <Dot badge={hidden} className="absolute top-1 left-1/2 ml-2" />}
       </Button>
       <AppSheet open={plusOpen} onOpenChange={setPlusOpen} title={text.more}>
         {overflow.map(item => <Button key={item.id} variant={item.id === activeId ? 'secondary' : 'ghost'} size="lg" data-testid={`plus-${item.id}`} aria-current={item.id === activeId} className={SHEET_ROW}
           onClick={() => { setPlusOpen(false); afterBack(() => onChange(item.id)); }}>
-          <item.icon data-icon="inline-start" />{item.label}{item.badge && <Dot className="ml-auto" />}
+          <item.icon data-icon="inline-start" />{item.label}{item.badge && <Dot badge={item.badge} className="ml-auto" />}
         </Button>)}
       </AppSheet>
     </>}
@@ -245,7 +254,7 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
       <SidebarMenuButton isActive={item.id === activeId} tooltip={item.label} data-testid={`nav-${item.id}`} className="pointer-coarse:min-h-[var(--control-min,2.75rem)] pointer-coarse:min-w-[var(--control-min,2.75rem)]" onClick={() => choose(item.id)}>
         <item.icon />
         <span>{item.label}</span>
-        {item.badge && <Dot className="ml-auto group-data-[collapsible=icon]:hidden" />}
+        {item.badge && <Dot badge={item.badge} className="ml-auto group-data-[collapsible=icon]:hidden" />}
       </SidebarMenuButton>
     </SidebarMenuItem>)}
   </SidebarMenu></SidebarGroupContent></SidebarGroup>;
