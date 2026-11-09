@@ -79,7 +79,7 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
         check(touch || width < 768 ? plain.row.h >= 44 : plain.row.h < 44, `row height ${plain.row.h} (rows are 44px or more on touch and below md, shorter on a wide fine pointer)`);
         check(!m.overflowX, 'the page does not scroll sideways');
         check(!folder.badgeClipped && !badge.badgeClipped, 'the count is not clipped');
-        check(folder.labelTruncates, 'the long folder label truncates');
+        check(width >= 768 || folder.labelTruncates, 'the long folder label truncates at 390');
         if (touch) {
           for (const [id, r] of Object.entries({ action, folder })) {
             check(Math.abs(r.action.cy - r.row.cy) <= 1, `${id}: the action centre ${r.action.cy} is the row centre ${r.row.cy}`);

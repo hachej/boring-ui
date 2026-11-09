@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Sidebar rows on touch: the « … » is centred, 44px and clear of the count (`shadcn/ui/sidebar.tsx` `SidebarMenuAction`, `SidebarMenuBadge`; D-1904).** On a coarse pointer (`pointer-coarse:`, the media query the touch row height already uses) the action is centred on its row and is 44x44 (its extra `after:` hit area, which reached into the neighbouring rows, is off), the count is centred too, and a row with both keeps the count to the left of the action (the count stays visible; the row's end padding reserves room for both so the label truncates before them). A fine pointer is unchanged, at any width. Re-sync `sidebar` if you carry a copy. Test: `test/contracts/sidebar-menu-action.test.mjs`; see `features/app-shell.md`.
+
 # Migrating to 0.4.72
 
 - **The assistant reads larger: new core token `--text-chat` (D-1901).** pi-chat's message prose, Markdown, composer, empty state and cards now compute to `--text-chat` (default 0.9375rem, line-height 1.6, at least 1rem on touch); meta rows are 0.93 of it and code 0.875. The rules ship in the kit's `app.css`, so a kit bump resizes the chat itself. Visual change for every app. To size the composer menus, the model picker, the queue menu, the header and reply overflow menus and the camera too, re-sync the `button`, `pi-chat`, `pi-chat-pickers` and `pi-chat-attachments` items (they now carry the `pi-chat` class on those portalled roots). An app may set `--text-chat` (and `--text-chat--line-height`) in its `theme.core.css`. Test: `test/contracts/chat-text-size.test.mjs`; see `features/chat.md`.
