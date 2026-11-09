@@ -64,6 +64,7 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
         actionOpacity: Number(getComputedStyle(row.querySelector(':scope > [data-sidebar=menu-action]') ?? row).opacity), badgeOpacity: badge ? Number(getComputedStyle(badge).opacity) : null,
         buttonFont: getComputedStyle(row.querySelector('[data-sidebar=menu-button]')).fontSize, subFont: row.querySelector('[data-sidebar=menu-sub-button]') ? getComputedStyle(row.querySelector('[data-sidebar=menu-sub-button]')).fontSize : null,
         childActionOpacity: row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-action]') ? Number(getComputedStyle(row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-action]')).opacity) : null, childBadgeOpacity: row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-badge]') ? Number(getComputedStyle(row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-badge]')).opacity) : null,
+        childButton: box(row.querySelector('[data-sidebar=menu-sub-button]')), childBadge: box(row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-badge]')), childAction: box(row.querySelector('[data-sidebar=menu-sub] [data-sidebar=menu-action]')), dotBadge: box(row.querySelector('[data-sidebar=menu-button] > [data-slot=badge]')),
         labelTruncates: label.scrollWidth > label.clientWidth, badgeClipped: badge ? badge.scrollWidth > badge.clientWidth : false };
     }
     return { rows: out, rail: box(document.querySelector('[data-slot=sidebar-container]')), overflowX: document.documentElement.scrollWidth > innerWidth };
@@ -71,12 +72,13 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
   const intersects = (a, b) => a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom;
   const report = [], problems = [];
   try {
-    for (const [name, width, touch, mode] of [['390-touch', 390, true, ''], ['1280-fine', 1280, false, ''], ['390-fine', 390, false, ''], ['1024-touch-collapsed', 1024, true, 'collapsed'], ['1280-fine-collapsed', 1280, false, 'collapsed'], ['390-touch-sheet', 390, true, 'sheet'], ['390-touch-sheet-row', 390, true, 'sheet-row']]) {
+    for (const [name, width, touch, mode] of [['390-touch', 390, true, ''], ['1280-fine', 1280, false, ''], ['390-fine', 390, false, ''], ['1024-touch-collapsed', 1024, true, 'collapsed'], ['1280-fine-collapsed', 1280, false, 'collapsed'], ['390-touch-sheet', 390, true, 'sheet'], ['390-touch-sheet-row', 390, true, 'sheet-row'], ['390-touch-sheet-tap', 390, true, 'sheet-tap']]) {
       browser = touch ? touchBrowser : fineBrowser;
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 560, deviceScaleFactor: 1, mobile: touch });
       await browser.send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: 5 });
       for (const theme of ['light', 'dark']) {
         await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?theme=${theme}&mode=${mode}` });
+        if (mode === 'sheet-tap') { await browser.until('trigger mounted', `!!document.querySelector('[data-sidebar=trigger]')`); await browser.tap(`document.querySelector('[data-sidebar=trigger]')`); }
         await browser.until('fixture mounted', `document.querySelectorAll('[data-row]').length === 8 && document.readyState === 'complete'`);
         await new Promise(done => setTimeout(done, 250));
         const m = await measure();
@@ -86,7 +88,35 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
         if (shots && name !== '390-fine') await browser.screenshot(`sidebar-action-${name}-${theme}.png`);
         const check = (ok, message) => { if (!ok) problems.push(`${name} ${theme}: ${message}`); };
         const { plain, action, badge, folder, nested } = m.rows;
-        if (mode === 'sheet' || mode === 'sheet-row') {
+        // D-2020: a sub-row's count and « … » share the parent's right column (4px in from the row's edge) and their own row's vertical centre, within 2px, and an empty or 0 count renders nothing.
+        const childChecks = () => {
+          for (const id of ['subbadge', 'subaction']) for (const what of ['childBadge', 'childAction']) {
+            const r = m.rows[id]; if (!r[what]) continue;
+            check(Math.abs(r[what].cy - r.childButton.cy) <= 2, `${id}: the sub-row ${what.slice(5).toLowerCase()} centre ${r[what].cy} is its sub-row's centre ${r.childButton.cy} (within 2px)`);
+            check(Math.abs((r.row.right - r[what].right) - 4) <= 2, `${id}: the sub-row ${what.slice(5).toLowerCase()} right edge is ${r.row.right - r[what].right}px in from the row edge, the parent's column is 4px (within 2px)`);
+          }
+          check(m.rows.dot.badge === null, 'a 0 or empty SidebarMenuBadge renders nothing');
+          check(m.rows.dot.dotBadge === null || m.rows.dot.dotBadge.w === 0, `an empty Badge renders nothing (${m.rows.dot.dotBadge?.w}px wide)`);
+        };
+        if (mode.startsWith('sheet')) childChecks();
+        if (mode === 'sheet-tap') {
+          // D-2020: a sheet opened by a tap shows no focus ring (focus may land inside, but the ring is for a keyboard open), and its list has no visible scrollbar on a coarse pointer yet still scrolls.
+          const s = await browser.evaluate(`(() => { const a = document.activeElement, c = document.querySelector('[data-mobile=true] [data-slot=sidebar-content]'); if (c) c.scrollTop = 40;
+            return { focusVisible: !!a?.matches(':focus-visible') && !!a.closest('[data-mobile=true]'), ring: a ? getComputedStyle(a).boxShadow : '', scrollbarWidth: c ? getComputedStyle(c).scrollbarWidth : null, overflows: !!c && c.scrollHeight > c.clientHeight, scrolled: !!c && c.scrollTop > 0 }; })()`);
+          check(!s.focusVisible && !/ 0px 0px 0px [1-9]/.test(s.ring), `a tap-opened sheet shows no focus ring (focus-visible ${s.focusVisible}; shadow ${s.ring})`);
+          check(s.scrollbarWidth === 'none', `the sheet list hides its scrollbar on a coarse pointer (scrollbar-width ${s.scrollbarWidth})`);
+          check(s.overflows && s.scrolled, `the sheet list still scrolls (overflows ${s.overflows}, scrolled ${s.scrolled})`);
+          // Opened from the keyboard, the ring is shown.
+          await browser.press('Escape');
+          await browser.until('sheet closed', `!document.querySelector('[data-mobile=true]')`);
+          await browser.evaluate(`document.querySelector('[data-sidebar=trigger]').focus()`);
+          await browser.press('Enter');
+          await browser.until('sheet reopened', `!!document.querySelector('[data-mobile=true] [data-slot=sidebar-content]')`);
+          await new Promise(done => setTimeout(done, 250));
+          const k = await browser.evaluate(`(() => { const a = document.activeElement; return { focusVisible: !!a?.matches(':focus-visible'), inside: !!a?.closest('[data-mobile=true]') }; })()`);
+          check(k.inside && k.focusVisible, `a keyboard-opened sheet takes focus with a visible ring (inside ${k.inside}, focus-visible ${k.focusVisible})`);
+        }
+        if (mode === 'sheet' || mode === 'sheet-row' || mode === 'sheet-tap') {
           // D-1972: in the real phone sheet (portaled outside the SidebarProvider wrapper) the count and the « … » are as tall as their row button and start at its top.
           check(await browser.evaluate(`document.querySelector('[data-mobile=true]')?.closest('[data-slot=sidebar-wrapper]') === null`), 'the rows are in the portaled sheet, outside the provider wrapper');
           for (const [id, r] of Object.entries(m.rows)) for (const what of ['badge', 'action']) {
@@ -108,6 +138,7 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
           check(!m.overflowX, 'the page does not scroll sideways');
           continue;
         }
+        childChecks();
         // D-1961: a sub-row reads at the same size as its parent row, on fine and touch.
         check(nested.subFont !== null && nested.subFont === nested.buttonFont, `the sub-row font-size ${nested.subFont} is its parent row's ${nested.buttonFont}`);
         const heights = [action, badge, folder].map(r => r.row.h);
@@ -152,6 +183,12 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
             check(!overlap(h), `${id} hovered: the drawn count and action boxes ${JSON.stringify(drawn(h, 'badge'))} and ${JSON.stringify(drawn(h, 'action'))} do not overlap`);
             check(h.action.w === 20 && h.action.y - h.row.y === 6 && h.row.right - h.action.right === 4, `${id} hovered: the action sits where the count was`);
           }
+          await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+          // D-2020: hovering a sub-row hovers its own button, not the parent's: the parent keeps its count and its action stays waiting.
+          await browser.hover(`document.querySelector('[data-row=nested] [data-sidebar=menu-sub-button]')`);
+          await new Promise(done => setTimeout(done, 250));
+          const ns = (await measure()).rows.nested;
+          check(ns.badgeOpacity === 1 && ns.actionOpacity === 0, `nested, a sub-row hovered: the parent's count stays (${ns.badgeOpacity}) and its action stays hidden (${ns.actionOpacity})`);
           await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
           // D-1960 round 2: a child's count does not hide a parent's action at rest; a child's action does not hide a parent's count on hover.
           check(m.rows.subaction.childActionOpacity === 1, `subaction at rest: the child's own action-only « … » stays shown (${m.rows.subaction.childActionOpacity})`);
