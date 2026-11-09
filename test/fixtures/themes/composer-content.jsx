@@ -52,12 +52,17 @@ const Page = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-c
 </div>;
 const nav = [{ id: 'week', label: 'Week', icon: Icon, render: () => <Page /> }];
 
+// `?pm=1`: a product-manager panel that renders nothing of its own, so the shell starts on it when the assistant is not there yet.
+const panel = params.get('pm') === '1' ? { config: {}, Provider: ({ children }) => children, Layout: ({ children, navigation }) => <div className="flex min-h-0 min-w-0 flex-1 flex-col"><div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>{navigation}</div> } : undefined;
 const agentSpec = { controller, icon: Icon, label: 'Assistant', chatProps: { mentions, attachments, title: 'Assistant', ...(voiceMessage ? { voiceMessage } : {}) } };
 // `?person=a@example.org` signs a fictional person in; window.__person('b@example.org') switches the account without a remount.
 const Root = () => {
   const [person, setPerson] = useState(params.get('person'));
+  // `?late=1`: the assistant arrives after the first render (a screen lending it, or a session that resolves), as in a real app.
+  const [here, setHere] = useState(params.get('late') !== '1');
+  useLayoutEffect(() => { if (!here) { const timer = setTimeout(() => setHere(true), 200); return () => clearTimeout(timer); } }, [here]);
   window.__person = setPerson;
   return <AppShell layout="screen" title="Visual" appId={params.get('app') ?? undefined} {...(person ? { account: { name: person, email: person, menu: [] } } : {})} nav={nav} route={{ id: 'week', onChange() {} }} composer={params.get('composer') ?? 'dock'} rail="icon"
-    agent={agentSpec} />;
+    {...(here ? { agent: agentSpec } : {})} {...(panel ? { panel } : {})} />;
 };
 createRoot(document.getElementById('root')).render(<Root />);
