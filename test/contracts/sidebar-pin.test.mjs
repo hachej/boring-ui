@@ -355,13 +355,21 @@ test('unpinned, the hover reveal floats over the page on the sidebar surface wit
 test('the pin shows pressed, keeps the collapse toggle\'s footprint and its tooltip names the shortcut', { skip, timeout: 120000 }, async () => {
   await mount();
   await over();
-  const unpressed = await pin('getComputedStyle(e).backgroundColor');
+  const unpressed = await pin('e.querySelector("svg").innerHTML');
+  assert.equal(await pin('e.querySelector("svg").dataset.pinned'), 'false');
   const box = await pin('(r => ({ width: r.width, height: r.height }))(e.getBoundingClientRect())');
   assert.equal(await pin('e.title'), 'Épingler le volet · Ctrl+B');
   await browser.click(`document.querySelector('${PIN}')`);
   await away();
   assert.equal(await pressed(), 'true');
-  assert.notEqual(await pin('getComputedStyle(e).backgroundColor'), unpressed, 'pinned looks pressed, not only through aria-pressed');
+  assert.notEqual(await pin('e.querySelector("svg").innerHTML'), unpressed, 'pinned shows the filled icon, not only aria-pressed');
+  assert.equal(await pin('e.querySelector("svg").dataset.pinned'), 'true');
+  await browser.click(`document.querySelector('${PIN}')`);
+  assert.equal(await pressed(), 'false', 'aria-pressed toggles back');
+  assert.equal(await pin('e.querySelector("svg").innerHTML'), unpressed, 'the regular icon returns');
+  await browser.click(`document.querySelector('${PIN}')`);
+  await away();
+  assert.equal(await pressed(), 'true');
   assert.equal(await pin('e.title'), 'Désépingler le volet · Ctrl+B');
   assert.equal(await name(), 'Épingler le volet', 'the visible name stays');
   await mount('plain=1');
