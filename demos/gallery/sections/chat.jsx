@@ -37,7 +37,7 @@ function ChatDemo() {
   const controller = useMemo(() => createDemoChat({ id: 'gallery-chat' }), []);
   const answer = useMemo(() => async (_id, value) => { controller.resolve(value); return { kind: 'answered' }; }, [controller]);
   return <div data-testid="gallery-chat-frame" className="flex h-[34rem] w-full min-w-0 flex-col overflow-hidden rounded-lg border bg-background">
-    <PiChat {...withChatPlugins({ ...chatProps, controller, answer })} />
+    <PiChat {...withChatPlugins({ ...chatProps, controller, actions: { answer } })} />
   </div>;
 }
 
