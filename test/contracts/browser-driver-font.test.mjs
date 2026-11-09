@@ -62,6 +62,13 @@ test('the font list is parsed respecting quotes ("Acme, Inc" is one family)', { 
   await withPage(t, html, async browser => { assert.ok(await browser.until('face loaded', 'window.ready === true')); });
 });
 
+test('a face that is declared but not yet loading when the page reports ready is awaited, not refused', { skip }, async t => {
+  // document.fonts.ready does not cover a face nothing has started loading: the page is "ready" at once while the face is still unloaded.
+  const html = `<!doctype html><style>:root{--font-sans:"Late Face",sans-serif}</style><body>x<script>
+    const late = new FontFace('Late Face', 'url(/font.woff2)'); document.fonts.add(late); window.ready = late.status === 'unloaded';</script>`;
+  await withPage(t, html, async browser => { assert.ok(await browser.until('late face', 'window.ready === true')); });
+});
+
 test('a stack that starts with a system keyword or generic needs no face', { skip }, async t => {
   for (const stack of ['-apple-system, BlinkMacSystemFont, sans-serif', 'System-UI, sans-serif', 'monospace']) {
     await withPage(t, `<!doctype html><style>:root{--font-sans:${stack}}</style><body>x`, async browser => {
