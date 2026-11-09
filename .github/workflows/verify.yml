@@ -67,6 +67,7 @@ jobs:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
       CHAT_TEXT_EVIDENCE: ${{ github.workspace }}/.cache/evidence/chat-text
       SIDEBAR_ACTION_EVIDENCE: ${{ github.workspace }}/.cache/evidence/sidebar-action
+      SHOTS_0473_EVIDENCE: ${{ github.workspace }}/.cache/evidence/shots-0473
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -150,6 +151,14 @@ jobs:
           path: .cache/evidence/sidebar-action
           retention-days: 14
           if-no-files-found: ignore
+      - name: Kit 0.4.73 sign-off shots (WorkspaceBar panel, resize handle, phone menu)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shots-0473-signoff
+          path: .cache/evidence/shots-0473
+          retention-days: 7
+          if-no-files-found: warn
   release-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
