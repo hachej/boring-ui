@@ -3,7 +3,8 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /** An expression for the first element matching `selector`. */
 export const q = (selector: string): string => `document.querySelector(${JSON.stringify(selector)})`;
@@ -28,13 +29,21 @@ export interface LaunchOptions {
 
 /** The kit's default sans (D-1974), the face a page without its own `--font-sans` is measured in. */
 export const FONT_FAMILY = 'Inter Variable';
+const FONT_FILE = 'node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2';
+/** The pinned font file, found from this module first (an isolated consumer's install), then from the working directory (a bundled copy of this file). */
+function fontFile(): string {
+  const starts = [dirname(fileURLToPath(import.meta.url)), process.cwd()];
+  for (const start of starts) for (let at = start; ; at = dirname(at)) {
+    if (existsSync(join(at, FONT_FILE))) return join(at, FONT_FILE);
+    if (dirname(at) === at) break;
+  }
+  throw new Error(`Font file missing: ${FONT_FILE} (@fontsource-variable/inter is a dependency of @hachej/boring-testing; install it) searched from ${starts.join(' and ')}`);
+}
 /**
- * Registers the pinned @fontsource-variable/inter file (from the repository's node_modules, no network) as `Inter Variable` in every
- * document, from bytes so a page's CSP cannot refuse it. A page that declares its own face of that name keeps it (it is added after).
+ * Registers the pinned @fontsource-variable/inter file (local node_modules, no network) as `Inter Variable` in every document, from
+ * bytes so a page's CSP cannot refuse it. Read before Chromium is spawned, so a missing file leaks nothing.
  */
-function fontInstallScript(): string {
-  const file = resolve(process.cwd(), 'node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2');
-  if (!existsSync(file)) throw new Error(`Font file missing: ${file} (npm ci installs @fontsource-variable/inter)`);
+function fontInstallScript(file: string): string {
   return `(() => {
     const bytes = Uint8Array.from(atob(${JSON.stringify(readFileSync(file).toString('base64'))}), c => c.charCodeAt(0));
     const face = new FontFace(${JSON.stringify(FONT_FAMILY)}, bytes.buffer, { weight: '100 900', style: 'normal' });
@@ -43,18 +52,21 @@ function fontInstallScript(): string {
   })()`;
 }
 /**
- * In the page: after document.fonts.ready, the first family of :root's --font-sans (quotes stripped; FONT_FAMILY when the page declares
- * none) must pass document.fonts.check, and its @font-face must be loaded when the page declares one or the family is the kit default.
- * A brand family nothing declares (a system face a fixture chose on purpose) is only check()ed, which cannot tell it from a fallback.
+ * In the page: the first family of :root's --font-sans (list parsed respecting quotes; FONT_FAMILY when the page declares none) must
+ * have a loaded @font-face in document.fonts and pass document.fonts.check (check() alone is true for a family nothing declares).
+ * A fixture that deliberately uses a system face says so with a `data-system-font` attribute on <html>; only then is a missing face
+ * accepted. Returns '' or the reason. Waits for document.fonts.ready, giving up when `deadline` (epoch ms) passes.
  */
-const FONT_CHECK = `(async () => {
-  await document.fonts.ready;
-  const declared = getComputedStyle(document.documentElement).getPropertyValue('--font-sans').split(',')[0].trim().replace(/^["']|["']$/g, '');
-  const family = declared || ${JSON.stringify(FONT_FAMILY)};
-  const faces = [...document.fonts].filter(face => face.family.replace(/["']/g, '') === family);
-  const loaded = faces.some(face => face.status === 'loaded');
-  if (!loaded && (faces.length || family === ${JSON.stringify(FONT_FAMILY)})) return 'no loaded @font-face for "' + family + '" (--font-sans of the page): it would be measured in a fallback font';
-  if (!document.fonts.check('14px "' + family + '"')) return "document.fonts.check('14px \\"" + family + "\\"') is false";
+const fontCheck = (deadline: number) => `(async () => {
+  const waited = await Promise.race([document.fonts.ready.then(() => true), new Promise(done => setTimeout(() => done(false), Math.max(0, ${deadline} - Date.now())))]);
+  const list = getComputedStyle(document.documentElement).getPropertyValue('--font-sans');
+  const first = (list.match(/^\\s*(?:"([^"]*)"|'([^']*)'|([^,]*))/) || []).slice(1).find(part => part !== undefined) ?? '';
+  const family = first.trim() || ${JSON.stringify(FONT_FAMILY)};
+  if (!waited) return 'document.fonts.ready did not settle before the timeout (a font request is stalled?) for "' + family + '"';
+  if (document.documentElement.hasAttribute('data-system-font')) return '';
+  const loaded = [...document.fonts].some(face => face.family.replace(/^["']|["']$/g, '') === family && face.status === 'loaded');
+  if (!loaded) return 'no loaded @font-face for "' + family + '" (--font-sans of the page): it would be measured in a fallback font; load the face or set data-system-font on <html>';
+  if (!document.fonts.check('14px "' + family + '"')) return 'document.fonts.check is false for "' + family + '"';
   return '';
 })()`;
 
@@ -63,8 +75,8 @@ export interface PageSession {
   evaluate(expression: string): Promise<any>;
   /** Polls `expression` until it is truthy and returns it; on timeout throws with `label`, the page text and the page's errors. */
   until(label: string, expression: string, timeout?: number): Promise<any>;
-  /** Awaits document.fonts.ready and throws unless the page's --font-sans face is loaded. `until` and `screenshot` call it, so no shot or measurement runs in a fallback font. */
-  fontReady(): Promise<void>;
+  /** Awaits document.fonts.ready (until `deadline`, epoch ms, default 20 s) and throws unless the page's --font-sans face is loaded (or the page sets `data-system-font` on <html>). `until` and `screenshot` call it, so no shot or measurement runs in a fallback font. */
+  fontReady(deadline?: number, label?: string): Promise<void>;
 }
 
 export interface Tab extends PageSession {
@@ -97,6 +109,7 @@ export interface Browser extends PageSession {
 /** Opens `url` in a fresh headless Chromium with a throwaway profile. */
 export async function launch(url: string, { chromium = process.env.CHROMIUM, evidence = '.', args = [] }: LaunchOptions = {}): Promise<Browser> {
   if (!chromium) throw new Error('Set CHROMIUM to a Chromium or chrome-headless-shell binary');
+  const fontScript = fontInstallScript(fontFile());
   const profile = mkdtempSync(join(tmpdir(), 'boring-testing-profile-'));
   const child = spawn(chromium, ['--headless', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1500,950', '--host-resolver-rules=MAP insecure.test 127.0.0.1', ...args, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
   const endpoint = await new Promise<string>((resolve, reject) => {
@@ -125,7 +138,7 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
   const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
   ({ sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }));
   await send('Runtime.enable'); await send('Page.enable');
-  await send('Page.addScriptToEvaluateOnNewDocument', { source: fontInstallScript() });
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: fontScript });
   await send('Page.navigate', { url });
   // evaluate / until over one page session (the first page, or another tab of the same profile).
   const inspect = (sendFn: Send): PageSession => {
@@ -138,14 +151,14 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
       const deadline = Date.now() + timeout;
       for (;;) {
         const value = await evaluate(expression).catch(() => undefined);
-        if (value) { await fontReady(); return value; }
+        if (value) { await fontReady(deadline, label); return value; }
         if (Date.now() > deadline) throw new Error(`Timed out: ${label}\n${String(await evaluate('document.body.innerText').catch(() => '')).slice(0, 3000)}\n${problems.join('\n')}`);
         await pause(150);
       }
     };
-    const fontReady = async () => {
-      const problem = await evaluate(FONT_CHECK);
-      if (problem) throw new Error(`Font not ready: ${problem}`);
+    const fontReady = async (deadline = Date.now() + 20000, label = 'page') => {
+      const problem = await evaluate(fontCheck(deadline));
+      if (problem) throw new Error(`Font not ready (${label}): ${problem}\n${problems.join('\n')}`);
     };
     return { evaluate, until, fontReady };
   };
@@ -156,7 +169,7 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
     const { sessionId: tabSession } = await sendTo(undefined, 'Target.attachToTarget', { targetId: created.targetId, flatten: true });
     const tabSend: Send = (method, params = {}) => sendTo(tabSession, method, params);
     await tabSend('Runtime.enable'); await tabSend('Page.enable');
-    await tabSend('Page.addScriptToEvaluateOnNewDocument', { source: fontInstallScript() });
+    await tabSend('Page.addScriptToEvaluateOnNewDocument', { source: fontScript });
     // Headless Chromium has no window stack, so every tab reports visible. `hidden` makes the tab report what a background tab does
     // (document.hidden and visibilityState, with visibilitychange) from before its first script; `setVisible` flips it later.
     await tabSend('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
