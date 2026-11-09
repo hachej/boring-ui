@@ -219,7 +219,8 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
 
     // P5: the host's own Button and Input keep their shadcn look, and the block ships no rule that restyles them.
     const css = registryCss(item('agent-bar'));
-    assert.equal(/data-slot=["']?(button|input)/.test(css), false, `the block's CSS restyles shadcn parts: ${css.match(/[^{}]*data-slot=["']?(button|input)[^{}]*/)?.[0]}`);
+    const loose = [...css.matchAll(/([^{}]*data-slot=["']?(?:button|input)[^{}]*)\{/g)].map(match => match[1].trim()).filter(selector => !selector.includes('[data-agent-bar]'));
+    assert.deepEqual(loose, [], 'every rule that touches a shadcn button or input must target the block own marked parts only');
     const look = await browser.evaluate(`(() => {
       const radius = value => { const p = document.createElement('i'); p.style.borderRadius = value; document.body.append(p); const r = getComputedStyle(p).borderTopLeftRadius; p.remove(); return r; };
       const button = getComputedStyle(document.querySelector('[data-testid=host-button]')), field = getComputedStyle(document.querySelector('[data-testid=host-input]'));

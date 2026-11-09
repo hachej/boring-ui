@@ -37,6 +37,6 @@ Preconditions: `CHROMIUM` set (CI sets it); `node_modules` installed.
 
 - The bar never clears the quote; `onClear` is the app's, and the app decides whether a send consumes it.
 - The waveform needs the Web Audio path (levels); the MediaRecorder fallback shows quiet dots.
-- The block ships no CSS: its look is classes on its own buttons and field, so a host's Button and Input are never restyled outside it.
+- The block's CSS targets only its own parts (`data-agent-bar` on its buttons and field), never every shadcn Button or Input, so a host's are never restyled.
 - On a fine pointer the icon buttons are the kit's 36px; the 44px floor applies on touch.
 - The hint under the bar (« Glisse un repas vers la droite… ») and the question card above it (slice 2, field « Ou réponds ici ») are the app's or later slices.
