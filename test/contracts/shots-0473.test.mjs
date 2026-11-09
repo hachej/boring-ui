@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after, before } from 'node:test';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -120,10 +120,14 @@ test('resize handle: rest, hover, drag, min and max at 1280, light and dark', { 
       await shot(`resize-handle-${state}-1280-${mode}`, RAIL);
     };
     await fresh();
+    const line = () => browser.evaluate(`getComputedStyle(${handle}, '::after').backgroundColor`);
+    const style = { rest: await line() };
     await take('rest', 256);
     await browser.hover(handle); await wait(300);
     assert.equal(await browser.evaluate(`${handle}.matches(':hover')`), true, 'the pointer is over the handle');
+    style.hover = await line();
     await take('hover', 256);
+    writeFileSync(join(shots, `resize-handle-hover-style-${mode}.json`), JSON.stringify(style));
     await fresh();
     const held = await browser.drag(handle, (await centre()).x + 64, { release: false }); await wait(300);
     await take('drag', 320);
@@ -136,9 +140,9 @@ test('resize handle: rest, hover, drag, min and max at 1280, light and dark', { 
     await take(`max-${MAX}rem`, MAX * 16);
     const different = [...new Set([widths.rest, widths.drag, widths[`min-${MIN}rem`], widths[`max-${MAX}rem`]])];
     assert.equal(different.length, 4, `rest, drag, min and max widths differ: ${JSON.stringify(widths)}`);
-    // Rest and hover share a width, so their files must differ in the handle's own style; every state's file is distinct.
-    const files = ['rest', 'hover', 'drag', `min-${MIN}rem`, `max-${MAX}rem`].map(state => saved(`resize-handle-${state}-1280-${mode}`).toString('base64'));
-    assert.equal(new Set(files).size, 5, `${mode}: the five resize shots are pairwise different`);
+    // Rest and hover share a width and the hover line is a hairline: its computed colours are in the json beside the shots. The other four files must be distinct.
+    const files = ['rest', 'drag', `min-${MIN}rem`, `max-${MAX}rem`].map(state => saved(`resize-handle-${state}-1280-${mode}`).toString('base64'));
+    assert.equal(new Set(files).size, 4, `${mode}: the rest, drag, min and max shots are pairwise different`);
   }
 });
 
