@@ -355,6 +355,28 @@ test('1280, composer=content: Esc from a host dock beside the content (outside t
   assert.equal(await browser.evaluate(`document.activeElement?.id`), 'host-dock', 'focus stays where it was');
 });
 
+test('1280, composer=content: each person has their own tray-or-dock choice, applied when the account switches without a remount, and focus lands on the field', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'composer=content&person=b@example.org');
+  await sendFromField('How much was the bread?');
+  await browser.evaluate(`document.querySelector('[data-testid=agent-tray-dock]').click()`);
+  await browser.until('dock open', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  await open(1280, 'composer=content&keep=1&person=a@example.org');
+  await sendFromField('And the cheese?');
+  assert.equal(await state(), 'closed', 'person A has no stored choice: the tray');
+  await browser.evaluate(`document.querySelector('[data-testid=agent-tray-grow]').focus()`);
+  assert.equal(await browser.evaluate(`document.activeElement?.dataset.testid === 'agent-tray-grow'`), true, 'focus is on Agrandir');
+  await browser.evaluate(`window.__person('b@example.org')`);
+  await browser.until('dock open', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  assert.equal(await count('[data-testid=agent-tray]'), 0, "person B's stored choice (dock) is applied after the switch");
+  await wait(300);
+  assert.equal(await browser.evaluate(`document.activeElement?.dataset.testid === 'composer-input'`), true, 'focus moved to the one field, not the body');
+  await browser.evaluate(`window.__person('a@example.org')`);
+  await browser.until('tray', `!!document.querySelector('[data-testid=agent-tray]') || document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'closed'`);
+  await browser.evaluate(`window.__layer.open('agent')`);
+  await browser.until('tray', `!!document.querySelector('[data-testid=agent-tray]')`);
+  assert.equal(await state(), 'closed', "back to person A's choice (the tray)");
+});
+
 for (const dark of [false, true]) {
   test(`shoot composer=content, ${dark ? 'dark' : 'light'}: 1280 dock closed, dock open, 390 peek`, { skip, timeout: 120000 }, async () => {
     const name = dark ? 'dark' : 'light', query = `composer=content${dark ? '&dark=1' : ''}`;

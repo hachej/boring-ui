@@ -52,6 +52,12 @@ const Page = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-c
 </div>;
 const nav = [{ id: 'week', label: 'Week', icon: Icon, render: () => <Page /> }];
 
-createRoot(document.getElementById('root')).render(
-  <AppShell layout="screen" title="Visual" {...(params.get('app') ? { appId: params.get('app') } : {})} nav={nav} route={{ id: 'week', onChange() {} }} composer={params.get('composer') ?? 'dock'} rail="icon"
-    agent={{ controller, icon: Icon, label: 'Assistant', chatProps: { mentions, attachments, title: 'Assistant', ...(voiceMessage ? { voiceMessage } : {}) } }} />);
+const agentSpec = { controller, icon: Icon, label: 'Assistant', chatProps: { mentions, attachments, title: 'Assistant', ...(voiceMessage ? { voiceMessage } : {}) } };
+// `?person=a@example.org` signs a fictional person in; window.__person('b@example.org') switches the account without a remount.
+const Root = () => {
+  const [person, setPerson] = useState(params.get('person'));
+  window.__person = setPerson;
+  return <AppShell layout="screen" title="Visual" {...(params.get('app') ? { appId: params.get('app') } : {})} {...(person ? { account: { name: person, email: person, menu: [] } } : {})} nav={nav} route={{ id: 'week', onChange() {} }} composer={params.get('composer') ?? 'dock'} rail="icon"
+    agent={agentSpec} />;
+};
+createRoot(document.getElementById('root')).render(<Root />);
