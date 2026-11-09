@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { AgentBar, AgentStatus } from '../../../registry/agent-bar/agent-bar.tsx';
 
 // D-1978 slice 1: the agent bar (field, mic, send, quoted chip) and the status line above it, over a fictional day page, with a fake microphone
-// and a fake transcriber (fictional text). `?dark=1` picks the dark theme; `?status=working|done` shows the status line; `?quoted=1` cites a row.
+// and a fake transcriber (fictional text). `?dark=1` picks the dark theme; `?status=working|done` shows the status line; `?quoted=1` cites a row; `?slow=1` makes the transcription take 1.5s; `?deny=1` refuses the microphone.
 // What the app would see is on window: __sent (onSend payloads), __transcribed (blobs handed to transcribe), __cancelled (status Annuler),
 // __cleared (quoted ✕), __history (history taps), __tracks (microphone tracks released).
 const params = new URLSearchParams(location.search);
@@ -15,6 +17,7 @@ window.__sent = []; window.__transcribed = []; window.__cancelled = 0; window.__
 Object.defineProperty(window, 'AudioContext', { configurable: true, value: undefined });
 Object.defineProperty(window, 'webkitAudioContext', { configurable: true, value: undefined });
 Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
+  if (params.get('deny') === '1') throw new DOMException('Permission denied', 'NotAllowedError');
   window.__tracks.opened += 1;
   let stopped = false;
   const track = { stop() { if (!stopped) { stopped = true; window.__tracks.released += 1; } } };
@@ -32,7 +35,7 @@ class FakeRecorder extends EventTarget {
 }
 window.MediaRecorder = FakeRecorder;
 
-const transcribe = async audio => { window.__transcribed.push(audio.size); await new Promise(done => setTimeout(done, 60)); return 'Au goûter une part de tarte aux pommes'; };
+const transcribe = async audio => { window.__transcribed.push(audio.size); await new Promise(done => setTimeout(done, params.get('slow') === '1' ? 1500 : 60)); return 'Au goûter une part de tarte aux pommes'; };
 const meals = [['Petit-déjeuner', 420, ['Flocons d’avoine 60 g', 'Lait demi-écrémé 200 ml']], ['Midi', 820, ['Riz cuit 200 g', 'Poulet grillé 150 g']], ['Goûter', 2, ['Tarte aux pommes · 1 part', 'Café noir 1 tasse']]];
 
 const Day = () => {
@@ -44,6 +47,7 @@ const Day = () => {
     <main className="flex flex-1 flex-col gap-3 p-4">
       <p className="text-sm text-muted-foreground">Lundi 9 novembre</p>
       <p className="text-4xl font-semibold">1 240 <span className="text-base font-medium text-muted-foreground">/ 2 100 kcal</span></p>
+      <div className="flex gap-2"><Button data-testid="host-button" variant="outline">Hôte</Button><Input data-testid="host-input" defaultValue="Hôte" aria-label="Champ hôte" /></div>
       {meals.map(([title, kcal, rows]) => <section key={title} className="flex flex-col gap-1.5 rounded-xl bg-card p-3">
         <h2 className="flex justify-between text-sm font-semibold"><span>{title}</span><span>{kcal}</span></h2>
         {rows.map(row => <p key={row} className="rounded-lg bg-background p-3 text-sm">{row}</p>)}

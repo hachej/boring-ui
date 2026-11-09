@@ -188,6 +188,79 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     }
   });
 
+  // D-1978 review fixes, one per finding, each driven with real input.
+  test(`the bar survives drift, a refused microphone and slow transcription, and keeps focus (${width}, ${theme})`, { skip, timeout: 240000 }, async () => {
+    if (theme === 'dark') return;
+    const focused = `(document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.dataset?.testid ?? document.activeElement?.tagName)`;
+    // P1: the mic moves to the left while held; 1px of drift is not a slide off, and the release still sends.
+    await open(width, theme);
+    let gesture = await hold(label('Parler'));
+    assert.equal(await stateOf(), 'holding');
+    await gesture.move(1, 0); await wait(150); await gesture.move(3, 2); await wait(150);
+    assert.equal(await stateOf(), 'holding', 'a 1px drift keeps recording');
+    await gesture.up(3, 2);
+    await browser.until('sent after a drifting hold', `window.__sent.length === 1`);
+    assert.deepEqual(await sent(), [{ text: spoken }]);
+
+    // P4: a tap on the mic moves focus to ■ Arrêter; stopping or cancelling gives it back to the field.
+    await browser.until('rest again', `document.querySelector('[data-testid=agent-bar]').dataset.state === 'rest'`);
+    await press('Parler');
+    await browser.until('listening', `document.querySelector('[data-testid=agent-bar]').dataset.state === 'listening'`);
+    assert.equal(await browser.evaluate(focused), 'Arrêter', 'focus is on Arrêter while listening');
+    await press('Arrêter');
+    await browser.until('text landed', `document.querySelector('[data-testid=agent-bar-input]')?.value === ${JSON.stringify(spoken)}`);
+    assert.equal(await browser.evaluate(focused), 'agent-bar-input', 'focus is back in the field after stop');
+    await press('Parler');
+    await browser.until('listening again', `document.querySelector('[data-testid=agent-bar]').dataset.state === 'listening'`);
+    assert.equal(await browser.evaluate(focused), 'Arrêter');
+    await press('Annuler');
+    await browser.until('rest after cancel', `document.querySelector('[data-testid=agent-bar]').dataset.state === 'rest'`);
+    assert.equal(await browser.evaluate(focused), 'agent-bar-input', 'focus is back in the field after cancel');
+
+    // P5: the host's own Button and Input keep their shadcn look, and the block ships no rule that restyles them.
+    const css = registryCss(item('agent-bar'));
+    assert.equal(/data-slot=["']?(button|input)/.test(css), false, `the block's CSS restyles shadcn parts: ${css.match(/[^{}]*data-slot=["']?(button|input)[^{}]*/)?.[0]}`);
+    const look = await browser.evaluate(`(() => {
+      const radius = value => { const p = document.createElement('i'); p.style.borderRadius = value; document.body.append(p); const r = getComputedStyle(p).borderTopLeftRadius; p.remove(); return r; };
+      const button = getComputedStyle(document.querySelector('[data-testid=host-button]')), field = getComputedStyle(document.querySelector('[data-testid=host-input]'));
+      const mic = getComputedStyle(${label('Parler')}), own = getComputedStyle(document.querySelector('[data-testid=agent-bar-input]'));
+      return { lg: radius('var(--radius-lg)'), xl3: radius('var(--radius-3xl)'), button: button.borderTopLeftRadius, field: field.borderTopLeftRadius, fieldBorder: field.borderTopWidth, fieldBg: field.backgroundColor, mic: mic.borderTopLeftRadius, ownBg: own.backgroundColor, ownShadow: own.boxShadow };
+    })()`);
+    assert.equal(look.button, look.lg, `the host Button keeps its radius: ${JSON.stringify(look)}`);
+    assert.equal(look.field, look.lg, `the host Input keeps its radius: ${JSON.stringify(look)}`);
+    assert.equal(look.fieldBorder, '1px'); assert.notEqual(look.fieldBg, 'rgba(0, 0, 0, 0)', 'the host Input keeps its background');
+    assert.equal(look.mic, look.xl3, `the bar's own mic is round: ${JSON.stringify(look)}`);
+    assert.equal(look.ownBg, 'rgba(0, 0, 0, 0)', 'the bar field is flat'); assert.equal(look.ownShadow, 'none');
+  });
+
+  test(`a refused microphone leaves the bar at rest with the error (${width}, ${theme})`, { skip, timeout: 240000 }, async () => {
+    if (theme === 'dark') return;
+    await open(width, theme, 'deny=1');
+    const gesture = await hold(label('Parler'), { ms: 50 });
+    await gesture.up(0, 0);
+    await wait(500);
+    assert.equal(await stateOf(), 'rest', 'a refused tap does not leave the bar listening');
+    assert.equal(await browser.evaluate(`document.querySelector('[role=alert]')?.textContent ?? ''`), 'Le micro est refusé. Autorise-le dans les réglages du navigateur.');
+    assert.equal(await has('Arrêter'), false);
+    assert.equal((await sent()).length, 0);
+  });
+
+  test(`Annuler and Escape work while the transcription is slow (${width}, ${theme})`, { skip, timeout: 240000 }, async () => {
+    if (theme === 'dark') return;
+    await open(width, theme, 'slow=1');
+    for (const how of ['Annuler', 'Escape']) {
+      const gesture = await hold(label('Parler'));
+      await gesture.up(0, 0);
+      await browser.until('transcribing', `document.querySelector('[data-testid=agent-bar]').dataset.state === 'transcribing'`);
+      if (how === 'Annuler') { assert.equal(await has('Annuler'), true, 'Annuler stays available while transcribing'); await press('Annuler'); }
+      else await browser.press('Escape');
+      await wait(2000);
+      assert.equal(await stateOf(), 'rest', `${how} returns to rest`);
+      assert.equal((await sent()).length, 0, `${how} during transcription sends nothing`);
+      assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-input]')?.value`), '', `${how} puts nothing in the field`);
+    }
+  });
+
   test(`the status line and the quoted chip (${width}, ${theme})`, { skip, timeout: 240000 }, async () => {
     const at = `${width}-${theme}`;
     const floor = width === 390 ? 44 : 36;
