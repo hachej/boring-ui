@@ -35,8 +35,7 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
   const vars = item('theme').cssVars;
-  // A headless Chromium reports no fine pointer or hover and CDP cannot emulate them, so the test CSS builds `hover:` / `group-hover:` without the (hover: hover) guard and `pointer-fine:` as `not (pointer: coarse)`; touch is still the real coarse pointer of the mobile emulation.
-  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n@custom-variant hover (&:hover);\n@custom-variant pointer-fine (@media not (pointer: coarse));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${['theme', 'app-shell'].map(name => registryCss(item(name))).join('\n')}`;
+  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${['theme', 'app-shell'].map(name => registryCss(item(name))).join('\n')}`;
   const compiler = await compile(cssSource, { base: root, loadStylesheet: async id => {
     const path = require.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id);
     return { path, base: dirname(path), content: readFileSync(path, 'utf8') };
@@ -51,7 +50,10 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   await build({ entryPoints: [join(root, 'packages/testing/src/browser.ts')], bundle: true, platform: 'node', format: 'esm', outfile: join(work, 'browser.mjs') });
   const { launch } = await import(pathToFileURL(join(work, 'browser.mjs')));
-  const browser = await launch('about:blank', { evidence: shots ?? work });
+  // A mouse (hover and fine pointer) for CSS media queries, as shots-0473.test.mjs does: a headless Chromium reports neither, so Tailwind's `hover:` and `pointer-fine:` would never apply. Touch runs in a default Chromium with mobile emulation (the coarse pointer).
+  const fineBrowser = await launch('about:blank', { evidence: shots ?? work, args: ['--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'] });
+  const touchBrowser = await launch('about:blank', { evidence: shots ?? work });
+  let browser = fineBrowser;
   const measure = () => browser.evaluate(`(() => {
     const box = el => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom, cy: r.y + r.height / 2 }; };
     const out = {};
@@ -69,6 +71,7 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
   const report = [], problems = [];
   try {
     for (const [name, width, touch, mode] of [['390-touch', 390, true, ''], ['1280-fine', 1280, false, ''], ['390-fine', 390, false, ''], ['1024-touch-collapsed', 1024, true, 'collapsed'], ['1280-fine-collapsed', 1280, false, 'collapsed']]) {
+      browser = touch ? touchBrowser : fineBrowser;
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 560, deviceScaleFactor: 1, mobile: touch });
       await browser.send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: 5 });
       for (const theme of ['light', 'dark']) {
@@ -151,6 +154,6 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
     }
     if (shots) writeFileSync(join(shots, 'sidebar-action-measurements.json'), JSON.stringify(report, null, 1));
     assert.deepEqual(problems, []);
-    assert.deepEqual(browser.problems, []);
-  } finally { await browser.close(); await new Promise(done => server.close(done)); }
+    assert.deepEqual([...fineBrowser.problems, ...touchBrowser.problems], []);
+  } finally { await fineBrowser.close(); await touchBrowser.close(); await new Promise(done => server.close(done)); }
 });
