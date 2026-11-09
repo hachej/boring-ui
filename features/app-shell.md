@@ -35,6 +35,8 @@ The `app-shell` block gives an app its navigation, one header per screen, an acc
 
 ## Driving it with the app-shell journeys
 
+- Dock focus at load: `shell-dock-load-focus`: `node --test test/contracts/app-shell-render.test.mjs` opens `?agent=agent&open=half` at 1280 and asserts the Float button does not hold focus, then clicks a side control and asserts focus is on a dock control.
+
 Preconditions: `npm ci`, Chromium available, a built kit (`npm run build`).
 
 - **Layouts.** `shell-layouts`: `npm run app-shell:journey` (screen) and `npm run app-shell:journey:workspace` (workspace). The sidebar is open in `screen`; in `workspace` it is the icon rail below 1280px, and from 1280px open on a screen with a `sidebar` (first visit).
