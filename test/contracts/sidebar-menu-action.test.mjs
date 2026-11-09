@@ -103,7 +103,9 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
         if (mode === 'sheet-tap') {
           // D-2020: a sheet opened by a tap shows no focus ring (focus may land inside, but the ring is for a keyboard open), and its list has no visible scrollbar on a coarse pointer yet still scrolls.
           const s = await browser.evaluate(`(() => { const a = document.activeElement, c = document.querySelector('[data-mobile=true] [data-slot=sidebar-content]'); if (c) c.scrollTop = 40;
-            return { focusVisible: !!a?.matches(':focus-visible') && !!a.closest('[data-mobile=true]'), ring: a ? getComputedStyle(a).boxShadow : '', scrollbarWidth: c ? getComputedStyle(c).scrollbarWidth : null, overflows: !!c && c.scrollHeight > c.clientHeight, scrolled: !!c && c.scrollTop > 0 }; })()`);
+            return { inside: !!a?.closest('[data-mobile=true]'), anyVisible: document.querySelectorAll('[data-mobile=true] :focus-visible, [data-mobile=true]:focus-visible').length, focusVisible: !!a?.matches(':focus-visible') && !!a.closest('[data-mobile=true]'), ring: a ? getComputedStyle(a).boxShadow : '', scrollbarWidth: c ? getComputedStyle(c).scrollbarWidth : null, overflows: !!c && c.scrollHeight > c.clientHeight, scrolled: !!c && c.scrollTop > 0 }; })()`);
+          check(s.inside, `a tap-opened sheet still takes focus: document.activeElement is inside the sheet (inside ${s.inside})`);
+          check(s.anyVisible === 0, `no element in a tap-opened sheet matches :focus-visible (${s.anyVisible})`);
           check(!s.focusVisible && !/ 0px 0px 0px [1-9]/.test(s.ring), `a tap-opened sheet shows no focus ring (focus-visible ${s.focusVisible}; shadow ${s.ring})`);
           check(s.scrollbarWidth === 'none', `the sheet list hides its scrollbar on a coarse pointer (scrollbar-width ${s.scrollbarWidth})`);
           check(s.overflows && s.scrolled, `the sheet list still scrolls (overflows ${s.overflows}, scrolled ${s.scrolled})`);
