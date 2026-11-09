@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppShell } from '../../../registry/app-shell/app-shell.tsx';
 import { WorkspaceBar } from '../../../registry/pi-app/workspace-bar.tsx';
-import { SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarMenuAction, SidebarMenuBadge } from '@/components/ui/sidebar';
+import { SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarMenuAction, SidebarMenuBadge } from '@/components/ui/sidebar';
 
 // D-1962: fixtures for the 0.4.73 sign-off shots (fictional data). ?case=bar mounts the real WorkspaceBar with a host panel `tasks` (D-1930; `window.__command(kind)` sends a command);
 // ?case=phone mounts the real AppShell with compactNav="sheet" and a nav sidebar of rows with a « … » SidebarMenuAction and a count (D-1904). ?theme=light|dark.
@@ -19,11 +19,11 @@ function Bar() {
 }
 
 const rows = [['Journal', false, null], ['Banque', true, null], ['Brouillons', false, '8'], ['Pièces justificatives de l’exercice en cours', true, '128']];
-const Rows = () => <SidebarMenu>{rows.map(([label, action, count]) => <SidebarMenuItem key={label}>
-  <SidebarMenuButton><span>{label}</span></SidebarMenuButton>
+const Rows = () => <SidebarGroup><SidebarGroupContent><SidebarMenu>{rows.map(([label, action, count]) => <SidebarMenuItem key={label}>
+  <SidebarMenuButton><Dot /><span>{label}</span></SidebarMenuButton>
   {action ? <SidebarMenuAction aria-label="Plus"><span aria-hidden="true">…</span></SidebarMenuAction> : null}
   {count ? <SidebarMenuBadge>{count}</SidebarMenuBadge> : null}
-</SidebarMenuItem>)}</SidebarMenu>;
+</SidebarMenuItem>)}</SidebarMenu></SidebarGroupContent></SidebarGroup>;
 const nav = ['Comptes', 'Bilan'].map(label => ({ id: label, label, icon: Dot, render: () => <p>Écritures fictives de la société Exemple</p>, ...(label === 'Comptes' ? { sidebar: () => <Rows /> } : {}) }));
 
 createRoot(document.getElementById('root')).render(query.get('case') === 'bar' ? <Bar />

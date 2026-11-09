@@ -69,10 +69,15 @@ after(async () => { await browser?.close(); await new Promise(done => server ? s
 const wait = ms => new Promise(done => setTimeout(done, ms));
 const exists = selector => browser.evaluate(`document.querySelector(${JSON.stringify(selector)}) !== null`);
 // Fine pointer at 1280, a finger (coarse pointer, touch) at 390, as the other shot steps do. `entry` picks the fixture bundle.
+// Headless Chromium does not promise a fine pointer, so the page is also told which pointer this person has (as sidebar-resize.test.mjs does): without it the rail is not a resize handle.
+let pointerScript = null;
+const pointerShim = (pointer, hover) => `(() => { const real = window.matchMedia.bind(window); window.matchMedia = query => { const list = real(query); const m = /^\\(\\s*(any-)?(pointer|hover)\\s*:\\s*(\\w+)\\s*\\)$/.exec(String(query).trim()); if (m) Object.defineProperty(list, 'matches', { get: () => m[3] === (m[2] === 'pointer' ? '${pointer}' : '${hover}') }); return list; }; })()`;
 async function open(query, width, touch, ready, entry = 'shots-0473') {
   await browser.send('Emulation.setDeviceMetricsOverride', { width, height: touch ? 844 : 800, deviceScaleFactor: 1, mobile: touch });
   await browser.send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: 5 });
   await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: touch ? 'coarse' : 'fine' }, { name: 'hover', value: touch ? 'none' : 'hover' }] });
+  if (pointerScript) await browser.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: pointerScript });
+  pointerScript = (await browser.send('Page.addScriptToEvaluateOnNewDocument', { source: pointerShim(touch ? 'coarse' : 'fine', touch ? 'none' : 'hover') })).identifier;
   await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 900, y: 700 });
   await browser.send('Page.navigate', { url: `http://127.0.0.1:${port}/?entry=${entry}&${query}` });
   await browser.until('fixture mounted', `document.readyState === 'complete' && ${ready}`);
@@ -94,24 +99,46 @@ test('workspacebar: the host panel open and closed through command, 1280 and 390
   }
 });
 
-test('resize handle: rest, hover, drag, min and max (12rem and 28rem) at 1280, light and dark', { skip, timeout: 180000 }, async () => {
-  const centre = () => browser.evaluate(`(() => { const r = document.querySelector('${RAIL}').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+// The bounds are read from the code under test, so a change to the kit's minimum renames the file instead of mislabelling it.
+const bound = name => Number(/const (?:MIN|MAX)_REM = (\d+)/.exec(readFileSync(join(root, 'registry/app-shell/sidebar-resize.tsx'), 'utf8').split('\n').find(line => line.startsWith(`const ${name}_REM`)))[1]);
+test('resize handle: rest, hover, drag, min and max at 1280, light and dark', { skip, timeout: 180000 }, async () => {
+  const MIN = bound('MIN'), MAX = bound('MAX');
   const handle = `document.querySelector('${RAIL}')`;
+  const centre = () => browser.evaluate(`(() => { const r = ${handle}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  const gap = () => browser.evaluate(`document.querySelector('[data-slot=sidebar-gap]').getBoundingClientRect().width`);
+  const saved = name => readFileSync(join(shots, `${name}.png`));
   for (const mode of ['light', 'dark']) {
-    const fresh = async () => { await open('', 1280, false, `document.querySelector('${RAIL}') !== null`, 'sidebar-resize'); await browser.evaluate(`localStorage.clear()`); await open('', 1280, false, `document.querySelector('${RAIL}') !== null`, 'sidebar-resize'); await browser.evaluate(`document.documentElement.classList.toggle('dark', ${mode === 'dark'})`); await wait(200); };
+    const fresh = async () => {
+      await open('', 1280, false, `${handle} !== null`, 'sidebar-resize'); await browser.evaluate(`localStorage.clear()`);
+      await open('', 1280, false, `${handle} !== null`, 'sidebar-resize'); await browser.evaluate(`document.documentElement.classList.toggle('dark', ${mode === 'dark'})`); await wait(200);
+      assert.equal(await browser.evaluate(`${handle}.getAttribute('role')`), 'separator', 'the rail is the resize handle');
+    };
+    const widths = {};
+    const take = async (state, expected) => {
+      widths[state] = await gap();
+      assert.equal(widths[state], expected, `${state} ${mode}: left pane width`);
+      await shot(`resize-handle-${state}-1280-${mode}`, RAIL);
+    };
     await fresh();
-    await shot(`resize-handle-rest-1280-${mode}`, RAIL);
+    await take('rest', 256);
     await browser.hover(handle); await wait(300);
-    await shot(`resize-handle-hover-1280-${mode}`, RAIL);
+    assert.equal(await browser.evaluate(`${handle}.matches(':hover')`), true, 'the pointer is over the handle');
+    await take('hover', 256);
     await fresh();
     const held = await browser.drag(handle, (await centre()).x + 64, { release: false }); await wait(300);
-    await shot(`resize-handle-drag-1280-${mode}`, RAIL);
+    await take('drag', 320);
     await held.release();
-    for (const [state, delta] of [['min-12rem', -2000], ['max-28rem', 2000]]) {
-      await fresh();
-      await browser.drag(handle, (await centre()).x + delta); await wait(400);
-      await shot(`resize-handle-${state}-1280-${mode}`, RAIL);
-    }
+    await fresh();
+    await browser.drag(handle, (await centre()).x - 2000); await wait(400);
+    await take(`min-${MIN}rem`, MIN * 16);
+    await fresh();
+    await browser.drag(handle, (await centre()).x + 2000); await wait(400);
+    await take(`max-${MAX}rem`, MAX * 16);
+    const different = [...new Set([widths.rest, widths.drag, widths[`min-${MIN}rem`], widths[`max-${MAX}rem`]])];
+    assert.equal(different.length, 4, `rest, drag, min and max widths differ: ${JSON.stringify(widths)}`);
+    // Rest and hover share a width, so their files must differ in the handle's own style; every state's file is distinct.
+    const files = ['rest', 'hover', 'drag', `min-${MIN}rem`, `max-${MAX}rem`].map(state => saved(`resize-handle-${state}-1280-${mode}`).toString('base64'));
+    assert.equal(new Set(files).size, 5, `${mode}: the five resize shots are pairwise different`);
   }
 });
 
