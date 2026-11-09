@@ -1,6 +1,5 @@
 {
   "exceptions": [
-    { "id": "state-dot-shape", "reason": "A state dot is round by meaning (a mark, not a control skin): a fixed 8px circle on bg-primary that signals something waits. The control it sits on keeps the kit's shape." },
     { "id": "mockup-compiler-input", "reason": "Pinned upstream Tailwind CSS is compiler input for opaque sandbox documents only, never a host stylesheet or control skin. build-tailwind.mjs reproduces this exact generated file; host theme values still come from computed CSS variables." },
     { "id": "editor-document", "reason": "Markdown document typography, syntax and proposal diff presentation are content, not shadcn controls. Editor toolbars and menus are not exempt." },
     { "id": "pdf-document", "reason": "The browser PDF renderer owns the embedded document's appearance. The pane's toolbar and frame are not exempt." },
@@ -8,10 +7,12 @@
     { "id": "agent-avatar-shape", "reason": "A thread tells agents from people by shape: an agent is a rounded square with a glyph, a person is a circle with an initial. The shape is meaning, not skin; the colour stays on theme tokens (info-soft). Only SharedChat's member avatar may do this." },
     { "id": "theme-definition", "reason": "The optional registry theme defines defaults; the fictional browser fixture defines a host theme. Only these theme definitions may contain visual literals." },
     { "id": "drawing-document", "reason": "A drawing's own white page and the native renderers' output (Excalidraw, and the vendored diagrams.net viewer run only inside the drawing viewer's opaque sandbox frame) are document content drawn as the tool draws it, never host chrome or a control skin. D-1398." },
+    { "id": "state-dot-shape", "reason": "A nav state dot is a circle by meaning (D-2028): a round 8px mark that is told apart from a count or a button. The shape is not skin; the colour stays on the tone tokens (info, success, warning, destructive). Only the app-shell nav dot and the agent-bar history dot may do this." },
     { "id": "inline-text-link", "reason": "A link inside a sentence is text, not a control box: a plain anchor without padding or height breaks across lines like the text around it (D-1715, D-1696). Only StatusNarrative's link parts may do this, and only for the focus ring radius (rounded-sm)." }
   ],
   "allow": [
     { "file": "registry/agent-bar/agent-bar.tsx", "rules": ["radius"], "pattern": "^rounded-full$", "exception": "state-dot-shape" },
+    { "file": "registry/app-shell/nav.tsx", "rules": ["radius"], "pattern": "^rounded-full$", "exception": "state-dot-shape" },
     { "file": "registry/status-narrative/status-narrative.tsx", "rules": ["radius"], "pattern": "^rounded-sm$", "exception": "inline-text-link" },
     { "file": "registry/mockup-viewer/mockup-tailwind.ts", "rules": ["color", "font", "motion", "radius"], "pattern": ".*", "exception": "mockup-compiler-input" },
     { "file": "registry.json#theme", "rules": ["color", "radius", "font", "shadow", "border-width", "motion"], "pattern": ".*", "exception": "theme-definition" },
