@@ -66,7 +66,8 @@ const open = async (width, query = '') => {
   const phone = width < 768;
   await browser.send('Emulation.setDeviceMetricsOverride', { width, height: phone ? 844 : 800, deviceScaleFactor: 1, mobile: phone });
   await browser.send('Page.navigate', { url: `http://127.0.0.1:${port}/?${query}` });
-  await browser.until('shell mounted', `window.__layer !== undefined && !!document.querySelector('[data-testid=app-shell]') && document.readyState === 'complete'`);
+  // The old document answers readyState complete until the navigation commits: wait for the new URL, not only for a mounted shell.
+  await browser.until('shell mounted', `location.search === ${JSON.stringify(query ? '?' + query : '')} && window.__layer !== undefined && !!document.querySelector('[data-testid=app-shell]') && document.readyState === 'complete'`);
   await wait(400);
 };
 const count = selector => browser.evaluate(`document.querySelectorAll('${selector}').length`);
