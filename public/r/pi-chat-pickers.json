@@ -7,8 +7,8 @@
     "react@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.74/r/pi-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.74/r/_shared.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.75/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.75/r/_shared.json"
   ],
   "files": [
     {
