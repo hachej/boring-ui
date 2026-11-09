@@ -64,8 +64,9 @@ test('the header switches the theme and the density; the phone entry opens the 3
   await browser.until('compact', `document.documentElement.dataset.density === 'compact'`);
   await browser.evaluate(`document.querySelector('[data-testid=nav-coquille]').click()`);
   await browser.until('phone frame', `!!document.querySelector('[data-testid=phone-frame]')?.contentDocument?.querySelector('[data-testid=gallery-bases]')`);
-  const phoneWidth = await browser.evaluate(`document.querySelector('[data-testid=phone-frame]').getBoundingClientRect().width`);
-  assert.ok(phoneWidth > 360 && phoneWidth <= 390, `the frame is a phone width inside its bezel (${phoneWidth}px)`);
+  // The bezel is 390px wide with an 8px padding and a 1px border either side, so the iframe is 390 - 18 = 372px and its own viewport is that wide: not scaled.
+  const phone = await browser.evaluate(`(() => { const f = document.querySelector('[data-testid=phone-frame]'); return { bezel: f.parentElement.getBoundingClientRect().width, frame: f.getBoundingClientRect().width, inner: f.contentWindow.innerWidth }; })()`);
+  assert.deepEqual(phone, { bezel: 390, frame: 372, inner: 372 }, 'a 390px phone frame, shown at its own size');
   assert.equal(await browser.evaluate(`document.querySelector('[data-testid=phone-frame]').contentDocument.documentElement.classList.contains('dark')`), true, 'the frame follows the theme');
   await browser.screenshot('gallery-phone');
   assert.deepEqual(browser.problems, [], 'no console error');
