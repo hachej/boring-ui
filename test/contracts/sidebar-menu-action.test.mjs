@@ -56,7 +56,7 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
     const out = {};
     for (const row of document.querySelectorAll('[data-row]')) {
       const label = row.querySelector('[data-sidebar=menu-button] > span'), badge = row.querySelector('[data-sidebar=menu-badge]');
-      out[row.dataset.row] = { row: box(row), button: box(row.querySelector('[data-sidebar=menu-button]')), sub: box(row.querySelector('[data-sidebar=menu-sub]')), action: box(row.querySelector('[data-sidebar=menu-action]')), badge: box(badge), label: box(label),
+      out[row.dataset.row] = { row: box(row), button: box(row.querySelector('[data-sidebar=menu-button]')), sub: box(row.querySelector('[data-sidebar=menu-sub]')), action: box(row.querySelector('[data-sidebar=menu-action]')), badge: box(badge), label: box(label), icon: box(row.querySelector('[data-sidebar=menu-button] > svg')),
         labelTruncates: label.scrollWidth > label.clientWidth, badgeClipped: badge ? badge.scrollWidth > badge.clientWidth : false };
     }
     return { rows: out, rail: box(document.querySelector('[data-slot=sidebar-container]')), overflowX: document.documentElement.scrollWidth > innerWidth };
@@ -78,6 +78,11 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
         const { plain, action, badge, folder, nested } = m.rows;
         if (mode === 'collapsed') {
           for (const [id, r] of Object.entries(m.rows)) check(r.button.w > 0 && r.button.right <= m.rail.right && r.button.w <= m.rail.w, `${id}: the collapsed button (${r.button.w}px wide, to ${r.button.right}) stays inside the ${m.rail.w}px rail (to ${m.rail.right})`);
+          // D-1914: on touch the 44px collapsed button must not show the start of the label beside the icon, and the icon sits in the middle of its button.
+          if (touch) for (const [id, r] of Object.entries(m.rows)) {
+            check(r.label.w === 0, `${id}: the collapsed label is ${r.label.w}px wide, nothing of it shows beside the icon`);
+            check(Math.abs((r.icon.x + r.icon.w / 2) - (r.button.x + r.button.w / 2)) <= 1, `${id}: the icon centre ${r.icon.x + r.icon.w / 2} is its button centre ${r.button.x + r.button.w / 2}`);
+          }
           check(!m.overflowX, 'the page does not scroll sideways');
           continue;
         }
