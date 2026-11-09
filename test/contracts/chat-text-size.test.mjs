@@ -72,7 +72,7 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
       const s = getComputedStyle(node); if (s.display === 'none' || s.visibility === 'hidden') continue;
       if (px(s.fontSize) < 13) small.push({ tag: node.tagName, testid: node.getAttribute('data-testid') ?? node.getAttribute('data-slot'), text: node.textContent.trim().slice(0, 30), size: px(s.fontSize) });
     }
-    const icon = selector => { const svg = document.querySelector(selector + ' svg'); const button = document.querySelector(selector); if (!svg || !button) return null; const r = svg.getBoundingClientRect(), b = button.getBoundingClientRect(); return { w: r.width, h: r.height, boxW: b.width, boxH: b.height }; };
+    const icon = selector => { const svg = document.querySelector(selector + ' svg'); const button = document.querySelector(selector); if (!svg || !button) return null; const r = svg.getBoundingClientRect(), b = button.getBoundingClientRect(); return { w: r.width, h: r.height, boxW: b.width, boxH: b.height, shape: svg.innerHTML, weight: svg.getAttribute('data-weight') }; };
     return { token, small, headerMore: icon('[data-testid=chat-action-more]'), replyMore: icon('[data-testid=reply-action-more]'), title: size('header h2'), userProse: size('[data-role=user] [data-slot=bubble-content]'), prose: size('[data-role=assistant] [data-slot=bubble-content]'),
       li: size('[data-role=assistant] li'), cell: size('[data-role=assistant] td'), codespan: size('[data-role=assistant] p code'), codeblock: size('[data-testid=code-block] pre'),
       composer: size('[data-testid=composer-input]'), empty: size('[data-slot=empty-description]'), line: size('[data-slot=trace-line]'), time: size('[data-testid=message-time]'), answered: size('[data-testid=answered-by]'), question: size('[data-testid=question-text]'), questionInput: size('[data-testid=question-input]'), approval: size('[data-testid=approval-card] [data-slot=item-title]'), titleButton: size('header h2 button'), plusItem: size('[data-testid=composer-plus-menu] [role=menuitem]'), headerItem: size('[data-testid=chat-action-more-list] [role=menuitem]'), replyItem: size('[data-testid=reply-action-more-list] [role=menuitem]'), modelItem: size('[data-testid=composer-model-menu] [role=menuitemradio], [data-testid=composer-model-menu] [role=menuitem]') };
@@ -128,6 +128,9 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
         if (state === 'reply') { // D-1905: the header "..." is the same size as the reply actions' icons, and its touch target is not reduced
           assert.ok(m.headerMore && m.replyMore, `${label}: both overflow triggers render`);
           near(m.headerMore.w, m.replyMore.w, `${label}: header "..." icon width equals the reply actions' icon`); near(m.headerMore.h, m.replyMore.h, `${label}: header "..." icon height equals the reply actions' icon`);
+          // D-1905: at the same 16px the header glyph is drawn bold so the dots do not read as a speck; the reply row keeps its regular dots.
+          assert.equal(m.headerMore.weight, 'bold', `${label}: the header "..." is the bold glyph`);
+          assert.notEqual(m.headerMore.shape, m.replyMore.shape, `${label}: the header "..." dots are drawn heavier than the reply row's`);
           if (mobile) assert.ok(m.headerMore.boxW >= 44 && m.headerMore.boxH >= 44, `${label}: the header "..." keeps its 44px touch target (${m.headerMore.boxW}x${m.headerMore.boxH})`);
         }
         if (state === 'approval') { near(m.approval?.size ?? null, prose, `${label}: approval card title`);
