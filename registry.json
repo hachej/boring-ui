@@ -985,6 +985,9 @@
             "box-shadow": "none",
             "border-radius": "var(--radius-3xl)"
           },
+          "[data-slot=\"agent-bar\"] [data-slot=\"input\"]:focus-visible": {
+            "box-shadow": "none"
+          },
           "[data-testid=\"agent-bar-quoted\"] [data-slot=\"button\"]": {
             "border-radius": "var(--radius-3xl)",
             "color": "var(--primary)"

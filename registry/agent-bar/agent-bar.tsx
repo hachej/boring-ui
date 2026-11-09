@@ -140,7 +140,7 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
   }, disabled);
 
   const busy = mode === 'idle' && dictation.phase !== 'idle';
-  const state = mode === 'holding' ? 'holding' : mode === 'press' || mode === 'listening' ? 'listening' : busy ? 'transcribing' : 'rest';
+  const state = mode === 'holding' ? 'holding' : mode === 'listening' ? 'listening' : busy ? 'transcribing' : 'rest';
   const outlined = state === 'listening' || state === 'holding' || quoted !== undefined;
   const canSend = state === 'rest' ? text.trim().length > 0 : state !== 'transcribing';
   const shown = transcript || partial ? <p data-testid="agent-bar-transcript" className="px-3 text-sm text-foreground italic">{transcript}{partial ? <span className="text-muted-foreground">{transcript ? ' ' : ''}{partial}</span> : null}</p> : null;
@@ -149,7 +149,7 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
     if (canSend) deliver(text);
   };
 
-  return <div className={cn('mx-auto flex w-full max-w-xl flex-col gap-2', className)}>
+  return <div data-slot="agent-bar" className={cn('mx-auto flex w-full max-w-xl flex-col gap-2', className)}>
     {shown}
     {dictation.problem ? <p role="alert" className="px-3 text-sm text-destructive">{dictation.problem}</p> : null}
     {quoted ? <div data-testid="agent-bar-quoted" className="flex items-center gap-1 rounded-(--radius-xl) bg-primary/10 py-0.5 pr-0.5 pl-3 text-sm font-semibold text-primary">
@@ -157,24 +157,23 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
       <span className="min-w-0 flex-1 truncate">{quoted.label}</span>
       <Button type="button" variant="ghost" size="icon" aria-label={words.removeQuote} onClick={quoted.onClear}><XIcon /></Button>
     </div> : null}
-    <div data-slot="agent-bar" data-testid="agent-bar" data-state={state} className={cn('flex items-center gap-1.5 rounded-(--radius-3xl) bg-card p-1.5 ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring', outlined && 'ring-2 ring-primary')}>
+    <div data-testid="agent-bar" data-state={state} className={cn('flex items-center gap-1.5 rounded-(--radius-3xl) bg-card p-1.5 ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring', outlined && 'ring-2 ring-primary')}>
       {state === 'listening' ? <>
         <Button type="button" variant="secondary" size="icon" aria-label={words.cancel} onClick={abandon}><XIcon /></Button>
         <Wave levels={dictation.levels} />
         <Button type="button" variant="secondary" size="icon" aria-label={words.stop} onClick={() => stopListening(false)}><SquareIcon /></Button>
-      </> : state === 'holding' ? <>
-        <span className="flex size-[var(--control-h,2.25rem)] shrink-0 items-center justify-center rounded-(--radius-3xl) bg-foreground text-background" aria-hidden="true"><SquareIcon /></span>
-        <span data-testid="agent-bar-hold-label" className="min-w-0 flex-1 truncate text-sm font-medium">{words.releaseToSend}</span>
-        <Wave levels={dictation.levels} />
       </> : <>
-        {onHistory ? <Button type="button" variant="secondary" size="icon" aria-label={words.history} aria-expanded={historyOpen} onClick={onHistory}>{historyOpen ? <ChevronDownIcon /> : <ChevronUpIcon />}</Button> : null}
-        {state === 'transcribing'
-          ? <span className="flex min-w-0 flex-1 items-center gap-2 px-2 text-sm text-muted-foreground"><span className="text-primary"><Spinner aria-label={words.transcribing} /></span>{words.transcribing}</span>
-          : <Input data-testid="agent-bar-input" value={text} disabled={disabled} placeholder={placeholder ?? words.placeholder} aria-label={placeholder ?? words.placeholder}
-              className="min-w-0 flex-1" enterKeyHint="send"
-              onChange={event => { setText(event.target.value); setTranscript(''); }}
-              onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />}
-        {state === 'rest' ? <Button type="button" variant="secondary" size="icon" className="touch-none select-none" aria-label={words.speak} disabled={disabled} {...hold}><MicIcon /></Button> : null}
+        {/* One flat list from rest to hold: the pressed mic must stay mounted, or the browser never delivers its pointer-up. */}
+        {onHistory && state !== 'holding' ? <Button type="button" variant="secondary" size="icon" aria-label={words.history} aria-expanded={historyOpen} onClick={onHistory}>{historyOpen ? <ChevronDownIcon /> : <ChevronUpIcon />}</Button> : null}
+        {state === 'holding'
+          ? <div className="flex min-w-0 flex-1 items-center gap-2 px-2"><span data-testid="agent-bar-hold-label" className="min-w-0 truncate text-sm font-medium">{words.releaseToSend}</span><Wave levels={dictation.levels} /></div>
+          : state === 'transcribing'
+            ? <span className="flex min-w-0 flex-1 items-center gap-2 px-2 text-sm text-muted-foreground"><span className="text-primary"><Spinner aria-label={words.transcribing} /></span>{words.transcribing}</span>
+            : <Input data-testid="agent-bar-input" value={text} disabled={disabled} placeholder={placeholder ?? words.placeholder} aria-label={placeholder ?? words.placeholder}
+                className="min-w-0 flex-1" enterKeyHint="send"
+                onChange={event => { setText(event.target.value); setTranscript(''); }}
+                onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />}
+        {state !== 'transcribing' ? <Button type="button" variant="secondary" size="icon" data-testid="agent-bar-mic" data-held={state === 'holding' ? '' : undefined} className={cn('touch-none select-none', state === 'holding' && 'order-first')} aria-label={words.speak} disabled={disabled} {...hold}>{state === 'holding' ? <SquareIcon /> : <MicIcon />}</Button> : null}
       </>}
       <Button type="button" size="icon" aria-label={words.send} disabled={disabled || !canSend || state === 'holding'} onClick={submit}><ArrowUpIcon /></Button>
     </div>
