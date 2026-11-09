@@ -1,0 +1,7 @@
+<h1>Flux</h1>
+<p id="live">En attente</p>
+<script>
+  // A long-lived connection, as a live app keeps: it never finishes, and the shot must not wait for it.
+  const source = new EventSource('/events');
+  source.onmessage = event => { document.getElementById('live').textContent = event.data; };
+</script>
