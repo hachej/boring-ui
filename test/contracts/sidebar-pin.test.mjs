@@ -240,6 +240,66 @@ test('unpinned: the pane does not fold under a dialog opened from it, and folds 
   assert.equal(await state(), 'collapsed', 'closed, pointer and focus outside: folded');
 });
 
+test('Tab in, pin then unpin with Space: moving the pointer in and out keeps the pane open while the focus stays inside', { skip, timeout: 120000 }, async () => {
+  await mount();
+  await away();
+  await tab();
+  await browser.press(' ');
+  await wait(300);
+  await browser.press(' ');
+  await wait(400);
+  assert.equal(await pressed(), 'false');
+  assert.equal(await browser.evaluate(`document.activeElement === document.querySelector('${PIN}')`), true);
+  await over();
+  await away();
+  assert.equal(await state(), 'expanded', 'the focus is still inside: the pointer leaving does not fold');
+  await browser.evaluate(`document.activeElement.blur()`);
+  await wait(400);
+  assert.equal(await state(), 'collapsed', 'focus and pointer both outside: folded');
+});
+
+test('a finger: the folded pin on a touch screen is tappable, opens the pane and pins it', { skip, timeout: 120000 }, async () => {
+  await mount('', { touch: true });
+  assert.equal(await state(), 'collapsed');
+  assert.equal(await pin('getComputedStyle(e).opacity'), '1', 'coarse pointer: the pin is shown');
+  await browser.tap(`document.querySelector('${PIN}')`);
+  await wait(500);
+  assert.equal(await pressed(), 'true', 'the tap reached the pin');
+  assert.equal(await state(), 'expanded');
+});
+
+test('pinned, a dialog open from the pane, the pointer away: Ctrl+B unpins but the pane and the dialog stay until it closes', { skip, timeout: 120000 }, async () => {
+  await mount('dialog=1');
+  await over();
+  await browser.click(`document.querySelector('${PIN}')`);
+  await browser.click(`document.querySelector('[data-testid=open-dialog]')`);
+  await wait(500);
+  assert.equal(await dialogOpen(), true);
+  await away();
+  await ctrlB();
+  assert.equal(await pressed(), 'false', 'Ctrl+B unpinned');
+  assert.equal(await dialogOpen(), true, 'the dialog is still open');
+  assert.equal(await ownSidebar(), true, 'the screen sidebar is still rendered');
+  assert.equal(await state(), 'expanded');
+  await closeDialog();
+  await away();
+  await wait(400);
+  assert.equal(await state(), 'collapsed', 'closed, pointer and focus outside: folded');
+});
+
+for (const editor of ['editor-area', 'editor-rich']) test(`Ctrl+B inside ${editor === 'editor-area' ? 'a textarea' : 'a contenteditable'} is the editor's own: it reaches the editor and does not toggle the pin`, { skip, timeout: 120000 }, async () => {
+  await mount('editor=1');
+  await over();
+  await browser.click(`document.querySelector('${PIN}')`);
+  await away();
+  assert.equal(await pressed(), 'true');
+  await browser.evaluate(`document.querySelector('[data-testid=${editor}]').focus()`);
+  await ctrlB();
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=${editor}]').dataset.bold ?? null`), '1', 'the editor got its Ctrl+B');
+  assert.equal(await pressed(), 'true', 'the pin did not toggle');
+  assert.equal(await state(), 'expanded');
+});
+
 test('shots at 1280 light and dark: hover-open unpinned, then pinned', { skip, timeout: 120000 }, async () => {
   for (const mode of ['light', 'dark']) {
     await mount('');
