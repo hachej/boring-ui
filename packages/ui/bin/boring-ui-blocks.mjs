@@ -677,18 +677,22 @@ async function openPage(cdp, { width, height, touch }, mode) {
   const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
   const send = (method, params) => cdp.send(method, params, sessionId);
   const errors = [];
+  // Requests the page has started and not finished: the shot waits for them (a page that fetches its content after the load event).
+  const inflight = new Set();
   off = cdp.on(message => {
     if (message.sessionId !== sessionId) return;
+    if (message.method === 'Network.requestWillBeSent' && !/^(?:data|blob):/.test(message.params.request.url)) inflight.add(message.params.requestId);
+    if (message.method === 'Network.loadingFinished' || message.method === 'Network.loadingFailed') inflight.delete(message.params.requestId);
     if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') errors.push(message.params.args.map(a => a.value ?? a.description ?? a.type).join(' '));
     if (message.method === 'Runtime.exceptionThrown') errors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
   });
-  await Promise.all([send('Page.enable'), send('Runtime.enable'), send('DOM.enable')]);
+  await Promise.all([send('Page.enable'), send('Runtime.enable'), send('DOM.enable'), send('Network.enable')]);
   await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: touch });
   await send('Emulation.setTouchEmulationEnabled', touch ? { enabled: true, maxTouchPoints: 5 } : { enabled: false });
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: mode }] });
   const apply = `document.documentElement.classList.${mode === 'dark' ? 'add' : 'remove'}('dark')`;
   await send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { const apply = () => ${apply}; if (document.documentElement) apply(); else new MutationObserver((_, o) => { if (document.documentElement) { o.disconnect(); apply(); } }).observe(document, { childList: true }); document.addEventListener('DOMContentLoaded', apply); })()` });
-  return { send, errors, apply, close };
+  return { send, errors, apply, close, inflight };
   } catch (e) { await close(); throw e; }
 }
 
@@ -760,8 +764,11 @@ async function runStep(page, { verb, args }, ctx) {
   if (!await poll(() => evaluate(page, `document.body.innerText.includes(${JSON.stringify(args[0])})`))) throw new Error(`the text "${args[0]}" did not appear within ${STEP_TIMEOUT / 1000} s`);
 }
 
-/** The full-page PNG of the page as it is now, once fonts are loaded and two frames are painted. */
+/** The full-page PNG of the page as it is now, once the page's requests are done, fonts are loaded and two frames are painted. */
 async function capture(page, height) {
+  // No request in flight for 300 ms (bounded by STEP_TIMEOUT): the content a page fetches after `load` is on screen before the shot.
+  let quiet = 0;
+  for (const end = Date.now() + STEP_TIMEOUT; quiet < 300 && Date.now() < end; await sleep(50)) quiet = page.inflight.size ? 0 : quiet + 50;
   await evaluate(page, `${page.apply}; document.fonts.ready.then(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))))`);
   const metrics = await page.send('Page.getLayoutMetrics');
   const size = metrics.cssContentSize ?? metrics.contentSize;
