@@ -7,6 +7,7 @@ import { createPrivacyPolicy } from '@hachej/boring-feedback/page';
 import { createFeedbackSession, parseSaveRequest } from '@hachej/boring-feedback/ui';
 import { parseFeedback } from '@hachej/boring-feedback/format';
 import { NoteBubble } from '../../../registry/feedback/feedback-session.tsx';
+import { CommentBanner } from '../../../registry/feedback/point-mode.tsx';
 
 const params = new URLSearchParams(location.search);
 const plate = document.getElementById('plate');
@@ -14,6 +15,10 @@ if (params.get('mirror') === '1') plate.style.transform = 'scaleX(-1)';
 if (params.get('scale') === '1') plate.style.scale = '-1 1';
 if (params.get('rotate') === '1') plate.style.rotate = '90deg';
 if (params.get('ancestor') === '1') plate.parentElement.style.transform = 'scaleX(-1)';
+// `?size=640x420` and `?at=100,120` size and place the surface; `?dark=1` turns the host's dark tokens on (D-1967).
+if (params.get('size')) { const [w, h] = params.get('size').split('x'); plate.style.width = `${w}px`; plate.style.height = `${h}px`; }
+if (params.get('at')) { const [x, y] = params.get('at').split(','); plate.style.left = `${x}px`; plate.style.top = `${y}px`; }
+if (params.get('dark') === '1') document.documentElement.classList.add('dark');
 const points = [];
 const saved = [];
 const session = createFeedbackSession({
@@ -21,7 +26,8 @@ const session = createFeedbackSession({
   surface: { element: plate, pins: params.get('pins') === 'host' ? 'host' : 'kit', onPoint: point => points.push(point) },
   save: async request => { saved.push(request); return { kind: 'saved', id: 'fb_7Q2mK9xRt4vW1cZp', revision: 'r1' }; },
 });
-if (params.get('bubble') === '1') createRoot(document.getElementById('ui')).render(createElement(NoteBubble, { session }));
+// `?banner=1` mounts the normal CommentBanner beside the bubble, as a host does (D-1967).
+if (params.get('bubble') === '1') createRoot(document.getElementById('ui')).render(createElement('div', null, createElement(NoteBubble, { session }), params.get('banner') === '1' ? createElement(CommentBanner, { session }) : null));
 // What a host route and a reader do with a sent report: the save route's request check (`store.create` validates with the same
 // draft check), and the stored report text parsed back strictly.
 const checkSent = () => {
