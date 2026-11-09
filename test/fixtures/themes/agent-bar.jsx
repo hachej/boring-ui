@@ -14,6 +14,9 @@ const { AgentBar, AgentStatus, AgentQuestion } = block;
 // __cleared (quoted ✕), __history (history taps), __tracks (microphone tracks released).
 const params = new URLSearchParams(location.search);
 if (params.get('dark') === '1') document.documentElement.classList.add('dark');
+// The host's theme sets the card's two variables (a lime-like fill, dark ink) the way an app would, so the shots compare with the boards.
+document.documentElement.style.setProperty('--agent-question', 'oklch(0.92 0.19 122)');
+document.documentElement.style.setProperty('--agent-question-foreground', 'oklch(0.2 0 0)');
 window.__sent = []; window.__transcribed = []; window.__answered = []; window.__later = 0; window.__cancelled = 0; window.__cleared = 0; window.__history = 0; window.__tracks = { opened: 0, released: 0 };
 
 // The fake microphone: getUserMedia hands out a stream with one track that counts its release; MediaRecorder hands over one chunk when it stops.

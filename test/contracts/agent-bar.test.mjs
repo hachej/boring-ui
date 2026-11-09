@@ -325,10 +325,10 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     assert.equal(await browser.evaluate(`${byText('Maison')}.getAttribute('aria-pressed')`), 'false');
     // The field reads « Ou réponds ici » while the question is open.
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-input]').placeholder`), 'Ou réponds ici');
-    // The card is the kit's accent token, never a literal, and sits above the bar.
-    const look = await browser.evaluate(`(() => { const probe = document.createElement('i'); probe.style.backgroundColor = 'var(--accent)'; document.body.append(probe); const cta = getComputedStyle(probe).backgroundColor; probe.remove();
+    // The card comes from --agent-question, never a literal, and sits above the bar.
+    const look = await browser.evaluate(`(() => { const probe = document.createElement('i'); probe.style.backgroundColor = 'var(--agent-question)'; document.body.append(probe); const cta = getComputedStyle(probe).backgroundColor; probe.remove();
       const style = getComputedStyle(${card}); return { cta, bg: style.backgroundColor, radius: style.borderTopLeftRadius, shadow: style.boxShadow, ink: getComputedStyle(${byText('Boulangerie')}).backgroundColor, quiet: getComputedStyle(${byText('Maison')}).backgroundColor }; })()`);
-    assert.equal(look.bg, look.cta, `the card takes the accent role: ${JSON.stringify(look)}`);
+    assert.equal(look.bg, look.cta, `the card takes the --agent-question variable: ${JSON.stringify(look)}`);
     assert.equal(parseFloat(look.radius) > 12, true, `the card is rounded: ${look.radius}`);
     assert.notEqual(look.shadow, 'none', 'the card has a shadow');
     assert.notEqual(look.ink, look.quiet, 'the selected choice differs from the others');

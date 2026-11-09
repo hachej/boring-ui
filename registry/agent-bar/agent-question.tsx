@@ -2,7 +2,7 @@
 
 // D-1978 slice 2: the question card above the agent bar. The agent asks (a title, the step, a few choices, one preselected); the person taps a choice
 // and « Suivant », or answers in their own words from the bar, whose field then reads « Ou réponds ici » (AgentBar routes that text to `onAnswer`).
-// The card is the kit's `accent` role (`bg-accent` ink `accent-foreground`): a host that wants another fill sets `--accent` in its theme; nothing here is a colour literal.
+// The card's fill is `--agent-question` and its ink `--agent-question-foreground` (the block's CSS falls back to `--accent` and `--accent-foreground`): a host sets them in its theme, for example `--agent-question: var(--cta)`. Nothing here is a colour literal.
 import { useState } from 'react';
 import { CheckIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
