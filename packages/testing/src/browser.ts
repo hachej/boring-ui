@@ -1,9 +1,9 @@
 // Minimal headless-Chromium driver over the DevTools protocol (no extra dependency): real pointer, touch and keyboard input, waits on
 // what the page shows, screenshots, device emulation and extra tabs. Expressions are JavaScript evaluated in the page; `q`/`qa` build them.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 /** An expression for the first element matching `selector`. */
 export const q = (selector: string): string => `document.querySelector(${JSON.stringify(selector)})`;
@@ -28,6 +28,20 @@ export interface LaunchOptions {
 
 /** The kit's default sans (D-1974), the face a page without its own `--font-sans` is measured in. */
 export const FONT_FAMILY = 'Inter Variable';
+/**
+ * Registers the pinned @fontsource-variable/inter file (from the repository's node_modules, no network) as `Inter Variable` in every
+ * document, from bytes so a page's CSP cannot refuse it. A page that declares its own face of that name keeps it (it is added after).
+ */
+function fontInstallScript(): string {
+  const file = resolve(process.cwd(), 'node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2');
+  if (!existsSync(file)) throw new Error(`Font file missing: ${file} (npm ci installs @fontsource-variable/inter)`);
+  return `(() => {
+    const bytes = Uint8Array.from(atob(${JSON.stringify(readFileSync(file).toString('base64'))}), c => c.charCodeAt(0));
+    const face = new FontFace(${JSON.stringify(FONT_FAMILY)}, bytes.buffer, { weight: '100 900', style: 'normal' });
+    document.fonts.add(face);
+    face.load().catch(error => console.error('font load failed: ' + error));
+  })()`;
+}
 /**
  * In the page: after document.fonts.ready, the first family of :root's --font-sans (quotes stripped; FONT_FAMILY when the page declares
  * none) must have a loaded @font-face and pass document.fonts.check. Returns '' or the reason. Note check() alone is true for a family
@@ -110,6 +124,7 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
   const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
   ({ sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }));
   await send('Runtime.enable'); await send('Page.enable');
+  await send('Page.addScriptToEvaluateOnNewDocument', { source: fontInstallScript() });
   await send('Page.navigate', { url });
   // evaluate / until over one page session (the first page, or another tab of the same profile).
   const inspect = (sendFn: Send): PageSession => {
@@ -140,6 +155,7 @@ export async function launch(url: string, { chromium = process.env.CHROMIUM, evi
     const { sessionId: tabSession } = await sendTo(undefined, 'Target.attachToTarget', { targetId: created.targetId, flatten: true });
     const tabSend: Send = (method, params = {}) => sendTo(tabSession, method, params);
     await tabSend('Runtime.enable'); await tabSend('Page.enable');
+    await tabSend('Page.addScriptToEvaluateOnNewDocument', { source: fontInstallScript() });
     // Headless Chromium has no window stack, so every tab reports visible. `hidden` makes the tab report what a background tab does
     // (document.hidden and visibilityState, with visibilitychange) from before its first script; `setVisible` flips it later.
     await tabSend('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {

@@ -175,7 +175,7 @@
       "pm-mark-width": "2px",
       "warning": "oklch(0.6 0.15 65)",
       "info": "oklch(0.5 0.2 264)",
-      "font-sans": "'Geist', ui-sans-serif, system-ui, sans-serif",
+      "font-sans": "'Inter Variable', ui-sans-serif, system-ui, sans-serif",
       "font-mono": "'Geist Mono', ui-monospace, Menlo, monospace",
       "success-soft": "color-mix(in oklab, var(--success) 14%, var(--card))",
       "success-soft-foreground": "color-mix(in oklab, var(--success) 75%, var(--foreground))",
