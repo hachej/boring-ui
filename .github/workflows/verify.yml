@@ -65,6 +65,7 @@ jobs:
       CHROMIUM: ${{ github.workspace }}/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
       CHAT_TEXT_EVIDENCE: ${{ github.workspace }}/.cache/evidence/chat-text
+      SIDEBAR_ACTION_EVIDENCE: ${{ github.workspace }}/.cache/evidence/sidebar-action
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -105,6 +106,14 @@ jobs:
         with:
           name: chat-text-shots
           path: .cache/evidence/chat-text
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Sidebar action shots (390 touch and 1280, light and dark)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sidebar-action-shots
+          path: .cache/evidence/sidebar-action
           retention-days: 14
           if-no-files-found: ignore
   release-gate:
