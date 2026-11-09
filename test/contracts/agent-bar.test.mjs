@@ -406,6 +406,7 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     assert.deepEqual(await answered(), [{ text: spoken, source: 'bar' }]);
     assert.deepEqual(await sent(), []);
   });
+}
 
 // D-1978 slice 4: the words appear live while listening. A fictional stream plays interim then final results; not-yet-final words are dimmed (the muted token),
 // final words keep the text colour, and stopping puts only the final text in the field (what ↑ and the release send).

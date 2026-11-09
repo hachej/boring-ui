@@ -59,7 +59,7 @@ export function AgentQuestion({ question, hint = true, labels, className }: Agen
   const [selected, setSelected] = useState(question.preselected);
   const confirm = question.submit === undefined ? words.next : question.submit;
   const choose = (choice: string) => { if (confirm === null) question.onAnswer({ text: choice, source: 'choice' }); else setSelected(choice); };
-  return <section data-slot="agent-bar" data-part="question" data-testid="agent-question" aria-label={question.title} className={cn('flex flex-col gap-3 rounded-(--radius-3xl) p-4 shadow-lg', className)}>
+  return <section data-slot="agent-bar" data-part="question" data-testid="agent-question" aria-label={question.title} className={cn('flex flex-col gap-3 rounded-(--radius-3xl) p-4', className)}>
     <div className="flex flex-col gap-1.5">
       {question.step ? <p data-testid="agent-question-step" className="text-xs font-medium">{question.step}</p> : null}
       {question.answered ? <p data-testid="agent-question-answered" className="flex items-center gap-1.5 text-sm"><CheckIcon className="size-3.5 shrink-0" aria-hidden="true" />{question.answered}</p> : null}
