@@ -453,8 +453,8 @@ test('the wide dock opened at load takes no focus: the Float button shows no foc
   await opened.act(async () => new Promise(done => setTimeout(done, 100)));
   const float = opened.window.document.querySelector('[data-testid=agent-layer-float]');
   assert.ok(float, 'the docked header has its Float button');
-  assert.notEqual(opened.window.document.activeElement, float, 'focus did not land on the Float button at mount');
-  assert.equal(opened.window.document.activeElement?.closest('[data-testid=agent-layer-header]'), null, 'no header control holds focus at mount');
+  assert.equal(opened.window.document.activeElement === float, false, 'focus did not land on the Float button at mount');
+  assert.equal(opened.window.document.activeElement?.closest('[data-testid=agent-layer-header]') == null, true, 'no header control holds focus at mount');
   await opened.unmount();
 });
 
