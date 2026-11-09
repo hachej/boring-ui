@@ -87,7 +87,7 @@ const TAB_STOPS = 'a[href],button,input,select,textarea,summary,[tabindex],[role
 const POINTER_EVENTS = ['pointerdown', 'pointerup', 'pointercancel', 'mousedown', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu', 'touchstart', 'touchend', 'dragstart', 'selectstart'] as const;
 const KEY_EVENTS = ['keydown', 'keyup', 'keypress'] as const;
 /** How far (CSS px) a finger may move and still tap. */
-const TAP_SLOP = 10;
+export const TAP_SLOP = 10;
 
 /** Why an element cannot be picked, or undefined when it can. */
 export function pickRefusal(element: Element, root: Element): string | undefined {
