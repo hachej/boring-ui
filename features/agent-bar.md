@@ -1,0 +1,42 @@
+# Agent bar
+
+The voice-first bar of an agent that works in the background (Coach Max): a pill with a history arrow, the field, the mic and send, and `AgentStatus`, the one line above it. The audio is the kit's (`useDictation`, `useHoldToRecord`); the app supplies `transcribe` and `onSend`. Registry item `agent-bar`.
+
+## Sub-features
+
+- `agent-bar-field` `AgentBar` rests as a pill: history arrow (only with `onHistory`; `historyOpen` flips it and sets `aria-expanded`), the field (« Maintiens pour parler », or `placeholder`), the mic and ↑. ↑ is disabled while the field is empty; Enter or ↑ calls `onSend({ text })` once and clears the field.
+- `agent-bar-listen` one tap on the mic listens: the bar is outlined in primary and holds ✕ Annuler, a waveform, ■ Arrêter and ↑ Envoyer. ■ hands the audio to `transcribe` and the text lands in the field, shown in italics above the bar; ↑ sends it; ✕ sends nothing and releases the microphone.
+- `agent-bar-hold` a press held past 300ms shows « Relâche pour envoyer »; release transcribes and sends. Sliding more than 24px off the button (measured from where it was pressed, although the mic moves to the left while held), Escape, blur or a hidden page cancels without sending (the kit's `useHoldToRecord` policy, `pressBounds`). A refused microphone leaves the bar at rest with the error, never listening.
+- `agent-bar-cancel` ✕ Annuler (and Escape) stay available while the audio is transcribed; a cancel then sends nothing and puts nothing in the field.
+- `agent-bar-focus` entering listening moves focus to ■ Arrêter; stop, cancel or send give it back to the field.
+- `agent-bar-quoted` `quoted={{ label, onClear }}` shows a chip « ↪ label » above the bar, outlines the bar and puts `quoted: label` in the next `onSend`. ✕ Retirer la citation calls `onClear`; the app removes the chip.
+- `agent-bar-partial` `partial` is text shown after the final transcript, dimmed: the slot for live partial words (a later slice).
+- `agent-status` `AgentStatus` `{ state: 'working' | 'done', text, onCancel? }`: a spinner and the sentence, with « Annuler » only while working and when `onCancel` is given; a check and the result when done.
+- `agent-bar-labels` every word is a `labels` key with a French default (`agentBarLabels`), including the microphone problems; icon buttons carry their label as `aria-label` and are 44px on touch.
+
+## How to get to it (user POV)
+
+- Type and press ↑, or tap the mic and speak, or hold the mic, speak and let go. The status line shows what the agent is doing above the bar.
+
+## Driving it with the real browser test
+
+Preconditions: `CHROMIUM` set (CI sets it); `node_modules` installed.
+
+- `node --test test/contracts/agent-bar.test.mjs` mounts `test/fixtures/themes/agent-bar.jsx` (fake microphone and transcriber, fictional meals) at 390 touch and 1280 fine, light and dark, and drives it with real input. Query `?status=working|done` and `?quoted=1` pick the state.
+- **Field.** `agent-bar-field`: type, click ↑, read `window.__sent`; press Enter; tap `Historique` and read `aria-expanded`.
+- **Listen.** `agent-bar-listen`: tap `Parler`, check `data-state="listening"`, press `Arrêter`, read the field and `agent-bar-transcript`, then `Envoyer`; press `Annuler` instead and check nothing was sent.
+- **Hold.** `agent-bar-hold`: press and hold `Parler` for 500ms (`data-state="holding"`, `agent-bar-hold-label`), release to send; move 200px away before release to cancel.
+- **Review proofs.** `agent-bar-hold`, `agent-bar-cancel`, `agent-bar-focus`: `?deny=1` refuses the microphone (tap `Parler`: `data-state` stays `rest`, the alert shows); `?slow=1` makes transcription take 1.5s (hold, release, press `Annuler` or Escape: nothing sent); a 1px `move` during a hold keeps `holding`; after `Arrêter` or `Annuler` the active element is `agent-bar-input`.
+- **Quoted.** `agent-bar-quoted`: `?quoted=1`, send (the payload has `quoted`), press `Retirer la citation` (`window.__cleared`).
+- **Status.** `agent-status`: `?status=working` shows `agent-status-spinner` and `Annuler` (`window.__cancelled`); `?status=done` shows `agent-status-check` and no button.
+- **Labels.** `agent-bar-labels`: the same test reads every `aria-label` and measures the 44px targets at 390.
+- **Partial.** `agent-bar-partial`: pass `partial="de la crème"` in the fixture and read `agent-bar-transcript`.
+- The shots land in `.cache/evidence/agent-bar` (CI artifact `agent-bar-shots`).
+
+## Gotchas
+
+- The bar never clears the quote; `onClear` is the app's, and the app decides whether a send consumes it.
+- The waveform needs the Web Audio path (levels); the MediaRecorder fallback shows quiet dots.
+- The block's CSS targets only its own parts (`data-agent-bar` on its buttons and field), never every shadcn Button or Input, so a host's are never restyled.
+- On a fine pointer the icon buttons are the kit's 36px; the 44px floor applies on touch.
+- The hint under the bar (« Glisse un repas vers la droite… ») and the question card above it (slice 2, field « Ou réponds ici ») are the app's or later slices.
