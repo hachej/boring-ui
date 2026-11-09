@@ -41,13 +41,14 @@ function wide(): boolean {
 
 /**
  * The controlled `open` and `onOpenChange` of the SidebarProvider. `fallback` is today's default (the pane is open on the `screen` layout); `hasSidebar` is whether
- * the screen on show has a `sidebar` content. Off (`enabled` false): both are undefined and the provider keeps its own `defaultOpen`.
+ * the screen on show has a `sidebar` content. Off (`enabled` false): `undefined`, and the provider keeps its own `defaultOpen`.
  */
 export function useSidebarOpen(enabled: boolean, identity: { readonly app?: string | undefined; readonly person?: string | undefined }, fallback: boolean, hasSidebar: boolean) {
   const key = sidebarKey('open', identity.app, identity.person);
   const [open, setOpen] = useState(fallback);
   const latest = useRef({ fallback, hasSidebar });
-  latest.current = { fallback, hasSidebar };
+  // The screen on show and today's default as of the last commit: read when the person (key) changes, not a dependency of it.
+  useIsoLayoutEffect(() => { latest.current = { fallback, hasSidebar }; }, [fallback, hasSidebar]);
   // Mount, or another person: that person's stored choice, else the first-visit default. Not on a change of screen.
   useIsoLayoutEffect(() => {
     if (!enabled) return;
@@ -59,5 +60,5 @@ export function useSidebarOpen(enabled: boolean, identity: { readonly app?: stri
     setOpen(next);
     writeOpen(key, next);
   }, [key]);
-  return enabled ? { open, onOpenChange } : { open: undefined, onOpenChange: undefined };
+  return enabled ? { open, onOpenChange } : undefined;
 }
