@@ -367,6 +367,7 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     assert.deepEqual((await answered())[1], { text: 'C’est une tarte fine en fait', source: 'bar' });
     assert.deepEqual(await sent(), [], 'the question took the text, onSend got nothing');
     await browser.until('card closed', `!document.querySelector('[data-testid=agent-question]')`);
+    assert.equal(await browser.evaluate(`(() => { const note = [...${card}.querySelectorAll('p')].find(node => node.textContent.includes('CIQUAL')); const first = ${card}.querySelector('button'); return !!note && !!first && !!(note.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING); })()`), true, 'the footnote sits above the actions (Question board)');
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-input]').placeholder`), 'Maintiens pour parler', 'the field is back once the question closes');
     await typeInto('un café');
     await browser.press('Enter');
