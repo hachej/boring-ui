@@ -67,7 +67,14 @@ const open = async (width, query = '') => {
   await browser.send('Emulation.setDeviceMetricsOverride', { width, height: phone ? 844 : 800, deviceScaleFactor: 1, mobile: phone });
   await browser.send('Page.navigate', { url: `http://127.0.0.1:${port}/?${query}` });
   // The old document answers readyState complete until the navigation commits: wait for the new URL, not only for a mounted shell.
-  await browser.until('shell mounted', `location.search === ${JSON.stringify(query ? '?' + query : '')} && window.__layer !== undefined && !!document.querySelector('[data-testid=app-shell]') && document.readyState === 'complete'`);
+  const search = JSON.stringify(query ? '?' + query : '');
+  try {
+    await browser.until('shell mounted', `location.search === ${search} && window.__layer !== undefined && !!document.querySelector('[data-testid=app-shell]') && document.readyState === 'complete'`);
+  } catch (error) {
+    // Name the condition that never held, so a timeout says why.
+    const seen = await browser.evaluate(`JSON.stringify({ search: location.search, wanted: ${search}, layer: window.__layer !== undefined, shell: !!document.querySelector('[data-testid=app-shell]'), ready: document.readyState })`).catch(() => 'unreadable');
+    throw new Error(`${error.message}\nseen: ${seen}`);
+  }
   await wait(400);
 };
 const count = selector => browser.evaluate(`document.querySelectorAll('${selector}').length`);
