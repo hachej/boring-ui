@@ -164,6 +164,7 @@ function Sidebar({
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
   const wrapperRef = React.useContext(SidebarWrapperContext)
+  const sheetRef = React.useRef<HTMLDivElement>(null)
   // The sheet portals outside the wrapper: carry the wrapper's resolved --sidebar-row into it (falls back to SIDEBAR_ROW).
   const [sheetRow, setSheetRow] = React.useState<string | undefined>()
   React.useLayoutEffect(() => {
@@ -194,8 +195,9 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          initialFocus={(openType) => openType === "keyboard"}
-          className={cn(SIDEBAR_ROW, "data-[side=left]:w-[var(--sidebar-width-mobile,75%)] data-[side=right]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden")}
+          ref={sheetRef}
+          initialFocus={(openType) => (openType === "keyboard" ? true : sheetRef)}
+          className={cn(SIDEBAR_ROW, "data-[side=left]:w-[var(--sidebar-width-mobile,75%)] data-[side=right]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground outline-none [&>button]:hidden")}
           style={sheetRow ? ({ "--sidebar-row": sheetRow } as React.CSSProperties) : undefined}
           side={side}
         >
