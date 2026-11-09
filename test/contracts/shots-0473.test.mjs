@@ -101,7 +101,7 @@ test('resize handle: rest, hover, drag, min and max (12rem and 28rem) at 1280, l
     const fresh = async () => { await open('', 1280, false, `document.querySelector('${RAIL}') !== null`, 'sidebar-resize'); await browser.evaluate(`localStorage.clear()`); await open('', 1280, false, `document.querySelector('${RAIL}') !== null`, 'sidebar-resize'); await browser.evaluate(`document.documentElement.classList.toggle('dark', ${mode === 'dark'})`); await wait(200); };
     await fresh();
     await shot(`resize-handle-rest-1280-${mode}`, RAIL);
-    await browser.hover(RAIL); await wait(300);
+    await browser.hover(handle); await wait(300);
     await shot(`resize-handle-hover-1280-${mode}`, RAIL);
     await fresh();
     const held = await browser.drag(handle, (await centre()).x + 64, { release: false }); await wait(300);
