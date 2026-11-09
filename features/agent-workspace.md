@@ -20,6 +20,7 @@
 - `workspace-documents` `documents`: the Library, a file and its revisions; `DocumentSheet`. `registry/documents/`.
 - `workspace-documents-live` Documents follows the provider's change feed like the workspace Library (`useWorkspaceChangeFeed` from `@hachej/boring-ui-kit/file-tree-view`: 150 ms settle, no connection while the page is hidden, resumes with `since` when shown, so an edit made while hidden shows on return without a reload); `[data-testid=documents]` carries `data-live`. `packages/ui/src/workspace-change-feed.ts`. Drive: `node --test test/contracts/documents-render.impl.mjs`.
 - `workspace-windows` floating utility windows and launcher. `registry/windows/`.
+- `workspace-bar-host-panel` `command={{ kind: '<panel id>', n }}` (D-1930): any `kind` other than `history`/`library`/`new` names one of the host `panels`; it opens like a click (`onOpenChange(true)`, `onOpen` once) and the same id requested again (new `n`) while shown closes it back to the chat; an unknown id does nothing; works with `hidden`. Drive: `node --test test/ui/workspace-bar-command.test.mjs`. `registry/pi-app/workspace-bar.tsx`.
 - `workspace-bar-host` `barOptions={{ hidden, command }}` (embedded): the host draws the one bar; `command={{ kind: 'history' | 'library' | 'new', n }}` still opens History or the Library, or starts a conversation (a new `n` per request). `registry/pi-app/workspace-bar.tsx`.
 
 ## How to get to it (user POV)
@@ -32,6 +33,7 @@
 Preconditions: `npm run build`, Chromium.
 
 - **Host bar.** `workspace-bar-host`: render an embedded workspace with `barOptions={{ hidden: true, command }}`; changing `command.n` opens `workspace-history` or `workspace-library`, or calls `onNew`. Not driven by a journey yet.
+- **Host panel by command.** `workspace-bar-host-panel`: `node --test test/ui/workspace-bar-command.test.mjs` mounts WorkspaceBar (drawn and `hidden`) with a host `tasks` panel; `command={{ kind: 'tasks', n: 1 }}` opens it (`onOpen` once), `n: 2` closes it, an unknown id does nothing, `history`/`library`/`new` unchanged.
 - **Folders.** `workspace-library-folders`: `node --test test/ui/file-tree.mjs` renames, moves and deletes a folder against a fictional sqlite workspace, with a refusal halfway and a retry; `npm run file-tree:journey` drives the folder menu, F2, Move to… and Delete in a browser; `node --test test/packages/files-publication-recovery.test.mjs` prunes on disk.
 - **Row status.** `workspace-library-status`: `node --test test/ui/file-tree.mjs` renders a tree with « Lu · 12 lignes », « En attente de lecture », « À revoir » and an undecorated row, and checks each badge by its label.
 - **Write permission per folder.** `workspace-library-writable`: `node --test test/ui/file-tree.mjs` renders the tree on the fixture rule `{"public/": "members", "*": ["owner","editor"]}` through `connectRevisionProvider` and a mocked host: a member sees only `public/` with no Upload, Rename, Move or Delete and no drop target; the owner sees every control; a host without the field shows every control; a 403 folder is read-only without an error and a 404 folder disappears; each listing request carries its `directory`.
