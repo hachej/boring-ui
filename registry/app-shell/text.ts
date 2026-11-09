@@ -28,6 +28,8 @@ export interface AppShellText {
   readonly darkMode: string;
   /** The label of the tab bar. */
   readonly tabs: string;
+  /** The phone button that opens a screen's sidebar content in a sheet, after the screen's name, when the screen names none. */
+  readonly panel: string;
   /** The « ← » of a header. */
   readonly goBack: string;
   /** The dock controls of the wide layer: float it over the app, or dock it on a side. */
@@ -52,6 +54,7 @@ const en: AppShellText = {
   actions: 'More actions',
   darkMode: 'Dark mode',
   tabs: 'Navigation',
+  panel: 'Panel',
   goBack: 'Back',
   float: 'Float over the app',
   dockLeft: 'Dock on the left',
@@ -74,6 +77,7 @@ const fr: AppShellText = {
   actions: 'Plus d’actions',
   darkMode: 'Mode sombre',
   tabs: 'Navigation',
+  panel: 'Panneau',
   goBack: 'Retour',
   float: 'Flotter sur l’app',
   dockLeft: 'Ancrer à gauche',

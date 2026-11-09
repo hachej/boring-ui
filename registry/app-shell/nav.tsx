@@ -8,12 +8,14 @@ import { EllipsisIcon, SparklesIcon } from '../_shared/icons';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarSeparator, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { afterBack } from '../utils/back';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { afterBack, BACK_SETTLE_MS, useBackLayer } from '../utils/back';
 import { NavUser } from './account';
 import { useAgentLayer } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
 import type { AccountSpec } from './account';
 import { AppSheet, SHEET_ROW } from './app-sheet';
+import { useExclusiveSheet } from './use-exclusive-sheet';
 import type { AppShellText } from './text';
 import { ResizableRail } from './sidebar-resize';
 
@@ -25,6 +27,8 @@ export interface NavItem {
   readonly render: () => ReactNode;
   /** The screen's own content inside the shell's sidebar (its list, say) while this item is on show: above the nav items, which move below it. `collapsed` is true on the icon rail, so the content can fold with it. */
   readonly sidebar?: (state: { readonly collapsed: boolean }) => ReactNode;
+  /** The sidebar content's own name, for the phone button that opens it in tabs mode (« Library »): its label reads « <item label>: <sidebarLabel> ». Default: the shell's word for « panel ». */
+  readonly sidebarLabel?: string;
   /** Where this item sits against a screen's own sidebar content: `'before-sidebar'` puts it above that content, `'after-sidebar'` (the default) below. Items marked before come first everywhere (the tab bar and the phone sheet too); each side keeps the registered order. */
   readonly placement?: 'before-sidebar' | 'after-sidebar';
 }
@@ -103,6 +107,69 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
       </AppSheet>
     </>}
   </nav>;
+}
+
+/** What keeps the sheet open, checked from the tapped element up: a field to type in, or anything under `data-keep-sheet`. */
+const KEEPS = 'input, textarea, select, [contenteditable=""], [contenteditable=true], [data-keep-sheet]';
+/** What a tap on a row of the sidebar content counts as « choosing a row »: it closes the sheet. A field to type in does not, and an element may opt out with `data-keep-sheet`. */
+const CHOOSES = 'a, button, [role=button], [role=option], [role=menuitem], [role=treeitem], [role=row], [role=link]';
+
+/**
+ * Tabs mode on a phone: the current item's `sidebar` has no sidebar to live in, so the header carries a leading button that opens that same content in a left sheet
+ * (the width of `compactNav="sheet"`). Choosing a row closes the sheet. An item without a `sidebar` renders nothing. Exported for the header.
+ */
+export function ScreenSidebarSheet({ item, text }: { readonly item: NavItem; readonly text: AppShellText }) {
+  // `open` owns the Back entry; `shown` keeps the sheet mounted while a chosen row's click is replayed once that entry has gone.
+  const [open, setOpen] = useState(false);
+  const [shown, setShown] = useState(false);
+  const replaying = useRef(false);
+  const choosing = useRef(false);
+  // The choice held behind the sheet's Back; unmounting or settling drops it.
+  const pending = useRef<object | null>(null);
+  useEffect(() => () => { pending.current = null; }, []);
+  const close = () => { pending.current = null; choosing.current = false; setOpen(false); setShown(false); };
+  useExclusiveSheet(open, close);
+  useBackLayer(open, close, 'sheet');
+  if (!item.sidebar) return null;
+  const name = `${item.label}: ${item.sidebarLabel ?? text.panel}`;
+  return <>
+    <Button variant="ghost" size="icon" data-testid="screen-sidebar-button" aria-label={name} title={name} aria-haspopup="dialog" aria-expanded={open} onClick={() => { setOpen(true); setShown(true); }}><item.icon data-icon="inline-start" aria-hidden="true" /></Button>
+    <Sheet open={shown} onOpenChange={next => { if (!next) close(); }}>
+      <SheetContent side="left" showCloseButton={false} data-testid="screen-sidebar-sheet" className="app-shell data-[side=left]:w-[var(--sidebar-width-mobile,75%)]">
+        <SheetHeader className="sr-only"><SheetTitle>{name}</SheetTitle><SheetDescription>{name}</SheetDescription></SheetHeader>
+        <div data-testid="screen-sidebar-content" className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain bg-sidebar pb-(--app-shell-safe-bottom) text-sidebar-foreground"
+          onClickCapture={event => {
+            // The choice is held back: the sheet lets go of its Back entry first, and only then does the row's own click (a router push, a link) run, so that entry's `history.back()` cannot undo it.
+            const target = event.target;
+            // A modified or non-primary click (new tab, new window, middle button) is not a choice: it goes through untouched and the sheet stays open.
+            const { button, metaKey, ctrlKey, shiftKey, altKey } = event;
+            if (replaying.current || !(target instanceof Element) || target.closest(KEEPS) || !target.closest(CHOOSES) || button !== 0 || metaKey || ctrlKey || shiftKey || altKey) return;
+            event.preventDefault();
+            event.stopPropagation();
+            // One choice at a time: a second tap while the sheet is closing is swallowed, so a navigating row navigates once.
+            if (choosing.current) return;
+            choosing.current = true;
+            const mine = {};
+            pending.current = mine;
+            setOpen(false);
+            // A Back that never lands settles after a bounded wait: the choice is dropped (never run ahead of the traversal) and the sheet closes.
+            setTimeout(() => { if (pending.current !== mine) return; pending.current = null; choosing.current = false; setShown(false); }, BACK_SETTLE_MS);
+            afterBack(() => {
+              if (pending.current !== mine) return;
+              pending.current = null;
+              if (target.isConnected) {
+                replaying.current = true;
+                try { target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); } finally { replaying.current = false; }
+              }
+              choosing.current = false;
+              setShown(false);
+            });
+          }}>
+          {item.sidebar({ collapsed: false })}
+        </div>
+      </SheetContent>
+    </Sheet>
+  </>;
 }
 
 /** The expanded sidebar: the app title, the nav items (none with one item) and the account in the footer. */
