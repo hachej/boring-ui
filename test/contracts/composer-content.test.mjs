@@ -318,7 +318,7 @@ test('1280, composer=content: the tray-or-dock choice is kept per app (D-1919 ke
   await browser.evaluate(`document.querySelector('[data-testid=agent-tray-dock]').click()`);
   await browser.until('alpha dock open', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
   const stored = await browser.evaluate(`JSON.stringify(Object.fromEntries(Object.keys(localStorage).filter(key => key.startsWith('boring-ui:sidebar-agent-mode')).map(key => [key, localStorage.getItem(key)])))`);
-  assert.equal(stored, JSON.stringify({ 'boring-ui:sidebar-agent-mode-screen:alpha': 'dock' }), 'the dock choice is stored under the app');
+  assert.equal(stored, JSON.stringify({ 'boring-ui:sidebar-agent-mode-screen:alpha': 'dock' }), `the dock choice is stored under the app (${await browser.evaluate('location.search')})`);
   await open(1280, 'composer=content&keep=1&app=beta');
   await type('And the cheese?');
   await browser.evaluate(`document.querySelector('[data-testid=composer-submit]').click()`);

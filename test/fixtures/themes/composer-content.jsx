@@ -57,7 +57,7 @@ const agentSpec = { controller, icon: Icon, label: 'Assistant', chatProps: { men
 const Root = () => {
   const [person, setPerson] = useState(params.get('person'));
   window.__person = setPerson;
-  return <AppShell layout="screen" title="Visual" {...(params.get('app') ? { appId: params.get('app') } : {})} {...(person ? { account: { name: person, email: person, menu: [] } } : {})} nav={nav} route={{ id: 'week', onChange() {} }} composer={params.get('composer') ?? 'dock'} rail="icon"
+  return <AppShell layout="screen" title="Visual" appId={params.get('app') ?? undefined} {...(person ? { account: { name: person, email: person, menu: [] } } : {})} nav={nav} route={{ id: 'week', onChange() {} }} composer={params.get('composer') ?? 'dock'} rail="icon"
     agent={agentSpec} />;
 };
 createRoot(document.getElementById('root')).render(<Root />);
