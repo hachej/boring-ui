@@ -123,7 +123,7 @@ Fix the code, never the list.
 | `design-no-x-scroll` | No horizontal scroll in a file with a table: cells truncate and the table stacks below its width |
 | `design-no-kit-restyle` | No CSS aimed at a kit part (`[data-slot=...]`, `[data-boring...]`, kit class names): a token or a knob |
 | `design-no-important` | No `!important`: fix the selector or set a token |
-| `design-no-script-tokens` | No `setProperty("--sidebar-width"` in script: the theme sets the width, `AppShell resizable` lets the person change it |
+| `design-no-script-tokens` | No `setProperty("--sidebar-width"` in script: the theme sets the width, `AppShell resizable` lets the person change it (a regex literal that spells the call is reported too: rephrase it) |
 | `design-overlay-has-title` | Every Dialog, AlertDialog, Sheet and Drawer content has its Title (`sr-only` to hide it) |
 | `design-theme-core-only` | Set only core roles above `=== EXCEPTIONS ===`; every pin has a reason in `DESIGN.md` |
 | `design-theme-roles-both-modes` | Every kit colour role set in `:root` is also set in `.dark`, and the reverse |

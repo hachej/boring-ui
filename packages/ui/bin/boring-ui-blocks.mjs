@@ -1045,23 +1045,6 @@ export const ELEMENT_KIT = Object.freeze({
 const UI_DIR = 'components/ui';
 export const LEGACY_NOTE = 'legacy components/ui path: factory D-1688 (Anciennes apps passent au kit) moves the app onto @boring/ui/shadcn/*';
 
-/** Whether the `/` at `index` opens a regex literal (the token before it expects an operand) rather than a division, a closing JSX tag or a comment, and the literal closes on its line. */
-function regexAt(text, index) {
-  let p = index - 1;
-  while (p >= 0 && (text[p] === ' ' || text[p] === '\t')) p--;
-  const before = p < 0 ? '' : text[p];
-  const word = /(?:^|[^\w$.])(?:return|typeof|case|in|of|void|delete|throw|yield|await|else|do)$/.test(text.slice(Math.max(0, p - 8), p + 1));
-  if (!(before === '' || before === '\n' || '(,=:[!&|?{;+-*%^~'.includes(before) || word)) return false;
-  let inClass = false;
-  for (let j = index + 1; j < text.length && text[j] !== '\n'; j++) {
-    if (text[j] === '\\') j++;
-    else if (text[j] === '[') inClass = true;
-    else if (text[j] === ']') inClass = false;
-    else if (text[j] === '/' && !inClass) return j > index + 1;
-  }
-  return false;
-}
-
 /** The source with comments and the inside of string literals blanked out (same length, same lines), so a rule never reads them; `strings: false` blanks the comments only. */
 export function mask(text, { strings = true } = {}) {
   const out = text.split(''); // UTF-16 code units, like every index below: an astral character must not shift the offsets
@@ -1082,12 +1065,6 @@ export function mask(text, { strings = true } = {}) {
   while (i < text.length) {
     const c = text[i], n = text[i + 1];
     if (c === '/' && n === '/') { const end = text.indexOf('\n', i); const to = end < 0 ? text.length : end; blank(i, to); i = to; }
-    else if (c === '/' && n !== '*' && regexAt(text, i)) { // a regex literal is code that matches text, not code that does it: its inside is blanked like a string
-      let j = i + 1, inClass = false;
-      while (j < text.length && text[j] !== '\n' && (inClass || text[j] !== '/')) { if (text[j] === '\\') j++; else if (text[j] === '[') inClass = true; else if (text[j] === ']') inClass = false; j++; }
-      if (strings) blank(i + 1, Math.min(j, text.length));
-      i = j + 1;
-    }
     else if (c === '/' && n === '*') { const end = text.indexOf('*/', i + 2); const to = end < 0 ? text.length : end + 2; blank(i, to); i = to; }
     else if (c === '"' || c === "'") { // a string ends at its quote or at the line's end (an apostrophe in JSX text must not swallow the file)
       let j = i + 1;
@@ -1540,7 +1517,7 @@ function important(file, source) {
   return found;
 }
 
-/** `setProperty("--sidebar-width"` (and its `-icon` and `-mobile` siblings) in script: the width is a theme token, and the kit's `resizable` sidebar writes it itself. */
+/** `setProperty("--sidebar-width"` (and its `-icon` and `-mobile` siblings) in script: the width is a theme token, and the kit's `resizable` sidebar writes it itself. A regex literal that spells the call is reported too (the shared mask does not guess regex literals; rephrase it). */
 function scriptTokens(file, source) {
   if (!/\.[cm]?[jt]sx?$/.test(file)) return [];
   // Only an executable call: the same `.setProperty(` must survive in the fully masked text, where a string or template literal (a help text) is blank.
