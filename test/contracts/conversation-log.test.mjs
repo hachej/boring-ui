@@ -9,16 +9,16 @@ import { build } from 'esbuild';
 import { compile } from 'tailwindcss';
 import { registryCss } from '../../lab/studio/tailwind.mjs';
 
-// D-1978 part 3: the day log sheet. A real Chromium mounts the public `agent-bar` and `agent-day-log` blocks (test/fixtures/themes/agent-day-log.jsx) at 390 touch
-// and 1280 fine, light and dark, and drives the bar's history arrow with real input. Shots go to .cache/evidence/agent-day-log (or EVIDENCE_DIR), uploaded by CI
-// as `agent-day-log-shots`. In CI a missing browser fails the test; it never skips (D-1731).
+// D-1978 part 3: the conversation log sheet. A real Chromium mounts the public `agent-bar` and `conversation-log` blocks (test/fixtures/themes/conversation-log.jsx) at 390 touch
+// and 1280 fine, light and dark, and drives the bar's history arrow with real input. Shots go to .cache/evidence/conversation-log (or EVIDENCE_DIR), uploaded by CI
+// as `conversation-log-shots`. In CI a missing browser fails the test; it never skips (D-1731).
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
 const registry = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8'));
 const item = name => registry.items.find(entry => entry.name === name);
 const block = vars => Object.entries(vars).map(([key, value]) => `--${key}: ${value};`).join('\n');
 const skip = !process.env.CHROMIUM && !process.env.CI;
-const shots = process.env.EVIDENCE_DIR ?? join(root, '.cache/evidence/agent-day-log');
+const shots = process.env.EVIDENCE_DIR ?? join(root, '.cache/evidence/conversation-log');
 
 let server, browser, port;
 before(async () => {
@@ -37,11 +37,11 @@ before(async () => {
       return { path: ['.ts', '.tsx'].map(ext => base + ext).find(existsSync) };
     });
   } };
-  const bundle = await build({ entryPoints: [join(root, 'test/fixtures/themes/agent-day-log.jsx')], bundle: true, write: false, metafile: true, format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty' }, plugins: [kit], logLevel: 'silent' });
+  const bundle = await build({ entryPoints: [join(root, 'test/fixtures/themes/conversation-log.jsx')], bundle: true, write: false, metafile: true, format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty' }, plugins: [kit], logLevel: 'silent' });
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
   const vars = item('theme').cssVars;
-  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${['theme', 'agent-bar', 'agent-day-log'].map(name => registryCss(item(name))).join('\n')}`;
+  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${['theme', 'agent-bar', 'conversation-log'].map(name => registryCss(item(name))).join('\n')}`;
   const compiler = await compile(cssSource, { base: root, loadStylesheet: async id => {
     const path = require.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id);
     return { path, base: dirname(path), content: readFileSync(path, 'utf8') };
@@ -102,7 +102,7 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     assert.equal(await browser.evaluate(`${sheet}.textContent.includes('Avec Max · aujourd’hui')`), true, 'the sheet is titled');
     assert.equal(await browser.evaluate(`!!${sheet}.closest('[role=dialog]') || ${sheet}.getAttribute('role') === 'dialog'`), true, 'the sheet is a dialog');
     assert.equal(await browser.evaluate(`${sheet}.contains(document.activeElement)`), true, 'focus moved into the sheet');
-    assert.equal(await browser.evaluate(focused), 'agent-log-close');
+    assert.equal(await browser.evaluate(focused), 'conversation-log-close');
     const popup = await rectOf(sheet), bar = await rectOf(`document.querySelector('[data-testid=agent-bar]')`);
     assert.equal(popup.y + popup.h <= bar.y + 1, true, `the bar stays under the sheet: sheet ends at ${popup.y + popup.h}, bar starts at ${bar.y}`);
     assert.equal(popup.y >= 40 && popup.y <= 90, true, `the day header stays above the sheet: ${popup.y}`);
@@ -114,7 +114,7 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     // The entries: times, bubbles, status lines with their check chips, the question and its answer, the suggestions and their buttons.
     const text = await browser.evaluate(`document.querySelector('[data-testid=agent-log]').textContent`);
     for (const expected of ['08:10', '« Flocons d’avoine 60 g, du lait et une banane »', 'Petit-déjeuner · 420 kcal', 'Vérifié', 'Goûter noté · tarte en cours', 'D’où vient la tarte ? Boulangerie', 'Tarte fine, alors : 230 kcal la part, pas 310.', 'Corrigé', '18:40', 'Saumon 150 g', 'Prévoir le saumon', 'Autre chose']) assert.equal(text.includes(expected), true, `the log shows « ${expected} »`);
-    assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=agent-log-status] svg').length`), 2, 'a check on each finished status, none on the pending one');
+    assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=conversation-log-status] svg').length`), 2, 'a check on each finished status, none on the pending one');
     assert.equal(await browser.evaluate(`(() => { const l = document.querySelector('[data-testid=agent-log]'); return l.scrollTop > 0 && l.scrollTop + l.clientHeight >= l.scrollHeight - 2; })()`), true, 'the log opens on its latest entry');
     await shot(`soir-${at}`);
     await browser.evaluate(`document.querySelector('[data-testid=agent-log]').scrollTop = 0`);

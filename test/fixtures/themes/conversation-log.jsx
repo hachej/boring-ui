@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AgentBar } from '../../../registry/agent-bar/agent-bar.tsx';
-import { AgentDayLog } from '../../../registry/agent-day-log/agent-day-log.tsx';
+import { ConversationLog } from '../../../registry/conversation-log/conversation-log.tsx';
 
-// D-1978 part 3: the day log sheet over the agent bar, on a fictional day page. `?dark=1` picks the dark theme. The entries are the shape the app passes
-// (see AgentLogEntry). What the app would see is on window: __sent (bar sends), __history (arrow taps), __selected (labels of the log's buttons).
+// D-1978 part 3: the conversation log sheet over the agent bar, on a fictional day page. `?dark=1` picks the dark theme. The entries are the shape the app passes
+// (see ConversationLogEntry). What the app would see is on window: __sent (bar sends), __history (arrow taps), __selected (labels of the log's buttons).
 const params = new URLSearchParams(location.search);
 if (params.get('dark') === '1') document.documentElement.classList.add('dark');
 window.__sent = []; window.__history = 0; window.__selected = [];
@@ -12,14 +12,14 @@ window.__sent = []; window.__history = 0; window.__selected = [];
 const entries = [
   { kind: 'time', id: 't1', time: '08:10' },
   { kind: 'user', id: 'u1', text: '« Flocons d’avoine 60 g, du lait et une banane »' },
-  { kind: 'status', id: 's1', text: 'Petit-déjeuner · 420 kcal', result: 'Vérifié' },
+  { kind: 'status', id: 's1', text: 'Petit-déjeuner · 420 kcal', state: 'done', label: 'Vérifié' },
   { kind: 'time', id: 't2', time: '16:30' },
   { kind: 'user', id: 'u2', text: '« Au goûter une part de tarte aux pommes et un café »' },
-  { kind: 'status', id: 's2', text: 'Goûter noté · tarte en cours' },
+  { kind: 'status', id: 's2', text: 'Goûter noté · tarte en cours', state: 'working' },
   { kind: 'question', id: 'q1', question: 'D’où vient la tarte ?', answer: 'Boulangerie' },
   { kind: 'user', id: 'u3', text: '« C’est une tarte fine en fait »' },
   { kind: 'agent', id: 'a1', text: 'Tarte fine, alors : 230 kcal la part, pas 310.' },
-  { kind: 'status', id: 's3', text: 'Goûter · 232 kcal', result: 'Corrigé' },
+  { kind: 'status', id: 's3', text: 'Goûter · 232 kcal', state: 'done', label: 'Corrigé' },
   { kind: 'time', id: 't3', time: '17:05' },
   { kind: 'user', id: 'u4', text: '« Combien de calories dans une tarte aux pommes ? »' },
   { kind: 'agent', id: 'a2', text: '≈ 285 kcal la part de 120 g, ≈ 237 pour 100 g. Rien n’est noté.' },
@@ -38,7 +38,7 @@ const Day = () => {
     <div data-testid="dock" className="flex flex-col gap-2 border-t bg-background px-4 pt-3 pb-6">
       <AgentBar transcribe={async () => ''} onSend={payload => { window.__sent.push(payload); }} historyOpen={open} onHistory={() => { window.__history += 1; setOpen(value => !value); }} />
     </div>
-    <AgentDayLog open={open} onOpenChange={setOpen} entries={entries} />
+    <ConversationLog open={open} labels={{ title: 'Avec Max · aujourd’hui' }} onOpenChange={setOpen} entries={entries} />
   </div>;
 };
 createRoot(document.getElementById('root')).render(<Day />);
