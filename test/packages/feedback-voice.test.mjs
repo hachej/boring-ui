@@ -1,7 +1,7 @@
 // Feedback voice: speech-to-pointer alignment, the microphone capture's refusals and truncation, and the browser boundary.
 // Transcription itself is a host capability, not part of @hachej/boring-feedback: the session takes a `transcribe` callback
 // (feedback-session.test.mjs), and the example's server-side glue is tested in feedback-transcription-example.test.mjs.
-// Fictional data only. The clock itself is measured in Chromium by `npm run feedback:voice-sync` (tools/feedback-voice-sync.mjs),
+// Fictional data only. The clock itself is measured in Chromium by `npm run feedback:voice-sync` (scripts/feedback-voice-sync.mjs),
 // not here.
 import assert from 'node:assert/strict';
 import test from 'node:test';

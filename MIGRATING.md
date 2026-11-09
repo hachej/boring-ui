@@ -1,6 +1,12 @@
 # Unreleased
 
+- **`feedback:voice-sync` tool moved (no behaviour change; `@hachej/boring-ui-kit`, `@hachej/boring-feedback`; D-2019).** The measurement script is now `scripts/feedback-voice-sync.mjs` (was `tools/`); `npm run feedback:voice-sync` is unchanged. Two source comments name the new path. Nothing to do.
 - **New registry item `agent-bar`: `AgentBar` and `AgentStatus` (additive; D-1978 slice 1).** The voice-first bar of a background agent: a pill with a history arrow, the field, the mic (tap to listen, hold to talk and release to send, the kit's `useDictation` and `useHoldToRecord`) and send, an optional quoted-row chip, and the one-line status above it (spinner and « Annuler » while working, a check when done). The app supplies `transcribe(audio)` and `onSend({ text, quoted })`; every word is a French default in `labels`. `npx shadcn add @boring-ui/agent-bar`. No change to existing items.
+
+# Migrating to 0.4.75
+
+- **Phone nav sheet: the count and the « … » are centred on their row (`shadcn/ui/sidebar.tsx`; D-1972).** `--sidebar-row` was defined only on the `SidebarProvider` wrapper, but on a phone the `Sidebar` renders in a `Sheet` portaled to body, outside it, so `SidebarMenuBadge` and `SidebarMenuAction` (`pointer-coarse:h-(--sidebar-row)`) resolved to nothing and floated above or below their row. The sheet content now defines the same token (one shared constant with the wrapper). Fine-pointer and D-1904 layouts are unchanged. Re-sync `sidebar` if you carry a copy. Test: `test/contracts/sidebar-menu-action.test.mjs` (`390-touch-sheet`).
+- **`theme` item: `--font-sans` is `'Inter Variable'` (was `'Geist'`; `theme`; D-1974).** The app template ships `'Inter Variable'`, so the kit's default sans now names it, and the browser driver (`@hachej/boring-testing`) loads the pinned `@fontsource-variable/inter` into every page it opens and fails a shot or `until` when the page's own `--font-sans` face has no loaded `@font-face` (a fixture that deliberately uses a system face sets `data-system-font` on `<html>`). `@hachej/boring-testing` now depends on `@fontsource-variable/inter` 5.3.0. The item still loads no font; an app that adopted the theme keeps whatever `--font-sans` it has. `--font-mono` is unchanged. Re-sync `theme` (`registry:build` refreshes `public/r`).
 
 # Migrating to 0.4.74
 

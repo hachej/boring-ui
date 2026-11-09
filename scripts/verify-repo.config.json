@@ -1,7 +1,6 @@
 {
   "version": 1,
   "allowedTopLevel": [
-    ".agent-handoff",
     ".github",
     "demos",
     "docs",
@@ -16,7 +15,6 @@
     "shared",
     "skills",
     "test",
-    "tools",
     "shadcn"
   ],
   "additionalSourceRoots": [

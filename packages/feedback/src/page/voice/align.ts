@@ -17,7 +17,7 @@
 //    the dwell over its own time; words over nothing stay with the group before them), and each group gets rules 2–4 on its own
 //    window. Without word timings a segment is never split.
 //
-// The clock was measured, not assumed: `npm run feedback:voice-sync` (tools/feedback-voice-sync.mjs) records beeps in headless
+// The clock was measured, not assumed: `npm run feedback:voice-sync` (scripts/feedback-voice-sync.mjs) records beeps in headless
 // Chromium while the pointer moves; the chosen `startedAt` was within 9 ms of an independent reader of the microphone (see
 // .cache/evidence/feedback-voice/RESULT.md), far below the 150 ms target and a segment's own length, so no window is widened.
 
