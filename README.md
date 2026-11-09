@@ -192,6 +192,29 @@ npx skills add hachej/boring-ui
 
 Apps built by the Boring Factory start from its app template and ship through the [Factory](https://github.com/hachej/boring-factory/blob/main/docs/PROVISIONING.md); this repository provides the packages and blocks they consume.
 
+## Repository layout
+
+One job per top-level folder. What the kit does is in the [feature map](features/README.md); the skills that teach an app builder to use it are in [`skills/`](skills/README.md).
+
+| Folder | Holds | Read by |
+| --- | --- | --- |
+| [`packages/`](packages/) | The published npm packages (`agent`, `browser`, `execution`, `feedback`, `files`, `testing`, `ui`) | npm consumers |
+| `registry/` | Source of the registry blocks (`pi-chat`, `app-shell`, viewers, ...) that `registry.json` lists | the shadcn CLI, `boring-ui-blocks`, boring-factory's bundle (by path) |
+| `public/r/` | The generated registry JSON, committed; `npm run registry:build` writes it | apps, which fetch `r/<item>.json` by URL |
+| [`shadcn/`](shadcn/README.md) | `ui/`: the kit's own shadcn primitives (Base UI, compact defaults) | boring-factory's bundle (by path), the design checks |
+| `shared/` | Host helpers (standard agent, workspace and MCP tools, SQLite workspaces, canvas transport) imported by relative path, not a package | examples, fixtures, `lab/`, boring-factory (`local-host.mjs`) |
+| [`examples/`](examples/README.md) | Single-feature and host recipes, one runnable app each | people learning the kit; boring-factory (`app-shell`) |
+| [`demos/`](demos/README.md) | One story demo, told end to end | people evaluating the kit |
+| [`lab/`](lab/README.md) | The studio playground over every block, plus its scripted-model and Tailwind helpers | maintainers, the scripted CI journeys, boring-factory |
+| `fixtures/` | Fictional data and fake hosts | tests, examples |
+| `test/` | All tests and their fixtures | CI, boring-factory (`test/fixtures`) |
+| `scripts/` | Build, release, check and browser-journey scripts | `package.json`, CI, boring-factory (`css-stub-register.mjs`) |
+| [`features/`](features/README.md) | The feature map, one file per feature | people and agents; `check-features` |
+| [`docs/`](docs/) | Specs, contracts, guides and per-task notes | everyone |
+| [`skills/`](skills/README.md) | Agent skills for building apps with the kit | coding agents, boring-factory's `build-app` |
+
+`examples/` are recipes to copy, `demos/` tell one product story, and `lab/` is the playground that exercises the library itself.
+
 ## Contributing
 
 Read [AGENTS.md](AGENTS.md) and [INVARIANTS.md](INVARIANTS.md) first. Use fictional data only.
