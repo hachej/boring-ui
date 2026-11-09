@@ -23,7 +23,7 @@
 - Run `npm run gallery:build`, then open `.cache/gallery/index.html`; or download the `kit-gallery` artifact from a CI run.
 - `?theme=dark` starts dark; `#chat` (or any section id) starts on that section.
 
-## Driving it
+## Driving it with the gallery test
 
 Preconditions: `npm run build`, Chromium (`CHROMIUM`).
 

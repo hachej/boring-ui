@@ -20,7 +20,7 @@ const query = new URLSearchParams(location.search);
 const hashTarget = () => {
   const id = decodeURIComponent(location.hash.slice(1));
   if (IDS.includes(id)) return { route: id };
-  const card = id && document.getElementById(id);
+  const card = id ? document.getElementById(id) : null;
   const section = card?.closest('[data-testid^="gallery-"]')?.dataset.testid.slice('gallery-'.length);
   return IDS.includes(section) ? { route: section, card: id } : {};
 };

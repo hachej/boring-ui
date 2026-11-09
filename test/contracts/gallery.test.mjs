@@ -85,7 +85,9 @@ test('the fake data answers: the toast shows, the question and the approval are 
   await browser.until('a toast', `document.querySelector('[data-testid=toast-stack]').textContent.includes('Enregistré')`);
   await browser.evaluate(`document.querySelector('[data-testid=nav-chat]').click()`);
   await browser.until('the question', `document.querySelector('[data-testid=gallery-chat-frame]')?.textContent.includes('Quel jour fait-on le marché ?')`);
-  await browser.evaluate(`[...document.querySelectorAll('[data-testid=gallery-chat-frame] button')].find(b => b.textContent.trim() === 'Samedi').click()`);
+  await browser.evaluate(`[...document.querySelectorAll('[data-testid=gallery-chat-frame] [data-testid=question-item] button')].find(b => b.textContent.includes('Samedi')).click()`);
+  await browser.until('answer enabled', `document.querySelector('[data-testid=gallery-chat-frame] [data-testid=question-submit]')?.disabled === false`);
+  await browser.evaluate(`document.querySelector('[data-testid=gallery-chat-frame] [data-testid=question-submit]').click()`);
   await browser.until('the approval', `!!document.querySelector('[data-testid=gallery-chat-frame] [data-testid=approval-approve]')`);
   await browser.evaluate(`document.querySelector('[data-testid=gallery-chat-frame] [data-testid=approval-approve]').click()`);
   await browser.until('the end', `document.querySelector('[data-testid=gallery-chat-frame]').textContent.includes('La semaine est prête.')`);
