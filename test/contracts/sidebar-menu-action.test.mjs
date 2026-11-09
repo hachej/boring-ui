@@ -55,10 +55,10 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
     const box = el => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom, cy: r.y + r.height / 2 }; };
     const out = {};
     for (const row of document.querySelectorAll('[data-row]')) {
-      const label = row.querySelector('[data-sidebar=menu-button] > span:not([data-slot=badge])'), badge = row.querySelector('[data-sidebar=menu-badge]');
-      out[row.dataset.row] = { row: box(row), button: box(row.querySelector('[data-sidebar=menu-button]')), sub: box(row.querySelector('[data-sidebar=menu-sub]')), action: box(row.querySelector('[data-sidebar=menu-action]')), badge: box(badge), label: box(label), icon: box(row.querySelector('[data-sidebar=menu-button] > svg')),
+      const label = row.querySelector('[data-sidebar=menu-button] > span:not([data-slot=badge])'), badge = row.querySelector(':scope > [data-sidebar=menu-badge]');
+      out[row.dataset.row] = { row: box(row), button: box(row.querySelector('[data-sidebar=menu-button]')), sub: box(row.querySelector('[data-sidebar=menu-sub]')), action: box(row.querySelector(':scope > [data-sidebar=menu-action]')), badge: box(badge), label: box(label), icon: box(row.querySelector('[data-sidebar=menu-button] > svg')),
         labelDisplay: getComputedStyle(label).display, labelClip: getComputedStyle(label).overflow, labelText: label.textContent,
-        actionOpacity: Number(getComputedStyle(row.querySelector('[data-sidebar=menu-action]') ?? row).opacity), badgeOpacity: badge ? Number(getComputedStyle(badge).opacity) : null,
+        actionOpacity: Number(getComputedStyle(row.querySelector(':scope > [data-sidebar=menu-action]') ?? row).opacity), badgeOpacity: badge ? Number(getComputedStyle(badge).opacity) : null,
         buttonFont: getComputedStyle(row.querySelector('[data-sidebar=menu-button]')).fontSize, subFont: row.querySelector('[data-sidebar=menu-sub-button]') ? getComputedStyle(row.querySelector('[data-sidebar=menu-sub-button]')).fontSize : null,
         labelTruncates: label.scrollWidth > label.clientWidth, badgeClipped: badge ? badge.scrollWidth > badge.clientWidth : false };
     }
@@ -72,7 +72,7 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
       await browser.send('Emulation.setTouchEmulationEnabled', { enabled: touch, maxTouchPoints: 5 });
       for (const theme of ['light', 'dark']) {
         await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?theme=${theme}&mode=${mode}` });
-        await browser.until('fixture mounted', `document.querySelectorAll('[data-row]').length === 6 && document.readyState === 'complete'`);
+        await browser.until('fixture mounted', `document.querySelectorAll('[data-row]').length === 8 && document.readyState === 'complete'`);
         await new Promise(done => setTimeout(done, 250));
         const m = await measure();
         const tree = await browser.send('Accessibility.getFullAXTree');
@@ -137,6 +137,13 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
             check(!overlap(h), `${id} hovered: the drawn count and action boxes ${JSON.stringify(drawn(h, 'badge'))} and ${JSON.stringify(drawn(h, 'action'))} do not overlap`);
             check(h.action.w === 20 && h.action.y - h.row.y === 6 && h.row.right - h.action.right === 4, `${id} hovered: the action sits where the count was`);
           }
+          await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+          // D-1960 round 2: a child's count does not hide a parent's action at rest; a child's action does not hide a parent's count on hover.
+          check(m.rows.subbadge.actionOpacity === 1, `subbadge at rest: the parent's action (no count of its own) stays shown (${m.rows.subbadge.actionOpacity})`);
+          await browser.hover(`document.querySelector('[data-row=subaction] > [data-sidebar=menu-button]')`);
+          await new Promise(done => setTimeout(done, 250));
+          const sa = (await measure()).rows.subaction;
+          check(sa.badgeOpacity === 1, `subaction hovered: the parent's count (no action of its own) stays shown (${sa.badgeOpacity})`);
           await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
         }
       }

@@ -1,4 +1,7 @@
-import { createRoot } from 'react-dom/client';
+import { // D-1960 round 2: a parent's pairing looks at its own children only: a child row's count or action, in an open sub-list, must not hide the parent's action or count.
+const SubWith = ({ kind }) => <SidebarMenuSub><SidebarMenuSubItem><SidebarMenuSubButton href="#"><span>2025</span></SidebarMenuSubButton>{kind === 'badge' ? <SidebarMenuBadge>2</SidebarMenuBadge> : <More />}</SidebarMenuSubItem></SidebarMenuSub>;
+
+createRoot } from 'react-dom/client';
 import { Badge } from '@/components/ui/badge';
 import { SidebarProvider, Sidebar, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarMenuAction, SidebarMenuBadge, SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton } from '@/components/ui/sidebar';
 
@@ -12,6 +15,8 @@ const rows = [
   ['badge', 'Brouillons', false, '8'],
   ['nested', 'Exercices', true, '3'],
   ['dot', 'Importer', false, null],
+  ['subbadge', 'Clôtures', true, null, 'badge'],
+  ['subaction', 'Archives', false, '5', 'action'],
   ['folder', 'Pièces justificatives de l’exercice en cours avec un très long nom de dossier', true, '128'],
 ];
 
@@ -20,10 +25,11 @@ const Dot = () => <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy=
 const Sub = () => <SidebarMenuSub>{['2025', '2024'].map(year => <SidebarMenuSubItem key={year}><SidebarMenuSubButton href="#" data-sub={year}><span>{year}</span></SidebarMenuSubButton></SidebarMenuSubItem>)}</SidebarMenuSub>;
 
 createRoot(document.getElementById('root')).render(<SidebarProvider defaultOpen={!collapsed}><Sidebar collapsible={collapsed ? 'icon' : 'none'} className={collapsed ? undefined : 'w-full'}><SidebarContent><SidebarMenu>
-  {rows.map(([id, label, action, count]) => <SidebarMenuItem key={id} data-row={id}>
+  {rows.map(([id, label, action, count, child]) => <SidebarMenuItem key={id} data-row={id}>
     <SidebarMenuButton>{collapsed ? <Dot /> : null}<span>{label}</span>{id === 'dot' ? <Badge aria-hidden="true" className="ml-auto group-data-[collapsible=icon]:hidden" /> : null}</SidebarMenuButton>
     {action ? <More /> : null}
     {count ? <SidebarMenuBadge>{count}</SidebarMenuBadge> : null}
     {id === 'nested' ? <Sub /> : null}
+    {child ? <SubWith kind={child} /> : null}
   </SidebarMenuItem>)}
 </SidebarMenu></SidebarContent></Sidebar></SidebarProvider>);
