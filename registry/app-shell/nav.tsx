@@ -125,9 +125,9 @@ export function ScreenSidebarSheet({ item, text }: { readonly item: NavItem; rea
   return <>
     <Button variant="ghost" size="icon" data-testid="screen-sidebar-button" aria-label={name} title={name} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}><item.icon data-icon="inline-start" aria-hidden="true" /></Button>
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetContent side="left" showCloseButton={false} data-testid="screen-sidebar-sheet" className="app-shell data-[side=left]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground">
+      <SheetContent side="left" showCloseButton={false} data-testid="screen-sidebar-sheet" className="app-shell data-[side=left]:w-[var(--sidebar-width-mobile,75%)]">
         <SheetHeader className="sr-only"><SheetTitle>{name}</SheetTitle><SheetDescription>{name}</SheetDescription></SheetHeader>
-        <div data-testid="screen-sidebar-content" className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain pb-(--app-shell-safe-bottom)"
+        <div data-testid="screen-sidebar-content" className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain bg-sidebar pb-(--app-shell-safe-bottom) text-sidebar-foreground"
           onClick={event => { const row = event.target instanceof Element ? event.target.closest(CHOOSES) : null; if (row && !row.closest('[data-keep-sheet]')) close(); }}>
           {item.sidebar({ collapsed: false })}
         </div>
