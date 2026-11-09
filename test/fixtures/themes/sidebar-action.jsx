@@ -37,7 +37,7 @@ createRoot(document.getElementById('root')).render(<>{tap ? <SidebarTrigger /> :
     <SidebarMenuButton className={tall ? 'h-14' : undefined}>{collapsed ? <Dot /> : null}<span>{label}</span>{id === 'dot' ? <Badge aria-hidden="true" className="ml-auto group-data-[collapsible=icon]:hidden" /> : null}</SidebarMenuButton>
     {action ? <More /> : null}
     {count ? <SidebarMenuBadge>{count}</SidebarMenuBadge> : null}
-    {id === 'dot' ? <><SidebarMenuBadge>{0}</SidebarMenuBadge><SidebarMenuBadge /></> : null}
+    {id === 'dot' ? <><SidebarMenuBadge>{0}</SidebarMenuBadge><SidebarMenuBadge /><SidebarMenuBadge><Badge aria-hidden="true" /></SidebarMenuBadge></> : null}
     {id === 'nested' ? <Sub /> : null}
     {child ? <SubWith kind={child} /> : null}
   </SidebarMenuItem>)}
