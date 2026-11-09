@@ -340,6 +340,34 @@ try {
     await live();
   });
 
+  await step('E2 nav dot (D-2028): role img named by its label, 8x8, the info token, in the tab bar (390 touch) and the sidebar (1280 fine), light and dark', async () => {
+    const dot = parent => `(() => { const d = document.querySelector('${parent} [role=img][aria-label="Nuit à noter"][data-testid=nav-badge]'); if (!d) return null; const r = d.getBoundingClientRect(), p = document.createElement('span'); p.style.backgroundColor = 'var(--info)'; document.body.append(p); const token = getComputedStyle(p).backgroundColor; p.remove(); return { w: Math.round(r.width), h: Math.round(r.height), bg: getComputedStyle(d).backgroundColor, token, tag: d.tagName }; })()`;
+    const check = async (where, parent) => {
+      for (const theme of ['light', 'dark']) {
+        await browser.evaluate(`document.documentElement.classList.${theme === 'dark' ? 'add' : 'remove'}('dark')`);
+        await pause(150);
+        const got = await browser.evaluate(dot(parent));
+        assert.ok(got, `${where} ${theme}: a dot with role img and name « Nuit à noter »`);
+        assert.deepEqual([got.w, got.h, got.tag], [8, 8, 'SPAN'], `${where} ${theme}: 8x8 span`);
+        assert.notEqual(got.bg, 'rgba(0, 0, 0, 0)', `${where} ${theme}: painted`);
+        assert.equal(got.bg, got.token, `${where} ${theme}: the info token`);
+        await browser.screenshot(`nav-dot-${where}-${theme}.png`);
+      }
+      await browser.evaluate(`document.documentElement.classList.remove('dark')`);
+    };
+    await browser.send('Page.navigate', { url: `${app.url}?app=fitness&nav=6` });
+    await live();
+    await check('tabbar-390-touch', '[data-testid=tab-plus]');
+    await browser.emulate('desktop');
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await browser.send('Page.navigate', { url: `${app.url}?app=fitness&nav=6` });
+    await live();
+    await check('sidebar-1280-fine', '[data-testid=nav-sommeil]');
+    await browser.emulate('phone');
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+  });
+
   await step('1 the trigger opens half: overlay visible, page behind inert (a tab tap does nothing)', async () => {
     assert.equal(await browser.evaluate(snap), null, 'closed: no layer mounted');
     await tap(TRIGGER);
