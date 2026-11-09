@@ -281,11 +281,13 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const zone = composerHost ? dropZone : null;
   // Moving the footer between the chat and the content column remounts the field: carry the focus and the selection across.
   const hosted = Boolean(composerHost), hostedBefore = useRef(hosted), carried = useRef<{ start: number; end: number } | null>(null);
+  /* eslint-disable react-hooks/refs -- read once, in the render that moves the footer: the old textarea is still in the page then, and an effect cleanup runs after it is gone */
   if (hostedBefore.current !== hosted) {
     hostedBefore.current = hosted;
     const input = dock.current?.querySelector<HTMLTextAreaElement>('[data-testid=composer-input]');
     carried.current = input && document.activeElement === input ? { start: input.selectionStart, end: input.selectionEnd } : null;
   }
+  /* eslint-enable react-hooks/refs */
   useLayoutEffect(() => {
     const kept = carried.current;
     carried.current = null;

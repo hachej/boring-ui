@@ -40,7 +40,7 @@ const voiceMessage = params.get('voice') === '1' ? {
   Button: ({ voice }) => <button type="button" data-testid="fake-voice" onClick={() => voice.start()}>mic</button>,
 } : undefined;
 // Local state of a screen: it must survive the shell crossing the wide breakpoint.
-const Counter = () => { const [count, setCount] = useState(0); return <button type="button" data-testid="counter" onClick={() => setCount(count + 1)}>Count {count}</button>; };
+const Counter = () => { const [count, setCount] = useState(0); return <button type="button" data-testid="counter" onClick={() => setCount(value => value + 1)}>Count {count}</button>; };
 const Page = () => <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
   <Probe />
   <h1 className="text-lg font-medium">Week of the market walk</h1>
