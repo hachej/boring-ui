@@ -32,7 +32,7 @@ test('default theme source and published output expose the original surface, typ
     assert.equal(light['text-title'], '0.875rem');
     assert.equal(theme['text-xs'], 'var(--text-body)');
     assert.equal(theme['text-sm'], 'var(--text-title)');
-    assert.equal(light['font-sans'], "'Geist', ui-sans-serif, system-ui, sans-serif");
+    assert.equal(light['font-sans'], "'Inter Variable', ui-sans-serif, system-ui, sans-serif");
     assert.equal(light['font-mono'], "'Geist Mono', ui-monospace, Menlo, monospace");
     for (const name of ['sans', 'mono']) assert.equal(theme[`font-${name}`], `var(--font-${name})`);
     for (const [mode, expected] of Object.entries(surfaces)) {
