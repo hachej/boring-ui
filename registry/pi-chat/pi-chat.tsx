@@ -348,7 +348,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   </section>
   {/* The shell's `composer: 'content'`: the same footer, drawn into the content column (the `pi-chat` class keeps the chat's text and resets there). */}
   {composerHost && createPortal(<div data-boring="pi-chat-composer" className="pi-chat bg-card text-card-foreground">{footer}</div>, composerHost)}
-  {zone && dragged && createPortal(<div data-testid="content-drop-overlay" aria-hidden="true" className="pi-chat pointer-events-none absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed border-primary bg-background/80 text-sm font-medium text-foreground">{labels.attachFiles}</div>, zone)}
+  {zone && dragged && createPortal(<div data-testid="content-drop-overlay" aria-hidden="true" className="pi-chat pointer-events-none absolute inset-0 z-10 flex items-center justify-center border border-dashed border-primary bg-background/80 text-sm font-medium text-foreground">{labels.attachFiles}</div>, zone)}
   </>;
 }
 
