@@ -10,7 +10,7 @@ export type { ShellPanel, ShellPanelLayoutProps, ShellPanelPageProps, ShellPanel
 export { useShellLayer } from './shell-layer';
 export type { ShellLayer } from './shell-layer';
 export { AppSidebar, TabBar } from './nav';
-export type { NavItem } from './nav';
+export type { NavBadge, NavItem } from './nav';
 export { ScreenHeader, useScreenHeader } from './header';
 export type { ScreenHeaderSpec } from './header';
 export { useIsCompact } from './compact';

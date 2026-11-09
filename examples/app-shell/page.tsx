@@ -121,7 +121,7 @@ const FITNESS = [
   { id: 'donnees', label: 'Données', icon: DatabaseIcon, render: () => <Data /> },
   ...(six ? [
     { id: 'objectifs', label: 'Objectifs', icon: TargetIcon, render: () => <Plain label="Vos objectifs" /> },
-    { id: 'sommeil', label: 'Sommeil', icon: MoonStarIcon, badge: true, render: () => <Plain label="Votre sommeil" /> },
+    { id: 'sommeil', label: 'Sommeil', icon: MoonStarIcon, badge: { tone: 'info', label: 'Nuit à noter' } as const, render: () => <Plain label="Votre sommeil" /> },
     { id: 'amis', label: 'Amis', icon: UsersIcon, render: () => <Plain label="Vos amis" /> },
   ] : []),
 ];
