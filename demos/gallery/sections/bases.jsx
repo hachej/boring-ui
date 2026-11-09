@@ -63,10 +63,10 @@ function SelectDemo() {
 export function Bases() {
   return <Page id="bases" title="Bases" description="Les composants de base du kit, dans son style par défaut : chaque variante, taille et état.">
     <Grid>
-      <Specimen id="button-variants" title="Bouton : variantes" description="Six variantes ; une seule action principale par écran.">
+      <Specimen id="button-variants" code={'<Button variant="outline" size="sm">  ·  npx shadcn add button'} feature={['gallery-bases', 'features/gallery.md']} title="Bouton : variantes" description="Six variantes ; une seule action principale par écran.">
         {BUTTONS.map(variant => <Button key={variant} variant={variant}>{variant}</Button>)}
       </Specimen>
-      <Specimen id="button-sizes" title="Bouton : tailles" description="La hauteur suit la densité et le pointeur (44 px au doigt).">
+      <Specimen id="button-sizes" code={'<Button size="xs|sm|lg|icon|inline">'} feature={['gallery-bases', 'features/gallery.md']} title="Bouton : tailles" description="La hauteur suit la densité et le pointeur (44 px au doigt).">
         <Button size="xs">xs</Button>
         <Button size="sm">sm</Button>
         <Button>défaut</Button>
@@ -74,16 +74,16 @@ export function Bases() {
         <Button size="icon" aria-label="Ajouter"><PlusIcon /></Button>
         <span>Un <Button size="inline" variant="link">lien dans une phrase</Button>.</span>
       </Specimen>
-      <Specimen id="button-states" title="Bouton : états" description="Chargement, désactivé, avec icône.">
+      <Specimen id="button-states" code={'<Button disabled><Spinner data-icon="inline-start" />'} feature={['gallery-bases', 'features/gallery.md']} title="Bouton : états" description="Chargement, désactivé, avec icône.">
         <Button disabled><Spinner data-icon="inline-start" />Envoi en cours</Button>
         <Button variant="outline" disabled>Désactivé</Button>
         <Button><SendIcon data-icon="inline-start" />Envoyer</Button>
         <Button variant="secondary">Suivant<PlusIcon data-icon="inline-end" /></Button>
       </Specimen>
-      <Specimen id="badges" title="Badge" description="Un état en un mot ; la couleur suit le sens, jamais la décoration.">
+      <Specimen id="badges" code={'<Badge variant="success|warning|info|destructive|outline">'} feature={['gallery-bases', 'features/gallery.md']} title="Badge" description="Un état en un mot ; la couleur suit le sens, jamais la décoration.">
         {BADGES.map(variant => <Badge key={variant} variant={variant}>{variant}</Badge>)}
       </Specimen>
-      <Specimen id="fields" title="Champs" description="Texte sur une ligne, plusieurs lignes, et le champ de code pour du brut collé.">
+      <Specimen id="fields" code={'<Input /> <Textarea variant="code" />'} feature={['gallery-bases', 'features/gallery.md']} title="Champs" description="Texte sur une ligne, plusieurs lignes, et le champ de code pour du brut collé.">
         <div className={FIELD}>
           <Label htmlFor="gallery-nom">Nom du carnet</Label>
           <Input id="gallery-nom" placeholder="Semaine du marché" />
@@ -100,14 +100,14 @@ export function Bases() {
           <Textarea id="gallery-json" variant="code" defaultValue={'{ "fictif": true, "pains": 3 }'} />
         </div>
       </Specimen>
-      <Specimen id="choices" title="Choix" description="Liste déroulante, case à cocher et interrupteur.">
+      <Specimen id="choices" code={'<Select> <Checkbox /> <Switch />'} feature={['gallery-bases', 'features/gallery.md']} title="Choix" description="Liste déroulante, case à cocher et interrupteur.">
         <SelectDemo />
         <Label className="w-full"><Checkbox defaultChecked />Garder les brouillons</Label>
         <Label className="w-full"><Checkbox />Prévenir l'équipe</Label>
         <Label className="w-full"><Switch defaultChecked />Notifications</Label>
         <Label className="w-full"><Switch disabled />Mode avion (indisponible)</Label>
       </Specimen>
-      <Specimen id="tooltip" title="Infobulle" description="Au survol ou au clavier ; elle ne porte jamais l'information seule.">
+      <Specimen id="tooltip" code={'<TooltipTrigger render={<Button />}>'} feature={['gallery-bases', 'features/gallery.md']} title="Infobulle" description="Au survol ou au clavier ; elle ne porte jamais l'information seule.">
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger render={<Button variant="outline" />}>Survolez-moi</TooltipTrigger>
@@ -115,7 +115,7 @@ export function Bases() {
           </Tooltip>
         </TooltipProvider>
       </Specimen>
-      <Specimen id="overlays" title="Dialogue, panneau, popover" description="Trois façons d'ouvrir une couche au-dessus de la page.">
+      <Specimen id="overlays" code={'<Dialog> <Sheet> <Popover>  (triggers take render=)'} feature={['gallery-bases', 'features/gallery.md']} title="Dialogue, panneau, popover" description="Trois façons d'ouvrir une couche au-dessus de la page.">
         <Dialog>
           <DialogTrigger render={<Button variant="outline" />}>Dialogue</DialogTrigger>
           <DialogContent>
@@ -145,7 +145,7 @@ export function Bases() {
           </PopoverContent>
         </Popover>
       </Specimen>
-      <Specimen id="tabs" title="Onglets" description="Le style par défaut et le style à filet.">
+      <Specimen id="tabs" code={'<TabsList variant="line">'} feature={['gallery-bases', 'features/gallery.md']} title="Onglets" description="Le style par défaut et le style à filet.">
         <Tabs defaultValue="semaine" className="w-full">
           <TabsList>
             <TabsTrigger value="semaine">Semaine</TabsTrigger>
@@ -163,10 +163,10 @@ export function Bases() {
           <TabsContent value="b">Le détail.</TabsContent>
         </Tabs>
       </Specimen>
-      <Specimen id="toast" title="Toast" description="Un message bref qui s'efface seul.">
+      <Specimen id="toast" code={'toast.success("…")  ·  npx shadcn add sonner'} feature={['gallery-bases', 'features/gallery.md']} title="Toast" description="Un message bref qui s'efface seul.">
         <ToastDemo />
       </Specimen>
-      <Specimen id="skeleton" title="Squelette" description="La place du contenu pendant qu'il arrive.">
+      <Specimen id="skeleton" code={'<Skeleton className="h-4 w-1/2" />'} feature={['gallery-bases', 'features/gallery.md']} title="Squelette" description="La place du contenu pendant qu'il arrive.">
         <div className="flex w-full flex-col gap-2">
           <Skeleton className="h-4 w-1/2" />
           <Skeleton className="h-4 w-full" />

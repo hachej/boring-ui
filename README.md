@@ -4,6 +4,8 @@
 
 Chat, files, document viewers, approvals and background work for React and Node apps, built on the [Pi](https://www.npmjs.com/package/@earendil-works/pi-durable) agent harness. You keep authentication, data, permissions and model keys.
 
+Documentation et démo : <https://hachej.github.io/boring-ui/>
+
 [![npm](https://img.shields.io/npm/v/@hachej/boring-ui-kit?label=%40hachej%2Fboring-ui-kit)](https://www.npmjs.com/package/@hachej/boring-ui-kit)
 [![CI](https://github.com/hachej/boring-ui/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/hachej/boring-ui/actions/workflows/verify.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)

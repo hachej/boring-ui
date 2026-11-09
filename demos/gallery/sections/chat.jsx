@@ -43,10 +43,10 @@ function ChatDemo() {
 
 export function Chat() {
   return <Page id="chat" title="Chat" description="Le fil de discussion de l'assistant, sur une conversation fictive : aucun modèle n'est appelé.">
-    <Specimen id="pi-chat" title="Conversation" description="Répondez à la question, approuvez la suppression, tapez / ou @, joignez un fichier ou dictez un message." wide>
+    <Specimen id="pi-chat" code={'npx boring-ui-blocks add pi-chat  ·  <PiChat {...withChatPlugins({ controller, slash, mentions, attachments, voiceMessage })} />'} feature={['chat-session', 'features/chat.md']} title="Conversation" description="Répondez à la question, approuvez la suppression, tapez / ou @, joignez un fichier ou dictez un message." wide>
       <ChatDemo />
     </Specimen>
-    <Specimen id="agent-bar" title="Barre d'agent" description="Emplacement réservé : le bloc agent-bar (D-1978) n'est pas encore sur main." wide>
+    <Specimen id="agent-bar" code={'npx boring-ui-blocks add agent-bar  (D-1978, not yet on main)'} feature={['gallery-chat', 'features/gallery.md']} title="Barre d'agent" description="Emplacement réservé : le bloc agent-bar (D-1978) n'est pas encore sur main." wide>
       <Alert data-testid="agent-bar-slot">
         <AlertTitle>À venir</AlertTitle>
         <AlertDescription>Ce bloc prendra sa place ici dès que la barre d'agent sera livrée.</AlertDescription>

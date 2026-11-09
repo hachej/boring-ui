@@ -13,8 +13,13 @@
 - `gallery-header-switches` the header holds a light/dark switch, a compact-density switch and the Téléphone entry. `demos/gallery/gallery.jsx`.
 - `gallery-phone-frame` the Coquille section shows this same page in a 390px iframe, so the shell is in its phone layout; it follows the theme and density. `demos/gallery/sections/coquille.jsx`.
 
+- `gallery-docs` the page is the kit's documentation: each card shows its import or registry name and the props that matter in a copyable line (Copier), names its feature id and repo path as plain text (the page is offline), and has its own anchor. `demos/gallery/common.jsx`.
+- `gallery-anchors` `#bases`, `#blocs`, `#chat`, `#visionneuses`, `#coquille` open a section; `#agent-bar`, `#data-table`, `#pi-chat`... open the section that holds that card and scroll to it, so a master can send a deep link. `demos/gallery/gallery.jsx`.
+- `gallery-pages` the same file is published with GitHub Pages at https://hachej.github.io/boring-ui/ on each push to main (Pages build type: GitHub Actions). `.github/workflows/gallery-pages.yml`.
+
 ## How to get to it (user POV)
 
+- Online: https://hachej.github.io/boring-ui/ (documentation and demo). A card link looks like `https://hachej.github.io/boring-ui/#data-table`.
 - Run `npm run gallery:build`, then open `.cache/gallery/index.html`; or download the `kit-gallery` artifact from a CI run.
 - `?theme=dark` starts dark; `#chat` (or any section id) starts on that section.
 
@@ -25,6 +30,8 @@ Preconditions: `npm run build`, Chromium (`CHROMIUM`).
 - **Sections.** `gallery-bases`, `gallery-blocs`, `gallery-chat`, `gallery-viewers`, `gallery-shell`: `node --test test/contracts/gallery.test.mjs` opens the built file, clicks each nav entry and finds its landmark in light and dark with no console error and no network request.
 - **Switches and phone.** `gallery-header-switches`, `gallery-phone-frame`: the same test clicks the header's theme and density actions, opens Coquille and reads the 390px frame.
 - **Fake data.** `gallery-chat`: the test answers the question card and approves, and the scripted reply appears.
+- **Docs and links.** `gallery-docs`, `gallery-anchors`: open `.cache/gallery/index.html#data-table`; the Tableau card is in view and shows its usage line and feature id. The test opens `#blocs` and a card anchor and reads the usage line.
+- **Pages.** `gallery-pages`: run the "Gallery pages" workflow (workflow_dispatch) after enabling Pages; the deploy job prints the URL.
 - **Build.** `gallery-build`: the test builds into a temporary folder; the CI step builds `.cache/gallery` and uploads it as `kit-gallery`.
 
 ## Gotchas

@@ -32,7 +32,7 @@ after(async () => { await browser?.close(); });
 const open = async (hash, theme) => {
   await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
   await browser.send('Page.navigate', { url: `${pathToFileURL(file).href}${theme === 'dark' ? '?theme=dark' : ''}#${hash}` });
-  await browser.until('shell mounted', `!!document.querySelector('[data-testid=gallery-${hash}]') && document.readyState === 'complete'`);
+  await browser.until('shell mounted', `!!document.querySelector('[data-testid=app-shell]') && !!document.querySelector('[data-testid^=gallery-]') && document.readyState === 'complete'`);
 };
 const visible = id => browser.evaluate(`(() => { const e = document.querySelector('[data-testid=${id}]'); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; })()`);
 
@@ -67,6 +67,15 @@ test('the header switches the theme and the density; the phone entry opens the 3
   assert.equal(await browser.evaluate(`document.querySelector('[data-testid=phone-frame]').getBoundingClientRect().width`), 374, 'the frame is the phone width inside its bezel');
   assert.equal(await browser.evaluate(`document.querySelector('[data-testid=phone-frame]').contentDocument.documentElement.classList.contains('dark')`), true, 'the frame follows the theme');
   await browser.screenshot('gallery-phone');
+  assert.deepEqual(browser.problems, [], 'no console error');
+});
+
+test('a card anchor opens its section and shows the usage line and the feature id', { skip, timeout: 120000 }, async () => {
+  await open('data-table', 'light');
+  await browser.until('the blocs section', `(() => { const e = document.querySelector('[data-testid=gallery-blocs]'); return !!e && e.getBoundingClientRect().width > 0; })()`);
+  assert.equal(await visible('specimen-data-table'), true, 'the card is on show');
+  assert.match(await browser.evaluate(`document.querySelector('#data-table [data-testid=usage-code]').textContent`), /boring-ui-blocks add data-table/);
+  assert.match(await browser.evaluate(`document.querySelector('#data-table [data-testid=feature-ref]').textContent`), /pattern-data-table/);
   assert.deepEqual(browser.problems, [], 'no console error');
 });
 

@@ -20,13 +20,13 @@ function PhoneFrame() {
 export function Coquille() {
   const framed = Boolean(window.__frame);
   return <Page id="coquille" title="Coquille" description="L'AppShell qui enveloppe cette page : barre latérale, en-tête, assistant, et sa version téléphone.">
-    <Specimen id="shell" title="La coquille de cette page" description="Survolez la barre de gauche pour voir ses libellés ; l'assistant s'ouvre depuis l'en-tête, son champ reste en bas." wide>
+    <Specimen id="shell" code={'npx boring-ui-blocks add app-shell  ·  <AppShell layout="screen" rail="hover" composer="content" nav route />'} feature={['shell-layouts', 'features/app-shell.md']} title="La coquille de cette page" description="Survolez la barre de gauche pour voir ses libellés ; l'assistant s'ouvre depuis l'en-tête, son champ reste en bas." wide>
       <Alert>
         <AlertTitle>Vous y êtes</AlertTitle>
         <AlertDescription>Cette page est une AppShell réelle : disposition « écran », barre au survol, champ de l'assistant sous le contenu. Le commutateur d'en-tête change le thème et la densité.</AlertDescription>
       </Alert>
     </Specimen>
-    <Specimen id="phone" title="Téléphone" description="La même coquille dans un cadre de 390 px : onglets en bas, un écran à la fois." wide>
+    <Specimen id="phone" code={'<AppShell compactNav="tabs|sheet" />  (below 768px)'} feature={['shell-nav', 'features/app-shell.md']} title="Téléphone" description="La même coquille dans un cadre de 390 px : onglets en bas, un écran à la fois." wide>
       {framed
         ? <Alert data-testid="phone-nested-note"><AlertTitle>Aperçu déjà en cours</AlertTitle><AlertDescription>Vous êtes dans le cadre téléphone ; l'aperçu ne s'imbrique pas.</AlertDescription></Alert>
         : <PhoneFrame />}

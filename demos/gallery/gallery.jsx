@@ -16,7 +16,15 @@ import { Visionneuses } from './sections/visionneuses.jsx';
 const IDS = ['bases', 'blocs', 'chat', 'visionneuses', 'coquille'];
 const frame = window.__frame;
 const query = new URLSearchParams(location.search);
-const startRoute = () => { const id = location.hash.slice(1); return IDS.includes(id) ? id : 'bases'; };
+// `#bases` is a section; `#agent-bar` is one card, found by its id inside the section that holds it (every screen stays mounted).
+const hashTarget = () => {
+  const id = decodeURIComponent(location.hash.slice(1));
+  if (IDS.includes(id)) return { route: id };
+  const card = id && document.getElementById(id);
+  const section = card?.closest('[data-testid^="gallery-"]')?.dataset.testid.slice('gallery-'.length);
+  return IDS.includes(section) ? { route: section, card: id } : {};
+};
+const startRoute = () => hashTarget().route ?? 'bases';
 
 const nav = [
   { id: 'bases', label: 'Bases', icon: LayoutDashboardIcon, render: () => <Bases /> },
@@ -34,6 +42,18 @@ function Gallery() {
   useLayoutEffect(() => { document.documentElement.classList.toggle('dark', dark); }, [dark]);
   useLayoutEffect(() => { if (compact) document.documentElement.dataset.density = 'compact'; else delete document.documentElement.dataset.density; }, [compact]);
   const choose = id => { setRoute(id); if (!frame) history.replaceState(null, '', `#${id}`); };
+  // A deep link to a card (also when the hash changes after load): open its section, then bring the card into view once that screen is on show.
+  useLayoutEffect(() => {
+    if (frame) return undefined;
+    const follow = () => {
+      const { route: target, card } = hashTarget();
+      if (target) setRoute(target);
+      if (card) requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(card)?.scrollIntoView({ block: 'start' })));
+    };
+    follow();
+    addEventListener('hashchange', follow);
+    return () => removeEventListener('hashchange', follow);
+  }, []);
   const actions = useMemo(() => [
     { id: 'theme', label: dark ? 'Thème clair' : 'Thème sombre', icon: dark ? SunIcon : MoonIcon, onSelect: () => setDark(value => !value) },
     { id: 'density', label: compact ? 'Densité normale' : 'Densité compacte', icon: Rows3Icon, onSelect: () => setCompact(value => !value) },
