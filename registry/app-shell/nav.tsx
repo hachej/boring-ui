@@ -195,7 +195,10 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
   useEffect(() => { if (pinned) setOpen(true); }, [pinned, setOpen]);
   // A dialog, menu or popover opened from the pane lives in a portal outside it: the pointer and focus leave the pane while it is open. Its trigger says so; the pane waits.
   const layerOpen = () => Boolean(wrapper.current?.querySelector('[aria-haspopup][aria-expanded="true"], [data-popup-open], [aria-haspopup][data-state="open"]'));
-  const settled = () => { const el = wrapper.current; return Boolean(el) && !el!.matches(':hover') && !(el!.contains(document.activeElement) && document.activeElement!.matches(':focus-visible')); };
+  const settled = () => {
+    const el = wrapper.current;
+    try { return Boolean(el) && !el!.matches(':hover') && !(el!.contains(document.activeElement) && document.activeElement!.matches(':focus-visible')); } catch { return false; }
+  };
   const fold = () => { if (!pinned && !layerOpen()) setOpen(false); };
   // When that layer closes, the pane folds if the pointer and focus are outside (the trigger gets focus back after a pause).
   useEffect(() => {
@@ -203,7 +206,7 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
     if (!hover || !el || pinned) return undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const observer = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(() => { if (!layerOpen() && settled()) setOpen(false); }, 60); });
-    observer.observe(el, { subtree: true, attributes: true, attributeFilter: ['aria-expanded', 'data-popup-open', 'data-state'] });
+    observer.observe(el, { subtree: true, attributes: true, attributeFilter: ['aria-expanded', 'data-popup-open'] });
     return () => { observer.disconnect(); clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hover, pinned, setOpen]);
