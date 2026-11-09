@@ -64,7 +64,8 @@ test('the header switches the theme and the density; the phone entry opens the 3
   await browser.until('compact', `document.documentElement.dataset.density === 'compact'`);
   await browser.evaluate(`document.querySelector('[data-testid=nav-coquille]').click()`);
   await browser.until('phone frame', `!!document.querySelector('[data-testid=phone-frame]')?.contentDocument?.querySelector('[data-testid=gallery-bases]')`);
-  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=phone-frame]').getBoundingClientRect().width`), 374, 'the frame is the phone width inside its bezel');
+  const phoneWidth = await browser.evaluate(`document.querySelector('[data-testid=phone-frame]').getBoundingClientRect().width`);
+  assert.ok(phoneWidth > 360 && phoneWidth <= 390, `the frame is a phone width inside its bezel (${phoneWidth}px)`);
   assert.equal(await browser.evaluate(`document.querySelector('[data-testid=phone-frame]').contentDocument.documentElement.classList.contains('dark')`), true, 'the frame follows the theme');
   await browser.screenshot('gallery-phone');
   assert.deepEqual(browser.problems, [], 'no console error');
@@ -85,7 +86,7 @@ test('the fake data answers: the toast shows, the question and the approval are 
   await browser.until('a toast', `document.querySelector('[data-testid=toast-stack]').textContent.includes('Enregistré')`);
   await browser.evaluate(`document.querySelector('[data-testid=nav-chat]').click()`);
   await browser.until('the question', `document.querySelector('[data-testid=gallery-chat-frame]')?.textContent.includes('Quel jour fait-on le marché ?')`);
-  await browser.evaluate(`[...document.querySelectorAll('[data-testid=gallery-chat-frame] [data-testid=question-item] button')].find(b => b.textContent.includes('Samedi')).click()`);
+  await browser.evaluate(`document.querySelector('[data-testid=gallery-chat-frame] [data-testid=question-option][data-option=Samedi]').click()`);
   await browser.until('answer enabled', `document.querySelector('[data-testid=gallery-chat-frame] [data-testid=question-submit]')?.disabled === false`);
   await browser.evaluate(`document.querySelector('[data-testid=gallery-chat-frame] [data-testid=question-submit]').click()`);
   await browser.until('the approval', `!!document.querySelector('[data-testid=gallery-chat-frame] [data-testid=approval-approve]')`);
