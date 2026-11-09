@@ -208,7 +208,6 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
     const observer = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(() => { if (!layerOpen() && settled()) setOpen(false); }, 60); });
     observer.observe(el, { subtree: true, attributes: true, attributeFilter: ['aria-expanded', 'data-popup-open'] });
     return () => { observer.disconnect(); clearTimeout(timer); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hover, pinned, setOpen]);
   // Ctrl+B toggles the pin here, ahead of the provider's own listener (which would fold the pane under the pointer).
   useEffect(() => {
