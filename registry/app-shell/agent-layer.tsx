@@ -922,7 +922,8 @@ function ContentColumn({ children }: { readonly children: ReactNode }) {
 function ContentTray() {
   const layer = useInternal();
   const { text, title } = useTitle();
-  const { grown, setGrown, side, restoreFocus } = layer;
+  const { grown, setGrown, side, restoreFocus: restoreFocusRef } = layer;
+  const toDock = () => { restoreFocusRef.current = true; layer.setMode('dock'); };
   const reduce = useCallback(() => {
     layer.close();
     layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true });
@@ -949,7 +950,7 @@ function ContentTray() {
       <div data-testid="agent-tray-header" className="flex shrink-0 items-center gap-1 pt-1">
         <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{title}</h2>
         <Button variant="ghost" size="icon" data-testid="agent-tray-dock" aria-label={dockLabel} title={dockLabel}
-          onClick={() => { restoreFocus.current = true; layer.setMode('dock'); }}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button>
+          onClick={toDock}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button>
         <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
           onClick={() => setGrown(!grown)}>{grown ? <ChevronDownIcon data-icon="inline-start" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>
         <Button variant="ghost" size="icon" data-testid="agent-tray-reduce" aria-label={text.collapse} title={text.collapse} onClick={reduce}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
