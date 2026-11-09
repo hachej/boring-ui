@@ -1,7 +1,6 @@
 {
   "version": 1,
   "allowedTopLevel": [
-    ".agent-handoff",
     ".github",
     "demos",
     "docs",
