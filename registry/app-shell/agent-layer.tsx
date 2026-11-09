@@ -169,9 +169,21 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly onSent: () => void;
   /** Set by a dock control: the next placement or side change puts focus back on the panel's first dock control. */
   readonly restoreFocus: { current: boolean };
+  /** Content composer on a wide screen: where a send opens the thread, the person's remembered choice. A tray above the field (default) or the dock. */
+  readonly mode: AgentMode;
+  readonly setMode: (mode: AgentMode) => void;
+  /** The tray is filling the main column (Agrandir). */
+  readonly grown: boolean;
+  readonly setGrown: (grown: boolean) => void;
+  /** The thread is on show in the tray above the field. */
+  readonly trayOpen: boolean;
+  /** The thread is on show in the dock (the dock's own `open`). */
+  readonly dockOpen: boolean;
 }
 
 type DockSide = 'left' | 'right';
+/** Where a thread sent from the content composer opens on a wide screen: `tray` above the field, or `dock` beside the app. */
+type AgentMode = 'tray' | 'dock';
 /**
  * Where the assistant's field sits on a wide screen. `dock` (default): inside the dock, under the thread. `content`: pinned under the page
  * content, at the content's width, with the dock holding only the thread (one controller, one thread, the same chat as the phone's peek).
@@ -181,6 +193,9 @@ export type AgentComposer = 'dock' | 'content';
 /** The dock's remembered state lives under this prefix (DockLayout's storageKey): `<key>.agent.floating`, `.width`, and the side. */
 const DOCK_KEY = 'boring.app-shell';
 const SIDE_KEY = `${DOCK_KEY}.agent.side`;
+const MODE_KEY = `${DOCK_KEY}.agent.mode`;
+/** The tray's height: 35% of the content column, at most this many px. */
+const TRAY_MAX = 360;
 
 const LayerContext = createContext<Internal | null>(null);
 
@@ -274,15 +289,23 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after mount; reading it before paint keeps server and client markup equal without a flash
   useLayoutEffect(() => { try { const saved = globalThis.localStorage?.getItem(SIDE_KEY); if (saved === 'left' || saved === 'right') setSideState(saved); } catch { /* a convenience */ } }, []);
   const setSide = useCallback((next: DockSide) => { setSideState(next); try { globalThis.localStorage?.setItem(SIDE_KEY, next); } catch { /* a convenience */ } }, []);
+  const [mode, setModeState] = useState<AgentMode>('tray');
+  const [grown, setGrown] = useState(false);
+  // The tray-or-dock choice is the viewer's, remembered with the side; read after mount for the same reason.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after mount; reading it before paint keeps server and client markup equal without a flash
+  useLayoutEffect(() => { try { if (globalThis.localStorage?.getItem(MODE_KEY) === 'dock') setModeState('dock'); } catch { /* a convenience */ } }, []);
+  const setMode = useCallback((next: AgentMode) => { setModeState(next); try { globalThis.localStorage?.setItem(MODE_KEY, next); } catch { /* a convenience */ } }, []);
   const contentColumn = composer === 'content' && agent !== undefined;
   const contentComposer = contentColumn && expanded;
-  const specs = useRef({ agent, improve, snap, shown, pmOpen, together });
+  const specs = useRef({ agent, improve, snap, shown, pmOpen, together, contentComposer, mode });
   // eslint-disable-next-line react-hooks/refs -- latest-value ref: open/lend/showAgent may be called from a child's layout effect, before this component's own effects run
-  specs.current = { agent, improve, snap, shown, pmOpen, together };
+  specs.current = { agent, improve, snap, shown, pmOpen, together, contentComposer, mode };
   const lentRef = useRef<AgentSpec | undefined>(undefined);
 
   const setSnap = useCallback((next: Snap) => setSnapState(next), []);
-  const close = useCallback(() => setSnapState('closed'), []);
+  // Closing the dock goes back to the tray mode (the content composer only): the next send opens the tray again.
+  const leaveDock = useCallback(() => { if (specs.current.contentComposer && specs.current.mode === 'dock' && specs.current.snap !== 'closed') setMode('tray'); }, [setMode]);
+  const close = useCallback(() => { leaveDock(); setSnapState('closed'); }, [leaveDock]);
   const closePm = useCallback(() => {
     setPmOpen(false);
     if (specs.current.shown === 'improve') setSnapState('closed');
@@ -291,8 +314,8 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const closeShowing = useCallback(() => {
     const current = specs.current;
     if (current.snap === 'closed' || current.shown === 'improve') setPmOpen(false);
-    if (current.snap !== 'closed') setSnapState('closed');
-  }, []);
+    if (current.snap !== 'closed') { leaveDock(); setSnapState('closed'); }
+  }, [leaveDock]);
   // Crossing `TOGETHER_FROM` moves the PM between its two representations, so what is on show stays on show and nothing reopens by itself.
   // Narrowing: a PM alone becomes the one snap; beside the assistant it closes (one at a time), its conversation still mounted. Widening:
   // a PM on the one snap moves to its column and the assistant's snap is free again.
@@ -400,6 +423,9 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     const text = before?.controller === selected.controller ? removeMention(draft, before.path) : draft;
     selected.controller.setText(`${appendToDraft(text, mentionToken(path))} `);
     previousTalk.current = { controller: selected.controller, path };
+    // The tray takes room from the content column: the row the person cited (focused when they cited it) is kept in view above it.
+    const cited = specs.current.contentComposer && specs.current.mode === 'tray' && document.activeElement instanceof HTMLElement && !document.activeElement.closest('[data-testid=composer-dock]') && document.activeElement.closest('[data-testid=agent-content]') ? document.activeElement : null;
+    if (cited) requestAnimationFrame(() => requestAnimationFrame(() => (cited.closest('[role=row]') ?? cited).scrollIntoView({ block: 'nearest' })));
     open('agent', options.at ?? 'half');
     if (options.voice && selected.voice) {
       setTalkRecording(true);
@@ -440,9 +466,14 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const setSlot = useCallback((element: HTMLElement | null) => { composerSlotRef.current = element; setComposerSlot(element); }, []);
   // Sending from the content composer shows the thread; a dock already open stays as it is.
   const onSent = useCallback(() => { if (specs.current.snap === 'closed' || specs.current.shown !== 'agent') open('agent'); }, [open]);
+  // On a wide content composer the reply is a tray above the field unless the person chose the dock; elsewhere the dock (or the phone's drawer) as before.
+  const trayOpen = contentComposer && snap !== 'closed' && shown === 'agent' && mode === 'tray';
+  const dockOpen = snap !== 'closed' && shown !== 'improve' && (!contentComposer || mode === 'dock');
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the tray is gone with the content composer (a phone width, a lost agent): the fill state goes with it
+  useEffect(() => { if (!trayOpen && grown) setGrown(false); }, [trayOpen, grown]);
   const value = useMemo<Internal>(() => ({
-    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, setDropZone, onSent,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, onSent]);
+    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, setDropZone, onSent, mode, setMode, grown, setGrown, trayOpen, dockOpen,
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, onSent, mode, setMode, grown, trayOpen, dockOpen]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -571,9 +602,12 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
 }
 
 /** Where the chats show: the persistent host element is moved in once, when the drawer or panel mounts. */
-function ChatSlot() {
+function ChatSlot({ live = true }: { readonly live?: boolean }) {
   const { host } = useInternal();
-  const place = useCallback((slot: HTMLDivElement | null) => { if (slot && host) slot.appendChild(host); }, [host]);
+  const slot = useRef<HTMLDivElement | null>(null);
+  const place = useCallback((element: HTMLDivElement | null) => { slot.current = element; if (element && host) element.appendChild(host); }, [host]);
+  // A slot that was mounted while the chats were shown elsewhere (the dock beside a tray) takes them back when it goes live.
+  useLayoutEffect(() => { if (live && slot.current && host && host.parentElement !== slot.current) slot.current.appendChild(host); }, [live, host]);
   // Coarse pointers: the chat's own transcript buttons (copy, show earlier) get the layer's 44px rule from here, without touching pi-chat.
   return <div ref={place} className="flex min-h-0 flex-1 flex-col [&_[data-testid=transcript]_button]:pointer-coarse:min-h-11 [&_[data-testid=transcript]_button]:pointer-coarse:min-w-11" />;
 }
@@ -811,7 +845,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
 function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSide }) {
   const layer = useInternal();
   const { text, title } = useTitle();
-  const open = layer.snap !== 'closed' && layer.showing !== 'improve';
+  const open = layer.dockOpen;
   const floating = api.floating;
   // The chats report this as their placement: the phone drawer and the floating panel are `floating`, the dock is `docked`.
   const { setDockFloating } = layer;
@@ -857,25 +891,73 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     {floating && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
     {!floating && <Separator orientation="vertical" className={cn('absolute inset-y-0', side === 'right' ? 'left-0' : 'right-0')} />}
     <Header text={text} title={title} controls={controls} className={cn('pt-2', floating && 'cursor-move touch-none select-none')} {...drag} />
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden"><VoiceProblem /><ChatSlot /></div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden"><VoiceProblem /><ChatSlot live={open} /></div>
   </div>;
 }
 
 function AgentDock({ side }: { readonly side: DockSide }) {
   const layer = useInternal();
   const { title } = useTitle();
-  return <Dock id="agent" side={side} floatable defaultWidth={384} minWidth={320} dragBelow={260} open={layer.snap !== 'closed' && layer.showing !== 'improve'} onOpenChange={next => { if (!next) layer.close(); }} labels={{ region: title }}>
+  return <Dock id="agent" side={side} floatable defaultWidth={384} minWidth={320} dragBelow={260} open={layer.dockOpen} onOpenChange={next => { if (!next) layer.close(); }} labels={{ region: title }}>
     {api => <DockPanel api={api} side={side} />}
   </Dock>;
 }
 
 /** `composer: 'content'`: the page content, then the field's slot at the bottom; a file dropped anywhere on the column goes to that field. */
 function ContentColumn({ children }: { readonly children: ReactNode }) {
-  const { setComposerSlot, setDropZone } = useInternal();
+  const { setComposerSlot, setDropZone, trayOpen, grown } = useInternal();
+  // The page keeps one wrapper whether the tray is open or not, so opening it never remounts the screen; Agrandir only hides it.
   return <div ref={setDropZone} data-testid="agent-content" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-    {children}
+    <div data-testid="agent-page" className={cn('flex min-h-0 min-w-0 flex-1 flex-col', trayOpen && grown && 'hidden')}>{children}</div>
+    {trayOpen && <ContentTray />}
     <div ref={setComposerSlot} data-testid="agent-content-composer" className="shrink-0" />
   </div>;
+}
+
+/**
+ * The reply as a tray just above the field (`composer: 'content'`, wide, the person's default): the desktop twin of the phone's peek to half.
+ * The same thread and controller as the dock and the drawer, moved here; its width is the field's, its height min(35%, 360px) of the column,
+ * and the page above it shrinks instead of being covered. No second composer: the field below stays the only input.
+ */
+function ContentTray() {
+  const layer = useInternal();
+  const { text, title } = useTitle();
+  const { grown, setGrown, side, restoreFocus } = layer;
+  const reduce = useCallback(() => {
+    layer.close();
+    layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true });
+  }, [layer]);
+  const reduceRef = useRef(reduce);
+  useLayoutEffect(() => { reduceRef.current = reduce; });
+  // Esc goes back to the bare field, unless something else owns it: an open menu, dialog or popup, an IME composition, a handled key.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+      if (document.querySelector('[role=menu],[role=listbox],[role=dialog],[role=alertdialog],[data-boring-overlay]')) return;
+      if (event.target instanceof Element && event.target.closest('[aria-expanded=true]')) return;
+      reduceRef.current();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+  const DockIcon = side === 'left' ? PanelLeftIcon : PanelRightIcon;
+  const dockLabel = side === 'left' ? text.dockLeft : text.dockRight;
+  return <section data-testid="agent-tray" aria-label={title} style={grown ? undefined : { height: `min(35%, ${TRAY_MAX}px)` }}
+    className={cn('relative flex min-h-0 min-w-0 flex-col bg-card px-4 text-card-foreground', grown ? 'flex-1' : 'shrink-0')}>
+    <Separator className="absolute inset-x-0 top-0" />
+    <div data-testid="agent-tray-body" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
+      <div data-testid="agent-tray-header" className="flex shrink-0 items-center gap-1 pt-1">
+        <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{title}</h2>
+        <Button variant="ghost" size="icon" data-testid="agent-tray-dock" aria-label={dockLabel} title={dockLabel}
+          onClick={() => { restoreFocus.current = true; layer.setMode('dock'); }}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button>
+        <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
+          onClick={() => setGrown(!grown)}>{grown ? <ChevronDownIcon data-icon="inline-start" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>
+        <Button variant="ghost" size="icon" data-testid="agent-tray-reduce" aria-label={text.collapse} title={text.collapse} onClick={reduce}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
+      </div>
+      <VoiceProblem />
+      <ChatSlot />
+    </div>
+  </section>;
 }
 
 /**
