@@ -68,6 +68,9 @@ export interface AgentBarProps {
 /** A press shorter than this is a tap (listening); longer is a hold (release sends). */
 const TAP_MS = 300;
 const BARS = 20;
+// The block restyles its own parts with classes on its own JSX (never a global rule on shadcn's button or input): the host's Button and Input look wins everywhere else.
+const ROUND = 'rounded-(--radius-3xl)';
+const FLAT_FIELD = 'rounded-(--radius-3xl) border-transparent bg-transparent shadow-none focus-visible:border-transparent focus-visible:ring-0';
 type Mode = 'idle' | 'press' | 'listening' | 'holding';
 
 function Wave({ levels }: { readonly levels: readonly number[] }) {
@@ -92,6 +95,9 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
   // A stop asked before the microphone is open (the kit's `finish` would cancel then) waits for the recording to begin.
   const stopAsked = useRef(false);
   const field = useRef('');
+  const root = useRef<HTMLDivElement>(null);
+  // Set while listening; the next rest gives the focus back to the field (a tap on the mic unmounts the focused element).
+  const fromListen = useRef(false);
   const quote = useRef(quoted?.label);
   useLayoutEffect(() => { field.current = text; quote.current = quoted?.label; });
 
@@ -133,11 +139,13 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
       dictation.start();
     },
     finish: () => {
+      // The attempt already ended (a refused microphone): nothing is listening and nothing is sent.
+      if (dictation.phase === 'idle') { clearTimeout(timer.current); sendOnText.current = false; setMode('idle'); return; }
       if (Date.now() - pressedAt.current < TAP_MS) { clearTimeout(timer.current); setMode('listening'); return; }
       stopListening(true);
     },
     cancel: abandon,
-  }, disabled);
+  }, disabled, { pressBounds: true });
   // The kit hook guards touchstart only on the mic node it first saw; this one remounts after each recording, so bind the node it has now.
   useEffect(() => {
     const node = hold.ref.current;
@@ -150,39 +158,53 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
   const state = mode === 'holding' ? 'holding' : mode === 'listening' ? 'listening' : busy ? 'transcribing' : 'rest';
   const outlined = state === 'listening' || state === 'holding' || quoted !== undefined;
   const canSend = state === 'rest' ? text.trim().length > 0 : state !== 'transcribing';
+  useEffect(() => {
+    if (state === 'listening') { fromListen.current = true; root.current?.querySelector<HTMLElement>('[data-testid="agent-bar-stop"]')?.focus(); }
+    else if (state === 'rest' && fromListen.current) { fromListen.current = false; root.current?.querySelector<HTMLElement>('[data-slot="input"]')?.focus(); }
+  }, [state]);
+  // While the audio is being transcribed, Escape abandons it like ✕ does (the kit's own Escape covers only recording).
+  useEffect(() => {
+    if (state !== 'transcribing') return;
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') abandon(); };
+    window.addEventListener('keydown', escape, true);
+    return () => window.removeEventListener('keydown', escape, true);
+  });
   const shown = transcript || partial ? <p data-testid="agent-bar-transcript" className="px-3 text-sm text-foreground italic">{transcript}{partial ? <span className="text-muted-foreground">{transcript ? ' ' : ''}{partial}</span> : null}</p> : null;
   const submit = () => {
     if (state === 'listening') { stopListening(true); return; }
     if (canSend) deliver(text);
   };
 
-  return <div data-slot="agent-bar" className={cn('mx-auto flex w-full max-w-xl flex-col gap-2', className)}>
+  return <div ref={root} data-slot="agent-bar" className={cn('mx-auto flex w-full max-w-xl flex-col gap-2', className)}>
     {shown}
     {dictation.problem ? <p role="alert" className="px-3 text-sm text-destructive">{dictation.problem}</p> : null}
     {quoted ? <div data-testid="agent-bar-quoted" className="flex items-center gap-1 rounded-(--radius-xl) bg-primary/10 py-0.5 pr-0.5 pl-3 text-sm font-semibold text-primary">
       <CornerDownRightIcon className="size-4 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">{quoted.label}</span>
-      <Button type="button" variant="ghost" size="icon" aria-label={words.removeQuote} onClick={quoted.onClear}><XIcon /></Button>
+      <Button type="button" variant="ghost" size="icon" className={cn(ROUND, 'text-primary hover:text-primary')} aria-label={words.removeQuote} onClick={quoted.onClear}><XIcon /></Button>
     </div> : null}
     <div data-testid="agent-bar" data-state={state} className={cn('flex items-center gap-1.5 rounded-(--radius-3xl) bg-card p-1.5 ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring', outlined && 'ring-2 ring-primary')}>
       {state === 'listening' ? <>
-        <Button key="cancel" type="button" variant="secondary" size="icon" aria-label={words.cancel} onClick={abandon}><XIcon /></Button>
+        <Button key="cancel" type="button" variant="secondary" size="icon" className={ROUND} aria-label={words.cancel} onClick={abandon}><XIcon /></Button>
         <Wave levels={dictation.levels} />
-        <Button key="stop" type="button" variant="secondary" size="icon" aria-label={words.stop} onClick={() => stopListening(false)}><SquareIcon /></Button>
+        <Button key="stop" type="button" variant="secondary" size="icon" className={ROUND} aria-label={words.stop} data-testid="agent-bar-stop" onClick={() => stopListening(false)}><SquareIcon /></Button>
       </> : <>
         {/* Keyed so the stop button of the listening layout is never the mic node reused (its touchstart guard would swallow the tap). One flat list from rest to hold: the pressed mic must stay mounted, or the browser never delivers its pointer-up. */}
-        {onHistory && state !== 'holding' ? <Button type="button" variant="secondary" size="icon" aria-label={words.history} aria-expanded={historyOpen} onClick={onHistory}>{historyOpen ? <ChevronDownIcon /> : <ChevronUpIcon />}</Button> : null}
+        {onHistory && state !== 'holding' ? <Button type="button" variant="secondary" size="icon" className={ROUND} aria-label={words.history} aria-expanded={historyOpen} onClick={onHistory}>{historyOpen ? <ChevronDownIcon /> : <ChevronUpIcon />}</Button> : null}
         {state === 'holding'
           ? <div className="flex min-w-0 flex-1 items-center gap-2 px-2"><span data-testid="agent-bar-hold-label" className="min-w-0 truncate text-sm font-medium">{words.releaseToSend}</span><Wave levels={dictation.levels} /></div>
           : state === 'transcribing'
-            ? <span className="flex min-w-0 flex-1 items-center gap-2 px-2 text-sm text-muted-foreground"><span className="text-primary"><Spinner aria-label={words.transcribing} /></span>{words.transcribing}</span>
+            ? <>
+              <Button key="cancel" type="button" variant="secondary" size="icon" className={ROUND} aria-label={words.cancel} onClick={abandon}><XIcon /></Button>
+              <span className="flex min-w-0 flex-1 items-center gap-2 px-2 text-sm text-muted-foreground"><span className="text-primary"><Spinner aria-label={words.transcribing} /></span>{words.transcribing}</span>
+            </>
             : <Input data-testid="agent-bar-input" value={text} disabled={disabled} placeholder={placeholder ?? words.placeholder} aria-label={placeholder ?? words.placeholder}
-                className="min-w-0 flex-1" enterKeyHint="send"
+                className={cn(FLAT_FIELD, 'min-w-0 flex-1')} enterKeyHint="send"
                 onChange={event => { setText(event.target.value); setTranscript(''); }}
                 onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />}
-        {state !== 'transcribing' ? <Button key="mic" type="button" variant="secondary" size="icon" data-testid="agent-bar-mic" data-held={state === 'holding' ? '' : undefined} className={cn('touch-none select-none', state === 'holding' && 'order-first')} aria-label={words.speak} disabled={disabled} {...hold}>{state === 'holding' ? <SquareIcon /> : <MicIcon />}</Button> : null}
+        {state !== 'transcribing' ? <Button key="mic" type="button" variant="secondary" size="icon" data-testid="agent-bar-mic" data-held={state === 'holding' ? '' : undefined} className={cn(ROUND, 'touch-none select-none', state === 'holding' && 'order-first bg-foreground text-background hover:bg-foreground')} aria-label={words.speak} disabled={disabled} {...hold}>{state === 'holding' ? <SquareIcon /> : <MicIcon />}</Button> : null}
       </>}
-      <Button type="button" size="icon" aria-label={words.send} disabled={disabled || !canSend || state === 'holding'} onClick={submit}><ArrowUpIcon /></Button>
+      <Button type="button" size="icon" className={ROUND} aria-label={words.send} disabled={disabled || !canSend || state === 'holding'} onClick={submit}><ArrowUpIcon /></Button>
     </div>
   </div>;
 }

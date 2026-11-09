@@ -973,31 +973,7 @@
           "type": "registry:component",
           "target": "components/agent-bar/agent-bar.tsx"
         }
-      ],
-      "css": {
-        "@layer utilities": {
-          "[data-slot=\"agent-bar\"] [data-slot=\"button\"]": {
-            "border-radius": "var(--radius-3xl)"
-          },
-          "[data-slot=\"agent-bar\"] [data-slot=\"input\"]": {
-            "border-color": "transparent",
-            "background-color": "transparent",
-            "box-shadow": "none",
-            "border-radius": "var(--radius-3xl)"
-          },
-          "[data-slot=\"agent-bar\"] [data-slot=\"input\"]:focus-visible": {
-            "box-shadow": "none"
-          },
-          "[data-slot=\"agent-bar\"] [data-testid=\"agent-bar-quoted\"] [data-slot=\"button\"]": {
-            "border-radius": "var(--radius-3xl)",
-            "color": "var(--primary)"
-          },
-          "[data-slot=\"agent-bar\"] [data-testid=\"agent-bar-mic\"][data-held]": {
-            "background-color": "var(--foreground)",
-            "color": "var(--background)"
-          }
-        }
-      }
+      ]
     },
     {
       "name": "pi-chat-attachments",

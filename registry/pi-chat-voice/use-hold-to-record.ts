@@ -26,11 +26,14 @@ export function useRecordingCancellation(cancel: () => void) {
 }
 
 /** Gesture policy shared by the chat and shell. Pointer cancellation keeps audio; deliberate slide/Escape/lost visibility discards it. */
-export function useHoldToRecord(actions: HoldToRecordActions, disabled = false) {
+export function useHoldToRecord(actions: HoldToRecordActions, disabled = false, options: { readonly pressBounds?: boolean } = {}) {
   const ref = useRef<HTMLButtonElement>(null);
   const latest = useRef({ actions, disabled });
   useLayoutEffect(() => { latest.current = { actions, disabled }; });
   const held = useRef<number | string | null>(null);
+  // Opt-in (`pressBounds`): the slide-off is measured from where the button was when pressed, for a button that moves while held.
+  const origin = useRef<DOMRect | null>(null);
+  const pressBounds = options.pressBounds === true;
   const cancel = () => { if (held.current === null) return; held.current = null; latest.current.actions.cancel(); };
   useRecordingCancellation(cancel);
   useEffect(() => {
@@ -58,13 +61,13 @@ export function useHoldToRecord(actions: HoldToRecordActions, disabled = false) 
     onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
       event.preventDefault();
       if (event.button !== 0 || latest.current.disabled || held.current !== null) return;
-      held.current = event.pointerId; event.currentTarget.setPointerCapture?.(event.pointerId); latest.current.actions.start();
+      held.current = event.pointerId; origin.current = pressBounds ? event.currentTarget.getBoundingClientRect() : null; event.currentTarget.setPointerCapture?.(event.pointerId); latest.current.actions.start();
     },
     onPointerUp: release,
     onPointerCancel: release,
     onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
       if (held.current !== event.pointerId) return;
-      const box = event.currentTarget.getBoundingClientRect(), slack = 24;
+      const box = origin.current ?? event.currentTarget.getBoundingClientRect(), slack = 24;
       if (event.clientX < box.left - slack || event.clientX > box.right + slack || event.clientY < box.top - slack || event.clientY > box.bottom + slack) cancel();
     },
     onMouseDown: (event: { preventDefault: () => void }) => event.preventDefault(),

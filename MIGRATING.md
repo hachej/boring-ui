@@ -1,6 +1,6 @@
 # Unreleased
 
-- **New registry item `agent-bar`: `AgentBar` and `AgentStatus` (additive; D-1978 slice 1).** The voice-first bar of a background agent: a pill with a history arrow, the field, the mic (tap to listen, hold to talk and release to send, the kit's `useDictation` and `useHoldToRecord`) and send, an optional quoted-row chip, and the one-line status above it (spinner and « Annuler » while working, a check when done). The app supplies `transcribe(audio)` and `onSend({ text, quoted })`; every word is a French default in `labels`. `npx shadcn add @boring-ui/agent-bar`. No change to existing items.
+- **New registry item `agent-bar`: `AgentBar` and `AgentStatus` (additive; D-1978 slice 1).** The voice-first bar of a background agent: a pill with a history arrow, the field, the mic (tap to listen, hold to talk and release to send, the kit's `useDictation` and `useHoldToRecord`) and send, an optional quoted-row chip, and the one-line status above it (spinner and « Annuler » while working, a check when done). The app supplies `transcribe(audio)` and `onSend({ text, quoted })`; every word is a French default in `labels`. `npx shadcn add @boring-ui/agent-bar`. The block ships no CSS (its look is classes on its own parts). `useHoldToRecord` gains an opt-in third argument `{ pressBounds: true }` (slide-off measured from the press); default behaviour unchanged.
 
 # Migrating to 0.4.74
 
