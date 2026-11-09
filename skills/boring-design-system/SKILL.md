@@ -79,6 +79,7 @@ Build screens from these before writing anything by hand.
 | A one-line cell in a table | `<TableCell truncate title=…>` (the bound is `--table-cell-truncate-max`, 16rem), never `max-w-* truncate` on the cell |
 | Pick or drop one or more files | `FilePick` (`@boring/ui/blocks/file-pick/file-pick`): a button or a drop strip; refusals come back to `onRefused` as `{ file, reason: "type" \| "size" \| "count" }` and the app writes the words |
 | A list of files with upload | The `file-tree` block (`FileTreeView`) |
+| A left pane the person can resize | `<AppShell resizable>` (or `{ min, max }` in rem, default 12 to 28): the rail is the drag handle, the width is remembered, the theme's `--sidebar-width` is the default; never a hand-made drag edge that calls `setProperty("--sidebar-width"` |
 | A sheet, drawer or bottom panel | `AppSheet` (`@boring/ui/blocks/app-shell/index`) |
 | A chat with the agent | `pi-chat` through the shell's agent layer (`AppShell agent={spec}`; placements in the `app-layout-and-agent` skill) |
 | Voice | `pi-chat-voice`, or `useDictation` from app-shell |
@@ -122,6 +123,7 @@ Fix the code, never the list.
 | `design-no-x-scroll` | No horizontal scroll in a file with a table: cells truncate and the table stacks below its width |
 | `design-no-kit-restyle` | No CSS aimed at a kit part (`[data-slot=...]`, `[data-boring...]`, kit class names): a token or a knob |
 | `design-no-important` | No `!important`: fix the selector or set a token |
+| `design-no-script-tokens` | No `setProperty("--sidebar-width"` in script: the theme sets the width, `AppShell resizable` lets the person change it (a regex literal that spells the call is reported too: rephrase it) |
 | `design-overlay-has-title` | Every Dialog, AlertDialog, Sheet and Drawer content has its Title (`sr-only` to hide it) |
 | `design-theme-core-only` | Set only core roles above `=== EXCEPTIONS ===`; every pin has a reason in `DESIGN.md` |
 | `design-theme-roles-both-modes` | Every kit colour role set in `:root` is also set in `.dark`, and the reverse |
