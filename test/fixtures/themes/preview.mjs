@@ -15,6 +15,8 @@ export const themePreviewHead = `<script>(() => {
   if (query.get('mode') === 'dark') document.documentElement.classList.add('dark');
   if (query.get('theme') === 'brand') {
     const link = document.createElement('link');
+    // The brand face is a system font (Arial Narrow with fallbacks) nothing loads: the driver's font check accepts that only on this explicit mark.
+    document.documentElement.setAttribute('data-system-font', '');
     link.rel = 'stylesheet'; link.href = '/__test/brand.css';
     document.head.append(link);
   }
