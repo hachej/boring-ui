@@ -391,6 +391,39 @@ test('1280, composer=content: each person has their own tray-or-dock choice, app
   assert.equal(await state(), 'closed', "back to person A's choice (the tray)");
 });
 
+// D-2021: the tray has an edge (the popover surface, a top hairline, shadow-md), and the phone peek shows whole lines with no scrollbar and no gap.
+const colorOf = value => browser.evaluate(`(() => { const probe = document.createElement('i'); probe.style.color = ${JSON.stringify(value)}; document.body.append(probe); const color = getComputedStyle(probe).color; probe.remove(); return color; })()`);
+for (const dark of [false, true]) {
+  test(`1280, composer=content, ${dark ? 'dark' : 'light'}: the tray is the popover surface with a top hairline and shadow-md, not the page's background (D-2021)`, { skip, timeout: 120000 }, async () => {
+    await open(1280, `composer=content${dark ? '&dark=1' : ''}`);
+    await sendFromField('How much was the bread?');
+    const tray = await browser.evaluate(`(() => { const style = getComputedStyle(document.querySelector('[data-testid=agent-tray]')); return { bg: style.backgroundColor, border: style.borderTopWidth, borderStyle: style.borderTopStyle, borderColor: style.borderTopColor, shadow: style.boxShadow, page: getComputedStyle(document.body).backgroundColor }; })()`);
+    assert.equal(tray.bg, await colorOf('var(--popover)'), `the popover token (${tray.bg})`);
+    assert.notEqual(tray.bg, tray.page, `not the page's background (${tray.page})`);
+    assert.ok(parseFloat(tray.border) > 0 && tray.borderStyle === 'solid', `a top border (${tray.border} ${tray.borderStyle})`);
+    assert.equal(tray.borderColor, await colorOf('var(--border)'), 'in the border token');
+    assert.notEqual(tray.shadow, 'none', 'a box-shadow');
+  });
+
+  test(`390, composer=content, ${dark ? 'dark' : 'light'}: the peek shows whole lines or fades its top, hides its scrollbar and leaves no gap above the field (D-2021)`, { skip, timeout: 120000 }, async () => {
+    await open(390, `composer=content${dark ? '&dark=1' : ''}`);
+    await browser.evaluate(`window.__layer.open('agent', 'peek')`);
+    await browser.until('peek', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'peek'`);
+    await wait(900);
+    const peek = await browser.evaluate(`(() => {
+      const scroll = document.querySelector('[data-testid=transcript-scroll]'), style = getComputedStyle(scroll), box = scroll.getBoundingClientRect();
+      const items = [...document.querySelectorAll('[data-testid=transcript] > *')], last = items.at(-1).getBoundingClientRect();
+      const field = document.querySelector('[data-testid=composer]').getBoundingClientRect();
+      const lines = [...document.querySelectorAll('[data-testid=transcript] [data-testid=user-text], [data-testid=transcript] p, [data-testid=transcript] [role=article]')].map(e => e.getBoundingClientRect());
+      const first = lines.find(r => r.bottom > box.top);
+      return { mask: style.maskImage || style.webkitMaskImage || 'none', scrollbar: style.scrollbarWidth, overflowY: style.overflowY, gap: field.top - last.bottom, firstTop: first ? first.top : null, top: box.top, space: parseFloat(getComputedStyle(document.documentElement).fontSize) / 4 * 0.5 };
+    })()`);
+    assert.ok(peek.mask !== 'none' || peek.firstTop === null || peek.firstTop >= peek.top - 0.5, `no line cut through by the top edge (mask ${peek.mask}, first line ${peek.firstTop} vs ${peek.top})`);
+    assert.ok(peek.scrollbar === 'none' || peek.overflowY === 'hidden', `no scrollbar (${peek.scrollbar}, ${peek.overflowY})`);
+    assert.ok(peek.gap <= 8.5, `at most the gap token (0.5rem) between the last content and the field (${peek.gap}px)`);
+  });
+}
+
 for (const dark of [false, true]) {
   test(`shoot composer=content, ${dark ? 'dark' : 'light'}: 1280 dock closed, dock open, 390 peek`, { skip, timeout: 120000 }, async () => {
     const name = dark ? 'dark' : 'light', query = `composer=content${dark ? '&dark=1' : ''}`;
