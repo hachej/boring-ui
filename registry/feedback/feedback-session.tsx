@@ -13,7 +13,7 @@ import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { readableElement } from '@hachej/boring-feedback/format';
 import { createVoiceCapture, type VoiceCapture } from '@hachej/boring-feedback/page';
-import { pinMark, type FeedbackSession, type FeedbackSessionSnapshot, type SessionNote } from '@hachej/boring-feedback/ui';
+import { pinMark, surfacePointToViewport, type FeedbackSession, type FeedbackSessionSnapshot, type SessionNote } from '@hachej/boring-feedback/ui';
 import { useHoldToRecord } from '../pi-chat-voice/use-hold-to-record';
 import { useExternal } from './use-external';
 import { plainElement, withLabels, type FeedbackLabels } from './feedback-labels';
@@ -111,10 +111,14 @@ export function pointBarInset(document: Document): number {
  * above it, else as low as it fits. Every branch is clamped to the space above the bar, so the bubble never covers it; a bubble taller
  * than that space scrolls inside it.
  */
-function bubblePlace(element: Element, size = 120): CSSProperties {
+function bubblePlace(element: Element, size = 120, point?: { readonly x: number; readonly y: number }): CSSProperties {
   const view = element.ownerDocument.defaultView;
   const width = view?.innerWidth ?? 1024, height = (view?.innerHeight ?? 768) - pointBarInset(element.ownerDocument);
-  const rect = element.getBoundingClientRect();
+  const box = element.getBoundingClientRect();
+  // A note pinned at a point of a surface: the bubble sits beside that point, not beside the whole surface.
+  // The forward transform places it, so a mirrored or rotated surface puts the bubble where the point is drawn.
+  const at = point ? surfacePointToViewport(element, point) : undefined;
+  const rect = at ? { left: at.x, right: at.x, top: at.y, bottom: at.y } : box;
   const left = Math.min(Math.max(8, rect.left), Math.max(8, width - BUBBLE_WIDTH - 8));
   const below = rect.bottom + 8;
   const above = rect.top - size - 8;
@@ -207,24 +211,24 @@ export function NoteBubble({ session, labels, transcribe }: { readonly session: 
   const [, redraw] = useState(0);
   const [announce, setAnnounce] = useState('');
   const box = useRef<HTMLDivElement>(null);
-  const noteId = bubble?.noteId, element = bubble?.element;
-  useLayoutEffect(() => { if (element) setPlace(bubblePlace(element, naturalHeight(box.current))); }, [noteId, element]);
+  const noteId = bubble?.noteId, element = bubble?.element, point = bubble?.point;
+  useLayoutEffect(() => { if (element) setPlace(bubblePlace(element, naturalHeight(box.current), point)); }, [noteId, element, point]);
   // Once drawn, place it again with its real height (taller with 44px touch targets and wrapped buttons).
   // eslint-disable-next-line react-hooks/exhaustive-deps -- measures after every commit on purpose (content, labels and voice state change the height); it sets state only when the place moved, so it settles
   useLayoutEffect(() => {
     if (!bubble || !place || !box.current) return;
-    const next = bubblePlace(bubble.element, naturalHeight(box.current));
+    const next = bubblePlace(bubble.element, naturalHeight(box.current), bubble.point);
     if (next.top !== place.top || next.left !== place.left) setPlace(next);
   });
   useEffect(() => { if (noteId !== undefined) field.current?.focus({ preventScroll: true }); }, [noteId]);
   useEffect(() => {
     if (!element) return;
     const view = element.ownerDocument.defaultView;
-    const follow = () => { setPlace(bubblePlace(element, naturalHeight(box.current))); redraw(value => value + 1); };
+    const follow = () => { setPlace(bubblePlace(element, naturalHeight(box.current), point)); redraw(value => value + 1); };
     view?.addEventListener('scroll', follow, { capture: true, passive: true });
     view?.addEventListener('resize', follow);
     return () => { view?.removeEventListener('scroll', follow, { capture: true }); view?.removeEventListener('resize', follow); };
-  }, [noteId, element]);
+  }, [noteId, element, point]);
   // A polite live region outlives the bubble, so the cancellation is heard even though the dialog is gone.
   const cancel = (): void => { session.cancelSelection(); setAnnounce(words.selectionCancelled); };
   const live = <span data-boring="feedback" data-feedback-ignore="" role="status" aria-live="polite" className="boring-feedback-sr" data-testid="feedback-bubble-announce"

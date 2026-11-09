@@ -9,6 +9,7 @@ export {
   fetchSaveEndpoint, saveResultOf, parseSaveRequest, saveResponseOf,
   type SaveRequest, type SaveResult, type SaveEndpoint, type StoreCreateResult,
 } from './save.js';
+export { viewportToSurfacePoint, surfacePointToViewport } from './surface.js';
 export { showAnchor, type ShowOutcome, type ShowCandidate, type ShowOptions } from './show.js';
 export {
   protectionNotice, ageOf, subjectLabel, listRows, reportView,
@@ -16,6 +17,6 @@ export {
 } from './report.js';
 export {
   createFeedbackSession, isPointing, pinMark,
-  type FeedbackSession, type SessionMode, type SessionStartOptions, type FeedbackSessionOptions, type FeedbackSessionSnapshot, type FeedbackAttachment, type SessionPhase, type SessionNote,
+  type FeedbackSession, type FeedbackSurface, type SurfacePoint, type SessionMode, type SessionStartOptions, type FeedbackSessionOptions, type FeedbackSessionSnapshot, type FeedbackAttachment, type SessionPhase, type SessionNote,
   type SessionBubble, type SendState, type VoiceState, type Transcribe, type TranscribeResult,
 } from './session.js';
