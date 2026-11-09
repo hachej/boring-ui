@@ -108,6 +108,8 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
   </nav>;
 }
 
+/** What keeps the sheet open, checked from the tapped element up: a field to type in, or anything under `data-keep-sheet`. */
+const KEEPS = 'input, textarea, select, [contenteditable=""], [contenteditable=true], [data-keep-sheet]';
 /** What a tap on a row of the sidebar content counts as « choosing a row »: it closes the sheet. A field to type in does not, and an element may opt out with `data-keep-sheet`. */
 const CHOOSES = 'a, button, [role=button], [role=option], [role=menuitem], [role=treeitem], [role=row], [role=link]';
 
@@ -116,19 +118,34 @@ const CHOOSES = 'a, button, [role=button], [role=option], [role=menuitem], [role
  * (the width of `compactNav="sheet"`). Choosing a row closes the sheet. An item without a `sidebar` renders nothing. Exported for the header.
  */
 export function ScreenSidebarSheet({ item, text }: { readonly item: NavItem; readonly text: AppShellText }) {
+  // `open` owns the Back entry; `shown` keeps the sheet mounted while a chosen row's click is replayed once that entry has gone.
   const [open, setOpen] = useState(false);
-  const close = () => setOpen(false);
+  const [shown, setShown] = useState(false);
+  const replaying = useRef(false);
+  const close = () => { setOpen(false); setShown(false); };
   useExclusiveSheet(open, close);
   useBackLayer(open, close, 'sheet');
   if (!item.sidebar) return null;
   const name = `${item.label}: ${item.sidebarLabel ?? text.panel}`;
   return <>
-    <Button variant="ghost" size="icon" data-testid="screen-sidebar-button" aria-label={name} title={name} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}><item.icon data-icon="inline-start" aria-hidden="true" /></Button>
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Button variant="ghost" size="icon" data-testid="screen-sidebar-button" aria-label={name} title={name} aria-haspopup="dialog" aria-expanded={open} onClick={() => { setOpen(true); setShown(true); }}><item.icon data-icon="inline-start" aria-hidden="true" /></Button>
+    <Sheet open={shown} onOpenChange={next => { if (!next) close(); }}>
       <SheetContent side="left" showCloseButton={false} data-testid="screen-sidebar-sheet" className="app-shell data-[side=left]:w-[var(--sidebar-width-mobile,75%)]">
         <SheetHeader className="sr-only"><SheetTitle>{name}</SheetTitle><SheetDescription>{name}</SheetDescription></SheetHeader>
         <div data-testid="screen-sidebar-content" className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain bg-sidebar pb-(--app-shell-safe-bottom) text-sidebar-foreground"
-          onClick={event => { const row = event.target instanceof Element ? event.target.closest(CHOOSES) : null; if (row && !row.closest('[data-keep-sheet]')) close(); }}>
+          onClickCapture={event => {
+            // The choice is held back: the sheet lets go of its Back entry first, and only then does the row's own click (a router push, a link) run, so that entry's `history.back()` cannot undo it.
+            const target = event.target;
+            if (replaying.current || !(target instanceof Element) || target.closest(KEEPS) || !target.closest(CHOOSES)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(false);
+            afterBack(() => {
+              replaying.current = true;
+              try { target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); } finally { replaying.current = false; }
+              setShown(false);
+            });
+          }}>
           {item.sidebar({ collapsed: false })}
         </div>
       </SheetContent>
