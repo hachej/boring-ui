@@ -4,7 +4,7 @@
 // `useDictation` records and hands the audio to the app's `transcribe`, `useHoldToRecord` is the hold gesture and its cancel policy (slide off, Escape,
 // blur, a hidden page). One tap on the mic listens (stop puts the text in the field, send sends it); a press held past TAP_MS talks and sends on release.
 // Slice 2 puts a question card above the bar and swaps `placeholder` for « Ou réponds ici »; slice 4 feeds `partial` live. Neither is built here.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useDictation, type DictationLabels } from '@hachej/boring-ui-kit/chat-react/voice';
 import { ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, CornerDownRightIcon, MicIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
@@ -90,9 +90,8 @@ export function AgentBar({ onSend, transcribe, quoted, onHistory, historyOpen = 
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const sendOnText = useRef(false);
   const field = useRef('');
-  field.current = text;
   const quote = useRef(quoted?.label);
-  quote.current = quoted?.label;
+  useLayoutEffect(() => { field.current = text; quote.current = quoted?.label; });
 
   const deliver = (body: string) => {
     const clean = body.trim();
