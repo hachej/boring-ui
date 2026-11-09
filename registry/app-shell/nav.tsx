@@ -258,14 +258,14 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
   const AgentIcon = agent?.icon ?? SparklesIcon;
   const agentLabel = agent?.label ?? agent?.chatProps?.labels?.title ?? text.assistant;
   // Hover-revealed and unpinned, the pane floats over the page: a shadow on its sidebar surface lifts it (pinned, it sits beside the page).
-  const sidebar = <Sidebar collapsible="icon" variant="inset" data-testid="app-sidebar" className={hover && !pinned && state === 'expanded' ? '[&_[data-slot=sidebar-inner]]:shadow-lg' : ''}>
+  const sidebar = <Sidebar collapsible="icon" variant="inset" data-testid="app-sidebar" data-float={hover && !pinned && state === 'expanded' ? 'true' : undefined}>
     {/* The phone sheet is portaled out of the shell root, so the `.app-shell` reset would not reach its buttons: this wrapper carries it (`contents`: no box of its own). */}
     <InsideNavSheet.Provider value={true}>
     <div className="app-shell contents">
     {/* The one toggle: title and button expanded, the button alone on the icon rail, and « close » inside the phone sheet. The hover rail has no toggle on a wide screen (it opens on hover and focus by itself) but a pin (D-2010) that keeps it open, and keeps « close » in the sheet. */}
     <SidebarHeader className="flex-row items-center justify-between gap-1 group-data-[collapsible=icon]:justify-center"><p data-testid="sidebar-title" className="m-0 min-w-0 truncate px-2 py-1 text-sm font-semibold group-data-[collapsible=icon]:hidden">{title}</p>{(rail !== 'hover' || isMobile) && <SidebarTrigger />}
       {hover && <Button type="button" variant="ghost" size="icon-sm" data-testid="sidebar-pin" aria-pressed={pinned} aria-label={text.pin} title={`${pinned ? text.unpin : text.pin} · Ctrl+B`} onClick={togglePin}
-        className="aria-pressed:bg-accent aria-pressed:text-accent-foreground group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:pointer-coarse:pointer-events-auto group-data-[collapsible=icon]:pointer-coarse:opacity-100"><PinIcon aria-hidden="true" weight={pinned ? 'fill' : 'regular'} /></Button>}</SidebarHeader>
+        className="group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:pointer-coarse:pointer-events-auto group-data-[collapsible=icon]:pointer-coarse:opacity-100"><PinIcon aria-hidden="true" weight={pinned ? 'fill' : 'regular'} /></Button>}</SidebarHeader>
     <SidebarContent>
       {/* Without the screen's own content, one group in placed order; with it, the before items above it and the rest below. */}
       {items.length > 1 && own != null && navGroup(before, 'shrink-0', 'nav-before')}
