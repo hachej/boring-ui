@@ -58,6 +58,8 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
       const label = row.querySelector('[data-sidebar=menu-button] > span:not([data-slot=badge])'), badge = row.querySelector('[data-sidebar=menu-badge]');
       out[row.dataset.row] = { row: box(row), button: box(row.querySelector('[data-sidebar=menu-button]')), sub: box(row.querySelector('[data-sidebar=menu-sub]')), action: box(row.querySelector('[data-sidebar=menu-action]')), badge: box(badge), label: box(label), icon: box(row.querySelector('[data-sidebar=menu-button] > svg')),
         labelDisplay: getComputedStyle(label).display, labelClip: getComputedStyle(label).overflow, labelText: label.textContent,
+        actionOpacity: Number(getComputedStyle(row.querySelector('[data-sidebar=menu-action]') ?? row).opacity), badgeOpacity: badge ? Number(getComputedStyle(badge).opacity) : null,
+        buttonFont: getComputedStyle(row.querySelector('[data-sidebar=menu-button]')).fontSize, subFont: row.querySelector('[data-sidebar=menu-sub-button]') ? getComputedStyle(row.querySelector('[data-sidebar=menu-sub-button]')).fontSize : null,
         labelTruncates: label.scrollWidth > label.clientWidth, badgeClipped: badge ? badge.scrollWidth > badge.clientWidth : false };
     }
     return { rows: out, rail: box(document.querySelector('[data-slot=sidebar-container]')), overflowX: document.documentElement.scrollWidth > innerWidth };
@@ -91,6 +93,8 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
           check(!m.overflowX, 'the page does not scroll sideways');
           continue;
         }
+        // D-1961: a sub-row reads at the same size as its parent row, on fine and touch.
+        check(nested.subFont !== null && nested.subFont === nested.buttonFont, `the sub-row font-size ${nested.subFont} is its parent row's ${nested.buttonFont}`);
         const heights = [action, badge, folder].map(r => r.row.h);
         check(heights.every(h => h === plain.row.h), `every row is as tall as the plain row: ${heights}`);
         check(nested.button.h === plain.row.h, `the parent button is as tall as the plain row: ${nested.button.h}`);
@@ -116,6 +120,24 @@ test('SidebarMenuAction is centred and 44px on touch, clear of the SidebarMenuBa
           for (const [id, r] of Object.entries({ badge, folder, nested })) {
             check(r.badge.h === 20 && r.badge.y - r.row.y === 6 && r.row.right - r.badge.right === 4, `${id}: the fine-pointer count is unchanged (20 high, top 6, right 4): ${JSON.stringify(r.badge)} in ${JSON.stringify(r.row)}`);
           }
+          // D-1960: at rest the count shows and the action waits; hovered, the action takes the count's place (the count hides). What is drawn never overlaps.
+          const drawn = (r, what) => r[`${what}Opacity`] > 0 ? r[what] : null;
+          const overlap = r => drawn(r, 'badge') !== null && drawn(r, 'action') !== null && intersects(r.badge, r.action);
+          for (const [id, r] of Object.entries({ folder, nested })) {
+            check(r.badgeOpacity === 1 && r.actionOpacity === 0, `${id} at rest: the count is shown (${r.badgeOpacity}) and the action is not (${r.actionOpacity})`);
+            check(!overlap(r), `${id} at rest: the drawn count and action do not overlap`);
+          }
+          check(action.actionOpacity === 1, `a row with an action and no count keeps its action shown at rest (${action.actionOpacity})`);
+          for (const id of ['folder', 'nested']) {
+            await browser.hover(`document.querySelector('[data-row=${id}]')`);
+            await new Promise(done => setTimeout(done, 250));
+            const h = (await measure()).rows[id];
+            if (shots && id === 'nested') await browser.screenshot(`sidebar-action-${name}-${theme}-hover.png`);
+            check(h.actionOpacity === 1 && h.badgeOpacity === 0, `${id} hovered: the action is shown (${h.actionOpacity}) and the count hidden (${h.badgeOpacity})`);
+            check(!overlap(h), `${id} hovered: the drawn count and action boxes ${JSON.stringify(drawn(h, 'badge'))} and ${JSON.stringify(drawn(h, 'action'))} do not overlap`);
+            check(h.action.w === 20 && h.action.y - h.row.y === 6 && h.row.right - h.action.right === 4, `${id} hovered: the action sits where the count was`);
+          }
+          await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
         }
       }
     }
