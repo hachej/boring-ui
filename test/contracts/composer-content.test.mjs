@@ -64,10 +64,21 @@ after(async () => { await browser?.close(); await new Promise(done => server ? s
 const wait = ms => new Promise(done => setTimeout(done, ms));
 const open = async (width, query = '') => {
   const phone = width < 768;
+  // Leave the previous page before resizing: resizing a phone page with its drawer open closes the drawer, whose `history.back()` (it lets go
+  // of its Back entry) lands after a navigation that started meanwhile and cancels it, leaving the old page in place.
+  await browser.send('Page.navigate', { url: 'about:blank' });
+  await browser.until('previous page left', `location.href === 'about:blank'`);
   await browser.send('Emulation.setDeviceMetricsOverride', { width, height: phone ? 844 : 800, deviceScaleFactor: 1, mobile: phone });
   await browser.send('Page.navigate', { url: `http://127.0.0.1:${port}/?${query}` });
   // The old document answers readyState complete until the navigation commits: wait for the new URL, not only for a mounted shell.
-  await browser.until('shell mounted', `location.search === ${JSON.stringify(query ? '?' + query : '')} && window.__layer !== undefined && !!document.querySelector('[data-testid=app-shell]') && document.readyState === 'complete'`);
+  const search = JSON.stringify(query ? '?' + query : '');
+  try {
+    await browser.until('shell mounted', `location.search === ${search} && window.__layer !== undefined && !!document.querySelector('[data-testid=app-shell]') && document.readyState === 'complete'`);
+  } catch (error) {
+    // Name the condition that never held, so a timeout says why.
+    const seen = await browser.evaluate(`JSON.stringify({ search: location.search, wanted: ${search}, layer: window.__layer !== undefined, shell: !!document.querySelector('[data-testid=app-shell]'), ready: document.readyState })`).catch(() => 'unreadable');
+    throw new Error(`${error.message}\nseen: ${seen}`);
+  }
   await wait(400);
 };
 const count = selector => browser.evaluate(`document.querySelectorAll('${selector}').length`);
