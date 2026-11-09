@@ -38,8 +38,8 @@ test('the item compiles strictly against the pinned shadcn fixtures', () => {
 
 test('the shell root carries the app-shell class in every layout, so the scoped reset reaches its own header and nav buttons', () => {
   // One root for the three layouts (Shell renders it); the `.app-shell` reset is scoped to this class, so a host never wraps the shell to get it.
-  const root = /<SidebarProvider\b[^>]*\bclassName="([^"]*)"/.exec(source('app-shell.tsx'));
-  assert.ok(root, 'the root is the SidebarProvider');
+  const root = /<(?:Resizable)?SidebarProvider\b[^>]*\bclassName="([^"]*)"/.exec(source('app-shell.tsx'));
+  assert.ok(root, 'the root is the SidebarProvider (the kit\'s ResizableSidebarProvider wraps it)');
   assert.match(root[1], /(?:^|\s)app-shell(?:\s|$)/, 'the root className names app-shell');
 });
 
@@ -231,7 +231,7 @@ test('AppShellProps has the shell props, optional rail, locale and URL opt-out, 
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'compactNav', 'layout', 'locale', 'nav', 'overlayBlur', 'panel', 'rail', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'appId', 'compactNav', 'layout', 'locale', 'nav', 'overlayBlur', 'panel', 'rail', 'resizable', 'route', 'title']);
   const rail = props.members.find(member => member.name.text === 'rail');
   assert.ok(rail.questionToken, 'rail is optional');
   assert.equal(rail.type.getText(file), "'icon' | 'hover'");
