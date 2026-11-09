@@ -1,4 +1,4 @@
-import { import { createRoot } from 'react-dom/client';
+import { createRoot } from 'react-dom/client';
 import { Badge } from '@/components/ui/badge';
 import { SidebarProvider, Sidebar, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarMenuAction, SidebarMenuBadge, SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton } from '@/components/ui/sidebar';
 
