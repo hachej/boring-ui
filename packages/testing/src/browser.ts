@@ -44,15 +44,16 @@ function fontInstallScript(): string {
 }
 /**
  * In the page: after document.fonts.ready, the first family of :root's --font-sans (quotes stripped; FONT_FAMILY when the page declares
- * none) must have a loaded @font-face and pass document.fonts.check. Returns '' or the reason. Note check() alone is true for a family
- * nothing declares, so a loaded face is required too.
+ * none) must pass document.fonts.check, and its @font-face must be loaded when the page declares one or the family is the kit default.
+ * A brand family nothing declares (a system face a fixture chose on purpose) is only check()ed, which cannot tell it from a fallback.
  */
 const FONT_CHECK = `(async () => {
   await document.fonts.ready;
   const declared = getComputedStyle(document.documentElement).getPropertyValue('--font-sans').split(',')[0].trim().replace(/^["']|["']$/g, '');
   const family = declared || ${JSON.stringify(FONT_FAMILY)};
-  const loaded = [...document.fonts].some(face => face.family.replace(/["']/g, '') === family && face.status === 'loaded');
-  if (!loaded) return 'no loaded @font-face for "' + family + '" (--font-sans of the page): it would be measured in a fallback font';
+  const faces = [...document.fonts].filter(face => face.family.replace(/["']/g, '') === family);
+  const loaded = faces.some(face => face.status === 'loaded');
+  if (!loaded && (faces.length || family === ${JSON.stringify(FONT_FAMILY)})) return 'no loaded @font-face for "' + family + '" (--font-sans of the page): it would be measured in a fallback font';
   if (!document.fonts.check('14px "' + family + '"')) return "document.fonts.check('14px \\"" + family + "\\"') is false";
   return '';
 })()`;
