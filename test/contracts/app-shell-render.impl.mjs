@@ -142,13 +142,18 @@ test('the hover rail starts collapsed, reveals on pointer hover or focus within,
   const state = () => sidebar.getAttribute('data-state');
   assert.equal(state(), 'collapsed', 'hover mode reserves only an icon rail');
   assert.equal(ui.container.querySelector('[role=tablist]'), null);
+  const settle = ms => act(async () => { await new Promise(done => setTimeout(done, ms)); });
   await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' })));
+  assert.equal(state(), 'collapsed', 'hover intent: a pointer that has just arrived reveals nothing yet');
+  await settle(250);
   assert.equal(state(), 'expanded', 'hover reveals the labels');
   assert.equal(first.textContent, 'Tableau de bord');
   assert.equal(second.textContent, 'Repas');
   await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse', relatedTarget: ui.window.document.body })));
+  await settle(450);
   assert.equal(state(), 'collapsed', 'leaving collapses');
   await act(async () => panel.dispatchEvent(new ui.window.PointerEvent('pointerover', { bubbles: true, pointerType: 'touch' })));
+  await settle(250);
   assert.equal(state(), 'collapsed', 'touch does not reveal an overlay');
   await act(async () => first.focus());
   assert.equal(state(), 'expanded', 'keyboard focus reveals');
@@ -160,6 +165,7 @@ test('the hover rail starts collapsed, reveals on pointer hover or focus within,
   await act(async () => first.focus());
   assert.equal(state(), 'expanded', 'the next focus reveals again');
   await act(async () => first.blur());
+  await settle(450);
   assert.equal(state(), 'collapsed', 'focus leaving collapses');
   await act(async () => second.click());
   assert.deepEqual(chosen, ['Repas'], 'the router still owns selection');
