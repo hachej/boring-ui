@@ -91,3 +91,24 @@ test('390 touch, compactNav sheet: Account > Improve the app closes the sheet, a
   assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=nav-user]')`), false, 'the nav sheet is closed');
 });
 
+
+test('390 touch: a sheet owned by the nav sheet\'s own content stacks on it, and closing it returns to the nav', { skip, timeout: 120000 }, async () => {
+  await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await browser.send('Page.navigate', { url: `http://127.0.0.1:${port}/` });
+  await browser.until('shell mounted', `!!document.querySelector('[data-testid=app-shell]') && document.readyState === 'complete'`);
+  await wait(300);
+  await browser.tap(`document.querySelector('[data-slot=sidebar-trigger]')`);
+  await browser.until('the nav sheet with its row', `!!document.querySelector('[data-testid=row-open]')`);
+  await wait(700);
+  await browser.tap(`document.querySelector('[data-testid=row-open]')`);
+  await browser.until('the row sheet', `!!document.querySelector('[data-testid=row-sheet-close]')`);
+  await wait(900);
+  await browser.screenshot('6-row-sheet.png');
+  assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=nav-user]')`), true, 'the nav sheet stays under the row sheet');
+  await browser.tap(`document.querySelector('[data-testid=row-sheet-close]')`);
+  await browser.until('the row sheet closed', `!document.querySelector('[data-testid=row-sheet-close]')`);
+  await wait(500);
+  await browser.screenshot('7-back-on-nav.png');
+  assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=row-open]')`), true, 'closing it returns to the nav sheet');
+});

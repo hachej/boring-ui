@@ -1,4 +1,5 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useState } from 'react';
+import { AppSheet } from '../../../registry/app-shell/app-sheet.tsx';
 import { createRoot } from 'react-dom/client';
 import { AppShell } from '../../../registry/app-shell/app-shell.tsx';
 
@@ -15,7 +16,13 @@ const Layout = ({ children }) => {
   </div>;
 };
 const Icon = ({ className }) => <svg className={className} viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="currentColor" /></svg>;
-const nav = ['Videos', 'Channels'].map(label => ({ id: label, label, icon: Icon, render: () => <p>Fictional channel overview</p> }));
+// A screen's own sidebar content that owns a sheet (D-1903 round 2): a row button opens a locally controlled AppSheet from inside the nav sheet.
+const RowSheet = () => {
+  const [open, setOpen] = useState(false);
+  return <div><button type="button" data-testid="row-open" className="m-2 h-11 rounded-md border px-3" onClick={() => setOpen(true)}>Filters</button>
+    <AppSheet open={open} onOpenChange={setOpen} title="Filters"><button type="button" data-testid="row-sheet-close" className="h-11 rounded-md border" onClick={() => setOpen(false)}>Done</button></AppSheet></div>;
+};
+const nav = ['Videos', 'Channels'].map(label => ({ id: label, label, icon: Icon, render: () => <p>Fictional channel overview</p>, ...(label === 'Videos' ? { sidebar: () => <RowSheet /> } : {}) }));
 
 createRoot(document.getElementById('root')).render(
   <AppShell layout="screen" compactNav="sheet" title="Visual" nav={nav} route={{ id: 'Videos', onChange() {} }} panel={{ config: null, Provider, Layout }} account={{ name: 'Camille Martin', menu: [], signOut() {} }} />);
