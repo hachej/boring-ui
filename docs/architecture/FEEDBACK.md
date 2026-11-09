@@ -283,7 +283,7 @@ This button should be green, and it should be disabled until something changes.
 
 A report made in feedback mode carries **several notes**, each optionally tied
 to an anchor (0-based `anchor` in data, `[anchor N]` 1-based in the body,
-`[voice]` when it came from speech), and the **steps** between them. Both are
+`[point x,y]` when pinned at a point of a surface such as an image, the optional `point` `{ x, y }` in data: fractions 0 to 1 of the surface, three decimals; `[voice]` when it came from speech), and the **steps** between them. Both are
 optional body sections; `## Said` holds the general note and may be empty when
 there are notes:
 
