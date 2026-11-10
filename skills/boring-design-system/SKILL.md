@@ -60,6 +60,7 @@ Phosphor (`@phosphor-icons/react`), never Lucide.
 | Blur behind dialogs, sheets and drawers | Off by default; `AppShell overlayBlur` turns it on, `--overlay-blur` retunes it | `shell-overlay-blur` (D-1799) |
 | Overlay height | `height="auto" \| "tall" \| "full"` on `DialogContent`, `SheetContent`, `DrawerContent`; retune with `--overlay-height-tall` / `--overlay-height-full` | `shell-overlay-height` (D-1800) |
 | Toasts above the chat composer | Automatic (pi-chat sets it); `--toast-offset-bottom` in the theme overrides | `toast-offset` (D-1801) |
+| Screen margin | Automatic: `--screen-gutter` (1rem, 0.75rem compact) is the one left edge the header title and `ScreenBody` share. Never pad a screen root yourself (`p-4`, `px-3`) | `shell-screen-gutter` (D-2030) |
 | Control height | Automatic: `--control-h` is 44px on touch, 36px with a fine pointer. Never set a height on a control | `control-height` (D-1741), `touch-floor` (D-1770) |
 | A link-style action in a row | `Button size="inline"` (text height, 44px touch area; inside a table cell it underlines only on hover and focus) | `pattern-button-inline` (D-1767, D-1814) |
 | Underline tabs | `TabsList variant="line"` | shadcn stock |
@@ -80,6 +81,7 @@ Build screens from these before writing anything by hand.
 | Pick or drop one or more files | `FilePick` (`@boring/ui/blocks/file-pick/file-pick`): a button or a drop strip; refusals come back to `onRefused` as `{ file, reason: "type" \| "size" \| "count" }` and the app writes the words |
 | A list of files with upload | The `file-tree` block (`FileTreeView`) |
 | A left pane the person can resize | `<AppShell resizable>` (or `{ min, max }` in rem, default 12 to 28): the rail is the drag handle, the width is remembered, the theme's `--sidebar-width` is the default; never a hand-made drag edge that calls `setProperty("--sidebar-width"` |
+| A screen's body | `<ScreenBody>` (`@boring/ui/blocks/app-shell/index`); for a list, table or `ListDetail` whose rows run edge to edge, `<ScreenBody bleed>`: the first cell's text still lands on the gutter. Drop the rows' own start padding |
 | A sheet, drawer or bottom panel | `AppSheet` (`@boring/ui/blocks/app-shell/index`) |
 | A chat with the agent | `pi-chat` through the shell's agent layer (`AppShell agent={spec}`; placements in the `app-layout-and-agent` skill) |
 | Voice | `pi-chat-voice`, or `useDictation` from app-shell |
