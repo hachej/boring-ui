@@ -108,6 +108,29 @@ test('the gutter is a token with a fallback: a root that sets --screen-gutter mo
   near(await textX('[data-testid=screen-Padded]') - edge, 32, 'body');
 });
 
+for (const view of views) test(`${view.name}: a bled list's selected row runs edge to edge while its text sits on the gutter, under a divider`, { skip, timeout: 120000 }, async () => {
+  await mount('screen=Bled', view);
+  const box = await browser.evaluate(`(() => { const body = document.querySelector('[data-testid=screen-Bled]').getBoundingClientRect(); const row = document.querySelector('[data-testid=row-selected]').getBoundingClientRect(); return { bodyLeft: body.left, bodyRight: body.right, left: row.left, right: row.right, divider: getComputedStyle(document.querySelector('[data-testid=row-selected]')).borderBottomWidth, fill: getComputedStyle(document.querySelector('[data-testid=row-selected]')).backgroundColor }; })()`);
+  near(box.left, box.bodyLeft, 'the selected row starts at the body edge (x=0 on the phone, the sidebar edge on desktop)');
+  near(box.right, box.bodyRight, 'the selected row ends at the body edge');
+  assert.ok(parseFloat(box.divider) > 0, `the row has a divider: ${box.divider}`);
+  assert.ok(box.fill !== 'rgba(0, 0, 0, 0)' && box.fill !== 'transparent', `the selected row has a fill: ${box.fill}`);
+  near(await textX('[data-testid=row-selected]') - box.bodyLeft, 16, 'the selected row text sits on the gutter');
+});
+
+test('390 touch: a back button before the title leaves a small gap, not the bare gutter', { skip, timeout: 120000 }, async () => {
+  await mount('screen=Padded&back=1', views[1]);
+  const back = await browser.evaluate(`document.querySelector('[data-testid=header-back]').getBoundingClientRect().right`);
+  const gap = await textX('[data-testid=header-title]') - back;
+  assert.ok(gap > 0 && gap <= 16, `the gap between the back button and the title is small and positive: ${gap}`);
+});
+
+test('the stub tab icons are sized by the kit (size-4), not giant circles', { skip, timeout: 120000 }, async () => {
+  await mount('screen=Padded', views[0]);
+  const size = await browser.evaluate(`Math.max(...[...document.querySelectorAll('[data-testid=app-shell] svg[data-icon]')].filter(svg => svg.closest('[data-slot=sidebar]')).map(svg => svg.getBoundingClientRect().width))`);
+  assert.ok(size > 0 && size <= 20, `nav icons are at most 20px: ${size}`);
+});
+
 test('shots at 1280 and 390, light and dark (padded body and bled list)', { skip, timeout: 180000 }, async () => {
   for (const view of views) for (const mode of ['light', 'dark']) for (const screen of ['Padded', 'Bled']) {
     await mount(`screen=${screen}`, view);
@@ -115,5 +138,10 @@ test('shots at 1280 and 390, light and dark (padded body and bled list)', { skip
     await wait(200);
     await browser.screenshot(`screen-gutter.${view.width}.${mode}.${screen.toLowerCase()}.png`);
   }
+  // D-2045: compact density, and a back button before the title on the phone.
+  await mount('screen=Padded&density=compact', views[0]);
+  await browser.screenshot('screen-gutter.1280.light.compact.padded.png');
+  await mount('screen=Padded&back=1', views[1]);
+  await browser.screenshot('screen-gutter.390.light.back.padded.png');
   assert.deepEqual(browser.problems, []);
 });
