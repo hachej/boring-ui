@@ -142,7 +142,7 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     const shape = await browser.evaluate(`(() => { const bar = document.querySelector('[data-testid=agent-bar]');
       return { root: [...bar.parentElement.children].map(node => node.dataset.testid ?? node.tagName), bar: [...bar.children].map(node => node.getAttribute('aria-label') ?? node.dataset.testid ?? node.tagName),
         files: document.querySelectorAll('input[type=file]').length, actions: document.querySelectorAll('[data-testid=agent-bar-actions], [data-testid=agent-bar-attach]').length }; })()`);
-    assert.deepEqual(shape, { root: ['agent-bar'], bar: ['SPAN', 'agent-bar-input', 'Parler', 'Envoyer'], files: 0, actions: 0 });
+    assert.deepEqual(shape, { root: ['agent-bar'], bar: ['SPAN', 'Maintiens pour parler', 'Parler', 'Envoyer'], files: 0, actions: 0 });
     await browser.click(input);
     await browser.send('Input.insertText', { text: '/' });
     await wait(200);

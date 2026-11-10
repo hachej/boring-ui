@@ -1,7 +1,7 @@
 'use client';
 
 import type { ComponentProps, ReactNode } from 'react';
-import { AlertCircleIcon, FileTextIcon, Loader2Icon, XIcon } from '../_shared/icons';
+import { AlertCircleIcon, FileTextIcon, Loader2Icon, XIcon } from './icons';
 import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentMedia, AttachmentTitle } from '@/components/ui/attachment';
 
 // The chips above a composer's text, shared by the `Composer` of `pi-chat` and the `AgentBar` of `agent-bar` (D-2084): one source for how an upload on its way,
