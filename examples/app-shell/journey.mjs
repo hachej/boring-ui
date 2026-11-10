@@ -379,10 +379,11 @@ try {
     await live();
     const plusDots = `[...document.querySelectorAll('[data-testid=tab-plus] [role=img][data-testid=nav-badge]')].map(e => e.getAttribute('aria-label'))`;
     // The accessible names of the tabs that carry the hidden label, from the browser's accessibility tree (role tab, by name).
+    // Chrome puts a space before the out-of-flow comma (« Plus , Nuit à noter »); the pause is the comma, so the space is folded away.
     const plusNames = async () => {
       await browser.send('Accessibility.enable');
       const { nodes } = await browser.send('Accessibility.getFullAXTree');
-      return nodes.filter(n => n.role?.value === 'tab' && !n.ignored && /Nuit à noter/.test(n.name?.value ?? '')).map(n => n.name.value);
+      return nodes.filter(n => n.role?.value === 'tab' && !n.ignored && /Nuit à noter/.test(n.name?.value ?? '')).map(n => n.name.value.replace(/\s+,/g, ','));
     };
     assert.deepEqual(await browser.evaluate(plusDots), ['Nuit à noter'], 'closed bar: « Plus » shows the dot');
     assert.deepEqual(await plusNames(), ['Plus, Nuit à noter'], 'closed bar: the tab is named « Plus, Nuit à noter », a pause between the word and the dot');
