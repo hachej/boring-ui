@@ -1,5 +1,6 @@
 # Unreleased
 
+- **app-shell nav dot (D-2040 note):** a nav item with a badge now reads « Label, badge » to screen readers (a comma in CSS generated content before the dot; `textContent` is unchanged), e.g. « Plus, Nuit à noter ». Nothing to change in apps; tests that match the exact accessible name gain the comma.
 - **New registry item `conversation-log`: `ConversationLog` (additive; D-1978 part 3).** The sheet that opens from the agent bar's history arrow: a non-modal shadcn Drawer above the bar (no overlay, the arrow flips and closes it), with the entries the app passes (`time`, `user`, `agent` with `items` and `actions`, `status` with `state` and `label`, `question`) and its own `labels`. Focus moves into the sheet and back to the arrow; Escape closes. `npx shadcn add @boring-ui/conversation-log`.
 
 - **`agent-bar`: the question card's `footnote` renders above the choices, not below them (D-1978).** Matches the Question board: the note, then the actions. Only a card that passes `footnote` changes.
