@@ -379,13 +379,15 @@ try {
     await live();
     const plusDots = `[...document.querySelectorAll('[data-testid=tab-plus] [role=img][data-testid=nav-badge]')].map(e => e.getAttribute('aria-label'))`;
     // The accessible names of the tabs that carry the hidden label, from the browser's accessibility tree (role tab, by name).
+    // Chrome puts a space before the out-of-flow comma (« Plus , Nuit à noter »); the pause is the comma, so the space is folded away.
     const plusNames = async () => {
       await browser.send('Accessibility.enable');
       const { nodes } = await browser.send('Accessibility.getFullAXTree');
-      return nodes.filter(n => n.role?.value === 'tab' && !n.ignored && /Nuit à noter/.test(n.name?.value ?? '')).map(n => n.name.value);
+      return nodes.filter(n => n.role?.value === 'tab' && !n.ignored && /Nuit à noter/.test(n.name?.value ?? '')).map(n => n.name.value.replace(/\s+,/g, ','));
     };
     assert.deepEqual(await browser.evaluate(plusDots), ['Nuit à noter'], 'closed bar: « Plus » shows the dot');
-    assert.deepEqual((await plusNames()).map(name => /^Plus\b/.test(name)), [true], 'closed bar: the tab is named « Plus » with the hidden label (« Plus, Nuit à noter »)');
+    assert.deepEqual(await plusNames(), ['Plus, Nuit à noter'], 'closed bar: the tab is named « Plus, Nuit à noter », a pause between the word and the dot');
+    assert.equal(await browser.evaluate(`${q('[data-testid=tab-plus]')}.textContent.trim()`), 'Plus', 'the pause is for screen readers only: the visible text stays « Plus »');
     await tap('[data-testid=tab-plus]');
     await browser.until('the Plus sheet', `${openSheets} === 1 && !!${q('[data-testid=plus-objectifs]')}`);
     await pause(700);
@@ -399,7 +401,7 @@ try {
       assert.deepEqual(await browser.evaluate(plusDots), ['Nuit à noter'], `${theme}: Objectifs on show, « Plus » still shows Sommeil's dot`);
       const names = await plusNames();
       assert.equal(names.length, 1, `${theme}: one tab carries the hidden label in its name`);
-      assert.match(names[0], /^Plus\b/, `${theme}: and is named « Plus » (« Plus, Nuit à noter »), not the screen on show`);
+      assert.equal(names[0], 'Plus, Nuit à noter', `${theme}: and is named « Plus, Nuit à noter », not the screen on show`);
       // A dot belongs to the label it sits next to: every dotted tab reads « Plus » or the badged item's own label (its own tab).
       const dotted = await browser.evaluate(`[...document.querySelectorAll('[data-testid=tabbar] [role=tab]')].filter(e => e.querySelector('[data-testid=nav-badge]')).map(e => [e.dataset.testid, e.textContent.trim()])`);
       assert.deepEqual(dotted, [['tab-plus', 'Plus']], `${theme}: the dotted tab's visible label is « Plus »`);
