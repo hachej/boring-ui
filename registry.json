@@ -2351,7 +2351,7 @@
             "--app-shell-tabbar-min": "calc(3.5rem + env(safe-area-inset-bottom))",
             "--app-shell-sheet-max": "85dvh"
           },
-          ":where([data-slot=\"screen-body\"][data-bleed]) :where(li, tr, [role=\"row\"]) > :first-child": {
+          ":where(.app-shell [data-slot=\"screen-body\"][data-bleed]) :where(li, tr, [role=\"row\"]) > :first-child": {
             "padding-inline-start": "var(--screen-gutter, 1rem)"
           }
         }
