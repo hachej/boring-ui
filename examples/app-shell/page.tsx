@@ -204,7 +204,7 @@ function App() {
   // The app's router: a tab switch replaces the URL (a hash here) and adds no history entry.
   const onChange = (id: string) => { window.__routes.push(id); history.replaceState(history.state, '', `#${id}`); setRoute(id); };
   return <div id="app-root" className="contents">
-    <AppShell {...rail} layout="screen" title="Forme" nav={nav} agent={agent} panel={query.get('pmChat') === '1' ? stubPanelWith(manager.controller) : stubPanel} account={account} route={{ id: route, onChange }} />
+    <AppShell {...rail} {...(query.get('composer') === 'content' ? { composer: 'content' as const } : {})} layout="screen" title="Forme" nav={nav} agent={agent} panel={query.get('pmChat') === '1' ? stubPanelWith(manager.controller) : stubPanel} account={account} route={{ id: route, onChange }} />
     {docs && <DocumentSheet provider={docs} path={spec} onClose={() => setSpec(undefined)} onShowAll={() => onChange('fiches')} locale="fr" />}
   </div>;
 }
