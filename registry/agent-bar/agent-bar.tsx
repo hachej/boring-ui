@@ -4,14 +4,21 @@
 // `useDictation` records and hands the audio to the app's `transcribe`, `useHoldToRecord` is the hold gesture and its cancel policy (slide off, Escape,
 // blur, a hidden page). One tap on the mic listens (stop puts the text in the field, send sends it); a press held past TAP_MS talks and sends on release.
 // Slice 2 (`question`, agent-question.tsx) puts a question card above the bar and swaps `placeholder` for « Ou réponds ici »; slice 4 feeds the words live (`stream`).
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { ClipboardEvent, ComponentType, DragEvent } from 'react';
 import { useDictation, type DictationLabels } from '@hachej/boring-ui-kit/chat-react/voice';
-import { ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, CornerDownRightIcon, MicIcon, SquareIcon, XIcon } from '../_shared/icons';
+import { slashItems, slashQuery } from '@hachej/boring-ui-kit/chat-text';
+import type { SlashItem } from '@hachej/boring-ui-kit/chat-text';
+import type { ChatAttachment } from '@hachej/boring-ui-kit/native-chat';
+import { ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, CornerDownRightIcon, MicIcon, PaperclipIcon, SlashIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '../utils/utils';
 import { useHoldToRecord } from '../pi-chat-voice/use-hold-to-record';
+import type { AttachmentsConfig, SlashConfig } from '../pi-chat/config';
+import { AttachmentChips, UploadChips } from '../_shared/attachment-chips';
+import { useBarAttachments } from './use-bar-attachments';
 import { AgentQuestion, agentQuestionLabels, type AgentQuestionData, type AgentQuestionLabels } from './agent-question';
 import { useLiveDictation, type LiveStream } from './use-live-dictation';
 
@@ -28,6 +35,18 @@ export interface AgentBarLabels extends DictationLabels, AgentQuestionLabels {
   readonly transcribing: string;
   readonly removeQuote: string;
   readonly working: string;
+  /** `attachments`: the pick button's name, the chip lists' names and the chips' words. */
+  readonly attachFiles: string;
+  readonly attachments: string;
+  readonly uploads: string;
+  readonly uploading: (name: string) => string;
+  readonly uploadFailed: (name: string, error?: string) => string;
+  readonly uploadFailedShort: string;
+  readonly dismiss: (name: string) => string;
+  readonly remove: (name: string) => string;
+  readonly restorePaste: string;
+  /** `slash`: the Actions button's name (and its text on a wide bar). */
+  readonly commands: string;
 }
 
 export const agentBarLabels: AgentBarLabels = {
@@ -41,6 +60,16 @@ export const agentBarLabels: AgentBarLabels = {
   transcribing: 'Transcription…',
   removeQuote: 'Retirer la citation',
   working: 'En cours',
+  attachFiles: 'Joindre des fichiers',
+  attachments: 'Pièces jointes',
+  uploads: 'Envois',
+  uploading: name => `Envoi de ${name}…`,
+  uploadFailed: (name, error) => `${name} : ${error ?? 'échec de l’envoi'}`,
+  uploadFailedShort: 'L’envoi a échoué',
+  dismiss: name => `Fermer ${name}`,
+  remove: name => `Retirer ${name}`,
+  restorePaste: 'Remettre le texte collé dans le message',
+  commands: 'Actions',
   ...agentQuestionLabels,
   voiceDenied: 'Le micro est refusé. Autorise-le dans les réglages du navigateur.',
   voiceNoMicrophone: 'Aucun micro trouvé.',
@@ -52,7 +81,14 @@ export const agentBarLabels: AgentBarLabels = {
   voiceTranscribeFailed: 'La transcription a échoué.',
 };
 
-export interface AgentBarSend { readonly text: string; readonly quoted?: string }
+export interface AgentBarSend {
+  /** With `attachments`, the uploaded paths are mentioned at the end of the text (`@uploads/releve.pdf`), as PiChat sends them. */
+  readonly text: string;
+  readonly quoted?: string;
+  /** Uploaded images, in the form a PiChat draft carries them. Only with `attachments`, and only when there are some. */
+  readonly attachments?: readonly ChatAttachment[];
+}
+type BarIcon = ComponentType<{ readonly className?: string | undefined; readonly 'aria-hidden'?: boolean | 'true' | 'false' | undefined }>
 export interface AgentBarProps {
   /** Called with the typed or spoken text, and the label of the quoted row when one is shown. The app clears the quote (`quoted.onClear`) if it wants to. */
   readonly onSend: (message: AgentBarSend) => void;
@@ -69,6 +105,12 @@ export interface AgentBarProps {
   /** A question the agent asks, shown as a card above the bar. While it is open the field reads « Ou réponds ici » and text sent from the bar goes to `question.onAnswer({ text, source: 'bar' })`, not `onSend`. */
   readonly question?: AgentQuestionData;
   readonly placeholder?: string;
+  /** Off by default. Same shape and meaning as PiChat's `chatProps.attachments`: with it the bar is a drop zone, a paste of files into the field uploads them and an attach button (`labels.attachFiles`) opens the picker. The chips (progress, error, remove) show above the field and the next `onSend` carries them. */
+  readonly attachments?: AttachmentsConfig;
+  /** Off by default. Like PiChat's `chatProps.slash` (`Picker` is `SlashPicker` of `pi-chat-slash`): typing `/` opens the commands list, and an Actions button (`labels.commands`) opens it too; choosing a command runs it and fills the bar. */
+  readonly slash?: SlashConfig;
+  /** Overrides the pick button's and the Actions button's icon. */
+  readonly icons?: { readonly attach?: BarIcon; readonly commands?: BarIcon };
   /** Not-yet-final words, shown dimmed after the final transcript above the bar (live partials arrive in a later slice). */
   readonly partial?: string;
   readonly labels?: Partial<AgentBarLabels>;
@@ -93,7 +135,7 @@ function Wave({ levels }: { readonly levels: readonly number[] }) {
   </div>;
 }
 
-export function AgentBar({ onSend, transcribe, stream, quoted, question, onHistory, historyOpen = false, historyBadge, placeholder, partial, labels, disabled = false, className }: AgentBarProps) {
+export function AgentBar({ onSend, transcribe, stream, quoted, question, onHistory, historyOpen = false, historyBadge, placeholder, attachments, slash, icons, partial, labels, disabled = false, className }: AgentBarProps) {
   const words = { ...agentBarLabels, ...labels };
   const [text, setText] = useState('');
   const [transcript, setTranscript] = useState('');
@@ -109,14 +151,28 @@ export function AgentBar({ onSend, transcribe, stream, quoted, question, onHisto
   const fromListen = useRef(false);
   const quote = useRef(quoted?.label);
   const asked = useRef(question);
-  useLayoutEffect(() => { field.current = text; quote.current = quoted?.label; asked.current = question; });
+  useLayoutEffect(() => { field.current = text; quote.current = quoted?.label; asked.current = question; filesRef.current = files; });
   const hint = question ? words.answerHere : (placeholder ?? words.placeholder);
+  const files = useBarAttachments(attachments, words.uploadFailedShort);
+  const filesRef = useRef(files);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  // The commands list: `/` typed in the field, or the Actions button. Esc or a pick closes it; the text it was dismissed on keeps it closed.
+  const Slash = slash?.Picker;
+  const items = useMemo<SlashItem[]>(() => slash && Slash ? slashItems(slash) : [], [slash, Slash]);
+  const [caret, setCaret] = useState(0);
+  const [dismissed, setDismissed] = useState<string | null>(null);
 
   const deliver = (body: string) => {
     const clean = body.trim();
-    if (!clean) return;
+    const bundle = filesRef.current;
+    if (!clean && (asked.current || bundle.count === 0)) return;
     if (asked.current) asked.current.onAnswer({ text: clean, source: 'bar' });
-    else onSend(quote.current === undefined ? { text: clean } : { text: clean, quoted: quote.current });
+    else {
+      const sendable = bundle.compose(clean);
+      onSend({ text: sendable.text, ...(quote.current === undefined ? {} : { quoted: quote.current }), ...(sendable.attachments.length ? { attachments: sendable.attachments } : {}) });
+      bundle.clear();
+    }
     setText(''); setTranscript('');
   };
   const onText = (spoken: string) => {
@@ -169,7 +225,7 @@ export function AgentBar({ onSend, transcribe, stream, quoted, question, onHisto
   const busy = mode === 'idle' && dictation.phase !== 'idle';
   const state = mode === 'holding' ? 'holding' : mode === 'listening' ? 'listening' : busy ? 'transcribing' : 'rest';
   const outlined = state === 'listening' || state === 'holding' || quoted !== undefined;
-  const canSend = state === 'rest' ? text.trim().length > 0 : state !== 'transcribing';
+  const canSend = state === 'rest' ? (text.trim().length > 0 || (!question && files.count > 0)) && !files.uploading : state !== 'transcribing';
   useEffect(() => {
     if (state === 'listening') { fromListen.current = true; root.current?.querySelector<HTMLElement>('[data-testid="agent-bar-stop"]')?.focus(); }
     else if (state === 'rest' && fromListen.current) { fromListen.current = false; root.current?.querySelector<HTMLElement>('[data-slot="input"]')?.focus(); }
@@ -189,7 +245,30 @@ export function AgentBar({ onSend, transcribe, stream, quoted, question, onHisto
     if (canSend) deliver(text);
   };
 
-  return <div ref={root} data-slot="agent-bar" className={cn('mx-auto flex w-full max-w-xl flex-col gap-2', className)}>
+  const query = items.length ? slashQuery(text, caret) : null;
+  const slashOpen = query !== null && dismissed !== text && state === 'rest';
+  const edit = (next: string) => { setText(next); setTranscript(''); setCaret(next.length); };
+  const focusField = () => root.current?.querySelector<HTMLElement>('[data-slot="input"]')?.focus();
+  const pickSlash = (item: SlashItem) => {
+    const rest = text.slice(caret).replace(/^\s+/, '');
+    if (item.source === 'skill') { edit(`/${item.name} ${rest}`); focusField(); return; }
+    const command = slash?.commands?.find(candidate => candidate.name === item.name);
+    edit(rest); focusField();
+    if (command) void Promise.resolve(command.run({ text: rest, setText: value => edit(value) })).catch(() => undefined);
+  };
+  const openCommands = () => { setDismissed(null); edit(`${text}${text && !/\s$/.test(text) ? ' ' : ''}/`); focusField(); };
+  const droppable = attachments !== undefined && !disabled;
+  const pick = (picked: readonly File[]) => { void files.add(picked); };
+  const drag = (event: DragEvent) => { if (!droppable) return; event.preventDefault(); setDragging(event.type === 'dragover'); };
+  const dropFiles = (event: DragEvent) => { if (!droppable) return; event.preventDefault(); setDragging(false); pick(Array.from(event.dataTransfer.files)); };
+  const pasteFiles = (event: ClipboardEvent) => { if (droppable && event.clipboardData.files.length) { event.preventDefault(); pick(Array.from(event.clipboardData.files)); } };
+  const AttachIcon = icons?.attach ?? PaperclipIcon, CommandsIcon = icons?.commands ?? SlashIcon;
+  const chipList = files.pending.length > 0 || files.chips.length > 0
+    ? <div data-testid="agent-bar-chips" className="flex flex-wrap gap-2 px-1"><UploadChips items={files.pending} words={words} onDismiss={files.dismiss} /><AttachmentChips items={files.chips} words={words} onRemove={files.remove} /></div> : null;
+
+  return <div ref={root} data-slot="agent-bar" data-dragging={dragging || undefined} className={cn('mx-auto flex w-full max-w-xl flex-col gap-2', (slash && Slash) && 'relative', className)}
+    {...(attachments ? { onDragOver: drag, onDragLeave: drag, onDrop: dropFiles } : {})}>
+    {slashOpen && Slash ? <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={() => setDismissed(text)} /> : null}
     {question ? <AgentQuestion key={`${question.step ?? ''}|${question.title}`} question={question} labels={words} /> : null}
     {shown}
     {dictation.problem ? <p role="alert" className="px-3 text-sm text-destructive">{dictation.problem}</p> : null}
@@ -198,7 +277,8 @@ export function AgentBar({ onSend, transcribe, stream, quoted, question, onHisto
       <span className="min-w-0 flex-1 truncate">{quoted.label}</span>
       <Button type="button" variant="ghost" size="icon" data-agent-bar="" aria-label={words.removeQuote} onClick={quoted.onClear}><XIcon /></Button>
     </div> : null}
-    <div data-testid="agent-bar" data-state={state} className={cn('flex items-center gap-1.5 rounded-(--radius-3xl) bg-card p-1.5 ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring', outlined && 'ring-2 ring-primary')}>
+    {chipList}
+    <div data-testid="agent-bar" data-state={state} className={cn('flex items-center gap-1.5 rounded-(--radius-3xl) bg-card p-1.5 ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring', (outlined || dragging) && 'ring-2 ring-primary')}>
       {state === 'listening' ? <>
         <Button key="cancel" type="button" variant="secondary" size="icon" data-agent-bar="" aria-label={words.cancel} onClick={abandon}><XIcon /></Button>
         <Wave levels={dictation.levels} />
@@ -206,6 +286,7 @@ export function AgentBar({ onSend, transcribe, stream, quoted, question, onHisto
       </> : <>
         {/* Keyed so the stop button of the listening layout is never the mic node reused (its touchstart guard would swallow the tap). One flat list from rest to hold: the pressed mic must stay mounted, or the browser never delivers its pointer-up. */}
         {onHistory && state !== 'holding' ? <span className="relative inline-flex"><Button type="button" variant="secondary" size="icon" data-agent-bar="" aria-label={words.history} aria-expanded={historyOpen} onClick={onHistory}>{historyOpen ? <ChevronDownIcon /> : <ChevronUpIcon />}</Button>{historyBadge ? <span role="img" aria-label={historyBadge.label} data-testid="agent-bar-history-badge" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-primary" /> : null}</span> : null}
+        {attachments && state === 'rest' ? <Button type="button" variant="secondary" size="icon" data-agent-bar="" data-testid="agent-bar-attach" aria-label={words.attachFiles} title={words.attachFiles} disabled={disabled} onClick={() => fileInput.current?.click()}><AttachIcon aria-hidden="true" /></Button> : null}
         {state === 'holding'
           ? <div className="flex min-w-0 flex-1 items-center gap-2 px-2"><span data-testid="agent-bar-hold-label" className="min-w-0 truncate text-sm font-medium">{words.releaseToSend}</span><Wave levels={dictation.levels} /></div>
           : state === 'transcribing'
@@ -215,10 +296,16 @@ export function AgentBar({ onSend, transcribe, stream, quoted, question, onHisto
             </>
             : <Input data-testid="agent-bar-input" value={text} disabled={disabled} placeholder={hint} aria-label={hint}
                 data-agent-bar="" className="min-w-0 flex-1" enterKeyHint="send"
-                onChange={event => { setText(event.target.value); setTranscript(''); }}
-                onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} />}
+                onChange={event => { setText(event.target.value); setTranscript(''); setCaret(event.target.selectionStart ?? event.target.value.length); }}
+                onKeyUp={event => setCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length)} onClick={event => setCaret(event.currentTarget.selectionStart ?? event.currentTarget.value.length)}
+                onPaste={pasteFiles}
+                {...(slash && Slash ? { role: 'combobox', 'aria-expanded': slashOpen, 'aria-haspopup': 'listbox', 'aria-autocomplete': 'list' } as const : {})}
+                onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); if (!slashOpen) submit(); } }} />}
+        {items.length > 0 && state === 'rest' ? <Button type="button" variant="secondary" size="icon" data-agent-bar="" data-testid="agent-bar-actions" aria-label={words.commands} title={words.commands} disabled={disabled} onClick={openCommands} className="sm:w-auto sm:px-3"><CommandsIcon aria-hidden="true" /><span className="max-sm:hidden">{words.commands}</span></Button> : null}
         {state !== 'transcribing' ? <Button key="mic" type="button" variant="secondary" size="icon" data-testid="agent-bar-mic" data-held={state === 'holding' ? '' : undefined} data-agent-bar="" className={cn('touch-none select-none', state === 'holding' && 'order-first')} aria-label={words.speak} disabled={disabled} {...hold}>{state === 'holding' ? <SquareIcon /> : <MicIcon />}</Button> : null}
       </>}
+      {attachments ? <Input ref={fileInput} type="file" multiple accept={attachments.accept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="agent-bar-file"
+        onChange={event => { pick(Array.from(event.currentTarget.files ?? [])); event.currentTarget.value = ''; }} /> : null}
       <Button type="button" size="icon" data-agent-bar="" aria-label={words.send} disabled={disabled || !canSend || state === 'holding'} onClick={submit}><ArrowUpIcon /></Button>
     </div>
   </div>;
