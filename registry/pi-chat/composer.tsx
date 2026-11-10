@@ -191,7 +191,7 @@ function useCoarsePointer(): boolean {
 function BarActions({ disabled, onAttach, onCommands }: { readonly disabled: boolean; readonly onAttach?: (() => void) | undefined; readonly onCommands?: (() => void) | undefined }) {
   const { labels, icons } = useChatText();
   return <>
-    {onAttach && <Button type="button" variant="ghost" size="icon" data-testid="composer-bar-attach" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
+    {onAttach && <Button type="button" variant="outline" size="icon" data-testid="composer-bar-attach" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
       <icons.attach data-icon="inline-start" aria-hidden="true" /></Button>}
     {onCommands && <Button type="button" variant="outline" size="sm" data-testid="composer-bar-commands" aria-label={labels.commands} title={labels.commands} disabled={disabled} onClick={onCommands} className="shrink-0">
       <SlashIcon data-icon="inline-start" aria-hidden="true" />{labels.commands}</Button>}
