@@ -26,6 +26,8 @@ import { PanelLeftIcon } from "../../registry/_shared/icons"
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 // Theme tokens: an app sets --sidebar-width, --sidebar-width-icon and --sidebar-width-mobile in its theme.core.css (:root); a SidebarProvider `style` on the wrapper wins. The phone sheet is 75% of the screen (the Sheet's own cap, 24rem, applies) unless --sidebar-width-mobile is set; the old inline 18rem never applied because the Sheet's side-qualified w-3/4 beat it. The wrapper resolves them with their defaults into the private --sidebar-w and --sidebar-w-icon, so the icon rail follows the wrapper's own --control-h.
+// The row height token (one source): the wrapper defines it, and so does the phone Sheet content, which portals to body outside the wrapper.
+const SIDEBAR_ROW = "[--sidebar-row:var(--control-h,2.25rem)] pointer-coarse:[--sidebar-row:max(var(--control-h,2.25rem),var(--control-min,2.75rem))]"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
 type SidebarContextProps = {
@@ -39,6 +41,8 @@ type SidebarContextProps = {
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
+// The provider's wrapper element, so the portaled phone Sheet can read the --sidebar-row the wrapper resolved (its default, or a consumer's override in style or className).
+const SidebarWrapperContext = React.createContext<React.RefObject<HTMLDivElement | null> | null>(null)
 
 function useSidebar() {
   const context = React.useContext(SidebarContext)
@@ -122,19 +126,25 @@ function SidebarProvider({
     [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
   )
 
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null)
+
   return (
     <SidebarContext.Provider value={contextValue}>
+      <SidebarWrapperContext.Provider value={wrapperRef}>
       <div
+        ref={wrapperRef}
         data-slot="sidebar-wrapper"
         style={style}
         className={cn(
-          "group/sidebar-wrapper flex min-h-svh w-full [--sidebar-w:var(--sidebar-width,16rem)] [--sidebar-w-icon:var(--sidebar-width-icon,calc(var(--sidebar-row)_+_1rem))] [--sidebar-row:var(--control-h,2.25rem)] pointer-coarse:[--sidebar-row:max(var(--control-h,2.25rem),var(--control-min,2.75rem))] has-data-[variant=inset]:bg-sidebar",
+          SIDEBAR_ROW,
+          "group/sidebar-wrapper flex min-h-svh w-full [--sidebar-w:var(--sidebar-width,16rem)] [--sidebar-w-icon:var(--sidebar-width-icon,calc(var(--sidebar-row)_+_1rem))] has-data-[variant=inset]:bg-sidebar",
           className
         )}
         {...props}
       >
         {children}
       </div>
+      </SidebarWrapperContext.Provider>
     </SidebarContext.Provider>
   )
 }
@@ -153,6 +163,14 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const wrapperRef = React.useContext(SidebarWrapperContext)
+  const sheetRef = React.useRef<HTMLDivElement>(null)
+  // The sheet portals outside the wrapper: carry the wrapper's resolved --sidebar-row into it (falls back to SIDEBAR_ROW).
+  const [sheetRow, setSheetRow] = React.useState<string | undefined>()
+  React.useLayoutEffect(() => {
+    if (!isMobile || !openMobile || !wrapperRef?.current) return
+    setSheetRow(getComputedStyle(wrapperRef.current).getPropertyValue("--sidebar-row").trim() || undefined)
+  }, [isMobile, openMobile, wrapperRef])
 
   if (collapsible === "none") {
     return (
@@ -177,7 +195,10 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="data-[side=left]:w-[var(--sidebar-width-mobile,75%)] data-[side=right]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          ref={sheetRef}
+          initialFocus={(openType) => (openType === "keyboard" ? true : sheetRef.current)}
+          className={cn(SIDEBAR_ROW, "data-[side=left]:w-[var(--sidebar-width-mobile,75%)] data-[side=right]:w-[var(--sidebar-width-mobile,75%)] bg-sidebar p-0 text-sidebar-foreground outline-none [&>button]:hidden")}
+          style={sheetRow ? ({ "--sidebar-row": sheetRow } as React.CSSProperties) : undefined}
           side={side}
         >
           <SheetHeader className="sr-only">
@@ -227,7 +248,7 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
+          className="flex size-full flex-col bg-sidebar in-data-[float=true]:shadow-lg in-data-[float=true]:border-r in-data-[float=true]:border-sidebar-border group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
         >
           {children}
         </div>
@@ -356,7 +377,7 @@ function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="sidebar-content"
       data-sidebar="content"
       className={cn(
-        "no-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
+        "no-scrollbar pointer-coarse:[scrollbar-width:none] pointer-coarse:[&::-webkit-scrollbar]:hidden flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
         className
       )}
       {...props}
@@ -549,7 +570,7 @@ function SidebarMenuAction({
     props: mergeProps<"button">(
       {
         className: cn(
-          "absolute top-1.5 right-1 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-foreground ring-sidebar-ring outline-hidden transition-transform group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 after:absolute after:-inset-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 md:after:hidden pointer-fine:[*:has(>[data-sidebar=menu-badge])>&]:opacity-0 pointer-fine:[*:hover:has(>[data-sidebar=menu-badge])>&]:opacity-100 pointer-fine:[*:focus-within:has(>[data-sidebar=menu-badge])>&]:opacity-100 pointer-fine:[*:has(>[data-sidebar=menu-badge])>&[aria-expanded=true]]:opacity-100 pointer-coarse:top-0! pointer-coarse:h-(--sidebar-row) pointer-coarse:w-11 peer-data-[size=lg]/menu-button:pointer-coarse:h-12 pointer-coarse:after:hidden [&>svg]:size-4 [&>svg]:shrink-0",
+          "absolute top-1.5 right-1 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-foreground ring-sidebar-ring outline-hidden transition-transform group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 after:absolute after:-inset-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 md:after:hidden pointer-fine:[*:has(>[data-sidebar=menu-badge])>&]:opacity-0 pointer-fine:[*:has(>[data-sidebar=menu-badge]):has(>:is([data-sidebar=menu-button],[data-sidebar=menu-sub-button],[data-sidebar=menu-action]):is(:hover,:focus))>&]:opacity-100 pointer-fine:[*:has(>[data-sidebar=menu-badge])>&[aria-expanded=true]]:opacity-100 pointer-coarse:top-0! pointer-coarse:h-(--sidebar-row) pointer-coarse:w-11 peer-data-[size=lg]/menu-button:pointer-coarse:h-12 pointer-coarse:after:hidden [&>svg]:size-4 [&>svg]:shrink-0",
           showOnHover &&
             "group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 peer-data-active/menu-button:text-sidebar-accent-foreground aria-expanded:opacity-100 md:opacity-0",
           className
@@ -567,18 +588,23 @@ function SidebarMenuAction({
 
 function SidebarMenuBadge({
   className,
+  children,
   ...props
 }: React.ComponentProps<"div">) {
+  // A count of 0, an empty string or nothing renders nothing (no empty pill).
+  if (children === 0 || children === "" || children === null || children === undefined || children === false) return null
   return (
     <div
       data-slot="sidebar-menu-badge"
       data-sidebar="menu-badge"
       className={cn(
-        "pointer-events-none absolute right-1 flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-xs font-medium text-sidebar-foreground tabular-nums select-none group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 peer-data-active/menu-button:text-sidebar-accent-foreground pointer-fine:[*:hover:has(>[data-sidebar=menu-action])>&]:opacity-0 pointer-fine:[*:focus-within:has(>[data-sidebar=menu-action])>&]:opacity-0 pointer-fine:[*:has(>[data-sidebar=menu-action][aria-expanded=true])>&]:opacity-0 pointer-coarse:top-0! pointer-coarse:h-(--sidebar-row)! peer-data-[size=lg]/menu-button:pointer-coarse:h-12! pointer-coarse:group-has-data-[sidebar=menu-action]/menu-item:right-12!",
+        "pointer-events-none absolute right-1 flex h-5 min-w-5 has-[>[data-slot=badge]:empty:only-child]:hidden items-center justify-center rounded-md px-1 text-xs font-medium text-sidebar-foreground tabular-nums select-none group-data-[collapsible=icon]:hidden peer-hover/menu-button:text-sidebar-accent-foreground peer-data-[size=default]/menu-button:top-1.5 peer-data-[size=lg]/menu-button:top-2.5 peer-data-[size=sm]/menu-button:top-1 peer-data-active/menu-button:text-sidebar-accent-foreground pointer-fine:[*:has(>[data-sidebar=menu-action]):has(>:is([data-sidebar=menu-button],[data-sidebar=menu-sub-button],[data-sidebar=menu-action]):is(:hover,:focus))>&]:opacity-0 pointer-fine:[*:has(>[data-sidebar=menu-action][aria-expanded=true])>&]:opacity-0 pointer-coarse:top-0! pointer-coarse:h-(--sidebar-row)! peer-data-[size=lg]/menu-button:pointer-coarse:h-12! pointer-coarse:[*:has(>[data-sidebar=menu-action])>&]:right-12!",
         className
       )}
       {...props}
-    />
+    >
+      {children}
+    </div>
   )
 }
 
@@ -642,7 +668,7 @@ function SidebarMenuSubItem({
     <li
       data-slot="sidebar-menu-sub-item"
       data-sidebar="menu-sub-item"
-      className={cn("group/menu-sub-item relative", className)}
+      className={cn("group/menu-sub-item relative [&>[data-sidebar=menu-badge]]:top-1 [&>[data-sidebar=menu-action]]:top-1 [&>[data-sidebar=menu-badge]]:right-[calc(var(--spacing)*-4.75)] [&>[data-sidebar=menu-action]]:right-[calc(var(--spacing)*-4.75)] pointer-coarse:[&>[data-sidebar=menu-badge]]:h-7! pointer-coarse:[&>[data-sidebar=menu-action]]:h-7! pointer-coarse:[&:has(>[data-sidebar=menu-action])>[data-sidebar=menu-badge]]:right-[calc(var(--spacing)*6.25)]!", className)}
       {...props}
     />
   )

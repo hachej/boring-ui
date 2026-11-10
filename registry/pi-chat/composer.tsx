@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent, ComponentProps, DragEvent, KeyboardEvent, ReactNode, Ref } from 'react';
-import { AlertCircleIcon, FileTextIcon, Loader2Icon, MessageSquarePlusIcon, SlashIcon, XIcon } from '../_shared/icons';
+import { AlertCircleIcon, FileTextIcon, Loader2Icon, MessageSquarePlusIcon, XIcon } from '../_shared/icons';
 import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentMedia, AttachmentTitle } from '@/components/ui/attachment';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -75,6 +75,8 @@ export interface ComposerProps {
   /** Extra controls in the bar (the model and effort pill) and a short note beside them. */
   readonly barStart?: ReactNode;
   readonly barNote?: ReactNode;
+  /** Off by default. On, "Attach files" and "Commands" are their own buttons left of the field (named by `labels.attachFiles` and `labels.commands`) instead of items of the "+" menu; the "+" stays only for what is left in it (Take a photo). Commands opens the same `/` list as typing `/`. */
+  readonly barActions?: boolean;
   /** Optional host mode/model chips beside the attach control. */
   readonly chips?: ReactNode;
   /** Optional host context above the input. */
@@ -185,6 +187,20 @@ function useCoarsePointer(): boolean {
   return coarse;
 }
 
+/** `barActions`: Attach files as a direct bar button, first in the bar row (label and icon from the app). */
+function BarAttach({ disabled, onAttach }: { readonly disabled: boolean; readonly onAttach: () => void }) {
+  const { labels, icons } = useChatText();
+  return <Button type="button" variant="outline" size="icon" data-testid="composer-bar-attach" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
+    <icons.attach data-icon="inline-start" aria-hidden="true" /></Button>;
+}
+
+/** `barActions`: Commands as a labelled bar button at the end of the bar, right before the voice and send controls. */
+function BarCommands({ disabled, onCommands }: { readonly disabled: boolean; readonly onCommands: () => void }) {
+  const { labels, icons } = useChatText();
+  return <Button type="button" variant="outline" size="sm" data-testid="composer-bar-commands" aria-label={labels.commands} title={labels.commands} disabled={disabled} onClick={onCommands} className="shrink-0">
+    <icons.commands data-icon="inline-start" aria-hidden="true" />{labels.commands}</Button>;
+}
+
 /** The "+" button and the host's shadcn dropdown menu (Attach files, Take a photo, Commands). */
 function PlusActions({ disabled, onAttach, onTakePhoto, onCommands, textarea }: { readonly disabled: boolean; readonly onAttach?: (() => void) | undefined; readonly onTakePhoto?: (() => void) | undefined; readonly onCommands?: (() => void) | undefined; readonly textarea: { readonly current: HTMLTextAreaElement | null } }) {
   const { labels, icons } = useChatText();
@@ -203,7 +219,7 @@ function PlusActions({ disabled, onAttach, onTakePhoto, onCommands, textarea }: 
       {onTakePhoto && <DropdownMenuItem data-testid="composer-take-photo" onClick={onTakePhoto} className="max-md:min-h-11 pointer-coarse:min-h-11">
         <icons.camera aria-hidden="true" />{labels.takePhoto}</DropdownMenuItem>}
       {onCommands && <DropdownMenuItem data-testid="composer-commands" onClick={() => { toText.current = true; onCommands(); }} className="max-md:min-h-11 pointer-coarse:min-h-11">
-        <SlashIcon aria-hidden="true" />{labels.commands}</DropdownMenuItem>}
+        <icons.commands aria-hidden="true" />{labels.commands}</DropdownMenuItem>}
     </DropdownMenuContent>
   </DropdownMenu>;
 }
@@ -389,7 +405,12 @@ export function Composer(props: ComposerProps) {
   const marked = props.markMentionQuery && mentionOpen && trigger ? <QueryBackdrop text={text} start={trigger.start} end={trigger.end} /> : null;
   // eslint-disable-next-line react-hooks/refs -- renderInput receives event callbacks, not ref values; an input calls them only on interaction
   const input = props.renderInput?.({ text, onText, onCaret: setCaret, onSend: () => { if (canSubmit && !menuOpen) props.onSend(); } }) ?? props.input ?? (props.placeholderContent || marked ? <div data-slot="composer-field" className="relative flex min-h-16 w-full min-w-0 flex-1">{marked}{textareaEl}{!text && props.placeholderContent && <span aria-hidden="true" data-slot="composer-placeholder" className="pointer-events-none absolute inset-x-3 top-2 text-xs text-muted-foreground">{props.placeholderContent}</span>}</div> : textareaEl);
-  const plus = (canAttach || items.length > 0) && <PlusActions disabled={disabled || recording} textarea={inner} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
+  const barActions = props.barActions === true;
+  // With `barActions`, attach and commands are bar buttons; the "+" stays only when Take a photo is left in it.
+  const plusHasItems = barActions ? canPhoto : canAttach || items.length > 0;
+  const plusButton = plusHasItems && <PlusActions disabled={disabled || recording} textarea={inner} onAttach={!barActions && canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={!barActions && items.length > 0 ? openCommands : undefined} />;
+  // Off: the "+" alone, as before (same element position). On: the bar buttons first.
+  const plus = barActions && canAttach ? <><BarAttach disabled={disabled || recording} onAttach={() => fileInput.current?.click()} />{plusButton}</> : plusButton;
   // One child slot either way, so a composer without `start` keeps its exact markup (React ids included).
   const startAndPlus = props.start && !recording ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
@@ -409,6 +430,7 @@ export function Composer(props: ComposerProps) {
     {!slots && props.barNote}
     {!slots && uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
     {!pill && <span className="min-w-0 flex-1" />}
+    {!slots && barActions && items.length > 0 && <BarCommands disabled={disabled || recording} onCommands={openCommands} />}
     {slots ? !stopInSend && props.recordingStop !== undefined && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.recordingStop}</div>
       : props.barEnd && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.barEnd}</div>}
     {!slots && working && hasContent && <Button variant="ghost" size="icon" data-testid="composer-queue" aria-label={labels.queue} title={labels.queue} disabled={!canSubmit} onClick={props.onSend} className="shrink-0">

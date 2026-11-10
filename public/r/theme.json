@@ -7,7 +7,7 @@
     "@fontsource-variable/geist-mono@5.3.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.74/r/touch-floor.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.79/r/touch-floor.json"
   ],
   "cssVars": {
     "theme": {
@@ -273,7 +273,8 @@
     "@layer base": {
       ":root": {
         "--control-h": "2.25rem",
-        "--control-min": "0rem"
+        "--control-min": "0rem",
+        "--screen-gutter": "1rem"
       },
       "@media (width < 768px), (pointer: coarse)": {
         ":root": {
@@ -283,7 +284,8 @@
       },
       "[data-density=\"compact\"]": {
         "--control-h": "2.25rem",
-        "--control-min": "0rem"
+        "--control-min": "0rem",
+        "--screen-gutter": "0.75rem"
       }
     }
   },

@@ -1,6 +1,6 @@
 {
   "name": "boring-ui",
-  "version": "0.4.74",
+  "version": "0.4.79",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -61,7 +61,7 @@
     "app-shell:journey:target": "node examples/app-shell/journey-target.mjs",
     "app-shell:journey:documents": "node examples/app-shell/journey-documents.mjs",
     "app-shell:journey:voice": "node examples/app-shell/journey-voice.mjs",
-    "feedback:voice-sync": "npm run build && node tools/feedback-voice-sync.mjs",
+    "feedback:voice-sync": "npm run build && node scripts/feedback-voice-sync.mjs",
     "cloudflare:build": "npm run build && node examples/hosts/cloudflare/scripts/build-browser.mjs",
     "cloudflare:dev": "wrangler dev --config examples/hosts/cloudflare/wrangler.jsonc",
     "cloudflare:deploy": "npm run cloudflare:build && wrangler deploy --config examples/hosts/cloudflare/wrangler.jsonc",

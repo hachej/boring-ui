@@ -97,13 +97,13 @@ function ShellContext({ name }: { readonly name: string }): null {
   return null;
 }
 
-function ScreenBody({ item }: { readonly item: NavItem }): ReactNode { return item.render(); }
+function ScreenContent({ item }: { readonly item: NavItem }): ReactNode { return item.render(); }
 
 /** Every screen stays mounted; the ones not on show are `hidden` and do not register a header or a context. */
 function Screens({ items, activeId, scrolls, slot }: { readonly items: readonly NavItem[]; readonly activeId: string; readonly scrolls: boolean; readonly slot: HTMLElement | null }) {
   return <div className="relative min-h-0 flex-1">
     {items.map(item => <ScreenActiveContext.Provider key={item.id} value={item.id === activeId}><ScreenHeaderSlotContext.Provider value={item.id === activeId ? slot : null}>
-      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={scrolls ? 'h-full overflow-y-auto overscroll-contain' : 'h-full overflow-hidden'}><ScreenBody item={item} /></div>
+      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={scrolls ? 'h-full overflow-y-auto overscroll-contain' : 'h-full overflow-hidden'}><ScreenContent item={item} /></div>
     </ScreenHeaderSlotContext.Provider></ScreenActiveContext.Provider>)}
   </div>;
 }
@@ -133,7 +133,7 @@ function Shell({ resizable, appId, compactNav, layout, rail, title, nav, agent, 
   </> : null;
   // The structure is the same compact or expanded, so a resize never remounts a screen.
   return <ResizableSidebarProvider data-testid="app-shell" resizable={resizable} app={appId || title} person={account?.email} defaultOpen={today} {...paneOpen} className="app-shell h-dvh min-h-0 overflow-hidden">
-    {(!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} title={title} items={nav} activeId={active.id} onChange={choose} agent={agent} account={account} improve={improve} text={text} />}
+    {(!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} identity={{ app: appId || title, person: account?.email }} title={title} items={nav} activeId={active.id} onChange={choose} agent={agent} account={account} improve={improve} text={text} />}
     <AgentDockLayout>
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-card">
       <Layout screen={active.label} navigation={compact && !sheet ? <TabBar items={nav} activeId={active.id} onChange={choose} text={text} /> : undefined}>

@@ -171,7 +171,7 @@ const waitUntil = async (act, label, check) => {
 
 function phone(t, coarse) {
   const media = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia');
-  Object.defineProperty(globalThis, 'matchMedia', { configurable: true, writable: true, value: () => ({ matches: coarse }) });
+  Object.defineProperty(globalThis, 'matchMedia', { configurable: true, writable: true, value: query => ({ matches: coarse && query.includes('pointer'), addEventListener() {}, removeEventListener() {} }) });
   t.after(() => { if (media) Object.defineProperty(globalThis, 'matchMedia', media); else delete globalThis.matchMedia; });
 }
 

@@ -48,7 +48,9 @@ function candidates(paths) {
     const source = readFileSync(path, 'utf8');
     // Quoted attribute selectors inside arbitrary utilities belong to the class, not its delimiter.
     const bracketed = source.match(/[^\s"'`]*\[[^\s]*?=["'][^\s"'`]*["'][^\s]*?\]:[^\s"'`]+/g) ?? [];
-    for (const token of [...source.split(/[\s"'`]+/), ...bracketed]) if (token) found.add(token);
+    // So do quoted arbitrary values, e.g. `before:content-[',_']` (the nav dot's spoken pause).
+    const quoted = source.match(/[\w:\[\]=&>*-]*-\[(["'])[^"'`\s]*\1\]/g) ?? [];
+    for (const token of [...source.split(/[\s"'`]+/), ...bracketed, ...quoted]) if (token) found.add(token);
   }
   return [...found];
 }

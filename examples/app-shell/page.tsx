@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIcon, ArchiveIcon, CalendarDaysIcon, CalendarPlusIcon, ClipboardListIcon, DatabaseIcon, HomeIcon, MessageCircleIcon, MessagesSquareIcon, Share2Icon, MicIcon, MoonIcon, MoonStarIcon, PlusIcon, TargetIcon, UsersIcon, UploadIcon } from 'lucide-react';
 import { stubPanel, stubPanelWith } from './stub-slot';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
-import { AppShell, ListDetail, useAgentContext, useAgentLayer, readAgentContext, useScreenHeader } from '../../registry/app-shell/index.ts';
+import { AppShell, ListDetail, useAgentContext, useAgentLayer, readAgentContext, useScreenHeader, ScreenBody } from '../../registry/app-shell/index.ts';
 import type { RevisionProvider } from '@hachej/boring-files/revision';
 import { AgentTargetMode } from '../../registry/agent-target/agent-target.tsx';
 import { agentTargetLabelsFr } from '../../registry/agent-target/agent-target-labels.ts';
@@ -60,7 +60,7 @@ const importAction = { id: 'import', label: 'Importer', icon: UploadIcon, showLa
 const moreAction = { id: 'export', label: 'Exporter', icon: DatabaseIcon, onSelect: () => window.__did.push('export') };
 
 const List = () => <ul className="m-0 list-none divide-y divide-border p-0">
-  {ROWS.map(row => <li key={row.day} className="flex items-center justify-between px-4 py-3"><span>{row.day}</span><span className="text-muted-foreground">{row.steps} pas</span></li>)}
+  {ROWS.map(row => <li key={row.day} className="flex items-center justify-between pe-[var(--screen-gutter,1rem)] py-3"><span>{row.day}</span><span className="text-muted-foreground">{row.steps} pas</span></li>)}
 </ul>;
 
 function Meals() {
@@ -70,27 +70,31 @@ function Meals() {
   const refresh = async () => { const response = await authorized(new Request(new URL('/api/meals', location.href))); setMeals(await response.json()); setRefetches(count => count + 1); };
   useEffect(() => { window.__mealTaps = 0; window.__outsideTaps = 0; window.__targetSettled = []; void refresh(); }, []);
   useScreenHeader({ title: 'Mes repas fictifs', actions: [themeAction, { id: 'target', label: enabled ? 'Arrêter de dicter' : 'Pointer et dicter', icon: MicIcon, onSelect: () => setEnabled(value => !value) }] });
-  return <section data-testid="meals" data-refetches={refetches} className="flex flex-col gap-4 p-4">
+  return <ScreenBody data-testid="meals" data-refetches={refetches} className="flex flex-col gap-4">
     <p>Activez « Pointer et dicter », puis touchez un repas.</p>
     {meals.map(meal => <Button key={meal.id} variant="outline" data-testid={`meal-${meal.id}`} data-agent-target={JSON.stringify({ meal: meal.id, slot: meal.slot })} data-private="not-sent" className="min-h-11 justify-start" onClick={() => { window.__mealTaps++; }}><span>{meal.label}</span></Button>)}
     <Button variant="ghost" data-testid="meal-outside" className="min-h-11" onClick={() => { window.__outsideTaps++; }}>Action ordinaire hors des repas</Button>
     <AgentTargetMode enabled={enabled} labels={agentTargetLabelsFr} transcribe={async () => 'remplace le riz par 150 g de pâtes'} onSettled={result => { window.__targetSettled.push(result); void refresh(); }} />
-  </section>;
+  </ScreenBody>;
 }
 function WalkingDay() {
   // `?header=owned`: a screen that owns its row (leading controls after the trigger, sans title, 48 px).
   const owned = new URLSearchParams(location.search).get('header') === 'owned';
-  useScreenHeader(owned
+  // `?header=long` (D-2047): a screen whose own leading content is as wide as its text (a long heading, no title), as a dossier crumb is.
+  const long = new URLSearchParams(location.search).get('header') === 'long';
+  useScreenHeader(long
+    ? { title: '', leading: <div className="flex min-w-0 items-center gap-1.5"><h1 className="m-0 truncate text-base font-semibold">Dossier fictif de la Société Imaginaire des Marchés Inventés</h1></div>, dense: true, actions: [themeAction] }
+    : owned
     ? { title: 'Ma journée', leading: <span className="hidden items-center gap-1 md:flex"><Button variant="secondary" size="sm">Cabinet</Button><Button variant="ghost" size="sm">Urgences</Button></span>, titleFace: 'sans', dense: true, actions: [themeAction] }
     : { title: 'Ma journée', subtitle: 'mardi 13 octobre', actions: [themeAction] });
-  return <List />;
+  return <ScreenBody bleed><List /></ScreenBody>;
 }
 function TalkAboutMeal() {
   const { talkAbout } = useAgentLayer();
   const start = useRef<number | null>(null);
   useScreenHeader({ title: 'Mes repas fictifs', actions: [themeAction] });
   const talk = () => talkAbout('@repas:2026-10-27/dejeuner', { voice: true });
-  return <section className="p-4">
+  return <ScreenBody>
     <Card data-testid="talk-about-card" className="touch-pan-y" onPointerDown={event => { start.current = event.clientX; event.currentTarget.setPointerCapture(event.pointerId); }}
       onPointerCancel={() => { start.current = null; }} onPointerUp={event => { if (start.current !== null && Math.abs(event.clientX - start.current) > 60) talk(); start.current = null; }}>
       <CardHeader><CardTitle>Déjeuner · mardi</CardTitle></CardHeader>
@@ -98,21 +102,21 @@ function TalkAboutMeal() {
         <Button variant="ghost" size="icon" data-testid="card-mic" aria-label="Parler de ce repas" onPointerDown={event => event.stopPropagation()} onClick={talk}><MicIcon data-icon="inline-start" aria-hidden="true" /></Button>
       </CardContent>
     </Card>
-  </section>;
+  </ScreenBody>;
 }
 function Day() { return query.get('talkAbout') === '1' ? <TalkAboutMeal /> : targets ? <Meals /> : <WalkingDay />; }
 function Progress() {
   useAgentContext({ name: 'Progrès', params: { range: 30 } });
   useScreenHeader({ actions: [themeAction] });
-  return <List />;
+  return <ScreenBody bleed><List /></ScreenBody>;
 }
 function Data() {
   useScreenHeader({ actions: [importAction, themeAction] });
-  return <p className="m-0 p-4">Vos données</p>;
+  return <ScreenBody><p className="m-0">Vos données</p></ScreenBody>;
 }
 function Plain({ label }: { label: string }) {
   useScreenHeader({ actions: [themeAction, importAction, moreAction] });
-  return <p className="m-0 p-4">{label}</p>;
+  return <ScreenBody><p className="m-0">{label}</p></ScreenBody>;
 }
 
 const FITNESS = [
@@ -121,7 +125,7 @@ const FITNESS = [
   { id: 'donnees', label: 'Données', icon: DatabaseIcon, render: () => <Data /> },
   ...(six ? [
     { id: 'objectifs', label: 'Objectifs', icon: TargetIcon, render: () => <Plain label="Vos objectifs" /> },
-    { id: 'sommeil', label: 'Sommeil', icon: MoonStarIcon, badge: true, render: () => <Plain label="Votre sommeil" /> },
+    { id: 'sommeil', label: 'Sommeil', icon: MoonStarIcon, badge: { tone: 'info', label: 'Nuit à noter' } as const, render: () => <Plain label="Votre sommeil" /> },
     { id: 'amis', label: 'Amis', icon: UsersIcon, render: () => <Plain label="Vos amis" /> },
   ] : []),
 ];
@@ -129,7 +133,7 @@ const DASHBOARD = [
   { id: 'dashboard', label: 'Tableau de bord', icon: HomeIcon, render: () => <Plain label="Votre tableau de bord" /> },
   { id: 'repas', label: 'Repas', icon: ClipboardListIcon, render: () => <Plain label="Vos repas" /> },
 ];
-const EMPTY = [{ id: 'accueil', label: 'Accueil', icon: HomeIcon, render: () => <p className="m-0 p-4">Bienvenue</p> }];
+const EMPTY = [{ id: 'accueil', label: 'Accueil', icon: HomeIcon, render: () => <ScreenBody><p className="m-0">Bienvenue</p></ScreenBody> }];
 
 function App() {
   // One workspace provider for Documents and retained voice uploads.
@@ -161,7 +165,7 @@ function App() {
   const closeHistory = useCallback(() => setPickingHistory(false), []);
   const listed = useConversations({ endpoint: toolsHistory ? new URL('/api/conversations', location.href) : undefined, fetch: authorized, onSelect: id => { window.__pickedConversation = id; } });
   const waiting = (!noAgent && coach.status !== 'ready') || manager.status !== 'ready' || (send === 'message' && !docs);
-  if (waiting) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
+  if (waiting) return <ScreenBody role="status" data-testid="connecting" className="text-sm text-muted-foreground">Connexion…</ScreenBody>;
   // A test seam: a send that fails the way an unconfirmed earlier submission does (the controller throws).
   if (!window.__sendWrapped && coach.status === 'ready') {
     window.__sendWrapped = true;
@@ -204,7 +208,7 @@ function App() {
   // The app's router: a tab switch replaces the URL (a hash here) and adds no history entry.
   const onChange = (id: string) => { window.__routes.push(id); history.replaceState(history.state, '', `#${id}`); setRoute(id); };
   return <div id="app-root" className="contents">
-    <AppShell {...rail} layout="screen" title="Forme" nav={nav} agent={agent} panel={query.get('pmChat') === '1' ? stubPanelWith(manager.controller) : stubPanel} account={account} route={{ id: route, onChange }} />
+    <AppShell {...rail} {...(query.get('composer') === 'content' ? { composer: 'content' as const } : {})} layout="screen" title="Forme" nav={nav} agent={agent} panel={query.get('pmChat') === '1' ? stubPanelWith(manager.controller) : stubPanel} account={account} route={{ id: route, onChange }} />
     {docs && <DocumentSheet provider={docs} path={spec} onClose={() => setSpec(undefined)} onShowAll={() => onChange('fiches')} locale="fr" />}
   </div>;
 }
@@ -229,10 +233,10 @@ function ConsultationList({ selected, onSelect }: { selected: number | null; onS
 function Consultation({ id }: { id: number }) {
   useAgentContext({ name: 'Consultations', params: { selected: id } });
   const row = CONSULTATIONS.find(entry => entry.id === id);
-  return <article data-testid="consultation-detail" className="grid gap-3 p-4">
+  return <ScreenBody data-testid="consultation-detail" className="grid gap-3">
     <h2 className="m-0 text-lg font-semibold">{row ? `${row.label} · ${row.person}` : `Consultation ${id}`}</h2>
     {['A · Contexte', 'B · Observations', 'C · Suite'].map(block => <section key={block} className="rounded-md border border-border p-3"><h3 className="m-0 text-sm font-medium">{block}</h3><p className="m-0 mt-1 text-sm text-muted-foreground">Texte d'exemple.</p></section>)}
-  </article>;
+  </ScreenBody>;
 }
 
 function Consultations({ selected, onSelect, onBack }: { selected: number | null; onSelect: (id: number) => void; onBack: () => void }) {
@@ -241,20 +245,20 @@ function Consultations({ selected, onSelect, onBack }: { selected: number | null
     ? <ul className="m-0 grid list-none justify-items-center gap-1 p-0 py-2">{CONSULTATIONS.slice(0, 12).map(row => <li key={row.id}><button type="button" aria-label={row.label} aria-current={row.id === selected} onClick={() => onSelect(row.id)}
       className={`size-9 rounded-md text-xs outline-none hover:bg-accent focus-visible:bg-accent ${row.id === selected ? 'bg-accent' : ''}`}>{row.id}</button></li>)}</ul>
     : <ConsultationList selected={selected} onSelect={onSelect} />;
-  if (inSidebar) return selected === null ? <p className="m-0 p-4 text-sm text-muted-foreground">Choisissez une consultation dans la liste du menu.</p> : <Consultation id={selected} />;
+  if (inSidebar) return selected === null ? <ScreenBody><p className="m-0 text-sm text-muted-foreground">Choisissez une consultation dans la liste du menu.</p></ScreenBody> : <Consultation id={selected} />;
   return <ListDetail {...(fold ? { collapsible: true, labels: { collapse: 'Replier la liste', expand: 'Déplier la liste' } } : {})} list={fold ? rows : <ConsultationList selected={selected} onSelect={onSelect} />} detail={selected === null ? null : <Consultation id={selected} />} onBack={onBack} title={selected === null ? undefined : `Consultation ${selected}`} />;
 }
 
 function Archives() {
   useScreenHeader({});
-  return <p className="m-0 p-4">Archives</p>;
+  return <ScreenBody><p className="m-0">Archives</p></ScreenBody>;
 }
 
 const NAV_IDS = ['consultations', 'archives'];
 function RedactionApp() {
   const manager = useRemoteChat({ conversationId: conversations.pm, endpoint: endpoint('pm'), fetch: authorized, identity, requestContext: readAgentContext });
   const [hash, setHash] = useState(() => location.hash.slice(1));
-  if (manager.status !== 'ready') return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
+  if (manager.status !== 'ready') return <ScreenBody role="status" data-testid="connecting" className="text-sm text-muted-foreground">Connexion…</ScreenBody>;
   // The app's router: the URL is a hash and is only ever replaced; the shell's Back layer owns the one history entry of an open detail.
   const go = (next: string) => { history.replaceState(history.state, '', `#${next}`); setHash(next); };
   const selected = /^\d+$/.test(hash) ? Number(hash) : null;
@@ -289,7 +293,7 @@ function PmApp() {
   useEffect(() => { if (items?.length && !items.some(item => item.id === selected)) setSelected(items[0].id); }, [items, selected]);
   const active = items?.some(item => item.id === selected) ? selected : undefined;
   const chat = useRemoteChat({ conversationId: active, endpoint: id => new URL(`/api/chat?agent=writer&conversation=${id}`, location.href), fetch: authorized, identity });
-  if (manager.status !== 'ready' || !revisionProvider) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
+  if (manager.status !== 'ready' || !revisionProvider) return <ScreenBody role="status" data-testid="connecting" className="text-sm text-muted-foreground">Connexion…</ScreenBody>;
   const nav = [{ id: 'atelier', label: 'Atelier', icon: MessagesSquareIcon, render: () => <main data-testid="app" data-conversation={active} className="flex h-full min-h-0">
     <AgentWorkspace artifactKinds={englishKinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={listed} revisionProvider={revisionProvider} layout={query.has('embedded') ? 'embedded' : 'default'} {...(query.has('popover-history') ? { history: 'popover' as const } : {})} {...(query.has('bar-panels') ? { barPanels: FICTIONAL_BAR_PANELS } : {})}
       chat={{ labels: { title: 'Writer' }, ...(chat.status === 'ready' ? { actions: chat.actions } : {}) }} connecting={<p role="status" className="p-4 text-sm text-muted-foreground">Connecting…</p>} />
@@ -315,7 +319,7 @@ function PlacedApp() {
   const [route, setRoute] = useState(() => location.hash.slice(1) || (remembered ? 'approvals' : 'agent'));
   const collapsed = route !== 'agent';
   useEffect(() => { remember(collapsed); }, [collapsed, remember]);
-  if (!revisionProvider || !listed) return <p role="status" data-testid="connecting" className="p-4 text-sm text-muted-foreground">Connexion…</p>;
+  if (!revisionProvider || !listed) return <ScreenBody role="status" data-testid="connecting" className="text-sm text-muted-foreground">Connexion…</ScreenBody>;
   const go = (id: string) => { history.replaceState(history.state, '', `#${id}`); setRoute(id); };
   const nav = [
     { id: 'agent', label: 'Agent', icon: MessagesSquareIcon, render: () => <main data-testid="app" data-conversation={active} className="flex h-full min-h-0">
