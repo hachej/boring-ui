@@ -76,10 +76,13 @@ test('barActions: attach and commands are bar buttons left of the field; command
         assert.ok(attach && commands, `${label}: both bar buttons exist`);
         assert.equal(attach.name, 'Ajouter des fichiers', `${label}: attach is named from labels.attachFiles`);
         assert.equal(commands.name, 'Actions du dossier', `${label}: commands is named from labels.commands`);
-        // The board (Main.dc.html) and the composer: the field above a bar row; attach and commands open that row, before the send button.
-        const send = await box('[data-testid=composer-submit]');
+        // The board (Main.dc.html:100-105): the field above a bar row [attach] ... spacer ... [commands] [voice] [send]. D-2068.
+        const voice = await box('[data-testid=voice-stub]'), send = await box('[data-testid=composer-submit]');
+        assert.ok(voice, `${label}: the voice stand-in is in the bar`);
         assert.ok(attach.y >= field.y + field.h - 1 && commands.y >= field.y + field.h - 1, `${label}: the buttons are in the bar row under the field: ${JSON.stringify({ attach, commands, field })}`);
-        assert.ok(attach.x < commands.x && commands.x + commands.w <= send.x, `${label}: attach, then commands, before the send button: ${JSON.stringify({ attach, commands, send })}`);
+        assert.ok(attach.x < commands.x, `${label}: attach is first, before commands: ${JSON.stringify({ attach, commands })}`);
+        assert.ok(commands.x + commands.w <= voice.x && voice.x + voice.w <= send.x, `${label}: commands, then voice, then send: ${JSON.stringify({ commands, voice, send })}`);
+        assert.ok(voice.x - (commands.x + commands.w) <= 16, `${label}: commands sits immediately before the voice control, at the end of the bar: ${JSON.stringify({ attach, commands, voice })}`);
         if (mobile) for (const [name, rect] of [['attach', attach], ['commands', commands]]) assert.ok(rect.h >= 44 && rect.w >= 44, `${label}: ${name} is a 44px target, got ${rect.w}x${rect.h}`);
         assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-plus]') === null`), true, `${label}: no empty + menu when nothing is left in it`);
         await browser.screenshot(`composer-bar-${width}-${theme}.png`);
