@@ -89,6 +89,7 @@ jobs:
           SIDEBAR_OPEN_EVIDENCE: ${{ runner.temp }}/evidence/sidebar-open
           FEEDBACK_BUBBLE_EVIDENCE: ${{ runner.temp }}/evidence/note-bubble
           SIDEBAR_PIN_EVIDENCE: ${{ runner.temp }}/evidence/sidebar-pin
+          SCREEN_GUTTER_EVIDENCE: ${{ runner.temp }}/evidence/screen-gutter
       - name: Resizable left pane shots (1280, light and dark)
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -111,6 +112,14 @@ jobs:
         with:
           name: sidebar-pin-shots
           path: ${{ runner.temp }}/evidence/sidebar-pin
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Screen gutter shots (1280 and 390, light and dark)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: screen-gutter-shots
+          path: ${{ runner.temp }}/evidence/screen-gutter
           retention-days: 7
           if-no-files-found: warn
       - name: Left pane open on a first visit shots (1280, light and dark)

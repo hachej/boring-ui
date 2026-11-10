@@ -97,13 +97,13 @@ function ShellContext({ name }: { readonly name: string }): null {
   return null;
 }
 
-function ScreenBody({ item }: { readonly item: NavItem }): ReactNode { return item.render(); }
+function ScreenContent({ item }: { readonly item: NavItem }): ReactNode { return item.render(); }
 
 /** Every screen stays mounted; the ones not on show are `hidden` and do not register a header or a context. */
 function Screens({ items, activeId, scrolls, slot }: { readonly items: readonly NavItem[]; readonly activeId: string; readonly scrolls: boolean; readonly slot: HTMLElement | null }) {
   return <div className="relative min-h-0 flex-1">
     {items.map(item => <ScreenActiveContext.Provider key={item.id} value={item.id === activeId}><ScreenHeaderSlotContext.Provider value={item.id === activeId ? slot : null}>
-      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={scrolls ? 'h-full overflow-y-auto overscroll-contain' : 'h-full overflow-hidden'}><ScreenBody item={item} /></div>
+      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={scrolls ? 'h-full overflow-y-auto overscroll-contain' : 'h-full overflow-hidden'}><ScreenContent item={item} /></div>
     </ScreenHeaderSlotContext.Provider></ScreenActiveContext.Provider>)}
   </div>;
 }

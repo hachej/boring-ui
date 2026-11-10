@@ -1485,7 +1485,7 @@ export const KIT_SLOTS = Object.freeze([
   'native-select-wrapper', 'pagination', 'pagination-content', 'pagination-ellipsis', 'pagination-item', 'pagination-link',
   'popover', 'popover-content', 'popover-description', 'popover-header', 'popover-title', 'popover-trigger', 'progress',
   'progress-indicator', 'progress-label', 'progress-track', 'progress-value', 'question-field', 'radio-group',
-  'radio-group-indicator', 'radio-group-item', 'scroll-area', 'scroll-area-scrollbar', 'scroll-area-thumb',
+  'radio-group-indicator', 'radio-group-item', 'screen-body', 'scroll-area', 'scroll-area-scrollbar', 'scroll-area-thumb',
   'scroll-area-viewport', 'select-content', 'select-group', 'select-item', 'select-label', 'select-scroll-down-button',
   'select-scroll-up-button', 'select-separator', 'select-trigger', 'select-value', 'separator', 'sheet', 'sheet-close',
   'sheet-content', 'sheet-description', 'sheet-footer', 'sheet-header', 'sheet-overlay', 'sheet-portal', 'sheet-title',
