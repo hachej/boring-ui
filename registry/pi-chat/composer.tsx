@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, ClipboardEvent, ComponentProps, DragEvent, KeyboardEvent, ReactNode, Ref } from 'react';
-import { AlertCircleIcon, FileTextIcon, Loader2Icon, MessageSquarePlusIcon, XIcon } from '../_shared/icons';
-import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentMedia, AttachmentTitle } from '@/components/ui/attachment';
+import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent, ReactNode, Ref } from 'react';
+import { FileTextIcon, Loader2Icon, MessageSquarePlusIcon, XIcon } from '../_shared/icons';
+import { AttachmentAction } from '@/components/ui/attachment';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -13,16 +13,11 @@ import { hasMention, isLongPaste, kindMentionDraft, mentionedPaths, mentionKind,
 import type { PasteToFile, SlashItem } from '@hachej/boring-ui-kit/chat-text';
 import type { AttachmentsConfig, MentionsConfig, PastedText, SlashConfig } from './config';
 import { useChatText } from './labels';
+import { AttachmentChips, Chip, RemoveChip, thumbnail, UploadChips } from '../_shared/attachment-chips';
+export { thumbnail } from '../_shared/attachment-chips';
 import { cn } from '../utils/utils';
 
 export interface ComposerAttachment { readonly id: string; readonly name: string; readonly mimeType: string; readonly data: string }
-
-const SAFE_IMAGE = /^image\/(png|jpe?g|gif|webp)$/;
-const BASE64 = /^[A-Za-z0-9+/=\s]+$/;
-/** A data URL for a thumbnail, only for common image types and well-formed base64. */
-export function thumbnail(mimeType: string, data: string): string | undefined {
-  return SAFE_IMAGE.test(mimeType) && BASE64.test(data) ? `data:${mimeType};base64,${data}` : undefined;
-}
 
 /**
  * Where an image part is drawn from: its bytes as a data URL, or, for a part the host sent as a link (`data: ''` and a `url`, which the
@@ -142,22 +137,6 @@ function AnnotateButton({ feedback, disabled }: { readonly feedback: ComposerFee
     aria-label={labels.annotate} title={labels.annotateHint} onPressedChange={() => feedback.annotate()}>
     <MessageSquarePlusIcon data-icon="inline-start" aria-hidden="true" />
   </Toggle>;
-}
-
-/**
- * One chip above the text (a mention, an upload, an attachment or the notes count) as the host's shadcn Attachment. The remove
- * buttons keep a 44px touch target on coarse pointers; negative margins let it extend beyond the chip instead of growing it.
- */
-function Chip({ media, image = false, label, actions, ...props }: ComponentProps<typeof Attachment> & { readonly media: ReactNode; readonly image?: boolean; readonly label: ReactNode; readonly actions?: ReactNode }) {
-  return <Attachment size="xs" role="listitem" {...props}>
-    <AttachmentMedia variant={image ? 'image' : 'icon'}>{media}</AttachmentMedia>
-    <AttachmentContent><AttachmentTitle>{label}</AttachmentTitle></AttachmentContent>
-    {actions && <AttachmentActions className="max-md:-my-2.5 pointer-coarse:-my-2.5">{actions}</AttachmentActions>}
-  </Attachment>;
-}
-
-function RemoveChip({ label, onClick }: { readonly label: string; readonly onClick: () => void }) {
-  return <AttachmentAction aria-label={label} title={label} onClick={onClick}><XIcon aria-hidden="true" /></AttachmentAction>;
 }
 
 /** The count chip: how many notes go with the next message, and a way to drop them. */
@@ -376,23 +355,8 @@ export function Composer(props: ComposerProps) {
           actions={<RemoveChip label={labels.remove(label)} onClick={() => props.onText(removeMention(props.text, path))} />} />;
       })}
     </div>}
-    {(props.uploads?.length ?? 0) > 0 && <div role="list" data-testid="uploads" aria-label={labels.uploads} className="contents">
-      {props.uploads!.map(item => <Chip key={item.id} data-testid="upload-chip" state={item.state === 'failed' ? 'error' : 'uploading'} data-state={item.state} title={item.error ?? item.name} className="max-w-full md:max-w-[20rem]"
-        media={item.state === 'failed' ? <AlertCircleIcon className="text-destructive" aria-hidden="true" /> : <Loader2Icon className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
-        label={item.state === 'failed' ? labels.uploadFailed(item.name, item.error) : labels.uploading(item.name)}
-        actions={<>
-          {item.cancel && <RemoveChip label={labels.restorePaste} onClick={() => item.cancel!()} />}
-          {item.state === 'failed' && <RemoveChip label={labels.dismiss(item.name)} onClick={() => props.onDismissUpload?.(item.id)} />}
-        </>} />)}
-    </div>}
-    {attachments.length > 0 && <div role="list" data-testid="attachments" aria-label={labels.attachments} className="contents">
-      {attachments.map(attachment => {
-        const src = thumbnail(attachment.mimeType, attachment.data);
-        return <Chip key={attachment.id} data-testid="attachment" className="max-w-full md:max-w-[14rem]" image={!!src}
-          media={src ? <img src={src} alt="" /> : <FileTextIcon aria-hidden="true" />} label={attachment.name}
-          actions={<RemoveChip label={labels.remove(attachment.name)} onClick={() => props.onRemoveAttachment(attachment.id)} />} />;
-      })}
-    </div>}
+    <UploadChips items={props.uploads ?? []} words={labels} onDismiss={props.onDismissUpload} />
+    <AttachmentChips items={attachments} words={labels} onRemove={props.onRemoveAttachment} />
   </>;
   const pill = layout === 'pill';
   const textareaEl = <InputGroupTextarea ref={setRef} data-testid="composer-input" aria-label={labels.messageInput} rows={1} value={text} disabled={disabled}
