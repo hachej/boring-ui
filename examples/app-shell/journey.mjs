@@ -1304,12 +1304,12 @@ try {
       await browser.screenshot(`d2047-header-${where.replace(/\W+/g, '-')}.png`);
     };
     await browser.emulate('phone');
-    await browser.send('Page.navigate', { url: `${app.url}?app=fitness&composer=content` });
+    await browser.send('Page.navigate', { url: `${app.url}?app=fitness&composer=content&header=long` });
     await live();
-    await check('390 touch composer=content', true);
-    await browser.send('Page.navigate', { url: app.url });
+    await check('390 touch composer=content, a long heading', true);
+    await browser.send('Page.navigate', { url: `${app.url}?app=fitness&header=long` });
     await live();
-    await check('390 touch composer unset', true);
+    await check('390 touch composer unset, a long heading', true);
     await browser.emulate('desktop');
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
     await browser.send('Page.navigate', { url: `${app.url}?app=fitness&composer=content` });
