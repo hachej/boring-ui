@@ -10,7 +10,8 @@
   "registryDependencies": [
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-voice.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-voice.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json"
   ],
   "files": [
     {
