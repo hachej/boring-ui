@@ -127,7 +127,7 @@ test('390 touch: a back button before the title leaves a small gap, not the bare
 
 test('the stub tab icons are sized by the kit (size-4), not giant circles', { skip, timeout: 120000 }, async () => {
   await mount('screen=Padded', views[0]);
-  const size = await browser.evaluate(`Math.max(...[...document.querySelectorAll('[data-testid=app-shell] svg[data-icon]')].filter(svg => svg.closest('[data-slot=sidebar]')).map(svg => svg.getBoundingClientRect().width))`);
+  const size = await browser.evaluate(`Math.max(...[...document.querySelectorAll('[data-testid=app-shell] svg[data-icon]')].map(svg => svg.getBoundingClientRect().width))`);
   assert.ok(size > 0 && size <= 20, `nav icons are at most 20px: ${size}`);
 });
 
