@@ -386,6 +386,7 @@ try {
     };
     assert.deepEqual(await browser.evaluate(plusDots), ['Nuit à noter'], 'closed bar: « Plus » shows the dot');
     assert.deepEqual(await plusNames(), ['Plus, Nuit à noter'], 'closed bar: the tab is named « Plus, Nuit à noter », a pause between the word and the dot');
+    assert.equal(await browser.evaluate(`${q('[data-testid=tab-plus]')}.textContent.trim()`), 'Plus', 'the pause is for screen readers only: the visible text stays « Plus »');
     await tap('[data-testid=tab-plus]');
     await browser.until('the Plus sheet', `${openSheets} === 1 && !!${q('[data-testid=plus-objectifs]')}`);
     await pause(700);

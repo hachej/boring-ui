@@ -55,8 +55,8 @@ export function splitNav<T>(items: readonly T[]): { readonly tabs: readonly T[];
 const DOT_TONE = { info: 'bg-info', success: 'bg-success', warning: 'bg-warning', destructive: 'bg-destructive' } as const;
 
 /** A state dot: a plain 8px span in the tone's token, named by its label. Its classes only place it. */
-// A hidden comma before the dot gives screen readers a pause: the item reads « Plus, Nuit à noter », not « Plus Nuit à noter ».
-const Dot = ({ badge, className }: { readonly badge: NavBadge; readonly className?: string }) => <><span className="sr-only">, </span><span role="img" aria-label={badge.label} data-testid="nav-badge" className={`inline-block size-2 shrink-0 rounded-full ${DOT_TONE[badge.tone]} ${className ?? ''}`} /></>;
+// A hidden comma before the dot gives screen readers a pause: the item reads « Plus, Nuit à noter », not « Plus Nuit à noter ». It is generated content, so the item's textContent stays « Plus ».
+const Dot = ({ badge, className }: { readonly badge: NavBadge; readonly className?: string }) => <><span className="sr-only before:content-[',_']" /><span role="img" aria-label={badge.label} data-testid="nav-badge" className={`inline-block size-2 shrink-0 rounded-full ${DOT_TONE[badge.tone]} ${className ?? ''}`} /></>;
 
 /** Publishes the bar's measured height as `--app-shell-tabbar` on the document root (the drawer is portaled, so the shell root is too high up to reach it). */
 function useTabbarHeight(bar: { readonly current: HTMLElement | null }, shown: boolean): void {
