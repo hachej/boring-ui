@@ -1,5 +1,7 @@
 # Unreleased
 
+- **AWS interpreter env: file operations no longer follow a link swapped in by the interpreter (`@hachej/boring-execution/aws-code-interpreter`; security fix, no API change; D-2087).** Every file operation walks the host's mount by directory fds with O_NOFOLLOW instead of checking a path then opening it, so code in the interpreter cannot race a directory into a link to outside the folder. Links inside the folder still resolve. Needs Linux `/proc/self/fd`: elsewhere file operations fail with `not_supported`. Nothing to change in hosts.
+
 # Migrating to 0.4.80
 
 - **`useAgentBarChat(controller, { actions })`: drive `AgentBar` from the chat controller (`agent-bar`; additive; D-2085).** New file `use-agent-bar-chat.ts` in the `agent-bar` item, imported from `components/agent-bar/use-agent-bar-chat`. It reads the controller PiChat takes (its own `subscribe`/`getSnapshot`, no second subscription) and returns `question` (the pending `ask_user` as `AgentQuestionData` for `AgentBar question`, answered through `actions.answer`, i.e. `createRemoteChat().remote.answer`, as a `QuestionCard` does), `status` (props for `AgentStatus`: working with `onCancel` stopping the run, then done) and `onSend` (for `AgentBar onSend`). Re-sync `agent-bar` (`registry:build` refreshes `public/r`). Test: `test/ui/agent-bar-chat.test.mjs`; see `features/agent-bar.md`.
