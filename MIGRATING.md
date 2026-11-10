@@ -1,5 +1,7 @@
 # Unreleased
 
+- **app-shell nav dot (D-2040 note):** a nav item with a badge now reads « Label, badge » to screen readers (a hidden comma before the dot), e.g. « Plus, Nuit à noter ». Nothing to change in apps; tests that match the exact accessible name gain the comma.
+
 - **« Plus » keeps its name while a hidden screen is on show (`app-shell`; visible change, no API change; D-2040).** On a phone tab bar with an overflow, the « Plus » slot used to take the active hidden item's icon and label, so a hidden item's dot sat next to another screen's name. The slot now always shows the Ellipsis icon and `text.more` (« Plus »), selected while a hidden screen is on show; the header already names that screen. An app or test that read the active hidden item's label from the `tab-plus` tab reads the header title instead.
 
 - **`agent-bar`: `historyBadge={{ label }}` puts a dot on the history arrow (additive; D-1978 part 2).** Optional; no dot without it. The dot is `bg-primary`, 8px, `role="img"` with `label` as its name.
