@@ -8,11 +8,11 @@
     "react-dom@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.79/r/pi-app.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.79/r/pi-ambient.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.79/r/app-shell.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.79/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.79/r/_shared.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-app.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-ambient.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/app-shell.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
   ],
   "files": [
     {
