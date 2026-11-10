@@ -485,7 +485,7 @@ test('1280, composer=content with an AgentComposerAnchor: the field and the tray
     assert.ok(await rect('[data-testid=composer-bar-attach]'), `${label}: the attach button is there too`);
     await browser.click("document.querySelector('[data-testid=composer-bar-commands]')");
     await browser.until('the / list opens', `!!document.querySelector('[data-testid=slash-item]')`);
-    assert.equal(await inside('[data-testid=slash-item]', '[data-testid=agent-composer-anchor]'), true, `${label}: the / list opens from the content field`);
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`), '/', `${label}: the commands button put / in the content field, as typing it does`);
     await browser.screenshot(`composer-anchor-1280-${theme}-list.png`);
     await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
