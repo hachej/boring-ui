@@ -304,6 +304,114 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
   });
 }
 
+// D-1978 slice 2: the question card above the bar, answered by a tap or from the bar (boards Demande, Bascule, Bascule2, Bascule3, Question).
+const byText = text => `[...document.querySelectorAll('[data-testid=agent-question] button')].find(node => node.textContent.trim() === ${JSON.stringify(text)})`;
+const pressText = text => touch ? browser.tap(byText(text)) : browser.click(byText(text));
+const answered = () => browser.evaluate(`JSON.stringify(window.__answered)`).then(JSON.parse);
+const card = `document.querySelector('[data-testid=agent-question]')`;
+const hasCard = () => browser.evaluate(`!!${card}`);
+
+for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1280, 'dark']]) {
+  test(`the question card is answered by a tap or from the bar (${width}, ${theme})`, { skip, timeout: 240000 }, async () => {
+    const at = `${width}-${theme}`;
+    const floor = width === 390 ? 44 : 36;
+    await open(width, theme, 'question=1');
+    assert.equal(await hasCard(), true, 'the question card shows above the bar');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-history-badge]')`), null, 'no dot without historyBadge');
+    await open(width, theme, 'question=1&badge=1');
+    assert.equal(await browser.evaluate(`(() => { const dot = document.querySelector('[data-testid=agent-bar-history-badge]'); return !!dot && dot.getAttribute('role') === 'img' && dot.getAttribute('aria-label') === 'Question en attente' && dot.parentElement.querySelector('button').getAttribute('aria-label') === 'Historique' && Math.round(dot.getBoundingClientRect().width) === 8; })()`), true, 'the history arrow carries the 8px dot');
+    await shot(`question-badge-${at}`);
+    await open(width, theme, 'question=1');
+    assert.equal(await browser.evaluate(`${card}.querySelector('[data-testid=agent-question-step]').textContent`), 'Tarte · 1 sur 2');
+    assert.equal(await browser.evaluate(`${card}.querySelector('h2').textContent`), 'D’où vient la tarte ?');
+    assert.equal(await browser.evaluate(`${card}.querySelector('[data-testid=agent-question-hint]').textContent`), 'ou réponds avec tes mots, dans la barre ↓');
+    for (const choice of ['Boulangerie', 'Maison', 'Supermarché', 'Plus tard', 'Suivant']) assert.equal(await browser.evaluate(`!!(${byText(choice)})`), true, `${choice} button`);
+    assert.equal(await browser.evaluate(`${byText('Boulangerie')}.getAttribute('aria-pressed')`), 'true', 'one choice is preselected');
+    assert.equal(await browser.evaluate(`${byText('Maison')}.getAttribute('aria-pressed')`), 'false');
+    // The field reads « Ou réponds ici » while the question is open.
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-input]').placeholder`), 'Ou réponds ici');
+    // The card comes from --agent-question, never a literal, and sits above the bar.
+    const look = await browser.evaluate(`(() => { const probe = document.createElement('i'); probe.style.backgroundColor = 'var(--agent-question)'; document.body.append(probe); const cta = getComputedStyle(probe).backgroundColor; probe.remove();
+      const style = getComputedStyle(${card}); return { cta, bg: style.backgroundColor, radius: style.borderTopLeftRadius, shadow: style.boxShadow, ink: getComputedStyle(${byText('Boulangerie')}).backgroundColor, quiet: getComputedStyle(${byText('Maison')}).backgroundColor }; })()`);
+    assert.equal(look.bg, look.cta, `the card takes the --agent-question variable: ${JSON.stringify(look)}`);
+    assert.equal(parseFloat(look.radius) > 12, true, `the card is rounded: ${look.radius}`);
+    assert.notEqual(look.ink, look.quiet, 'the selected choice differs from the others');
+    const cardBox = await rectOf(card), barBox = await rectOf(`document.querySelector('[data-testid=agent-bar]')`);
+    assert.equal(cardBox.y + cardBox.h <= barBox.y + 1, true, 'the card is above the bar');
+    if (width === 390) assert.equal(await browser.evaluate('document.scrollingElement.scrollWidth <= 390'), true, 'no horizontal scroll at 390');
+    for (const name of ['Boulangerie', 'Maison', 'Supermarché', 'Plus tard', 'Suivant']) {
+      const r = await rectOf(byText(name));
+      assert.equal(r.w >= floor && r.h >= floor, true, `${name} is ${r.w}x${r.h}, at least ${floor}`);
+    }
+    await shot(`question-1-${at}`);
+
+    // Tap another choice, « Plus tard », then « Suivant » answers with the selected choice and opens step 2.
+    await pressText('Maison');
+    assert.equal(await browser.evaluate(`${byText('Maison')}.getAttribute('aria-pressed')`), 'true');
+    assert.equal(await browser.evaluate(`${byText('Boulangerie')}.getAttribute('aria-pressed')`), 'false');
+    await pressText('Plus tard');
+    assert.equal(await browser.evaluate('window.__later'), 1);
+    await pressText('Suivant');
+    await browser.until('answered', `window.__answered.length === 1`);
+    assert.deepEqual(await answered(), [{ text: 'Maison', source: 'choice' }]);
+    await browser.until('step 2', `document.querySelector('[data-testid=agent-question-step]')?.textContent === 'Tarte · 2 sur 2'`);
+    assert.equal(await browser.evaluate(`${card}.querySelector('[data-testid=agent-question-answered]').textContent`), 'Boulangerie');
+    assert.equal(await browser.evaluate(`${byText('Normale')}.getAttribute('aria-pressed')`), 'true');
+    assert.equal(await browser.evaluate(`!!(${byText('Valider')}) && !(${byText('Suivant')})`), true, 'the last step says Valider');
+    await shot(`question-2-${at}`);
+
+    // Words typed in the bar answer the open question: onAnswer gets them, onSend does not.
+    await typeInto('C’est une tarte fine en fait');
+    await press('Envoyer');
+    await browser.until('answered from the bar', `window.__answered.length === 2`);
+    assert.deepEqual((await answered())[1], { text: 'C’est une tarte fine en fait', source: 'bar' });
+    assert.deepEqual(await sent(), [], 'the question took the text, onSend got nothing');
+    await browser.until('card closed', `!document.querySelector('[data-testid=agent-question]')`);
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-input]').placeholder`), 'Maintiens pour parler', 'the field is back once the question closes');
+    await typeInto('un café');
+    await browser.press('Enter');
+    await browser.until('sent after the question', `window.__sent.length === 1`);
+    assert.deepEqual(await sent(), [{ text: 'un café' }]);
+    assert.deepEqual(browser.problems, []);
+  });
+
+  test(`a confirm card answers at once, an answer card is not a bar question, and speech answers (${width}, ${theme})`, { skip, timeout: 240000 }, async () => {
+    const at = `${width}-${theme}`;
+    // Bascule2: « Oui, corrige » / « Non, normale », no Suivant; a tap answers.
+    await open(width, theme, 'question=3');
+    assert.equal(await browser.evaluate(`${card}.textContent.includes('Tarte fine : 230 kcal la part.')`), true);
+    assert.equal(await browser.evaluate(`${card}.textContent.includes('Tu as dit : « C’est une tarte fine en fait »')`), true);
+    assert.equal(await browser.evaluate(`!(${byText('Suivant')}) && !(${byText('Valider')}) && !(${byText('Plus tard')})`), true, 'no confirm button, no Plus tard');
+    await shot(`question-3-${at}`);
+    await pressText('Oui, corrige');
+    await browser.until('answered at once', `window.__answered.length === 1`);
+    assert.deepEqual(await answered(), [{ text: 'Oui, corrige', source: 'choice' }]);
+    // Question board: the answer card has rows and no hint, and the bar keeps its own words.
+    await open(width, theme, 'question=info');
+    assert.equal(await browser.evaluate(`${card}.querySelector('[data-testid=agent-question-hint]')`), null, 'no hint on an answer card');
+    assert.equal(await browser.evaluate(`${card}.textContent.includes('≈ 2 280 kcal') && ${card}.textContent.includes('CIQUAL + étiquettes · rien n’est noté')`), true);
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-input]').placeholder`), 'Maintiens pour parler');
+    const fit = await browser.evaluate(`(() => { const bar = document.querySelector('[data-testid=agent-bar]').getBoundingClientRect(); const card = ${card}.getBoundingClientRect(); return { bar: bar.bottom, card: card.top, height: innerHeight }; })()`);
+    if (width === 390) {
+      assert.equal(fit.bar <= fit.height && fit.bar > fit.height - 120, true, `the bar is pinned at the bottom of the viewport: ${JSON.stringify(fit)}`);
+      assert.equal(fit.card >= 120, true, `the card leaves the content visible above it: ${JSON.stringify(fit)}`);
+    }
+    await shot(`question-info-${at}`);
+    await pressText('Ajouter une part');
+    await browser.until('answer card action', `window.__answered.length === 1`);
+    assert.deepEqual(await answered(), [{ text: 'Ajouter une part', source: 'choice' }]);
+    // Speech answers too: hold the mic, release; the transcript goes to onAnswer.
+    if (theme === 'dark') return;
+    await open(width, theme, 'question=1');
+    await browser.evaluate(`document.querySelector('[data-testid=agent-bar]').scrollIntoView({ block: 'end' })`);
+    const gesture = await hold(label('Parler'));
+    await gesture.up(0, 0);
+    await browser.until('spoken answer', `window.__answered.length === 1`);
+    assert.deepEqual(await answered(), [{ text: spoken, source: 'bar' }]);
+    assert.deepEqual(await sent(), []);
+  });
+}
+
 // D-1978 slice 4: the words appear live while listening. A fictional stream plays interim then final results; not-yet-final words are dimmed (the muted token),
 // final words keep the text colour, and stopping puts only the final text in the field (what ↑ and the release send).
 for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1280, 'dark']]) {
