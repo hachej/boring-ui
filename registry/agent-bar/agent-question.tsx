@@ -69,13 +69,13 @@ export function AgentQuestion({ question, hint = true, labels, className }: Agen
     {question.details?.length ? <dl className="flex flex-col gap-1 text-sm">
       {question.details.map(row => <div key={row.label} className="flex justify-between gap-3"><dt>{row.label}</dt><dd className="font-semibold">{row.value}</dd></div>)}
     </dl> : null}
-    {question.footnote ? <p className="text-xs">{question.footnote}</p> : null}
     <div className="flex flex-wrap gap-2">
       {question.choices.map(choice => {
         const on = choice === selected;
         return <Button key={choice} type="button" variant="ghost" data-agent-bar="" data-choice="" data-selected={on ? '' : undefined} {...(confirm === null ? {} : { 'aria-pressed': on })} onClick={() => choose(choice)}>{choice}</Button>;
       })}
     </div>
+    {question.footnote ? <p className="text-xs">{question.footnote}</p> : null}
     {hint ? <p data-testid="agent-question-hint" className="text-xs">{words.hint}</p> : null}
     {confirm !== null || question.onLater ? <div className="flex items-center justify-between gap-2">
       {question.onLater ? <Button type="button" variant="ghost" data-agent-bar="" onClick={question.onLater}>{words.later}</Button> : <span />}

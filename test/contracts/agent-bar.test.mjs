@@ -367,7 +367,6 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     assert.deepEqual((await answered())[1], { text: 'C’est une tarte fine en fait', source: 'bar' });
     assert.deepEqual(await sent(), [], 'the question took the text, onSend got nothing');
     await browser.until('card closed', `!document.querySelector('[data-testid=agent-question]')`);
-    assert.equal(await browser.evaluate(`(() => { const note = [...${card}.querySelectorAll('p')].find(node => node.textContent.includes('CIQUAL')); const first = ${card}.querySelector('button'); return !!note && !!first && !!(note.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING); })()`), true, 'the footnote sits above the actions (Question board)');
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-input]').placeholder`), 'Maintiens pour parler', 'the field is back once the question closes');
     await typeInto('un café');
     await browser.press('Enter');
@@ -389,6 +388,8 @@ for (const [width, theme] of [[390, 'light'], [390, 'dark'], [1280, 'light'], [1
     assert.deepEqual(await answered(), [{ text: 'Oui, corrige', source: 'choice' }]);
     // Question board: the answer card has rows and no hint, and the bar keeps its own words.
     await open(width, theme, 'question=info');
+    await browser.until('answer card footnote', `[...document.querySelectorAll('[data-testid=agent-question] p')].some(node => node.textContent.includes('CIQUAL'))`);
+    assert.equal(await browser.evaluate(`(() => { const note = [...${card}.querySelectorAll('p')].find(node => node.textContent.includes('CIQUAL')); const first = ${card}.querySelector('button'); return !!note && !!first && !!(note.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING); })()`), true, 'the footnote sits above the actions (Question board)');
     assert.equal(await browser.evaluate(`${card}.querySelector('[data-testid=agent-question-hint]')`), null, 'no hint on an answer card');
     assert.equal(await browser.evaluate(`${card}.textContent.includes('≈ 2 280 kcal') && ${card}.textContent.includes('CIQUAL + étiquettes · rien n’est noté')`), true);
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-input]').placeholder`), 'Maintiens pour parler');

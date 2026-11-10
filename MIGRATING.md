@@ -1,6 +1,5 @@
 # Unreleased
 
-- **`agent-bar`: the question card's `footnote` renders above the choices, not below them (D-1978).** Matches the Question board: the note, then the actions. Only a card that passes `footnote` changes.
 - **`agent-bar`: `historyBadge={{ label }}` puts a dot on the history arrow (additive; D-1978 part 2).** Optional; no dot without it. The dot is `bg-primary`, 8px, `role="img"` with `label` as its name.
 - **`agent-bar`: a question card above the bar, answered by a tap or from the bar (additive; D-1978 part 2).** `AgentBar` takes `question={{ title, step, choices, preselected, onAnswer, onLater }}`: a card filled with `--agent-question` and inked with `--agent-question-foreground` (they fall back to `--accent` and `--accent-foreground`; an app sets them in its theme, e.g. `--agent-question: var(--cta)`) with the choices as chips, « Plus tard » and « Suivant » (`submit` renames it, `null` answers on tap). While it is open the field reads « Ou réponds ici » and text sent from the bar goes to `question.onAnswer({ text, source: 'bar' })`, not `onSend`. New file `agent-question.tsx` (`AgentQuestion` is exported alone too); new French defaults `later`, `next`, `hint`, `answerHere` in `agentBarLabels`. Re-run `npx shadcn add @boring-ui/agent-bar`.
 # Migrating to 0.4.76
