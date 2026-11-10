@@ -29,4 +29,5 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Pattern blocks | KPI stat, list row, empty state, page header, data table | [patterns.md](patterns.md) |
 | Space overview blocks | SpaceCard and WiringChips | [space-overview.md](space-overview.md) |
 | Agent bar | AgentBar (field, mic, tap to listen, hold to talk, quoted chip) and AgentStatus | [agent-bar.md](agent-bar.md) |
+| Conversation log | ConversationLog, the sheet of the bar's history arrow (entries, labels, focus) | [conversation-log.md](conversation-log.md) |
 | Atlas | the screens-and-states manifest, its schema and `atlas --check` | [atlas.md](atlas.md) |
