@@ -1,13 +1,10 @@
 import { useLayoutEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppShell } from '../../../registry/app-shell/app-shell.tsx';
-import * as layerModule from '../../../registry/app-shell/agent-layer.tsx';
+import { AgentComposerAnchor as Anchor, useAgentLayer } from '../../../registry/app-shell/agent-layer.tsx';
 import { defaultChatIcons, defaultChatLabels } from '../../../registry/pi-chat/labels.ts';
 import { SlashPicker } from '../../../registry/pi-chat-slash/slash-menu.tsx';
 
-const { useAgentLayer } = layerModule;
-// D-2083: the kit's AgentComposerAnchor (absent before the fix: an empty stand-in, so the first run fails on the asserts, not on the bundle).
-const Anchor = layerModule.AgentComposerAnchor ?? (() => null);
 
 // D-1932: the real AppShell with an assistant over a fake controller (fictional text) whose composer sits under the page content (`?composer=content`)
 // or in the dock (`?composer=dock`, today's default). The layer's api is on window.__layer; what the controller sends is on window.__sent.
