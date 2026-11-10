@@ -1,7 +1,10 @@
 import { useLayoutEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppShell } from '../../../registry/app-shell/app-shell.tsx';
-import { useAgentLayer } from '../../../registry/app-shell/agent-layer.tsx';
+import { AgentComposerAnchor as Anchor, useAgentLayer } from '../../../registry/app-shell/agent-layer.tsx';
+import { defaultChatIcons, defaultChatLabels } from '../../../registry/pi-chat/labels.ts';
+import { SlashPicker } from '../../../registry/pi-chat-slash/slash-menu.tsx';
+
 
 // D-1932: the real AppShell with an assistant over a fake controller (fictional text) whose composer sits under the page content (`?composer=content`)
 // or in the dock (`?composer=dock`, today's default). The layer's api is on window.__layer; what the controller sends is on window.__sent.
@@ -44,17 +47,29 @@ const voiceMessage = params.get('voice') === '1' ? {
 // Local state of a screen: it must survive the shell crossing the wide breakpoint.
 const Counter = () => { const [count, setCount] = useState(0); return <button type="button" data-testid="counter" onClick={() => setCount(value => value + 1)}>Count {count}</button>; };
 const rows = Math.max(5, Number(params.get('rows') ?? 5));
-const Page = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+// The screen's own box scrolls (layout="screen"): a page that holds the anchor fills it (`h-full`) and scrolls its table itself, so the field stays docked at the window's bottom.
+// `?aside=1`: a 420px aside on the right inside the page, as an expert's page has; `?anchor=1` also puts the kit's AgentComposerAnchor in the main column, so the field sits under it.
+const withAnchor = params.get('anchor') === '1', withAside = withAnchor || params.get('aside') === '1';
+const Table = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
   <Probe />
   <h1 className="text-lg font-medium">Week of the market walk</h1>
   <Counter />
   {Array.from({ length: rows }, (_, index) => <p key={index} role="row" className="flex items-center justify-between rounded-md border p-3">Row {index + 1}<button type="button" data-testid={`cite-${index + 1}`} onClick={() => window.__layer.talkAbout('@meal:2026-10-27/lunch')}>Cite</button></p>)}
 </div>;
+const Page = () => withAside ? <div data-testid="split" className="flex h-full min-h-0 min-w-0">
+  <div data-testid="main-column" className="flex min-h-0 min-w-0 flex-1 flex-col"><Table />{withAnchor && <Anchor />}</div>
+  <aside data-testid="aside" className="w-[420px] shrink-0 overflow-y-auto border-l p-4"><h2 className="text-base font-medium">Demande de justificatifs</h2><p>Trois pièces fictives manquent au dossier Cèdre.</p></aside>
+</div> : <Table />;
 const nav = [{ id: 'week', label: 'Week', icon: Icon, render: () => <Page /> }];
 
 // `?pm=1`: a product-manager panel that renders nothing of its own, so the shell starts on it when the assistant is not there yet.
 const panel = params.get('pm') === '1' ? { config: {}, Provider: ({ children }) => children, Layout: ({ children, navigation }) => <div className="flex min-h-0 min-w-0 flex-1 flex-col"><div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>{navigation}</div> } : undefined;
-const agentSpec = { controller, icon: Icon, label: 'Assistant', chatProps: { mentions, attachments, title: 'Assistant', ...(voiceMessage ? { voiceMessage } : {}) } };
+// `?bar=1`: the chat's slash list, bar buttons and the app's own words for them, passed as chatProps (D-2064 through the content composer).
+const bar = params.get('bar') === '1' ? {
+  slash: { Picker: SlashPicker, commands: [{ name: 'relance', description: 'Rédiger une relance fictive.', run: api => api.setText('Relance du dossier Cèdre') }], skills: [] },
+  composerBarActions: true, labels: { ...defaultChatLabels, attachFiles: 'Ajouter des fichiers', commands: 'Actions du dossier' }, icons: defaultChatIcons,
+} : {};
+const agentSpec = { controller, icon: Icon, label: 'Assistant', chatProps: { mentions, attachments, title: 'Assistant', ...bar, ...(voiceMessage ? { voiceMessage } : {}) } };
 // `?person=a@example.org` signs a fictional person in; window.__person('b@example.org') switches the account without a remount.
 const Root = () => {
   const [person, setPerson] = useState(params.get('person'));
