@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.78
+
 - **`Composer barActions`: attach and commands as bar buttons (`pi-chat`; additive, off by default; D-2064).** New optional `Composer` prop `barActions` (and `PiChat composerBarActions`). On, "Attach files" and "Commands" are their own buttons left of the field, an outlined icon button and a labelled outlined button, named by `labels.attachFiles` and `labels.commands` (the app supplies the words, for example `commands: 'Actions du dossier'`); the commands button opens the same `/` list as typing `/`, the attach button opens the file picker, both 44px on touch. Take a photo stays in the `+` menu, which is not drawn when nothing is left in it. Off (the default) the `+` menu is exactly as before. Re-sync `pi-chat` (`registry:build` refreshes `public/r`). Test: `test/contracts/composer-bar-actions.test.mjs`; see `features/chat.md`.
 
 # Migrating to 0.4.77
