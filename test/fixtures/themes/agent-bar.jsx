@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import * as block from '../../../registry/agent-bar/agent-bar.tsx';
+import { SlashPicker } from '../../../registry/pi-chat-slash/slash-menu.tsx';
 
 const { AgentBar, AgentStatus, AgentQuestion } = block;
 
@@ -50,6 +51,14 @@ const stream = async sink => { window.__sink = sink; window.__stream.opened += 1
 const transcribe = async audio => { window.__transcribed.push(audio.size); await new Promise(done => setTimeout(done, params.get('slow') === '1' ? 1500 : 60)); return 'Au goûter une part de tarte aux pommes'; };
 const meals = [['Petit-déjeuner', 420, ['Flocons d’avoine 60 g', 'Lait demi-écrémé 200 ml']], ['Midi', 820, ['Riz cuit 200 g', 'Poulet grillé 150 g']], ['Goûter', 2, ['Tarte aux pommes · 1 part', 'Café noir 1 tasse']]];
 
+// D-2084 `?files=1`: the bar as a dossier composer, with `attachments` (a fake upload that keeps the name, window.__uploaded) and `slash` (one fictional command). Fictional French wording.
+window.__uploaded = [];
+const dossier = params.get('files') === '1' ? {
+  labels: { commands: 'Actions du dossier', attachFiles: 'Ajouter des fichiers' },
+  attachments: { upload: async files => { await new Promise(done => setTimeout(done, 150)); window.__uploaded.push(...files.map(file => file.name)); return files.map(file => ({ name: file.name, path: `uploads/${file.name}` })); } },
+  slash: { Picker: SlashPicker, commands: [{ name: 'relance', description: 'Rédiger une relance fictive.', run: api => api.setText('Relance du dossier Cèdre') }], skills: [] },
+} : {};
+
 const later = () => { window.__later += 1; };
 const cards = {
   '1': answer => ({ step: 'Tarte · 1 sur 2', title: 'D’où vient la tarte ?', choices: ['Boulangerie', 'Maison', 'Supermarché'], preselected: 'Boulangerie', onAnswer: answer, onLater: later }),
@@ -78,7 +87,7 @@ const Day = () => {
     <div data-testid="dock" className="flex shrink-0 flex-col gap-2 border-t bg-background px-4 pt-3 pb-6">
       {status ? <AgentStatus state={status} text={status === 'working' ? 'Max compte la tarte…' : 'Tarte vérifiée : 285 kcal'} onCancel={() => { window.__cancelled += 1; }} /> : null}
       {card === 'info' ? <AgentQuestion question={info} hint={false} /> : null}
-      <AgentBar {...(params.get('live') === '1' ? { stream } : { transcribe })} onSend={payload => { window.__sent.push(payload); }} historyOpen={open}
+      <AgentBar {...(params.get('live') === '1' ? { stream } : { transcribe })} onSend={payload => { window.__sent.push(payload); }} historyOpen={open} {...dossier}
         {...(params.get('badge') ? { historyBadge: { label: 'Question en attente' } } : {})}
         {...(card && card !== 'info' ? { question: cards[card](answer) } : {})}
         onHistory={() => { window.__history += 1; setOpen(value => !value); }}
