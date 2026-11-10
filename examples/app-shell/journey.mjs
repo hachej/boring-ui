@@ -1292,6 +1292,39 @@ try {
     await browser.screenshot('phone-hover-option-390.png');
   });
 
+  await step('D-2047 the agent trigger stays inside the screen and its right inset mirrors the header\'s left one: 390 touch with composer=content, 390 and 1280 with the composer unset', async () => {
+    // The header's left inset is where its first child starts; the trigger's right inset is the viewport width minus its right edge.
+    const geometry = `(() => { const h = document.querySelector('[data-testid=screen-header]'), t = ${q(TRIGGER)}; if (!h || !t) return null; const hr = h.getBoundingClientRect(), tr = t.getBoundingClientRect(), first = h.firstElementChild.getBoundingClientRect();
+      const cs = getComputedStyle(h); return { vw: innerWidth, header: [hr.x, hr.right], trigger: [tr.x, tr.right, tr.width], left: first.x, right: innerWidth - tr.right, padding: [cs.paddingLeft, cs.paddingRight], scroll: [document.documentElement.scrollWidth, h.scrollWidth, h.clientWidth], children: [...h.children].map(c => [c.dataset.testid ?? c.tagName, Math.round(c.getBoundingClientRect().x), Math.round(c.getBoundingClientRect().right)]) }; })()`;
+    const check = async (where, mirrored) => {
+      const g = await browser.evaluate(geometry);
+      assert.ok(g, `${where}: header and trigger present`);
+      const info = JSON.stringify(g);
+      assert.ok(g.trigger[1] <= g.vw, `${where}: the trigger is inside the viewport (right ${g.trigger[1]} <= ${g.vw}): ${info}`);
+      if (mirrored) assert.ok(g.trigger[2] >= 44, `${where}: the trigger keeps its 44px touch target: ${info}`);
+      if (mirrored) assert.ok(Math.abs(g.right - g.left) <= 1, `${where}: right inset ${g.right} within 1px of the left inset ${g.left}: ${info}`);
+      await browser.screenshot(`d2047-header-${where.replace(/\W+/g, '-')}.png`);
+    };
+    await browser.emulate('phone');
+    await browser.send('Page.navigate', { url: `${app.url}?app=fitness&composer=content&header=long` });
+    await live();
+    await check('390 touch composer=content, a long heading', true);
+    await browser.send('Page.navigate', { url: `${app.url}?app=fitness&header=long` });
+    await live();
+    await check('390 touch composer unset, a long heading', true);
+    await browser.emulate('desktop');
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await browser.send('Page.navigate', { url: `${app.url}?app=fitness&composer=content` });
+    await live();
+    await check('1280 composer=content', false);
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+    await check('1280 composer unset', false);
+    await browser.emulate('phone');
+    await browser.send('Page.navigate', { url: app.url });
+    await live();
+  });
+
   if (failed.length) console.log(`COLLECT: ${failed.length} failing step(s): ${failed.join(' | ')}`);
   console.log(browser.problems.length ? `page problems:\n${browser.problems.join('\n')}` : 'no page problems');
   assert.deepEqual(browser.problems.filter(p => !/Failed to load resource/.test(p)), []);

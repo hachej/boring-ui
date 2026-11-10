@@ -80,7 +80,11 @@ function Meals() {
 function WalkingDay() {
   // `?header=owned`: a screen that owns its row (leading controls after the trigger, sans title, 48 px).
   const owned = new URLSearchParams(location.search).get('header') === 'owned';
-  useScreenHeader(owned
+  // `?header=long` (D-2047): a screen whose own leading content is as wide as its text (a long heading, no title), as a dossier crumb is.
+  const long = new URLSearchParams(location.search).get('header') === 'long';
+  useScreenHeader(long
+    ? { title: '', leading: <div className="flex min-w-0 items-center gap-1.5"><h1 className="m-0 truncate text-base font-semibold">Dossier fictif de la Société Imaginaire des Marchés Inventés</h1></div>, dense: true, actions: [themeAction] }
+    : owned
     ? { title: 'Ma journée', leading: <span className="hidden items-center gap-1 md:flex"><Button variant="secondary" size="sm">Cabinet</Button><Button variant="ghost" size="sm">Urgences</Button></span>, titleFace: 'sans', dense: true, actions: [themeAction] }
     : { title: 'Ma journée', subtitle: 'mardi 13 octobre', actions: [themeAction] });
   return <ScreenBody bleed><List /></ScreenBody>;
@@ -204,7 +208,7 @@ function App() {
   // The app's router: a tab switch replaces the URL (a hash here) and adds no history entry.
   const onChange = (id: string) => { window.__routes.push(id); history.replaceState(history.state, '', `#${id}`); setRoute(id); };
   return <div id="app-root" className="contents">
-    <AppShell {...rail} layout="screen" title="Forme" nav={nav} agent={agent} panel={query.get('pmChat') === '1' ? stubPanelWith(manager.controller) : stubPanel} account={account} route={{ id: route, onChange }} />
+    <AppShell {...rail} {...(query.get('composer') === 'content' ? { composer: 'content' as const } : {})} layout="screen" title="Forme" nav={nav} agent={agent} panel={query.get('pmChat') === '1' ? stubPanelWith(manager.controller) : stubPanel} account={account} route={{ id: route, onChange }} />
     {docs && <DocumentSheet provider={docs} path={spec} onClose={() => setSpec(undefined)} onShowAll={() => onChange('fiches')} locale="fr" />}
   </div>;
 }
