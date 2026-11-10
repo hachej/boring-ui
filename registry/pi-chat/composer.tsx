@@ -402,13 +402,12 @@ export function Composer(props: ComposerProps) {
   const marked = props.markMentionQuery && mentionOpen && trigger ? <QueryBackdrop text={text} start={trigger.start} end={trigger.end} /> : null;
   // eslint-disable-next-line react-hooks/refs -- renderInput receives event callbacks, not ref values; an input calls them only on interaction
   const input = props.renderInput?.({ text, onText, onCaret: setCaret, onSend: () => { if (canSubmit && !menuOpen) props.onSend(); } }) ?? props.input ?? (props.placeholderContent || marked ? <div data-slot="composer-field" className="relative flex min-h-16 w-full min-w-0 flex-1">{marked}{textareaEl}{!text && props.placeholderContent && <span aria-hidden="true" data-slot="composer-placeholder" className="pointer-events-none absolute inset-x-3 top-2 text-xs text-muted-foreground">{props.placeholderContent}</span>}</div> : textareaEl);
-  const onAttach = canAttach ? () => fileInput.current?.click() : undefined, onCommands = items.length > 0 ? openCommands : undefined;
   const barActions = props.barActions === true;
   // With `barActions`, attach and commands are bar buttons; the "+" stays only when Take a photo is left in it.
   const plusHasItems = barActions ? canPhoto : canAttach || items.length > 0;
-  const plusMenu = plusHasItems && <PlusActions disabled={disabled || recording} textarea={inner} onAttach={barActions ? undefined : onAttach} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={barActions ? undefined : onCommands} />;
+  const plusButton = plusHasItems && <PlusActions disabled={disabled || recording} textarea={inner} onAttach={!barActions && canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={!barActions && items.length > 0 ? openCommands : undefined} />;
   // Off: the "+" alone, as before (same element position). On: the bar buttons first.
-  const plus = barActions && (onAttach || onCommands) ? <><BarActions disabled={disabled || recording} onAttach={onAttach} onCommands={onCommands} />{plusMenu}</> : plusMenu;
+  const plus = barActions && (canAttach || items.length > 0) ? <><BarActions disabled={disabled || recording} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onCommands={items.length > 0 ? openCommands : undefined} />{plusButton}</> : plusButton;
   // One child slot either way, so a composer without `start` keeps its exact markup (React ids included).
   const startAndPlus = props.start && !recording ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"

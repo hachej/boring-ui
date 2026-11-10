@@ -83,13 +83,13 @@ test('barActions: attach and commands are bar buttons left of the field; command
         if (mobile) for (const [name, rect] of [['attach', attach], ['commands', commands]]) assert.ok(rect.h >= 44 && rect.w >= 44, `${label}: ${name} is a 44px target, got ${rect.w}x${rect.h}`);
         assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-plus]') === null`), true, `${label}: no empty + menu when nothing is left in it`);
         await browser.screenshot(`composer-bar-${width}-${theme}.png`);
-        await browser.click('[data-testid=composer-bar-attach]');
+        await browser.click("document.querySelector('[data-testid=composer-bar-attach]')");
         assert.equal(await browser.evaluate('window.__picker'), 1, `${label}: attach opens the file picker`);
-        await browser.click('[data-testid=composer-bar-commands]');
+        await browser.click("document.querySelector('[data-testid=composer-bar-commands]')");
         await browser.until('the / list opens', `!!document.querySelector('[data-testid=slash-item]')`);
         assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`), '/', `${label}: commands puts / in the field, as typing it does`);
         await browser.screenshot(`composer-bar-${width}-${theme}-list.png`);
-        await browser.click('[data-testid=slash-item][data-name=relance]');
+        await browser.click("document.querySelector('[data-testid=slash-item][data-name=relance]')");
         await browser.until('the command ran', `document.querySelector('[data-testid=composer-input]').value === 'Relance du dossier Cèdre'`);
         // Off (the default): the + menu keeps attach and commands, no bar buttons.
         await browser.send('Page.navigate', { url: url(theme, '&barActions=off') });
