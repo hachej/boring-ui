@@ -292,7 +292,7 @@
         }
       },
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/touch-floor.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/touch-floor.json"
       ]
     },
     {
@@ -364,8 +364,8 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -386,8 +386,8 @@
       "title": "Markdown editor",
       "description": "A host-owned styled wrapper over the concrete borrowed Markdown controller.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
-        "@hachej/boring-files@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
+        "@hachej/boring-files@^0.4.81",
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "marked@^17.0.6",
@@ -543,8 +543,8 @@
       },
       "docs": "Create and own a MarkdownController from @hachej/boring-ui-kit/markdown. Pass it to MarkdownEditor. The wrapper does not acquire resources or dispose the controller. Check the repository release notes for available npm versions; local tarball tests do not establish registry availability.",
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ]
     },
     {
@@ -553,8 +553,8 @@
       "title": "HTML source and passive preview",
       "description": "Exact HTML source editing with a reconstructed passive preview and borrowed controller. Browser security qualification remains separate.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
-        "@hachej/boring-files@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
+        "@hachej/boring-files@^0.4.81",
         "react@^19.0.0",
         "react-dom@^19.0.0"
       ],
@@ -602,7 +602,7 @@
         }
       },
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/button.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/button.json"
       ]
     },
     {
@@ -611,8 +611,8 @@
       "title": "Pi chat",
       "description": "A complete Tailwind chat over the borrowed native chat controller: composer, messages, one collapsible activity block per turn (tool calls and reasoning), message queue, history and feedback cards for the opt-in feedback tool (lists, and Show offers that the host page resolves). Chat only: no layout. Owned, editable source; no AI SDK. The question, approval, sub-agent and artifact cards are separate items (pi-chat-question, pi-chat-approval, pi-chat-subagent, pi-artifacts); without them a question or an approval shows a \"waiting for your answer\" notice, a sub-agent call is an ordinary tool step and no artifact is offered. The optional pi-ambient and pi-workspace blocks build on it.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
-        "@hachej/boring-files@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
+        "@hachej/boring-files@^0.4.81",
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "@base-ui/react@1.9.0",
@@ -624,10 +624,10 @@
         "zod@^4.6.5"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/touch-floor.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/touch-floor.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -841,13 +841,13 @@
       "title": "Pi chat Markdown",
       "description": "Markdown for the chat's assistant replies: safe token-by-token rendering (raw HTML shown as text, no images fetched, http(s) links only), code blocks, tables, task lists and /command buttons. Plug it in with `renderText={markdownText}`; without it pi-chat shows replies as plain text.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
         "react@^19.0.0",
         "marked@^17.0.6",
         "entities@^9.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json"
       ],
       "files": [
         {
@@ -863,12 +863,12 @@
       "title": "Pi chat slash menu",
       "description": "The composer's `/` menu of commands and skills (and the Commands entry of the + menu). Plug it in with `slash={{ ...config, Picker: SlashPicker }}`; without it pi-chat has no `/` menu.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -887,8 +887,8 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -907,8 +907,8 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -924,13 +924,13 @@
       "title": "Pi chat voice messages",
       "description": "Tap-to-record voice messages: a compatibility export of the kit's chat-react/voice recorder hook, the composer's record button and the pending voice bubble, plus useHoldToRecord. Plug it in with `voiceMessage={{ ...config, ...voiceMessagePlugin }}`; without it pi-chat has no voice button.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -961,13 +961,13 @@
       "title": "Agent bar",
       "description": "The voice-first bar for an agent that works in the background: a pill with a history arrow, the field, a mic (tap to listen, hold to talk and release to send) and send, an optional quoted-row chip, AgentStatus, the one-line spinner or check above it, and the question card the agent asks above the bar (`question`: choices with one preselected, answered by a tap or from the bar). `useAgentBarChat(controller, { actions })` drives the bar, the question and the status from the chat controller PiChat takes. Dictation and the hold gesture are the kit's; the app supplies `transcribe` (or a live `stream`, which shows the words as they come) and `onSend`.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-voice.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-voice.json"
       ],
       "files": [
         {
@@ -1037,7 +1037,7 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1064,8 +1064,8 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1081,14 +1081,14 @@
       "title": "Pi chat question card",
       "description": "The human-in-the-loop question card for `ask_user` (choices, free text, answered state). Plug it in with `cards={{ question: QuestionCard }}`; without it pi-chat shows a \"waiting for your answer\" notice with no answer UI.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
         "react@^19.0.0",
         "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/inline-question.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/inline-question.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1104,13 +1104,13 @@
       "title": "Pi chat approval card",
       "description": "The Approve / Deny card for host tools wrapped with `requireApproval`. Plug it in with `cards={{ approval: ApprovalCard }}`; without it pi-chat shows a \"waiting for your answer\" notice with no answer UI.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
         "react@^19.0.0",
         "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1130,8 +1130,8 @@
         "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1152,14 +1152,14 @@
       "title": "Pi artifacts",
       "description": "Artifact descriptors, kinds and the artifact card that opens generated content in the host's panel. Plug it in with `artifacts={{ ...artifactCards, open, isOpen, kinds }}`; without it pi-chat offers no artifact. pi-app and the viewers import their artifact kinds and types from it.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
         "react@^19.0.0",
         "@earendil-works/pi-ai@~1.4.0",
         "@earendil-works/pi-durable@~1.4.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1183,17 +1183,17 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-markdown.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-slash.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-mentions.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-pickers.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-voice.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-attachments.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-question.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-approval.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-subagent.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-artifacts.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-markdown.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-slash.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-mentions.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-pickers.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-voice.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-attachments.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-question.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-approval.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-subagent.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-artifacts.json"
       ],
       "files": [
         {
@@ -1209,21 +1209,21 @@
       "title": "Pi ambient agent",
       "description": "AmbientChat, a compact floating agent bar that grows into a chat window over an existing page, and AgentNotifications, toasts over the kit's shared chat-react run notifications (with the one guarded browser Notification helper). A block over the pi-chat item; its in-window artifact panel uses the pi-workspace layout.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "@earendil-works/pi-durable@~1.4.0",
         "@earendil-works/pi-ai@~1.4.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-plugins.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-question.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-artifacts.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-workspace.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-plugins.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-question.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-artifacts.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-workspace.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1252,7 +1252,7 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json"
       ],
       "files": [
         {
@@ -1272,9 +1272,9 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/dock.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/dock.json"
       ],
       "files": [
         {
@@ -1300,8 +1300,8 @@
         "zod@^4.6.5"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-frame.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1345,9 +1345,9 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/mockup-viewer.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/mockup-viewer.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1398,7 +1398,7 @@
         }
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ]
     },
     {
@@ -1437,7 +1437,7 @@
         }
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ]
     },
     {
@@ -1446,7 +1446,7 @@
       "title": "Drawing viewer",
       "description": "DrawingViewer, drawingKind and describeDrawing: an Excalidraw (.excalidraw) or draw.io (.drawio) file, read-only, drawn by the tool's own renderer on a white page fitted to the shapes: Excalidraw's exportToSvg (its fonts served by the app, never its CDN) and the official diagrams.net viewer, vendored in the kit (@hachej/boring-ui-kit/drawio-viewer), in a sandboxed frame without network. Shown as an image, so nothing in the file runs; an unreadable file shows an inline error. onRead hands the shapes and arrows the renderer read (kind, place, size, label, colours, from and to). Each renderer loads the first time a drawing of its format opens; the kind is not in the pi-app-kinds default list, so apps without drawings install nothing.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
         "react@^19.0.0",
         "@excalidraw/excalidraw@0.18.1"
       ],
@@ -1488,7 +1488,7 @@
         }
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ]
     },
     {
@@ -1500,9 +1500,9 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/diagram-viewer.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/data-table.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/diagram-viewer.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/data-table.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1567,17 +1567,17 @@
       "title": "Board viewer",
       "description": "A board@1 artifact kind for *.board.json. Lazy native tldraw projection of maquette screens, sandboxed HTML mock-ups, goto arrows and notes. Conditional board-file autosave; phone viewing without accidental frame edits. Hosts supply their resource client, asset URLs and license key.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
-        "@hachej/boring-files@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
+        "@hachej/boring-files@^0.4.81",
         "react@^19.0.0",
         "tldraw@5.6.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/maquette-viewer.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/mockup-viewer.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-artifacts.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/maquette-viewer.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/mockup-viewer.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-artifacts.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1613,16 +1613,16 @@
       "title": "Shared chat",
       "description": "Optional multi-party host log presentation over PiChat's generic composition seams. No agent runtime or speaking policy.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-plugins.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-markdown.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-mentions.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-plugins.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-markdown.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-mentions.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1678,21 +1678,21 @@
       "title": "Pi agent app",
       "description": "AgentWorkspace: a whole agent page in one component. Left: the sessions pane (search, New, rename, archive, delete; collapsible, a drawer on a narrow screen). Center: PiChat. Right: the artifact panel (versions, file viewer, auto-open of new artifacts) in the ArtifactWorkspace panel, a full-screen sheet on a phone; it draws files with the kinds the app passes in artifactKinds (defaultKinds of the pi-app-kinds item is the default list). layout=\"embedded\" drops the left column for one compact top bar (title, History, Library, New) that joins an app-shell screen header. Props are data and callbacks; hooks for the conversations handler (useConversations), the chat transport (useRemoteChat) and saved resources (useSaved).",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
-        "@hachej/boring-files@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
+        "@hachej/boring-files@^0.4.81",
         "react@^19.0.0",
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-plugins.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-artifacts.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-workspace.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-frame.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/file-tree.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-plugins.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-artifacts.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-workspace.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/file-tree.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1778,16 +1778,16 @@
       "title": "Pi agent app default kinds",
       "description": "defaultKinds({ locale, comments }): the artifact kinds the pi-app item draws with by default, in order: maquette, diagram, mock-up and records, then Markdown, HTML, SVG, CSV, image and PDF (documentKinds). Pass it as AgentWorkspace's artifactKinds (or ViewerOptions.kinds), with an app's own kinds before it. Each kind loads its viewer on first open.",
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-app.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-markdown.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-html.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-image.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-pdf.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-code.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/maquette-viewer.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/diagram-viewer.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/mockup-viewer.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/record-viewer.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-app.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-markdown.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-html.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-image.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-pdf.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-code.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/maquette-viewer.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/diagram-viewer.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/mockup-viewer.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/record-viewer.json"
       ],
       "files": [
         {
@@ -1807,11 +1807,11 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-app.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-ambient.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/app-shell.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-app.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-ambient.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/app-shell.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -1827,9 +1827,9 @@
       "title": "Feedback",
       "description": "Feedback from the chat composer: one Feedback button starts feedback mode on the application page (hover, click to pin a numbered note, hold ⌥ to use the app, optional voice), and one chip carries the notes to the next message. FeedbackBar, NoteBubble, FeedbackChip with its review, useComposerFeedback for the pi-chat composer, and PickerOverlay styles. Optional, not mounted by default: PointButton, AnnotateSheet, FeedbackList and FeedbackReport. Picking, masking, anchoring and placement stay in @hachej/boring-feedback/page and /ui, so restyling cannot weaken them.",
       "dependencies": [
-        "@hachej/boring-feedback@^0.4.80",
-        "@hachej/boring-ui-kit@^0.4.80",
-        "@hachej/boring-files@^0.4.80",
+        "@hachej/boring-feedback@^0.4.81",
+        "@hachej/boring-ui-kit@^0.4.81",
+        "@hachej/boring-files@^0.4.81",
         "react@^19.0.0",
         "react-dom@^19.0.0"
       ],
@@ -2328,11 +2328,11 @@
         }
       },
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/touch-floor.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-voice.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/touch-floor.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-voice.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ]
     },
     {
@@ -2341,22 +2341,22 @@
       "title": "App shell: layouts, list/detail and agent layer",
       "description": "AppShell with three layouts. B \"workspace\" puts a ListDetail on a screen (phone: the list, then the detail as a stack step with Back; wide: a 20rem list and the detail side by side, sidebar as an icon rail). C \"chat\" wraps the app's own AgentWorkspace (untouched, passed as the nav item's render; install the pi-app item yourself) in the same sidebar, account menu and header; it takes no shell agent. A \"screen\": one screen at a time, every screen kept mounted. On a phone bottom tabs (at most four; more give three plus a « Plus » sheet) and an avatar button that opens the account sheet; on a wide screen the shadcn sidebar (icon rail, NavUser). One header per screen through useScreenHeader (title, subtitle, back, up to two actions, the rest behind « … »). The account menu holds « Améliorer l'app » (the improve agent), the app's own entries and sign out. AppSheet is the one bottom sheet (one open at a time, Back closes it). It mounts the AgentLayer: one agent's PiChat above the app (phone: a drawer with peek, half and full snap points; wide: a right panel), the improve agent in the same layer, optional push-to-talk and point mode. Also useAgentContext and readAgentContext (the screen on show travels as `context` with each submit) and useBackLayer, the one Back manager. Built on explicitly pinned Base UI drawer and dropdown-menu recipes, plus the sidebar and avatar of the host's own shadcn style.",
       "dependencies": [
-        "@hachej/boring-feedback@^0.4.80",
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-feedback@^0.4.81",
+        "@hachej/boring-ui-kit@^0.4.81",
         "@base-ui/react@^1.9.0",
         "react@^19.0.0",
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/touch-floor.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-plugins.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat-voice.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/dock.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/feedback.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/touch-floor.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-plugins.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat-voice.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/dock.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/feedback.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "css": {
         "@layer base": {
@@ -2501,16 +2501,16 @@
       "title": "Viewer frame",
       "description": "The standard viewer top bar every viewer draws in (title, status, viewer controls, Refresh, Share, Copy, Download, Open in new tab, Close, overflow menu), its window labels, download, share and media helpers and the sandboxed interactive HTML frame. The viewers' styles live here. Each viewer is its own item (viewer-markdown, viewer-html, viewer-image, viewer-pdf, viewer-code) with a cheap kind module and a view loaded on first open.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
         "react@^19.0.0",
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/touch-floor.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/version-history.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/touch-floor.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/version-history.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -2932,7 +2932,7 @@
       "title": "Markdown viewer",
       "description": "The Markdown kind: `markdownKind` (match, loader) and `MarkdownPane`, the tiptap editor with a formatting toolbar and prose styling over the kit's revisioned Markdown controller, in the viewer frame. The pane and tiptap load the first time a Markdown file opens.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
         "react@^19.0.0",
         "marked@^17.0.6",
         "@tiptap/core@^3.31.4",
@@ -2949,11 +2949,11 @@
         "@tiptap/extension-floating-menu@^3.31.4"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-frame.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/markdown-editor.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/markdown-editor.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -2974,14 +2974,14 @@
       "title": "HTML viewer",
       "description": "The HTML kind: `htmlKind` (match, loader) and `HtmlPane`, the passive HTML preview (sandboxed when the host opts in) and source editor, in the viewer frame. The pane loads the first time an HTML file opens.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-frame.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -3005,9 +3005,9 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-frame.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -3033,14 +3033,14 @@
       "title": "PDF viewer",
       "description": "The PDF kind: `pdfKind` (match, loader) and `PdfPane` in the viewer frame (the browser's viewer, or pdf.js pages where there is none), and LocalFileViewer for browser-only files. The pane loads the first time a PDF opens.",
       "dependencies": [
-        "@hachej/boring-files@^0.4.80",
+        "@hachej/boring-files@^0.4.81",
         "react@^19.0.0",
         "pdfjs-dist@6.5.438"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-frame.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-image.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-image.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -3074,9 +3074,9 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-frame.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -3103,12 +3103,12 @@
       "description": "Deprecated aggregate: installs every viewer item (viewer-frame, viewer-markdown, viewer-html, viewer-image, viewer-pdf, viewer-code). Add the items you use instead.",
       "files": [],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-frame.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-markdown.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-html.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-image.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-pdf.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-code.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-markdown.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-html.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-image.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-pdf.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-code.json"
       ]
     },
     {
@@ -3121,8 +3121,8 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -3138,8 +3138,8 @@
       "title": "Consumer task-list viewer",
       "description": "A consumer-defined task-list schema and controller over the shared text buffer, with a restylable borrowed React renderer.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
-        "@hachej/boring-files@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
+        "@hachej/boring-files@^0.4.81",
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "zod@^4.6.5"
@@ -3214,11 +3214,11 @@
       "title": "Version history rows",
       "description": "Shared view-only version rows and menu metadata with relative time, provenance and Current. No file reads, publication or restoration.",
       "dependencies": [
-        "@hachej/boring-files@^0.4.80",
+        "@hachej/boring-files@^0.4.81",
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/button.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/button.json"
       ],
       "files": [
         {
@@ -3234,14 +3234,14 @@
       "title": "File tree",
       "description": "Browse, search, upload, rename, move, delete and inspect retained versions through one revisionProvider binding. Uses the consumer's shadcn Button, dropdown-menu and dialog with shared version-history rows; Base UI style only.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
-        "@hachej/boring-files@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
+        "@hachej/boring-files@^0.4.81",
         "react@^19.0.0",
         "lucide-react@^1.51.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/version-history.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/version-history.json"
       ],
       "files": [
         {
@@ -3258,21 +3258,21 @@
       "title": "Documents: the Library, a file and its revisions",
       "description": "The workspace's Library as the list, the chosen file in its viewer and its retained revisions beside it (an older one opens read-only). DocumentSheet opens one document over the app for a host's « Voir la fiche », with an optional « Toutes les fiches ». Every read goes through one revisionProvider binding.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
-        "@hachej/boring-files@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
+        "@hachej/boring-files@^0.4.81",
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-artifacts.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-app.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-app-kinds.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/app-shell.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/file-tree.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-frame.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-image.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/viewer-pdf.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-artifacts.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-app.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-app-kinds.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/app-shell.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/file-tree.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-image.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/viewer-pdf.json"
       ],
       "files": [
         {
@@ -3308,15 +3308,15 @@
       "title": "Point and dictate on app data",
       "description": "Tap explicitly marked JSON app context, dictate once and show the same app agent’s native reply without opening chat. Host-controlled presentation; no feedback report or second controller.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
-        "@hachej/boring-feedback@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
+        "@hachej/boring-feedback@^0.4.81",
         "@earendil-works/pi-durable@~1.4.0",
         "react@^19.0.0",
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/app-shell.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/pi-chat.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/app-shell.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/pi-chat.json"
       ],
       "files": [
         {
@@ -3337,13 +3337,13 @@
       "title": "Anchored highlights",
       "description": "Exact Markdown highlights and comments in a conditional workspace sidecar.",
       "dependencies": [
-        "@hachej/boring-ui-kit@^0.4.80",
-        "@hachej/boring-files@^0.4.80",
+        "@hachej/boring-ui-kit@^0.4.81",
+        "@hachej/boring-files@^0.4.81",
         "react@^19.0.0",
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/markdown-editor.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/markdown-editor.json"
       ],
       "files": [
         {
@@ -3363,8 +3363,8 @@
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -3380,7 +3380,7 @@
       "title": "Spaces",
       "description": "A client for a host's Spaces service: useSpaces, SpaceSwitcher and MembersSheet over a transport the app gives. Membership and roles stay the host's; no route or app wording.",
       "dependencies": [
-        "@hachej/boring-files@^0.4.80",
+        "@hachej/boring-files@^0.4.81",
         "react@^19.0.0"
       ],
       "files": [
@@ -3411,7 +3411,7 @@
         }
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ]
     },
     {
@@ -3445,8 +3445,8 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -3465,7 +3465,7 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json"
       ],
       "files": [
         {
@@ -3484,8 +3484,8 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -3529,8 +3529,8 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -3549,8 +3549,8 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -3582,8 +3582,8 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -3602,8 +3602,8 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -3622,7 +3622,7 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json"
       ],
       "files": [
         {
@@ -3655,8 +3655,8 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/_shared.json"
       ],
       "files": [
         {
@@ -3675,7 +3675,7 @@
         "react@^19.0.0"
       ],
       "registryDependencies": [
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/utils.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.81/r/utils.json"
       ],
       "files": [
         {
