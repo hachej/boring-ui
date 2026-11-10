@@ -100,14 +100,15 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
     onClick={() => onChange(item.id)} className={TAB}>
     <item.icon />{item.label}{item.badge && <Dot badge={item.badge} className="absolute top-1 left-1/2 ml-2" />}
   </Button>;
-  const Plus = overflow.length ? (inOverflow?.icon ?? EllipsisIcon) : undefined;
+  // « Plus » always keeps its own icon and word (a dot belongs to the label it sits next to); the header names the screen on show.
+  const Plus = overflow.length ? EllipsisIcon : undefined;
   return <nav ref={bar} role="tablist" aria-label={text.tabs} data-testid="tabbar" data-feedback-ignore="" onKeyDown={arrows}
     className="relative z-(--app-shell-z-tabs) box-border flex min-h-(--app-shell-tabbar-min) shrink-0 bg-sidebar px-2 pb-(--app-shell-safe-bottom)">
     {tabs.map(tab)}
     {Plus && <>
       <Button variant={inOverflow ? 'secondary' : 'ghost'} role="tab" data-testid="tab-plus" aria-selected={Boolean(inOverflow)} aria-haspopup="dialog" tabIndex={inOverflow ? 0 : -1} onClick={() => setPlusOpen(true)}
         className={TAB}>
-        <Plus />{inOverflow?.label ?? text.more}{hidden && <Dot badge={hidden} className="absolute top-1 left-1/2 ml-2" />}
+        <Plus />{text.more}{hidden && <Dot badge={hidden} className="absolute top-1 left-1/2 ml-2" />}
       </Button>
       <AppSheet open={plusOpen} onOpenChange={setPlusOpen} title={text.more}>
         {overflow.map(item => <Button key={item.id} variant={item.id === activeId ? 'secondary' : 'ghost'} size="lg" data-testid={`plus-${item.id}`} aria-current={item.id === activeId} className={SHEET_ROW}
