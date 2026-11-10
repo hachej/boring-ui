@@ -172,6 +172,14 @@ jobs:
           path: .cache/evidence/composer-content
           retention-days: 14
           if-no-files-found: ignore
+      - name: Composer anchor shots (1280, light and dark)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: composer-anchor-shots
+          path: .cache/evidence/composer-content/composer-anchor-*.png
+          retention-days: 14
+          if-no-files-found: ignore
       - name: Agent bar shots (390 touch, 1280 fine, light and dark)
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

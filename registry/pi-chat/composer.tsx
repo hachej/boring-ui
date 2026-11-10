@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent, ReactNode, Ref } from 'react';
-import { FileTextIcon, Loader2Icon, MessageSquarePlusIcon, SlashIcon, XIcon } from '../_shared/icons';
+import { FileTextIcon, Loader2Icon, MessageSquarePlusIcon, XIcon } from '../_shared/icons';
 import { AttachmentAction } from '@/components/ui/attachment';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -166,15 +166,18 @@ function useCoarsePointer(): boolean {
   return coarse;
 }
 
-/** `barActions`: Attach files and Commands as direct bar buttons (labels from the app). */
-function BarActions({ disabled, onAttach, onCommands }: { readonly disabled: boolean; readonly onAttach?: (() => void) | undefined; readonly onCommands?: (() => void) | undefined }) {
+/** `barActions`: Attach files as a direct bar button, first in the bar row (label and icon from the app). */
+function BarAttach({ disabled, onAttach }: { readonly disabled: boolean; readonly onAttach: () => void }) {
   const { labels, icons } = useChatText();
-  return <>
-    {onAttach && <Button type="button" variant="outline" size="icon" data-testid="composer-bar-attach" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
-      <icons.attach data-icon="inline-start" aria-hidden="true" /></Button>}
-    {onCommands && <Button type="button" variant="outline" size="sm" data-testid="composer-bar-commands" aria-label={labels.commands} title={labels.commands} disabled={disabled} onClick={onCommands} className="shrink-0">
-      <SlashIcon data-icon="inline-start" aria-hidden="true" />{labels.commands}</Button>}
-  </>;
+  return <Button type="button" variant="outline" size="icon" data-testid="composer-bar-attach" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
+    <icons.attach data-icon="inline-start" aria-hidden="true" /></Button>;
+}
+
+/** `barActions`: Commands as a labelled bar button at the end of the bar, right before the voice and send controls. */
+function BarCommands({ disabled, onCommands }: { readonly disabled: boolean; readonly onCommands: () => void }) {
+  const { labels, icons } = useChatText();
+  return <Button type="button" variant="outline" size="sm" data-testid="composer-bar-commands" aria-label={labels.commands} title={labels.commands} disabled={disabled} onClick={onCommands} className="shrink-0">
+    <icons.commands data-icon="inline-start" aria-hidden="true" />{labels.commands}</Button>;
 }
 
 /** The "+" button and the host's shadcn dropdown menu (Attach files, Take a photo, Commands). */
@@ -195,7 +198,7 @@ function PlusActions({ disabled, onAttach, onTakePhoto, onCommands, textarea }: 
       {onTakePhoto && <DropdownMenuItem data-testid="composer-take-photo" onClick={onTakePhoto} className="max-md:min-h-11 pointer-coarse:min-h-11">
         <icons.camera aria-hidden="true" />{labels.takePhoto}</DropdownMenuItem>}
       {onCommands && <DropdownMenuItem data-testid="composer-commands" onClick={() => { toText.current = true; onCommands(); }} className="max-md:min-h-11 pointer-coarse:min-h-11">
-        <SlashIcon aria-hidden="true" />{labels.commands}</DropdownMenuItem>}
+        <icons.commands aria-hidden="true" />{labels.commands}</DropdownMenuItem>}
     </DropdownMenuContent>
   </DropdownMenu>;
 }
@@ -371,7 +374,7 @@ export function Composer(props: ComposerProps) {
   const plusHasItems = barActions ? canPhoto : canAttach || items.length > 0;
   const plusButton = plusHasItems && <PlusActions disabled={disabled || recording} textarea={inner} onAttach={!barActions && canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={!barActions && items.length > 0 ? openCommands : undefined} />;
   // Off: the "+" alone, as before (same element position). On: the bar buttons first.
-  const plus = barActions && (canAttach || items.length > 0) ? <><BarActions disabled={disabled || recording} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onCommands={items.length > 0 ? openCommands : undefined} />{plusButton}</> : plusButton;
+  const plus = barActions && canAttach ? <><BarAttach disabled={disabled || recording} onAttach={() => fileInput.current?.click()} />{plusButton}</> : plusButton;
   // One child slot either way, so a composer without `start` keeps its exact markup (React ids included).
   const startAndPlus = props.start && !recording ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
@@ -391,6 +394,7 @@ export function Composer(props: ComposerProps) {
     {!slots && props.barNote}
     {!slots && uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
     {!pill && <span className="min-w-0 flex-1" />}
+    {!slots && barActions && items.length > 0 && <BarCommands disabled={disabled || recording} onCommands={openCommands} />}
     {slots ? !stopInSend && props.recordingStop !== undefined && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.recordingStop}</div>
       : props.barEnd && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.barEnd}</div>}
     {!slots && working && hasContent && <Button variant="ghost" size="icon" data-testid="composer-queue" aria-label={labels.queue} title={labels.queue} disabled={!canSubmit} onClick={props.onSend} className="shrink-0">

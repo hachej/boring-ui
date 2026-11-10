@@ -165,6 +165,9 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly composerSlot: HTMLElement | null;
   readonly dropZone: HTMLElement | null;
   readonly setComposerSlot: (element: HTMLElement | null) => void;
+  /** An `AgentComposerAnchor` is mounted: the field and the tray are drawn there, not in the full-width slot. */
+  readonly anchored: boolean;
+  readonly setAnchor: (anchor: { readonly tray: HTMLElement; readonly field: HTMLElement } | null) => void;
   readonly setDropZone: (element: HTMLElement | null) => void;
   /** The content composer sent a message: the thread opens in the dock. */
   readonly onSent: () => void;
@@ -277,9 +280,13 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // The PM column beside the dock, used only `together`; below that the PM is `shown === 'improve'` with the one snap, as on a phone.
   const [pmOpen, setPmOpen] = useState(false);
   const [dockFloating, setDockFloating] = useState(false);
-  const [composerSlot, setComposerSlot] = useState<HTMLElement | null>(null);
+  const [columnSlot, setComposerSlot] = useState<HTMLElement | null>(null);
+  // The app's own column (`AgentComposerAnchor`) takes the field and the tray from the full-width slot while it is mounted.
+  const [anchor, setAnchor] = useState<{ readonly tray: HTMLElement; readonly field: HTMLElement } | null>(null);
+  const composerSlot = anchor?.field ?? columnSlot;
   const [dropZone, setDropZone] = useState<HTMLElement | null>(null);
   const composerSlotRef = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => { composerSlotRef.current = composerSlot; }, [composerSlot]);
   // A screen may lend the layer its assistant (`useAgentLoan`); the shell's own `agent` always wins.
   const [lent, setLent] = useState<AgentSpec | undefined>();
   const agent = own ?? lent;
@@ -486,7 +493,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // Both open: the state is `open` and `showing` the assistant; the PM alone: `improve`.
   const state: AgentLayerState = snap === 'closed' ? (improveOpen ? 'open' : 'closed') : expanded ? 'open' : snap;
   const besidePanel = together && improveOpen;
-  const setSlot = useCallback((element: HTMLElement | null) => { composerSlotRef.current = element; setComposerSlot(element); }, []);
+  const setSlot = setComposerSlot;
   // Sending from the content composer shows the thread; a dock already open stays as it is.
   const onSent = useCallback(() => { if (specs.current.snap === 'closed' || specs.current.shown !== 'agent') open('agent'); }, [open]);
   // On a wide content composer the reply is a tray above the field unless the person chose the dock; elsewhere the dock (or the phone's drawer) as before.
@@ -495,8 +502,8 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the tray is gone with the content composer (a phone width, a lost agent): the fill state goes with it
   useEffect(() => { if (!trayOpen && grown) setGrown(false); }, [trayOpen, grown]);
   const value = useMemo<Internal>(() => ({
-    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, setDropZone, onSent, mode, setMode, moveToDock, registerDock, grown, setGrown, trayOpen, dockOpen,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen]);
+    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, anchored: anchor !== null, setAnchor, setDropZone, onSent, mode, setMode, moveToDock, registerDock, grown, setGrown, trayOpen, dockOpen,
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -931,12 +938,34 @@ function AgentDock({ side }: { readonly side: DockSide }) {
 
 /** `composer: 'content'`: the page content, then the field's slot at the bottom; a file dropped anywhere on the column goes to that field. */
 function ContentColumn({ children }: { readonly children: ReactNode }) {
-  const { setComposerSlot, setDropZone, trayOpen, grown } = useInternal();
+  const { setComposerSlot, setDropZone, trayOpen, grown, anchored } = useInternal();
   // The page keeps one wrapper whether the tray is open or not, so opening it never remounts the screen; Agrandir only hides it.
   return <div ref={setDropZone} data-testid="agent-content" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-    <div data-testid="agent-page" className={cn('flex min-h-0 min-w-0 flex-1 flex-col', trayOpen && grown && 'hidden')}>{children}</div>
-    {trayOpen && <ContentTray />}
+    <div data-testid="agent-page" className={cn('flex min-h-0 min-w-0 flex-1 flex-col', trayOpen && grown && !anchored && 'hidden')}>{children}</div>
+    {trayOpen && !anchored && <ContentTray />}
     <div ref={setComposerSlot} data-testid="agent-content-composer" className="shrink-0" />
+  </div>;
+}
+
+/**
+ * Where the app wants the assistant's field: place it in the column the field belongs under (for a page with an aside, the main column).
+ * While mounted, `composer: 'content'` draws the field and the reply tray here instead of across the whole content column; a file drop stays on the whole column.
+ * Absent, nothing changes. Still one controller and one composer; the page is not remounted. Renders nothing visible without a content composer.
+ */
+export function AgentComposerAnchor({ className }: { readonly className?: string }) {
+  const layer = useContext(LayerContext);
+  const [tray, setTray] = useState<HTMLElement | null>(null);
+  const [field, setField] = useState<HTMLElement | null>(null);
+  const setAnchor = layer?.setAnchor;
+  useLayoutEffect(() => {
+    if (!setAnchor || !tray || !field) return;
+    setAnchor({ tray, field });
+    return () => setAnchor(null);
+  }, [setAnchor, tray, field]);
+  if (!layer) return null;
+  return <div data-testid="agent-composer-anchor" className={cn('flex min-w-0 shrink-0 flex-col', className)}>
+    <div ref={setTray} data-testid="agent-anchor-tray" className="flex min-w-0 flex-col">{layer.trayOpen && layer.anchored && <ContentTray />}</div>
+    <div ref={setField} data-testid="agent-anchor-composer" className="shrink-0" />
   </div>;
 }
 
@@ -960,7 +989,7 @@ function ContentTray() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
       // Only a key pressed in the tray or in the one field is the tray's; a host dock beside the content, a menu or a dialog keep their own Esc.
-      if (!(event.target instanceof Element) || !event.target.closest('[data-testid=agent-tray], [data-testid=agent-content-composer]')) return;
+      if (!(event.target instanceof Element) || !event.target.closest('[data-testid=agent-tray], [data-testid=agent-content-composer], [data-testid=agent-composer-anchor]')) return;
       if (document.querySelector('[role=menu],[role=listbox],[role=dialog],[role=alertdialog],[data-boring-overlay]')) return;
       if (event.target instanceof Element && event.target.closest('[aria-expanded=true]')) return;
       reduceRef.current();
@@ -970,8 +999,10 @@ function ContentTray() {
   }, []);
   const DockIcon = side === 'left' ? PanelLeftIcon : PanelRightIcon;
   const dockLabel = side === 'left' ? text.dockLeft : text.dockRight;
-  return <section data-testid="agent-tray" aria-label={title} style={grown ? undefined : { height: `min(35%, ${TRAY_MAX}px)` }}
-    className={cn('relative flex min-h-0 min-w-0 flex-col bg-card px-4 text-card-foreground', grown ? 'flex-1' : 'shrink-0')}>
+  // In an anchor the tray sits in the app's column, whose height is not the content column's: a share of the viewport, and Agrandir takes more of it instead of hiding the page.
+  const height = layer.anchored ? (grown ? 'min(70dvh, 720px)' : `min(35dvh, ${TRAY_MAX}px)`) : grown ? undefined : `min(35%, ${TRAY_MAX}px)`;
+  return <section data-testid="agent-tray" aria-label={title} style={height ? { height } : undefined}
+    className={cn('relative flex min-h-0 min-w-0 flex-col bg-card px-4 text-card-foreground', grown && !layer.anchored ? 'flex-1' : 'shrink-0')}>
     <Separator className="absolute inset-x-0 top-0" />
     <div data-testid="agent-tray-body" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
       <div data-testid="agent-tray-header" className="flex shrink-0 items-center gap-1 pt-1">

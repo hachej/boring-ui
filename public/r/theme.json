@@ -7,7 +7,7 @@
     "@fontsource-variable/geist-mono@5.3.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.78/r/touch-floor.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.80/r/touch-floor.json"
   ],
   "cssVars": {
     "theme": {
