@@ -112,7 +112,7 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text, slotRef, me
   return <header data-testid="screen-header" className={`sticky top-0 z-10 flex ${spec?.dense ? 'min-h-12' : 'min-h-14'} shrink-0 items-center gap-1 bg-card px-[var(--screen-gutter,1rem)] pt-(--app-shell-safe-top)`}>
     {compact ? (back ?? (menu ? <SidebarTrigger /> : avatar)) : back}
     {compact && screenSidebar}
-    {spec?.leading != null && <div data-testid="header-leading" className="flex shrink-0 items-center gap-1">{spec.leading}</div>}
+    {spec?.leading != null && <div data-testid="header-leading" className="flex min-w-0 shrink items-center gap-1">{spec.leading}</div>}
     <div className={`min-w-0 flex-1 pe-1 ${precedes ? 'ps-1' : ''}`}>
       <h1 data-testid="header-title" className={`m-0 truncate text-sm leading-tight font-semibold ${spec?.titleFace === 'sans' ? 'font-sans' : '[font-family:var(--font-display,var(--font-sans))]'}`}>{spec?.title ?? fallbackTitle}</h1>
       {spec?.subtitle && <p data-testid="header-subtitle" className="m-0 truncate text-xs text-muted-foreground">{spec.subtitle}</p>}
