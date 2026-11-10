@@ -69,6 +69,7 @@
 
 Preconditions: `npm run build`, Chromium; journeys use a scripted fake model unless stated.
 
+- **Bar buttons.** `chat-bar-actions`: `CHROMIUM=... node --test test/contracts/composer-bar-actions.test.mjs` (real Chromium at 390 touch and 1280 fine, light and dark: both buttons named from the labels, 44px on touch, attach opens the picker, commands opens the `/` list and a pick runs; shots in `COMPOSER_BAR_EVIDENCE`, CI artifact `composer-bar-actions-shots`).
 - **Developer switch.** `chat-developer-switch`: `node --test test/ui/pi-chat-developer-switch.test.mjs` (a natural chat shows the model line after `?chatMode=developer`, keeps it on the next page, loses it after `?chatMode=expert`).
 - **Recovered step.** `chat-recovered-step`: `node --test test/ui/pi-chat-recovered-step.test.mjs` (quiet after later steps or an answer and while still working; red when the run ends on the failure and in developer mode).
 - **Question send.** `chat-question-send`: `node --test test/ui/pi-chat-question-send.test.mjs` (Stop with nothing typed, Send and an answer with text, a picture after it, a refused or unstarted question superseded, one answered elsewhere sent as usual, no harness text after a stop, a refused call or a warning, no draft card for a call with no question text); `test/packages/agent-ask-user.test.mjs` proves a message sent right after a stop reaches the model.

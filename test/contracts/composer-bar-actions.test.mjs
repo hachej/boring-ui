@@ -76,8 +76,10 @@ test('barActions: attach and commands are bar buttons left of the field; command
         assert.ok(attach && commands, `${label}: both bar buttons exist`);
         assert.equal(attach.name, 'Ajouter des fichiers', `${label}: attach is named from labels.attachFiles`);
         assert.equal(commands.name, 'Actions du dossier', `${label}: commands is named from labels.commands`);
-        assert.ok(attach.x + attach.w <= field.x + 1 || attach.y + attach.h <= field.y + 1, `${label}: attach is left of (or above) the field: ${JSON.stringify({ attach, field })}`);
-        assert.ok(commands.x + commands.w <= field.x + 1 || commands.y + commands.h <= field.y + 1, `${label}: commands is left of (or above) the field: ${JSON.stringify({ commands, field })}`);
+        // The board (Main.dc.html) and the composer: the field above a bar row; attach and commands open that row, before the send button.
+        const send = await box('[data-testid=composer-submit]');
+        assert.ok(attach.y >= field.y + field.h - 1 && commands.y >= field.y + field.h - 1, `${label}: the buttons are in the bar row under the field: ${JSON.stringify({ attach, commands, field })}`);
+        assert.ok(attach.x < commands.x && commands.x + commands.w <= send.x, `${label}: attach, then commands, before the send button: ${JSON.stringify({ attach, commands, send })}`);
         if (mobile) for (const [name, rect] of [['attach', attach], ['commands', commands]]) assert.ok(rect.h >= 44 && rect.w >= 44, `${label}: ${name} is a 44px target, got ${rect.w}x${rect.h}`);
         assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-plus]') === null`), true, `${label}: no empty + menu when nothing is left in it`);
         await browser.screenshot(`composer-bar-${width}-${theme}.png`);
