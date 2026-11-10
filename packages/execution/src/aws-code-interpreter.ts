@@ -3,11 +3,11 @@ import { InvokeCodeInterpreterCommand, StartCodeInterpreterSessionCommand, StopC
 import type { BedrockAgentCoreClient, CodeInterpreterResult, ToolArguments, ToolName, ToolsFileSystemConfiguration } from '@aws-sdk/client-bedrock-agentcore';
 import type { Context } from '@earendil-works/chord';
 import { ExecutionError, FileError, err, ok } from '@earendil-works/pi-durable/env';
-import type { ExecutionEnv, FileInfo, Result, ShellExecOptions, ShellExecResult, WatchTarget } from '@earendil-works/pi-durable/env';
-import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
+import type { ExecutionEnv, FileInfo, Result, ShellExecOptions, ShellExecResult } from '@earendil-works/pi-durable/env';
 import { boundedMessage } from './bounded-error.js';
 import { shellCommand } from './fs-readers.js';
 import { createNoFollowFileSystem } from './no-follow-fs.js';
+import type { NoFollowWatchTarget } from './no-follow-fs.js';
 
 /** What the adapter sends: the host's own `BedrockAgentCoreClient` (it owns region, credentials and retries). */
 export type CodeInterpreterClient = Pick<BedrockAgentCoreClient, 'send'>;
@@ -151,8 +151,6 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
     }
     return stop;
   };
-  // Only the watcher: file operations go through the no-follow walk below.
-  const local = new NodeExecutionEnv({ cwd: root });
 
   // ---- Session: borrowed or owned, started lazily, reported lost instead of silently replaced.
   // The start is never cancelled half way: an abandoned start could leave a session nobody stops.
@@ -312,7 +310,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
 
   // ---- Files: interpreter paths mapped onto this host's mount of the same folder, confined to it.
   // Code in the interpreter writes the same folder, so a check then an open by path would race a swapped symbolic link:
-  // every file operation walks the folder by directory fds instead (D-2087). Only the watcher still takes paths.
+  // every file operation walks the folder by directory fds instead (D-2087), the watcher included.
   const namespace = (path: string): string => posix.resolve(env.cwd, path);
   const toLocal = (path: string): string | undefined => {
     const absolute = namespace(path);
@@ -360,17 +358,16 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
         close: readContext => reader.close(readContext),
       });
     },
-    // The mount's own watcher, with its paths reported in the workspace's namespace. It takes paths, so it is confined by
-    // a walk at the start only; it reports which paths changed and never reads bytes.
+    // Watched through the same walk (directory fds, never a path), with its paths reported in the workspace's namespace.
     watch: async (targets, onChange, context) => {
-      const mapped: WatchTarget[] = [];
+      const mapped: NoFollowWatchTarget[] = [];
       for (const target of targets) {
-        const confined = await guarded([target.path], path => files.confine(path, context));
-        if (!confined.ok) return err(confined.error);
-        mapped.push({ ...target, path: toLocal(target.path)! });
+        const local = toLocal(target.path);
+        if (local === undefined) return err(outside(target.path));
+        mapped.push({ local, recursive: target.recursive === true, hidden: target.exclude?.hidden === true, names: new Set(target.exclude?.names ?? []) });
       }
-      const watcher = await local.watch(mapped, change => onChange('paths' in change ? { paths: change.paths.map(path => fromLocal(path)) } : 'error' in change ? { error: mapError(change.error) } : change), context);
-      return watcher.ok ? watcher : err(mapError(watcher.error));
+      const watcher = await files.watch(mapped, change => onChange('paths' in change ? { paths: change.paths.map(path => fromLocal(path)) } : 'error' in change ? { error: mapError(change.error) } : change), context);
+      return watcher.ok ? ok({ mode: watcher.value.mode, close: () => watcher.value.close() }) : err(mapError(watcher.error));
     },
     writeFile: (path, content, context) => guarded([path], file => files.writeFile(file, content, context)),
     appendFile: (path, content, context) => guarded([path], file => files.appendFile(file, content, context)),
@@ -389,8 +386,9 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
     // A temporary file on this host would not be visible to the interpreter, and one in the folder would show in the workspace.
     createTempDir: async () => notSupported('createTempDir'),
     createTempFile: async () => notSupported('createTempFile'),
-    // Releasing a consumer's view never ends the session: only the owner's stop() does.
-    cleanup: async () => {},
+    // Releasing a consumer's view never ends the session: only the owner's stop() does. It closes the folder's fd once no
+    // operation uses it (a later operation opens it again).
+    cleanup: async () => { await files.close(); },
     exec,
   };
 
@@ -404,6 +402,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
       return true;
     },
     stop: async context => {
+      await files.close();
       if (!start) return;
       stopped = true;
       await Promise.allSettled([starting]); // a start in flight still registers its session

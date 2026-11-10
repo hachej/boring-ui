@@ -6,9 +6,9 @@
 // a link on our behalf; a link the operation follows by contract is read with readlink and its target walked again from
 // the folder, the same way. Operations without an fd (rename, unlink, mkdir, rmdir) run on `/proc/self/fd/<parent>/<name>`
 // of a parent reached by that walk. Linux only: without `/proc/self/fd` every operation fails closed.
-import { close as closeFd, constants, open as openFd } from 'node:fs';
-import { lstat, mkdir, open, opendir, readdir, readlink, realpath, rename, rmdir, stat, unlink } from 'node:fs/promises';
-import type { Dir, Stats } from 'node:fs';
+import { close as closeFd, constants, open as openFd, watch as watchPath } from 'node:fs';
+import { lstat, mkdir, open, opendir, readdir, readlink, realpath, rename, rmdir, stat, statfs, unlink } from 'node:fs/promises';
+import type { Dir, FSWatcher, Stats } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import { posix } from 'node:path';
 import type { Context } from '@earendil-works/chord';
@@ -20,6 +20,11 @@ const { O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, O_TRUNC, O_APPEND, O_DIRECTORY, O_N
 const MAX_HOPS = 40;
 /** Largest single read of a binary reader, so a huge `length` allocates only as much as the file yields. */
 const READ_CHUNK = 1024 * 1024;
+/** A watcher rescans this long after the last event, and at least this often (EFS, NFS: no events from other hosts). */
+const WATCH_DEBOUNCE_MS = 50;
+const WATCH_POLL_MS = 2000;
+const WATCH_MAX_DIRECTORIES = 10_000;
+const NFS_SUPER_MAGIC = 0x6969;
 const PROC_PATH = /\/proc\/self\/fd\/\d+(?:\/[^'"\s,]*)?/g;
 
 const openDirFd = (path: string): Promise<number> => new Promise((resolve, reject) => {
@@ -34,6 +39,8 @@ const within = (path: string, root: string): boolean => path === root || path.st
 class Outside extends Error {}
 /** This host has no `/proc/self/fd`: fail closed rather than fall back to path calls. */
 class Unsupported extends Error {}
+/** A watched tree grew past the directory budget. */
+class TooLarge extends Error {}
 
 export interface NoFollowOptions {
   /** The folder; every operation stays inside it. Paths given to the operations are host paths inside it. */
@@ -61,9 +68,38 @@ export interface NoFollowFileSystem {
   exists(local: string, context: Context): Promise<Result<boolean, FileError>>;
   createDir(local: string, options: { recursive?: boolean } | undefined, context: Context): Promise<Result<void, FileError>>;
   remove(local: string, options: { recursive?: boolean; force?: boolean } | undefined, context: Context): Promise<Result<void, FileError>>;
-  /** Whether the path, following links, stays in the folder (a missing part is fine); for path-based callers such as a watcher. */
+  /** Whether the path, following links, stays in the folder (a missing part is fine). */
   confine(local: string, context: Context): Promise<Result<void, FileError>>;
+  /**
+   * Watches by the same walk: every scan reaches the targets through directory fds, so a reported path is always a name
+   * listed in a directory inside the folder. Changes are the difference between two scans; events only trigger a scan.
+   */
+  watch(targets: readonly NoFollowWatchTarget[], onChange: (change: NoFollowChange) => void, context: Context): Promise<Result<NoFollowWatcher, FileError>>;
+  /** Closes the folder's fd once no operation uses it; a later operation opens it again. */
+  close(): Promise<void>;
 }
+
+export interface NoFollowWatchTarget {
+  readonly local: string;
+  readonly recursive: boolean;
+  /** Skip names starting with `.`, and these names, below the target. */
+  readonly hidden: boolean;
+  readonly names: ReadonlySet<string>;
+}
+export type NoFollowChange = { paths: string[] } | { overflow: true } | { error: FileError };
+export interface NoFollowWatcher {
+  readonly mode: 'native' | 'polling';
+  close(): Promise<void>;
+}
+/** What a scan remembers of an entry; directories by identity only (their own times change with every entry). */
+interface Entry { readonly kind: string; readonly dev: number; readonly ino: number; readonly size: number; readonly mtimeMs: number; readonly ctimeMs: number }
+const entryOf = (stats: Stats): Entry | undefined => {
+  const kind = stats.isFile() ? 'file' : stats.isDirectory() ? 'directory' : stats.isSymbolicLink() ? 'symlink' : undefined;
+  if (!kind) return undefined;
+  return kind === 'directory' ? { kind, dev: stats.dev, ino: stats.ino, size: 0, mtimeMs: 0, ctimeMs: 0 }
+    : { kind, dev: stats.dev, ino: stats.ino, size: stats.size, mtimeMs: stats.mtimeMs, ctimeMs: stats.ctimeMs };
+};
+const sameEntry = (a: Entry, b: Entry): boolean => a.kind === b.kind && a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs;
 
 /** Where a walk ended: the final component `name` in the directory `parent` (an fd it owns unless it is the root's). */
 interface Walked {
@@ -87,30 +123,46 @@ interface WalkOptions {
 
 export function createNoFollowFileSystem(options: NoFollowOptions): NoFollowFileSystem {
   const root = posix.resolve(options.root);
-  let rooted: Promise<{ fd: number; real: string }> | undefined;
+  /** The folder's fd, shared by every walk; `users` walks hold it, and a closed one is released when the last ends. */
+  interface Root { readonly fd: number; readonly real: string; users: number; closing: boolean }
+  let rooted: Promise<Root> | undefined;
 
-  /** The folder's directory fd, opened once and kept for the life of the env; retried while it fails. */
-  function rootFd(): Promise<{ fd: number; real: string }> {
+  /** The folder's directory fd, opened once and kept until `close()`; retried while it fails. */
+  function rootFd(): Promise<Root> {
     rooted ??= (async () => {
       const fd = await new Promise<number>((resolve, reject) => openFd(root, O_RDONLY | O_DIRECTORY, (error, value) => error ? reject(error) : resolve(value)));
       try { await stat(`/proc/self/fd/${fd}`); } catch {
         await release(fd);
         throw new Unsupported('No-follow file access needs /proc/self/fd (Linux): file operations on the shared mount are refused');
       }
-      return { fd, real: await realpath(root).catch(() => root) };
+      return { fd, real: await realpath(root).catch(() => root), users: 0, closing: false };
     })();
     const pending = rooted;
     pending.catch(() => { if (rooted === pending) rooted = undefined; });
     return pending;
   }
+  async function acquire(): Promise<Root> {
+    for (;;) {
+      const base = await rootFd();
+      if (!base.closing) { base.users++; return base; }
+    }
+  }
+  async function unuse(base: Root): Promise<void> {
+    if (--base.users === 0 && base.closing) await release(base.fd);
+  }
 
   /**
    * Resolves `local` component by component from the folder's fd. Intermediate components must be directories opened with
    * O_NOFOLLOW; a link among them (or a final one with `follow`) is read and its target walked again from where it points.
+   *
+   * Out of scope, because both need write access outside the folder, which the interpreter's EFS access point does not
+   * give: a hard link to a file outside (made from outside), and a directory held here being moved out of the folder
+   * while it is walked.
    */
   async function walk(local: string, walkOptions: WalkOptions): Promise<Walked | undefined> {
     if (!within(local, root)) throw new Outside(local);
-    const base = await rootFd();
+    const base = await acquire();
+    let holdsRoot = false;
     const stack: number[] = [base.fd], names: string[] = [];
     let queue = local.slice(root.length).split('/');
     let budget = MAX_HOPS;
@@ -120,7 +172,13 @@ export function createNoFollowFileSystem(options: NoFollowOptions): NoFollowFile
       const parent = top();
       kept = parent;
       const resolved = posix.join(root, ...names, name === '.' ? '' : name);
-      return { parent, name, resolved, path: at(parent, name), done: async () => { if (parent !== base.fd) await release(parent); } };
+      holdsRoot = parent === base.fd;
+      let finished = false;
+      return { parent, name, resolved, path: at(parent, name), done: async () => {
+        if (finished) return;
+        finished = true;
+        if (parent !== base.fd) await release(parent); else await unuse(base);
+      } };
     };
     try {
       for (;;) {
@@ -178,6 +236,7 @@ export function createNoFollowFileSystem(options: NoFollowOptions): NoFollowFile
       }
     } finally {
       for (const fd of stack) if (fd !== base.fd && fd !== kept) await release(fd);
+      if (!holdsRoot) await unuse(base);
     }
   }
 
@@ -394,7 +453,172 @@ export function createNoFollowFileSystem(options: NoFollowOptions): NoFollowFile
       await result?.done();
       return fine();
     }),
+    watch: async (targets, onChange, context) => {
+      const first = targets[0]?.local ?? root;
+      const early = aborted(context, first);
+      if (early) return early;
+      for (const target of targets) {
+        const confined = await fs.confine(target.local, context);
+        if (!confined.ok) return err(confined.error);
+      }
+      const watcher = new FdWatcher(targets, onChange);
+      try { await watcher.start(); } catch (error) { await watcher.close(); return err(fileError(error, first)); }
+      const late = aborted(context, first);
+      if (late) { await watcher.close(); return late; }
+      const nfs = await statfs(root).then(stats => stats.type === NFS_SUPER_MAGIC, () => false);
+      const handle: NoFollowWatcher = { mode: nfs ? 'polling' : 'native', close: () => watcher.close() };
+      return ok(handle);
+    },
+    close: async () => {
+      const pending = rooted;
+      rooted = undefined;
+      const base = await pending?.catch(() => undefined);
+      if (!base || base.closing) return;
+      base.closing = true;
+      if (base.users === 0) await release(base.fd);
+    },
   };
+
+  /**
+   * Scans its targets through the walk, compares each scan with the previous one and reports the paths that differ. Every
+   * directory a scan reaches is watched as `/proc/self/fd/<fd>` (the directory itself, whatever its path now names), and
+   * an event only schedules the next scan, so no reported name comes from the kernel resolving a path. Also scans every 2 s.
+   */
+  class FdWatcher {
+    #snapshot = new Map<string, Entry>();
+    #watchers = new Map<string, FSWatcher>();
+    #timer: ReturnType<typeof setInterval> | undefined;
+    #debounce: ReturnType<typeof setTimeout> | undefined;
+    #running: Promise<void> | undefined;
+    #dirty = false;
+    #closed = false;
+    constructor(readonly targets: readonly NoFollowWatchTarget[], readonly onChange: (change: NoFollowChange) => void) {}
+
+    async start(): Promise<void> {
+      this.#snapshot = await this.#scan();
+      this.#timer = setInterval(() => this.#schedule(), WATCH_POLL_MS);
+      this.#timer.unref?.();
+    }
+
+    async close(): Promise<void> {
+      this.#closed = true;
+      if (this.#timer) clearInterval(this.#timer);
+      if (this.#debounce) clearTimeout(this.#debounce);
+      for (const watcher of this.#watchers.values()) watcher.close();
+      this.#watchers.clear();
+      await this.#running;
+    }
+
+    #schedule(): void {
+      if (this.#closed || this.#debounce) return;
+      this.#debounce = setTimeout(() => { this.#debounce = undefined; this.#flush(); }, WATCH_DEBOUNCE_MS);
+      this.#debounce.unref?.();
+    }
+
+    #flush(): void {
+      if (this.#running) { this.#dirty = true; return; }
+      this.#running = (async () => {
+        try {
+          do {
+            this.#dirty = false;
+            const next = await this.#scan();
+            if (this.#closed) return;
+            const paths = new Set<string>();
+            for (const [path, entry] of next) { const old = this.#snapshot.get(path); if (!old || !sameEntry(old, entry)) paths.add(path); }
+            for (const path of this.#snapshot.keys()) if (!next.has(path)) paths.add(path);
+            this.#snapshot = next;
+            if (paths.size) this.onChange({ paths: [...paths].sort() });
+          } while (this.#dirty && !this.#closed);
+        } catch (error) {
+          if (this.#closed) return;
+          if (error instanceof TooLarge) {
+            this.#closed = true;
+            if (this.#timer) clearInterval(this.#timer);
+            for (const watcher of this.#watchers.values()) watcher.close();
+            this.#watchers.clear();
+            this.onChange({ error: new FileError('invalid', error.message, root) });
+          } else this.onChange({ overflow: true });
+        } finally { this.#running = undefined; }
+      })();
+    }
+
+    /** Watches the directory open as `fd` (once per directory), so a change in it schedules a scan. */
+    async #consider(fd: number, seen: Set<string>): Promise<void> {
+      const stats = await stat(`/proc/self/fd/${fd}`);
+      const key = `${stats.dev}:${stats.ino}`;
+      seen.add(key);
+      if (this.#closed || this.#watchers.has(key)) return;
+      try {
+        const watcher = watchPath(`/proc/self/fd/${fd}`, { persistent: false }, () => this.#schedule());
+        watcher.on('error', () => {
+          watcher.close();
+          if (this.#watchers.get(key) === watcher) this.#watchers.delete(key);
+          this.#schedule();
+        });
+        this.#watchers.set(key, watcher);
+      } catch { /* out of watches: the periodic scan still covers it */ }
+    }
+
+    async #scan(): Promise<Map<string, Entry>> {
+      const snapshot = new Map<string, Entry>(), seen = new Set<string>();
+      let directories = 0;
+      const record = (path: string, stats: Stats): void => { const entry = entryOf(stats); if (entry) snapshot.set(path, entry); };
+      const scanDirectory = async (fd: number, local: string, target: NoFollowWatchTarget): Promise<void> => {
+        if (++directories > WATCH_MAX_DIRECTORIES) throw new TooLarge(`Watched paths exceed ${WATCH_MAX_DIRECTORIES} directories`);
+        await this.#consider(fd, seen);
+        let names: string[];
+        try { names = await readdir(`/proc/self/fd/${fd}`); } catch { return; }
+        for (const name of names) {
+          if ((target.hidden && name.startsWith('.')) || target.names.has(name)) continue;
+          const path = posix.join(local, name);
+          let stats: Stats;
+          try { stats = await lstat(at(fd, name)); } catch { continue; }
+          if (!snapshot.has(path)) record(path, stats);
+          if (!target.recursive || !stats.isDirectory()) continue;
+          // Opened without following: a directory swapped for a link since the lstat is skipped, never listed.
+          let child: number;
+          try { child = await openDirFd(at(fd, name)); } catch { continue; }
+          try { await scanDirectory(child, path, target); } finally { await release(child); }
+        }
+      };
+      /** Opens an existing directory by the walk (links followed by hand) and watches it; false when there is none. */
+      const ancestor = async (local: string): Promise<boolean> => {
+        let walked: Walked | undefined;
+        try { walked = await walk(local, { follow: true, missingOk: true }); } catch { return false; }
+        if (!walked) return false;
+        try {
+          const fd = await openDirFd(walked.path).catch(() => undefined);
+          if (fd === undefined) return false;
+          try { await this.#consider(fd, seen); } finally { await release(fd); }
+          return true;
+        } finally { await walked.done(); }
+      };
+      for (const target of this.targets) {
+        // Its existing ancestors are watched, so a missing target's creation schedules a scan.
+        const parts = target.local.slice(root.length).split('/').filter(part => part !== '' && part !== '.');
+        for (let depth = 0; depth < parts.length; depth++) if (!await ancestor(posix.join(root, ...parts.slice(0, depth)))) break;
+        let walked: Walked | undefined;
+        // Now outside (a link changed) or not there: nothing to report under it.
+        try { walked = await walk(target.local, { follow: true, missingOk: true }); } catch { continue; }
+        if (!walked) continue;
+        try {
+          // The directory holding what the target resolves to (for a link to a file, that file's own directory).
+          await this.#consider(walked.parent, seen);
+          let stats: Stats;
+          try { stats = await lstat(walked.path); } catch { continue; }
+          if (stats.isSymbolicLink()) continue; // changed since the walk: the next scan resolves it again
+          record(target.local, stats);
+          if (!stats.isDirectory()) continue;
+          let fd: number;
+          try { fd = await openDirFd(walked.path); } catch { continue; }
+          try { await scanDirectory(fd, target.local, target); } finally { await release(fd); }
+        } finally { await walked.done(); }
+      }
+      for (const [key, watcher] of this.#watchers) if (!seen.has(key)) { watcher.close(); this.#watchers.delete(key); }
+      return snapshot;
+    }
+  }
+
 
   /** Removes `name` in `parent`: a link or file is unlinked (never followed), a directory emptied through its own fd. */
   async function removeEntry(parent: number, name: string, force: boolean): Promise<void> {

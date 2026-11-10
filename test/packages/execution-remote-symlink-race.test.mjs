@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawn } from 'node:child_process';
-import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
@@ -178,4 +178,39 @@ test('Code Interpreter env: links that stay inside the folder still resolve wher
   assert.equal((await env.createDir('in/sub', undefined, context)).ok, true);
   assert.equal(lstatSync(join(root, 'd', 'sub')).isDirectory(), true);
   unchanged(outside);
+});
+
+/** Waits until `seen()` holds, failing after `ms`. */
+async function until(seen, ms, label) {
+  const end = Date.now() + ms;
+  while (!seen()) {
+    if (Date.now() > end) assert.fail(`timed out waiting for ${label}`);
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+}
+
+test('Code Interpreter env: a watch never reports names from outside, before or after a watched directory is swapped for a link', { timeout: 20000 }, async t => {
+  const { root, outside } = linked(t);
+  const { env } = open(root);
+  const refused = await env.watch([{ path: 'esc', recursive: true }], () => {}, context);
+  assert.equal(refused.ok ? 'watching' : refused.error.code, 'permission_denied', 'a link to an outside directory is refused for watch');
+
+  const reported = [];
+  const watcher = await env.watch([{ path: 'd', recursive: true }, { path: '.', recursive: true }], change => { if (change.paths) reported.push(...change.paths); }, context);
+  assert.equal(watcher.ok, true, 'watching the folder');
+  t.after(() => watcher.ok && watcher.value.close());
+
+  // The interpreter swaps `d` for a link to the outside folder, then names appear and change out there.
+  renameSync(join(root, 'd'), join(root, 'd-real'));
+  symlinkSync(outside, join(root, 'd'));
+  await until(() => reported.includes('/mnt/workspace/d'), 5000, 'the swap of d to be reported');
+  writeFileSync(join(outside, 'fictional-private-name'), 'fictional\n');
+  writeFileSync(join(outside, 'f'), 'fictional change outside\n');
+  // A change inside, after the outside ones, shows the watcher is still live; then wait past the next periodic scan.
+  writeFileSync(join(root, 'd-real', 'after'), 'inside\n');
+  await until(() => reported.includes('/mnt/workspace/d-real/after'), 5000, 'a later change inside to be reported');
+  await new Promise(resolve => setTimeout(resolve, 2500));
+
+  const escaped = reported.filter(path => !path.startsWith('/mnt/workspace/') || path.includes('fictional-private-name'));
+  assert.deepEqual(escaped, [], `no reported name came from outside (${reported.length} reported)`);
 });
