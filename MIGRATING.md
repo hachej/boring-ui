@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.80
+
 - **`useAgentBarChat(controller, { actions })`: drive `AgentBar` from the chat controller (`agent-bar`; additive; D-2085).** New file `use-agent-bar-chat.ts` in the `agent-bar` item, imported from `components/agent-bar/use-agent-bar-chat`. It reads the controller PiChat takes (its own `subscribe`/`getSnapshot`, no second subscription) and returns `question` (the pending `ask_user` as `AgentQuestionData` for `AgentBar question`, answered through `actions.answer`, i.e. `createRemoteChat().remote.answer`, as a `QuestionCard` does), `status` (props for `AgentStatus`: working with `onCancel` stopping the run, then done) and `onSend` (for `AgentBar onSend`). Re-sync `agent-bar` (`registry:build` refreshes `public/r`). Test: `test/ui/agent-bar-chat.test.mjs`; see `features/agent-bar.md`.
 # Migrating to 0.4.79
 
