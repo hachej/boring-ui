@@ -151,10 +151,10 @@ export function AgentBar({ onSend, transcribe, stream, quoted, question, onHisto
   const fromListen = useRef(false);
   const quote = useRef(quoted?.label);
   const asked = useRef(question);
-  useLayoutEffect(() => { field.current = text; quote.current = quoted?.label; asked.current = question; filesRef.current = files; });
   const hint = question ? words.answerHere : (placeholder ?? words.placeholder);
   const files = useBarAttachments(attachments, words.uploadFailedShort);
   const filesRef = useRef(files);
+  useLayoutEffect(() => { field.current = text; quote.current = quoted?.label; asked.current = question; filesRef.current = files; });
   const fileInput = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   // The commands list: `/` typed in the field, or the Actions button. Esc or a pick closes it; the text it was dismissed on keeps it closed.
