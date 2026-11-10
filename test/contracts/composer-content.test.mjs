@@ -468,6 +468,15 @@ for (const dark of [false, true]) {
 }
 
 // D-2083: the content field follows the app's anchor, and the bar buttons and the / list work through the content composer. Shots (composer-anchor-*.png beside the others) go up as `composer-anchor-shots`.
+
+// D-2083 (master review): the field is always whole on screen, docked at the bottom of the window, inside the anchor column; its whole button row too.
+const docked = async (label, what) => {
+  const view = await browser.evaluate(`({ w: innerWidth, h: innerHeight })`);
+  const field = await rect('[data-testid=composer]'), anchor = await rect('[data-testid=agent-composer-anchor]'), send = await rect('[data-testid=composer-submit]');
+  for (const [name, box] of [['field', field], ['send button', send]]) assert.ok(box && box.y >= 0 && box.x >= 0 && box.bottom <= view.h && box.right <= view.w, `${label} ${what}: the ${name} is whole inside the ${view.w}x${view.h} viewport: ${JSON.stringify(box)}`);
+  assert.ok(view.h - field.bottom <= 24, `${label} ${what}: the field is docked at the window's bottom (${view.h - field.bottom}px under it, field bottom ${field.bottom} of ${view.h})`);
+  assert.ok(field.x >= anchor.x - 0.5 && field.right <= anchor.right + 0.5, `${label} ${what}: the field is horizontally inside the anchor: ${JSON.stringify({ field, anchor })}`);
+};
 test('1280, composer=content with an AgentComposerAnchor: the field and the tray sit under the app column, not under its aside; the Actions button and the / list are in the field (light, dark)', { skip, timeout: 180000 }, async () => {
   for (const theme of ['light', 'dark']) {
     await open(1280, `composer=content&anchor=1&bar=1${theme === 'dark' ? '&dark=1' : ''}`);
@@ -478,6 +487,8 @@ test('1280, composer=content with an AgentComposerAnchor: the field and the tray
     assert.ok(field.right <= aside.x + 0.5, `${label}: the field's right edge ${field.right} stops at the aside's left edge ${aside.x}`);
     assert.ok(Math.abs((field.x + field.w / 2) - (main.x + main.w / 2)) <= 2, `${label}: the field is centred in the main column: ${JSON.stringify({ field, main })}`);
     assert.equal(await count('[data-testid=composer]'), 1, `${label}: still one composer`);
+    await docked(label, 'idle');
+    await browser.screenshot(`composer-anchor-1280-${theme}-idle.png`);
     const commands = await rect('[data-testid=composer-bar-commands]');
     assert.ok(commands, `${label}: the Actions button is in the content field`);
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-bar-commands]')?.getAttribute('aria-label')`), 'Actions du dossier', `${label}: named from labels.commands`);
@@ -486,6 +497,7 @@ test('1280, composer=content with an AgentComposerAnchor: the field and the tray
     await browser.click("document.querySelector('[data-testid=composer-bar-commands]')");
     await browser.until('the / list opens', `!!document.querySelector('[data-testid=slash-item]')`);
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`), '/', `${label}: the commands button put / in the content field, as typing it does`);
+    await docked(label, 'with the / list open');
     await browser.screenshot(`composer-anchor-1280-${theme}-list.png`);
     await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
@@ -495,6 +507,7 @@ test('1280, composer=content with an AgentComposerAnchor: the field and the tray
     assert.ok(tray.right <= aside.x + 0.5, `${label}: the tray stops at the aside too (${tray.right} vs ${aside.x})`);
     assert.equal(await inside('[data-testid=agent-tray]', '[data-testid=agent-composer-anchor]'), true, `${label}: the tray is in the anchor`);
     assert.equal(await count('[data-testid=composer]'), 1, `${label}: one composer with the tray open`);
+    await docked(label, 'with the tray open');
     await browser.screenshot(`composer-anchor-1280-${theme}.png`);
   }
   assert.deepEqual(browser.problems, []);
@@ -508,4 +521,13 @@ test('1280, composer=content without an anchor: the field still spans the column
   assert.ok(Math.abs(slot.w - content.w) <= 1, `the slot spans the column (${slot.w} of ${content.w})`);
   assert.ok(Math.abs((field.x + field.w / 2) - (content.x + content.w / 2)) <= 2, 'the field is centred in the whole column, as today');
   assert.ok(await rect('[data-testid=composer-bar-commands]'), 'the Actions button is in the content field without an anchor too');
+});
+
+test('390, composer=content with an AgentComposerAnchor: the phone keeps the peek drawer, the anchor draws nothing, the page is whole', { skip, timeout: 120000 }, async () => {
+  await open(390, 'composer=content&anchor=1&bar=1');
+  assert.equal(await count('[data-testid=composer]'), 1, 'one composer');
+  const view = await browser.evaluate(`({ w: innerWidth, h: innerHeight })`);
+  const field = await rect('[data-testid=composer]');
+  assert.ok(field && field.x >= 0 && field.right <= view.w && field.bottom <= view.h, `the field is whole on the phone: ${JSON.stringify(field)}`);
+  await browser.screenshot('composer-anchor-390-light-idle.png');
 });
