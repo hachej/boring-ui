@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.4.81
+
 - **AWS interpreter env: file operations no longer follow a link swapped in by the interpreter (`@hachej/boring-execution/aws-code-interpreter`; security fix, no API change; D-2087).** Every file operation walks the host's mount by directory fds with O_NOFOLLOW instead of checking a path then opening it, so code in the interpreter cannot race a directory into a link to outside the folder. Links inside the folder still resolve. Needs Linux `/proc/self/fd`: elsewhere file operations fail with `not_supported`. Nothing to change in hosts.
 
 # Migrating to 0.4.80
