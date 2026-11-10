@@ -47,6 +47,7 @@ const voiceMessage = params.get('voice') === '1' ? {
 // Local state of a screen: it must survive the shell crossing the wide breakpoint.
 const Counter = () => { const [count, setCount] = useState(0); return <button type="button" data-testid="counter" onClick={() => setCount(value => value + 1)}>Count {count}</button>; };
 const rows = Math.max(5, Number(params.get('rows') ?? 5));
+// The screen's own box scrolls (layout="screen"): a page that holds the anchor fills it (`h-full`) and scrolls its table itself, so the field stays docked at the window's bottom.
 // `?aside=1`: a 420px aside on the right inside the page, as an expert's page has; `?anchor=1` also puts the kit's AgentComposerAnchor in the main column, so the field sits under it.
 const withAnchor = params.get('anchor') === '1', withAside = withAnchor || params.get('aside') === '1';
 const Table = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
@@ -55,7 +56,7 @@ const Table = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-
   <Counter />
   {Array.from({ length: rows }, (_, index) => <p key={index} role="row" className="flex items-center justify-between rounded-md border p-3">Row {index + 1}<button type="button" data-testid={`cite-${index + 1}`} onClick={() => window.__layer.talkAbout('@meal:2026-10-27/lunch')}>Cite</button></p>)}
 </div>;
-const Page = () => withAside ? <div data-testid="split" className="flex min-h-0 min-w-0 flex-1">
+const Page = () => withAside ? <div data-testid="split" className="flex h-full min-h-0 min-w-0">
   <div data-testid="main-column" className="flex min-h-0 min-w-0 flex-1 flex-col"><Table />{withAnchor && <Anchor />}</div>
   <aside data-testid="aside" className="w-[420px] shrink-0 overflow-y-auto border-l p-4"><h2 className="text-base font-medium">Demande de justificatifs</h2><p>Trois pièces fictives manquent au dossier Cèdre.</p></aside>
 </div> : <Table />;

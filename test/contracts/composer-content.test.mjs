@@ -523,11 +523,14 @@ test('1280, composer=content without an anchor: the field still spans the column
   assert.ok(await rect('[data-testid=composer-bar-commands]'), 'the Actions button is in the content field without an anchor too');
 });
 
-test('390, composer=content with an AgentComposerAnchor: the phone keeps the peek drawer, the anchor draws nothing, the page is whole', { skip, timeout: 120000 }, async () => {
+test('390, composer=content with an AgentComposerAnchor: the phone keeps the peek drawer, the anchor draws nothing, the field is whole', { skip, timeout: 120000 }, async () => {
   await open(390, 'composer=content&anchor=1&bar=1');
-  assert.equal(await count('[data-testid=composer]'), 1, 'one composer');
-  const view = await browser.evaluate(`({ w: innerWidth, h: innerHeight })`);
-  const field = await rect('[data-testid=composer]');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-anchor-composer]')?.childElementCount ?? 0`), 0, 'nothing drawn in the anchor on a phone');
+  await browser.evaluate(`window.__layer.open('agent', 'peek')`);
+  await browser.until('peek', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'peek'`);
+  await wait(900);
+  assert.equal(await count('[data-testid=composer]'), 1, 'one composer, in the drawer');
+  const view = await browser.evaluate(`({ w: innerWidth, h: innerHeight })`), field = await rect('[data-testid=composer]');
   assert.ok(field && field.x >= 0 && field.right <= view.w && field.bottom <= view.h, `the field is whole on the phone: ${JSON.stringify(field)}`);
   await browser.screenshot('composer-anchor-390-light-idle.png');
 });
