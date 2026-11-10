@@ -75,6 +75,8 @@ export interface ComposerProps {
   /** Extra controls in the bar (the model and effort pill) and a short note beside them. */
   readonly barStart?: ReactNode;
   readonly barNote?: ReactNode;
+  /** Off by default. On, "Attach files" and "Commands" are their own buttons left of the field (named by `labels.attachFiles` and `labels.commands`) instead of items of the "+" menu; the "+" stays only for what is left in it (Take a photo). Commands opens the same `/` list as typing `/`. */
+  readonly barActions?: boolean;
   /** Optional host mode/model chips beside the attach control. */
   readonly chips?: ReactNode;
   /** Optional host context above the input. */
@@ -183,6 +185,17 @@ function useCoarsePointer(): boolean {
     return () => query.removeEventListener?.('change', update);
   }, []);
   return coarse;
+}
+
+/** `barActions`: Attach files and Commands as direct bar buttons (labels from the app). */
+function BarActions({ disabled, onAttach, onCommands }: { readonly disabled: boolean; readonly onAttach?: (() => void) | undefined; readonly onCommands?: (() => void) | undefined }) {
+  const { labels, icons } = useChatText();
+  return <>
+    {onAttach && <Button type="button" variant="outline" size="icon" data-testid="composer-bar-attach" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
+      <icons.attach data-icon="inline-start" aria-hidden="true" /></Button>}
+    {onCommands && <Button type="button" variant="outline" size="sm" data-testid="composer-bar-commands" aria-label={labels.commands} title={labels.commands} disabled={disabled} onClick={onCommands} className="shrink-0">
+      <SlashIcon data-icon="inline-start" aria-hidden="true" />{labels.commands}</Button>}
+  </>;
 }
 
 /** The "+" button and the host's shadcn dropdown menu (Attach files, Take a photo, Commands). */
@@ -389,7 +402,12 @@ export function Composer(props: ComposerProps) {
   const marked = props.markMentionQuery && mentionOpen && trigger ? <QueryBackdrop text={text} start={trigger.start} end={trigger.end} /> : null;
   // eslint-disable-next-line react-hooks/refs -- renderInput receives event callbacks, not ref values; an input calls them only on interaction
   const input = props.renderInput?.({ text, onText, onCaret: setCaret, onSend: () => { if (canSubmit && !menuOpen) props.onSend(); } }) ?? props.input ?? (props.placeholderContent || marked ? <div data-slot="composer-field" className="relative flex min-h-16 w-full min-w-0 flex-1">{marked}{textareaEl}{!text && props.placeholderContent && <span aria-hidden="true" data-slot="composer-placeholder" className="pointer-events-none absolute inset-x-3 top-2 text-xs text-muted-foreground">{props.placeholderContent}</span>}</div> : textareaEl);
-  const plus = (canAttach || items.length > 0) && <PlusActions disabled={disabled || recording} textarea={inner} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={items.length > 0 ? openCommands : undefined} />;
+  const barActions = props.barActions === true;
+  // With `barActions`, attach and commands are bar buttons; the "+" stays only when Take a photo is left in it.
+  const plusHasItems = barActions ? canPhoto : canAttach || items.length > 0;
+  const plusButton = plusHasItems && <PlusActions disabled={disabled || recording} textarea={inner} onAttach={!barActions && canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={!barActions && items.length > 0 ? openCommands : undefined} />;
+  // Off: the "+" alone, as before (same element position). On: the bar buttons first.
+  const plus = barActions && (canAttach || items.length > 0) ? <><BarActions disabled={disabled || recording} onAttach={canAttach ? () => fileInput.current?.click() : undefined} onCommands={items.length > 0 ? openCommands : undefined} />{plusButton}</> : plusButton;
   // One child slot either way, so a composer without `start` keeps its exact markup (React ids included).
   const startAndPlus = props.start && !recording ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
