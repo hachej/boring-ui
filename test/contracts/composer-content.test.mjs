@@ -466,3 +466,46 @@ for (const dark of [false, true]) {
     await browser.screenshot(`composer-content-390-${name}-peek.png`);
   });
 }
+
+// D-2083: the content field follows the app's anchor, and the bar buttons and the / list work through the content composer. Shots (composer-anchor-*.png beside the others) go up as `composer-anchor-shots`.
+test('1280, composer=content with an AgentComposerAnchor: the field and the tray sit under the app column, not under its aside; the Actions button and the / list are in the field (light, dark)', { skip, timeout: 180000 }, async () => {
+  for (const theme of ['light', 'dark']) {
+    await open(1280, `composer=content&anchor=1&bar=1${theme === 'dark' ? '&dark=1' : ''}`);
+    const label = `1280 ${theme}`;
+    const field = await rect('[data-testid=composer]'), main = await rect('[data-testid=main-column]'), aside = await rect('[data-testid=aside]');
+    assert.ok(field && main && aside, `${label}: field, main column and aside are drawn`);
+    assert.equal(await inside('[data-testid=composer]', '[data-testid=agent-composer-anchor]'), true, `${label}: the field is inside the anchor`);
+    assert.ok(field.right <= aside.x + 0.5, `${label}: the field's right edge ${field.right} stops at the aside's left edge ${aside.x}`);
+    assert.ok(Math.abs((field.x + field.w / 2) - (main.x + main.w / 2)) <= 2, `${label}: the field is centred in the main column: ${JSON.stringify({ field, main })}`);
+    assert.equal(await count('[data-testid=composer]'), 1, `${label}: still one composer`);
+    const commands = await rect('[data-testid=composer-bar-commands]');
+    assert.ok(commands, `${label}: the Actions button is in the content field`);
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-bar-commands]')?.getAttribute('aria-label')`), 'Actions du dossier', `${label}: named from labels.commands`);
+    assert.equal(await inside('[data-testid=composer-bar-commands]', '[data-testid=composer]'), true, `${label}: the button is part of the field`);
+    assert.ok(await rect('[data-testid=composer-bar-attach]'), `${label}: the attach button is there too`);
+    await browser.click("document.querySelector('[data-testid=composer-bar-commands]')");
+    await browser.until('the / list opens', `!!document.querySelector('[data-testid=slash-item]')`);
+    assert.equal(await inside('[data-testid=slash-item]', '[data-testid=agent-composer-anchor]'), true, `${label}: the / list opens from the content field`);
+    await browser.screenshot(`composer-anchor-1280-${theme}-list.png`);
+    await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await browser.evaluate(`window.__layer.talkAbout('@meal:2026-10-27/lunch'), 0`);
+    await browser.until('the tray opens', `!!document.querySelector('[data-testid=agent-tray]')`);
+    const tray = await rect('[data-testid=agent-tray]');
+    assert.ok(tray.right <= aside.x + 0.5, `${label}: the tray stops at the aside too (${tray.right} vs ${aside.x})`);
+    assert.equal(await inside('[data-testid=agent-tray]', '[data-testid=agent-composer-anchor]'), true, `${label}: the tray is in the anchor`);
+    assert.equal(await count('[data-testid=composer]'), 1, `${label}: one composer with the tray open`);
+    await browser.screenshot(`composer-anchor-1280-${theme}.png`);
+  }
+  assert.deepEqual(browser.problems, []);
+});
+
+test('1280, composer=content without an anchor: the field still spans the column under the aside', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'composer=content&aside=1&bar=1');
+  assert.equal(await count('[data-testid=agent-composer-anchor]'), 0, 'no anchor in the page');
+  assert.equal(await inside('[data-testid=composer]', '[data-testid=agent-content-composer]'), true, 'the field is in the full-width slot');
+  const slot = await rect('[data-testid=agent-content-composer]'), content = await rect('[data-testid=agent-content]'), field = await rect('[data-testid=composer]');
+  assert.ok(Math.abs(slot.w - content.w) <= 1, `the slot spans the column (${slot.w} of ${content.w})`);
+  assert.ok(Math.abs((field.x + field.w / 2) - (content.x + content.w / 2)) <= 2, 'the field is centred in the whole column, as today');
+  assert.ok(await rect('[data-testid=composer-bar-commands]'), 'the Actions button is in the content field without an anchor too');
+});
