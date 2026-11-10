@@ -5,7 +5,7 @@
  */
 import { createContext, createElement, useContext, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { ArrowDownIcon, ArrowUpIcon, CameraIcon, GitForkIcon, HistoryIcon, ListEndIcon, MessagesSquareIcon, PaperclipIcon, PlusIcon, RefreshCwIcon, SquareIcon } from '../_shared/icons';
+import { ArrowDownIcon, ArrowUpIcon, CameraIcon, GitForkIcon, HistoryIcon, ListEndIcon, MessagesSquareIcon, PaperclipIcon, PlusIcon, RefreshCwIcon, SlashIcon, SquareIcon } from '../_shared/icons';
 import type { BlockIcon } from '../button/actions';
 import { withDefaults } from '../utils/utils';
 
@@ -361,6 +361,8 @@ export const defaultChatIcons = {
   newChat: PlusIcon as BlockIcon,
   add: PlusIcon as BlockIcon,
   attach: PaperclipIcon as BlockIcon,
+  /** The Commands entry (the `+` menu item and the `barActions` button). */
+  commands: SlashIcon as BlockIcon,
   camera: CameraIcon as BlockIcon,
   queue: ListEndIcon as BlockIcon,
   jumpToLatest: ArrowDownIcon as BlockIcon,
