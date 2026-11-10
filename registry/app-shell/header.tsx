@@ -109,7 +109,7 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text, slotRef, me
   const back = spec?.back ? <Button variant="ghost" size="icon" data-testid="header-back" aria-label={text.goBack} title={text.goBack} onClick={() => top?.spec.back?.()}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button> : null;
   // The title starts on the screen gutter (the body's left edge) when it is the first thing in the header; a button or control before it keeps a small gap instead.
   const precedes = Boolean(spec?.leading != null || back || (compact && (menu || avatar || screenSidebar)));
-  return <header data-testid="screen-header" className={`sticky top-0 z-10 flex ${spec?.dense ? 'min-h-12' : 'min-h-14'} shrink-0 items-center gap-1 bg-card ps-[var(--screen-gutter,1rem)] pe-2 pt-(--app-shell-safe-top)`}>
+  return <header data-testid="screen-header" className={`sticky top-0 z-10 flex ${spec?.dense ? 'min-h-12' : 'min-h-14'} shrink-0 items-center gap-1 bg-card px-[var(--screen-gutter,1rem)] pt-(--app-shell-safe-top)`}>
     {compact ? (back ?? (menu ? <SidebarTrigger /> : avatar)) : back}
     {compact && screenSidebar}
     {spec?.leading != null && <div data-testid="header-leading" className="flex shrink-0 items-center gap-1">{spec.leading}</div>}
