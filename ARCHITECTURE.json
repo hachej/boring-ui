@@ -259,6 +259,7 @@
         "isomorphic-git",
         "@earendil-works/chord/context",
         "zod",
+        "node:fs",
         "node:fs/promises",
         "@aws-sdk/client-bedrock-agentcore"
       ],
