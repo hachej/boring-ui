@@ -3,7 +3,7 @@
 // D-2085: drives AgentBar, AgentQuestion and AgentStatus from the chat controller PiChat takes. A thin adapter: it reads the controller's own
 // snapshot (`subscribe`/`getSnapshot`, no second subscription model), derives the pending `ask_user` with the kit's chat view, answers it through
 // the same `actions.answer` a QuestionCard calls (`createRemoteChat().remote.answer`), stops the run with `controller.stop` and sends with `controller.send`.
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { derive, formAnswer, parseQuestion, waitingPart } from '@hachej/boring-ui-kit/chat-view';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
 import type { AgentAnswer, AgentQuestionData } from './agent-question';
@@ -39,7 +39,7 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
   const sending = Boolean(state.echo?.some(item => item.state === 'sending'));
   const working = (Boolean(derived.run) || sending) && !asked;
   const latest = useRef({ controller, actions, derived });
-  latest.current = { controller, actions, derived };
+  useLayoutEffect(() => { latest.current = { controller, actions, derived }; });
 
   // Answered ids stay hidden until the controller's view shows the result, so a second tap cannot answer twice.
   const [settled, setSettled] = useState<string | undefined>();
@@ -69,13 +69,11 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
   }, [asked, answer, questionId, settled, onAnswer, text.skipped]);
 
   // `done` after work ends, until the next work starts.
-  const [finished, setFinished] = useState(false);
-  const was = useRef(false);
-  useEffect(() => {
-    if (working) setFinished(false);
-    else if (was.current && !asked) setFinished(true);
-    was.current = working || (was.current && Boolean(asked));
-  }, [working, asked]);
+  // Derived while rendering (React's "adjust state on a prop change"), so no effect sets state.
+  const [track, setTrack] = useState({ was: false, finished: false });
+  const finished = working ? false : track.was && !asked ? true : track.finished;
+  const was = working || (track.was && Boolean(asked));
+  if (finished !== track.finished || was !== track.was) setTrack({ was, finished });
 
   const onCancel = useCallback(() => { void latest.current.controller.stop().catch(() => {}); }, []);
   const onSend = useCallback(({ text: value }: { readonly text: string }) => {
