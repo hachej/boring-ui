@@ -1,6 +1,9 @@
 # Unreleased
 
 - **AWS interpreter env: file operations no longer follow a link swapped in by the interpreter (`@hachej/boring-execution/aws-code-interpreter`; security fix, no API change; D-2087).** Every file operation walks the host's mount by directory fds with O_NOFOLLOW instead of checking a path then opening it, so code in the interpreter cannot race a directory into a link to outside the folder. Links inside the folder still resolve. Needs Linux `/proc/self/fd`: elsewhere file operations fail with `not_supported`. Nothing to change in hosts.
+
+# Migrating to 0.4.79
+
 - **`Composer barActions`: the commands button moves to the end of the bar; new icon `icons.commands` (`pi-chat`; visible change with `barActions` on only; D-2068).** As the board has it, attach stays first in the bar row and the commands button now sits at the end, right before the voice and send controls (it was next to attach). New `ChatIcons.commands` (default `SlashIcon`) draws the commands glyph in the bar button and in the `+` menu item, so an app can pass its own (for example a lightning bolt) through `icons={{ commands }}`; `icons.attach` already drew the attach glyph. Off by default, the `+` menu is unchanged apart from reading `icons.commands`. Re-sync `pi-chat` (`registry:build` refreshes `public/r`). Test: `test/contracts/composer-bar-actions.test.mjs`; see `features/chat.md`.
 # Migrating to 0.4.78
 
