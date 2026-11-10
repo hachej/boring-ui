@@ -301,7 +301,7 @@ export function AgentBar({ onSend, transcribe, stream, quoted, question, onHisto
                 onPaste={pasteFiles}
                 {...(slash && Slash ? { role: 'combobox', 'aria-expanded': slashOpen, 'aria-haspopup': 'listbox', 'aria-autocomplete': 'list' } as const : {})}
                 onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); if (!slashOpen) submit(); } }} />}
-        {items.length > 0 && state === 'rest' ? <Button type="button" variant="secondary" size="icon" data-agent-bar="" data-testid="agent-bar-actions" aria-label={words.commands} title={words.commands} disabled={disabled} onClick={openCommands} className="sm:w-auto sm:px-3"><CommandsIcon aria-hidden="true" /><span className="max-sm:hidden">{words.commands}</span></Button> : null}
+        {items.length > 0 && state === 'rest' ? <Button type="button" variant="secondary" size="icon" data-agent-bar="" data-testid="agent-bar-actions" aria-label={words.commands} title={words.commands} disabled={disabled} onClick={openCommands}><CommandsIcon aria-hidden="true" /></Button> : null}
         {state !== 'transcribing' ? <Button key="mic" type="button" variant="secondary" size="icon" data-testid="agent-bar-mic" data-held={state === 'holding' ? '' : undefined} data-agent-bar="" className={cn('touch-none select-none', state === 'holding' && 'order-first')} aria-label={words.speak} disabled={disabled} {...hold}>{state === 'holding' ? <SquareIcon /> : <MicIcon />}</Button> : null}
       </>}
       {attachments ? <Input ref={fileInput} type="file" multiple accept={attachments.accept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="agent-bar-file"
