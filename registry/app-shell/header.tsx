@@ -101,16 +101,18 @@ function mergedSpec(entries: readonly Entry[]): ScreenHeaderSpec {
  * The header of the screen on show: the avatar button (compact) or « ← », then the title and subtitle,
  * then the slot of the screen's own controls (`slotRef`), up to two actions, « … » and the agent trigger. `avatar` is the compact account button. `menu` (compact only) makes the leading button open the sidebar sheet and leaves the account to the sidebar's footer. The sidebar toggle of a wide screen lives in the sidebar's own header (`AppSidebar`), not here: on a phone the sheet does not exist while closed, so its opener stays in this header.
  */
-export function ScreenHeader({ fallbackTitle, compact, avatar, text, slotRef, menu, screenSidebar }: { readonly menu?: boolean; readonly screenSidebar?: ReactNode; readonly fallbackTitle: string; readonly compact: boolean; readonly avatar: ReactNode; readonly text: AppShellText; readonly slotRef?: (element: HTMLElement | null) => void }) {
+export function ScreenHeader({ fallbackTitle, compact, leadingAvatar = false, trigger = true, avatar, text, slotRef, menu, screenSidebar }: { readonly leadingAvatar?: boolean; readonly trigger?: boolean; readonly menu?: boolean; readonly screenSidebar?: ReactNode; readonly fallbackTitle: string; readonly compact: boolean; readonly avatar: ReactNode; readonly text: AppShellText; readonly slotRef?: (element: HTMLElement | null) => void }) {
   const top = useTopHeader();
   const spec = top?.spec;
   const actions = spec?.actions ?? [];
   const run = (id: string) => top?.spec.actions?.find(action => action.id === id)?.onSelect();
   const back = spec?.back ? <Button variant="ghost" size="icon" data-testid="header-back" aria-label={text.goBack} title={text.goBack} onClick={() => top?.spec.back?.()}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button> : null;
   // The title starts on the screen gutter (the body's left edge) when it is the first thing in the header; a button or control before it keeps a small gap instead.
-  const precedes = Boolean(spec?.leading != null || back || (compact && (menu || avatar || screenSidebar)));
+  // `leadingAvatar` (AppShell `sidebar={false}`): the account menu leads the bar at every width, as on a phone.
+  const lead = compact || leadingAvatar;
+  const precedes = Boolean(spec?.leading != null || back || (lead && (menu || avatar || screenSidebar)));
   return <header data-testid="screen-header" className={`sticky top-0 z-10 flex ${spec?.dense ? 'min-h-12' : 'min-h-14'} shrink-0 items-center gap-1 bg-card px-[var(--screen-gutter,1rem)] pt-(--app-shell-safe-top)`}>
-    {compact ? (back ?? (menu ? <SidebarTrigger /> : avatar)) : back}
+    {lead ? (back ?? (menu ? <SidebarTrigger /> : avatar)) : back}
     {compact && screenSidebar}
     {spec?.leading != null && <div data-testid="header-leading" className="flex min-w-0 shrink items-center gap-1">{spec.leading}</div>}
     <div className={`min-w-0 flex-1 pe-1 ${precedes ? 'ps-1' : ''}`}>
@@ -120,7 +122,7 @@ export function ScreenHeader({ fallbackTitle, compact, avatar, text, slotRef, me
     {/* An embedded page's own controls (`ScreenHeaderSlotContext`, for example AgentWorkspace layout="embedded"), so it needs no second row. */}
     <div ref={slotRef} data-testid="header-slot" className="flex shrink-0 items-center gap-1 empty:hidden" />
     <HeaderActions actions={actions} compact={compact} text={text} prefix="header" run={run} />
-    {compact && back && !menu && avatar}
-    <AgentTrigger />
+    {lead && back && !menu && avatar}
+    {trigger && <AgentTrigger />}
   </header>;
 }

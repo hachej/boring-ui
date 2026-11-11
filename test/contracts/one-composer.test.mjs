@@ -702,6 +702,33 @@ test('1280: « Discuter » on a task puts it as a mention chip in the one field 
   assert.equal(await count('[data-testid=composer]'), 1, 'one composer, one conversation');
 });
 
+test('AppShell sidebar={false}: a single-screen app has no sidebar at any width, its title and account menu in one top bar, the content centred, with the one composer at the bottom centre (1440, 390)', { skip, timeout: 120000 }, async () => {
+  const visible = selector => browser.evaluate(`[...document.querySelectorAll(${js(selector)})].filter(e => e.getClientRects().length > 0 && e.getBoundingClientRect().width > 0).length`);
+  for (const width of [1440, 390]) {
+    await open(width, 'single=1');
+    assert.equal(await visible('[data-slot=sidebar], [data-slot=sidebar-container], [data-slot=sidebar-gap], [data-testid=tabbar]'), 0, `${width}: no sidebar, no tabs`);
+    const header = await rect('[data-testid=screen-header]');
+    assert.ok(header && header.y <= 1 && header.h <= 64, `${width}: one slim bar at the top (${JSON.stringify(header)})`);
+    assert.equal(await text('[data-testid=header-title]'), 'Compta fictive', `${width}: the app's title`);
+    assert.equal(await inside('[data-testid=account-button]', '[data-testid=screen-header]'), true, `${width}: the account menu in the bar`);
+    assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=screen-header] button')].filter(e => e.getClientRects().length > 0).map(e => e.dataset.testid).filter(id => id !== 'account-button')`).then(ids => ids.length), 0, `${width}: nothing else in the bar (the field's chevron opens the conversation)`);
+    await oneField(`single ${width}`);
+    if (width === 1440) {
+      const page = await rect('[data-testid=page]'), main = await rect('[data-boring=dock-main]'), box = await rect('[data-testid=agent-composer-box]');
+      assert.ok(main.x <= 1 && main.w >= 1439, `the content column takes the whole width (${JSON.stringify(main)})`);
+      assert.ok(Math.abs((page.x + page.w / 2) - 720) <= 2 && page.w <= 800, `the content is centred (${JSON.stringify(page)})`);
+      assert.ok(Math.abs(box.w - 720) <= 1 && Math.abs((box.x + box.w / 2) - 720) <= 2, `the composer at the bottom centre, 720 px (${JSON.stringify(box)})`);
+    } else {
+      const field = await rect('[data-testid=composer]');
+      assert.ok(844 - field.bottom < 40, `390: the field rests at the bottom (no tabs under it): ${field.bottom}`);
+    }
+    await browser.screenshot(`one-composer-${width}-light-single.png`);
+  }
+  // The default (no `sidebar` prop) keeps the sidebar.
+  await open(1440);
+  assert.ok(await visible('[data-slot=sidebar-container], [data-slot=sidebar]') > 0, 'default: the sidebar is there');
+});
+
 test('1440: the geometry: the field at most 720 px at the bottom centre, the page ends above it, the sidebar never moves; Ouvert ~30 %, Agrandir ~70 %; Ancré a ~380 px full-height column (AC-15, AC-16, AC-17)', { skip, timeout: 120000 }, async () => {
   await open(1440);
   const H = 800;

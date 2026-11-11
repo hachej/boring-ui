@@ -7,7 +7,8 @@ import { SlashPicker } from '../../../registry/pi-chat-slash/slash-menu.tsx';
 // D-2198: the real AppShell with `composer="bar"` (the one composer) in French, over a fake controller with fictional bookkeeping text.
 // The test scripts the agent through `window.__run(kind)`: `tool` (a read with its progress), `form` (two questions), `reply` (the run ends
 // with a reply that cites a file). `window.__answered` holds what the question card answered, `window.__sent` what the field sent.
-// A cited file opens the fixture's own preview through `useAgentLayer().preview`. `?composer=content` is the previous mode, `?dark=1` the dark theme.
+// A cited file opens the fixture's own preview through `useAgentLayer().preview`. `?composer=content` is the previous mode, `?dark=1` the dark theme,
+// `?single=1` a single-screen app (`sidebar={false}`, with an account).
 const params = new URLSearchParams(location.search);
 // The demo page (one-composer-demo.html) runs in English; the tests keep the French words they assert.
 const EN = typeof window !== 'undefined' && window.__DEMO_LANG === 'en';
@@ -107,4 +108,5 @@ const agent = { controller, icon: Icon, label: 'Assistant', library, ...(params.
   // `?fork=1`: the host's conversations with fork and new (edit last, D3): `window.__forked` holds the entries forked at, `window.__new` counts new ones.
   chatProps: { ...(params.get('fork') === '1' ? { conversations: { items: [{ id: 'one-composer', title: 'Dossier Cèdre' }], activeId: 'one-composer', onSelect() {},
     onNew() { window.__new = (window.__new ?? 0) + 1; }, fork: async at => { (window.__forked ??= []).push(String(at)); } } } : {}), title: 'Assistant', locale: LOCALE, mentions: { kinds: { task: { label: id => id, icon: <Icon className="size-4" /> } } }, labels: { placeholder: T('Demandez, ou « / » pour une action', 'Ask anything, or « / » for an action') }, actions, attachments, slash, onOpenFile } };
-createRoot(document.getElementById('root')).render(<AppShell layout="screen" locale={LOCALE} title={T('Compta fictive', 'Demo books')} nav={nav} route={{ id: 'dossier', onChange(id) { window.__route = id; } }} composer={params.get('composer') ?? 'bar'} rail="icon" agent={agent} />);
+createRoot(document.getElementById('root')).render(<AppShell layout="screen" locale={LOCALE} title={T('Compta fictive', 'Demo books')} nav={nav} route={{ id: 'dossier', onChange(id) { window.__route = id; } }} composer={params.get('composer') ?? 'bar'} rail="icon" agent={agent}
+  {...(params.get('single') === '1' ? { sidebar: false, account: { name: 'Julie (fictive)', email: 'julie@example.test', signOut() {}, menu: [] } } : {})} />);

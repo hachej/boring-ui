@@ -94,6 +94,19 @@ test('line, component and file length limits (ported from the template) fail the
   assert.deepEqual(found.findings.map(finding => finding.rule).sort(), ['component-length', 'file-length', 'line-length']);
 });
 
+test('a single-screen app asks the shell for no sidebar (AppShell sidebar={false}) and passes; hiding the sidebar from app css is still a restyle', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'web/src'), { recursive: true });
+  writeFileSync(join(dir, 'web/src/shell.tsx'), `import { AppShell } from '@/components/app-shell/app-shell';\nexport const Shell = ({ nav, route, agent, account }) => <AppShell layout="screen" sidebar={false} composer="bar" title="Coach Max" nav={nav} route={route} agent={agent} account={account} />;\n`);
+  let result = spawnSync(process.execPath, [bin, 'design', 'web/src', '--json'], { cwd: dir, encoding: 'utf8' });
+  assert.deepEqual(JSON.parse(result.stdout).findings, []);
+  assert.equal(result.status, 0);
+  writeFileSync(join(dir, 'web/src/hide.css'), '[data-slot=sidebar] { display: none; }\n');
+  result = spawnSync(process.execPath, [bin, 'design', 'web/src', '--json'], { cwd: dir, encoding: 'utf8' });
+  assert.deepEqual(JSON.parse(result.stdout).findings.map(finding => finding.rule), ['design-no-kit-restyle']);
+});
+
 test('structural arbitrary values and var() pass; platform-owned paths are skipped', t => {
   const dir = mkdtempSync(join(tmpdir(), 'boring-design-app-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
