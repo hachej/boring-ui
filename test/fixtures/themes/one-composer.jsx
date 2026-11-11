@@ -61,7 +61,7 @@ const controller = {
     change({ send: { kind: 'idle' }, draft: { text: '', attachments: [], version: snapshot.draft.version + 1 }, view: { entries: asked, docs: live() } });
     setTimeout(() => change({ view: { entries: [...asked, reply(next + 1, T('Réponse fictive : noté.', 'Fictional reply: noted.'))], docs: {} } }), 800);
   },
-  connect: async () => {}, stop: async () => {}, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {},
+  connect: async () => {}, stop: async () => { window.__stops = (window.__stops ?? 0) + 1; change({ view: runs.reply() }); }, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {},
 };
 // The agent's scripted turns, after the person's question (entry 10).
 const ask = say(10, T('Rapproche le relevé de janvier.', 'Reconcile the January statement.'));
@@ -101,5 +101,7 @@ const FILES = ['uploads/releve-janvier.pdf', 'uploads/ecarts-janvier.csv', 'uplo
 const library = onPicked => <ul data-testid="fixture-library" className="m-0 flex list-none flex-col gap-1 p-2">{FILES.map(path => <li key={path}>
   <button type="button" data-testid="fixture-library-file" data-path={path} className="w-full rounded-md p-2 text-left text-sm hover:bg-accent" onClick={() => { window.__library += 1; onOpenFile(path); onPicked(); }}>{path.split('/').at(-1)}</button></li>)}</ul>;
 const agent = { controller, icon: Icon, label: 'Assistant', library, ...(params.get('readonly') === '1' ? { readOnly: T('Lecture seule : votre rôle permet de lire, pas d’écrire (fictif).', 'Read only: your role may read, not write (fictional).') } : {}), voice: { transcribe: async () => 'Texte dicté fictif', send: 'draft' },
-  chatProps: { title: 'Assistant', locale: LOCALE, labels: { placeholder: T('Demandez, ou « / » pour une action', 'Ask anything, or « / » for an action') }, actions, attachments, slash, onOpenFile } };
+  // `?fork=1`: the host's conversations with fork and new (edit last, D3): `window.__forked` holds the entries forked at, `window.__new` counts new ones.
+  chatProps: { ...(params.get('fork') === '1' ? { conversations: { items: [{ id: 'one-composer', title: 'Dossier Cèdre' }], activeId: 'one-composer', onSelect() {},
+    onNew() { window.__new = (window.__new ?? 0) + 1; }, fork: async at => { (window.__forked ??= []).push(String(at)); } } } : {}), title: 'Assistant', locale: LOCALE, labels: { placeholder: T('Demandez, ou « / » pour une action', 'Ask anything, or « / » for an action') }, actions, attachments, slash, onOpenFile } };
 createRoot(document.getElementById('root')).render(<AppShell layout="screen" locale={LOCALE} title={T('Compta fictive', 'Demo books')} nav={nav} route={{ id: 'dossier', onChange() {} }} composer={params.get('composer') ?? 'bar'} rail="icon" agent={agent} />);

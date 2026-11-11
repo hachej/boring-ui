@@ -1,11 +1,13 @@
 'use client';
 
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import type { ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
 import type { JsonObject } from '@earendil-works/pi-durable';
 import { AlertCircleIcon, CircleSlashIcon, ClockIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, ImageOffIcon, PauseIcon, PlayIcon, PresentationIcon } from '../_shared/icons';
 import { CopyButton } from './code-block';
+import type { OwnMessageActions } from './queue';
 import type { AnswerOutcome, ChatArtifactsConfig, ChatCards, CommandMentions } from './config';
 import { ActivityBlock } from './activity';
 import type { ActivityState } from './activity';
@@ -91,6 +93,8 @@ export interface RowContext {
   readonly answeredBy?: ((reply: ReplyRef) => AnsweredBy | undefined) | undefined;
   /** Fork the conversation after a settled reply (its last native entry): adds a Fork button next to Copy. */
   readonly onFork?: ((entryId: string) => void) | undefined;
+  /** `PiChat composerEditLast` on touch: a long press on the person's own message offers « Reprendre » and « Revenir ici » (`useEditLast`). */
+  readonly ownMessage?: OwnMessageActions | undefined;
 }
 
 function AnsweredByLine({ answered }: { readonly answered: AnsweredBy }) {
@@ -346,6 +350,30 @@ function UserBubble({ message, images, context, align = 'end', lead = false, loc
   </MessageContent></Message>;
 }
 
+/** A press of this long on the person's own message (touch only) opens « Reprendre » and « Revenir ici ». */
+const LONG_PRESS_MS = 500;
+
+/** D3 on touch: the person's own message, which a long press opens to « Reprendre » (its text back in the field) and « Revenir ici » (the
+ * conversation forked before it, the old one kept). A mouse click or a key opens nothing: the keyboard has ↑ and Échap twice. */
+function OwnMessagePress({ rowKey, actions, children }: { readonly rowKey: string; readonly actions: OwnMessageActions; readonly children: ReactNode }) {
+  const { labels } = useChatText();
+  const [open, setOpen] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const release = () => clearTimeout(timer.current);
+  return <DropdownMenu open={open} onOpenChange={next => { if (!next) setOpen(false); }}>
+    <DropdownMenuTrigger nativeButton={false} render={<div data-testid="own-message" />}
+      onPointerDown={event => { if (event.pointerType !== 'touch') return; clearTimeout(timer.current); timer.current = setTimeout(() => setOpen(true), LONG_PRESS_MS); }}
+      onPointerUp={release} onPointerCancel={release} onPointerLeave={release} onContextMenu={event => { if (open) event.preventDefault(); }}>{children}</DropdownMenuTrigger>
+    <DropdownMenuContent align="end" data-testid="own-message-menu" className="pi-chat">
+      <DropdownMenuGroup>
+        <DropdownMenuItem data-testid="own-message-resume" onClick={() => actions.resume(rowKey)}>{labels.resumeMessage}</DropdownMenuItem>
+        <DropdownMenuItem data-testid="own-message-rewind" onClick={() => actions.rewind(rowKey)}>{labels.rewindHere}</DropdownMenuItem>
+      </DropdownMenuGroup>
+    </DropdownMenuContent>
+  </DropdownMenu>;
+}
+
 function Notice({ tone, icon, children, testid }: { readonly tone: 'error' | 'muted'; readonly icon: ReactNode; readonly children: ReactNode; readonly testid: string }) {
   return <Alert variant={tone === 'error' ? 'destructive' : 'default'} role={tone === 'error' ? 'alert' : 'status'} data-testid={testid}>
     {icon}<AlertDescription>{children}</AlertDescription>
@@ -416,7 +444,11 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
   const { labels, icons } = useChatText();
   const renderMention = useMemo(() => context.pieces?.mentions ? (path: string, text: string) => <UserMention path={path} text={text} open={context.pieces?.openMention} render={context.pieces?.renderMention} kinds={context.pieces?.kinds} /> : undefined, [context.pieces]);
   switch (row.type) {
-    case 'user': return <article data-row-id={row.key} data-role="user" data-send-state={row.local} aria-live={row.historical ? 'off' : undefined} className={row.local === 'sending' ? 'opacity-70' : undefined}><UserBubble message={row.message} images={images} context={row.local && context.pieces?.preview ? { ...context, pieces: { ...context.pieces, preview: undefined } } : context} lead={row.lead === true} local={row.local} />{row.local === 'failed' && <NotSent />}</article>;
+    case 'user': {
+      const bubble = <UserBubble message={row.message} images={images} context={row.local && context.pieces?.preview ? { ...context, pieces: { ...context.pieces, preview: undefined } } : context} lead={row.lead === true} local={row.local} />;
+      return <article data-row-id={row.key} data-role="user" data-send-state={row.local} aria-live={row.historical ? 'off' : undefined} className={row.local === 'sending' ? 'opacity-70' : undefined}>
+        {context.ownMessage && !row.local && !row.historical ? <OwnMessagePress rowKey={row.key} actions={context.ownMessage}>{bubble}</OwnMessagePress> : bubble}{row.local === 'failed' && <NotSent />}</article>;
+    }
     case 'card': return <article data-row-id={row.key} data-role="event">{row.card.content}</article>;
     case 'event': return <article data-row-id={row.key} data-role="event" className="text-center text-xs text-muted-foreground">{labels.event(row.label)}</article>;
     case 'system': return <article data-row-id={row.key} data-role="system"><Collapsible>

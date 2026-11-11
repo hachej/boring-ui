@@ -544,3 +544,56 @@ test('1280: read only, the box stays in place with one line giving the reason; n
   await browser.screenshot('one-composer-1280-light-read-only.png');
 });
 
+test('1280: edit last the Claude Code way: ↑ recalls, ↓ comes back, Échap stops a run, Échap twice lists the messages and a pick forks before it; a long press on an own message offers Reprendre and Revenir ici (AC-14)', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'fork=1');
+  const value = () => browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`);
+  await type('Combien de pièces manquent ?');
+  await click('[data-testid=composer-submit]');
+  await browser.until('the run ends', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply'`);
+  await browser.evaluate(`document.querySelector('[data-testid=composer-input]').focus()`);
+  await browser.press('ArrowUp');
+  await browser.until('last message recalled', `document.querySelector('[data-testid=composer-input]').value === 'Combien de pièces manquent ?'`);
+  await browser.press('ArrowUp');
+  await browser.until('the one before', `document.querySelector('[data-testid=composer-input]').value === 'Où en est le dossier Cèdre ?'`);
+  await browser.press('ArrowDown');
+  await browser.until('forward again', `document.querySelector('[data-testid=composer-input]').value === 'Combien de pièces manquent ?'`);
+  await browser.press('ArrowDown');
+  await browser.until('empty again', `document.querySelector('[data-testid=composer-input]').value === ''`);
+  // Échap during a run stops it.
+  await browser.evaluate(`window.__run('tool')`);
+  await browser.until('working', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'working'`);
+  await browser.evaluate(`document.querySelector('[data-testid=composer-input]').focus()`);
+  await browser.press('Escape');
+  await browser.until('stopped', `window.__stops === 1`);
+  // Échap twice in an empty field: the person's messages, newest first; a pick forks before it with the message in the field.
+  await browser.until('rest', `document.querySelector('[data-testid=agent-card]')?.dataset.state !== 'working'`);
+  await browser.evaluate(`document.querySelector('[data-testid=composer-input]').focus()`);
+  await browser.press('Escape'); await browser.press('Escape');
+  await browser.until('rewind list', `!!document.querySelector('[data-testid=rewind-list]')`);
+  assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=rewind-item]')].map(e => e.textContent)`), ['Combien de pièces manquent ?', 'Où en est le dossier Cèdre ?']);
+  assert.equal(await inside('[data-testid=rewind-list]', '[data-testid=agent-composer-box]'), true, 'above the field, in the box');
+  await browser.screenshot('one-composer-1280-light-rewind.png');
+  await click('[data-testid=rewind-item]');
+  await browser.until('forked', `(window.__forked ?? []).length === 1`);
+  assert.equal(await value(), 'Combien de pièces manquent ?', 'the picked message is in the field');
+  assert.equal(await count('[data-testid=rewind-list]'), 0);
+  // The first message has no reply before it: a new conversation, with it in the field.
+  await browser.evaluate(`window.__setText('')`);
+  await browser.evaluate(`document.querySelector('[data-testid=composer-input]').focus()`);
+  await browser.press('Escape'); await browser.press('Escape');
+  await browser.until('rewind list again', `document.querySelectorAll('[data-testid=rewind-item]').length === 2`);
+  await browser.evaluate(`document.querySelectorAll('[data-testid=rewind-item]')[1].click()`);
+  await browser.until('new conversation', `window.__new === 1`);
+  assert.equal(await value(), 'Où en est le dossier Cèdre ?');
+  // Touch: a long press on an own message in the open conversation.
+  await browser.evaluate(`window.__setText('')`);
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('Ouvert', `!!document.querySelector('[data-testid=agent-tray] [data-testid=own-message]')`);
+  await browser.evaluate(`(() => { const e = document.querySelector('[data-testid=agent-tray] [data-testid=own-message]'); const r = e.getBoundingClientRect(); e.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', isPrimary: true, clientX: r.x + 4, clientY: r.y + 4 })); })()`);
+  await browser.until('long-press menu', `!!document.querySelector('[data-testid=own-message-resume]') && !!document.querySelector('[data-testid=own-message-rewind]')`);
+  assert.equal(await text('[data-testid=own-message-resume]'), 'Reprendre');
+  assert.equal(await text('[data-testid=own-message-rewind]'), 'Revenir ici');
+  await click('[data-testid=own-message-resume]');
+  await browser.until('resumed', `document.querySelector('[data-testid=composer-input]').value === 'Où en est le dossier Cèdre ?'`);
+});
+
