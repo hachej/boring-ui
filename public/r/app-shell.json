@@ -179,15 +179,15 @@
       }
     },
     "@layer utilities": {
-      "[data-one-composer] [data-testid=\"composer-dock\"]": {
+      ".app-shell [data-one-composer] [data-testid=\"composer-dock\"]": {
         "padding": "0"
       },
-      "[data-one-composer] [data-slot=\"input-group\"]": {
+      ".app-shell [data-one-composer] [data-slot=\"input-group\"], .app-shell [data-one-composer] [data-slot=\"input-group\"]:focus-within": {
         "border-color": "transparent",
         "background-color": "transparent",
         "box-shadow": "none"
       },
-      "[data-one-composer] [data-testid=\"composer-input\"]:placeholder-shown": {
+      ".app-shell [data-one-composer] [data-testid=\"composer-input\"]:placeholder-shown": {
         "white-space": "nowrap",
         "overflow": "hidden",
         "text-overflow": "ellipsis"
