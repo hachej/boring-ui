@@ -45,7 +45,6 @@ export interface AppShellText {
   readonly dictate: string;
   /** The one composer's microphone: held past 300 ms, release sends; a tap listens until ■. */
   readonly releaseToSend: string;
-  readonly listening: string;
   readonly undock: string;
   /** The folded card: the dot of an unread reply, the run's words, the form's « 1 sur 2 ». */
   readonly unread: string;
@@ -91,7 +90,6 @@ const en: AppShellText = {
   conversation: 'Conversation',
   dictate: 'Dictate',
   releaseToSend: 'Release to send',
-  listening: 'Listening…',
   undock: 'Move to the bottom',
   unread: 'New reply',
   working: 'Working',
@@ -131,7 +129,6 @@ const fr: AppShellText = {
   conversation: 'Conversation',
   dictate: 'Dicter',
   releaseToSend: 'Relâche pour envoyer',
-  listening: 'À l’écoute…',
   undock: 'Détacher en bas',
   unread: 'Nouvelle réponse',
   working: 'En cours',
