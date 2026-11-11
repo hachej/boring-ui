@@ -160,8 +160,9 @@ export function useEditLast({ on, rows, queued, queueActions, working, stop, set
     const recalled = recall.current.index >= 0 && value === recall.current.text;
     if (!recalled) recall.current = { index: -1, text: '' };
     const last = queued.at(-1);
+    const edit = queueActions?.edit;
     if (event.key === 'ArrowUp') {
-      if (last && queueActions && value === '') { event.preventDefault(); void queueActions.edit(last).catch(() => {}); return; }
+      if (last && edit && value === '') { event.preventDefault(); void edit(last).catch(() => {}); return; }
       if ((value === '' || recalled) && recall.current.index + 1 < messages.length) { event.preventDefault(); show(recall.current.index + 1); }
       return;
     }
@@ -170,7 +171,7 @@ export function useEditLast({ on, rows, queued, queueActions, working, stop, set
       return;
     }
     if (event.key !== 'Escape') return;
-    if (last && queueActions) { event.preventDefault(); void queueActions.edit(last).catch(() => {}); return; }
+    if (last && edit) { event.preventDefault(); void edit(last).catch(() => {}); return; }
     if (working) { event.preventDefault(); stop(); return; }
     if (value !== '' || messages.length === 0) { escapedAt.current = 0; return; }
     const now = Date.now();
