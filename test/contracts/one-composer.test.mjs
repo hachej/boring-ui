@@ -638,6 +638,20 @@ test('390: the one field rests above the tabs; the chevron opens half with the t
   await oneField('phone at rest again');
 });
 
+test('390: a hold on Dicter says « Relâche pour envoyer » and release sends from the phone\'s field; nothing opens (AC-11 on a phone, AC-25)', { skip, timeout: 120000 }, async () => {
+  await open(390, 'tabs=1');
+  await browser.until('the field at rest', `!!document.querySelector('[data-testid=agent-talk]')`);
+  const [x, y] = await center('[data-testid=agent-talk]');
+  await mouse('mousePressed', x, y);
+  await browser.until('holding', `!!document.querySelector('[data-testid=agent-talk-release]')`);
+  assert.equal(await text('[data-testid=agent-talk-release]'), 'Relâche pour envoyer');
+  await browser.screenshot('one-composer-390-light-hold.png');
+  await mouse('mouseReleased', x, y);
+  await browser.until('sent on release', `window.__sent.includes('Texte dicté fictif')`);
+  await wait(300);
+  assert.equal(await dockState(), 'peek', 'the send leaves the phone at rest (AC-25)');
+});
+
 // A software keyboard, as a phone reports it: the visual viewport shrinks from the bottom (`?kb=1` installs the stand-in before the page runs).
 const KEYBOARD = `if (location.search.includes('kb=1')) { const real = window.visualViewport; const fake = new EventTarget(); let inset = 0;
   for (const key of ['width', 'offsetLeft', 'pageLeft', 'pageTop']) Object.defineProperty(fake, key, { get: () => real[key] });
@@ -693,6 +707,7 @@ test('1280: « Discuter » on a task puts it as a mention chip in the one field 
   await oneField('talkAbout');
   assert.equal(await text('[data-testid=composer] [data-testid=mention-chip]'), 'D-2219', 'the chip names the task');
   assert.ok(!(await browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`)).includes('@task:'), 'no raw token in the field (no target in the field, D6)');
+  await browser.screenshot('one-composer-1280-light-talk-about.png');
   await type('Relance-la');
   await click('[data-testid=composer-submit]');
   await browser.until('sent', `window.__sent.length === 1`);
