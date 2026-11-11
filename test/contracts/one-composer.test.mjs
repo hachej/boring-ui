@@ -614,6 +614,9 @@ test('390: the one field rests above the tabs; the chevron opens half with the t
   assert.ok(field.bottom <= tabbar.y + 1, `the field sits above the tabs (${field.bottom} <= ${tabbar.y})`);
   const tabHit = () => browser.evaluate(`(() => { const e = document.elementFromPoint(${tabbar.x}, ${tabbar.y + tabbar.h / 2}); return !!e && !!e.closest(${js(tabs)}); })()`);
   assert.equal(await tabHit(), true, 'the tabs are in view at rest');
+  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer-sheet] [data-testid=conversation-content]')].filter(e => e.getClientRects().length > 0).length`), 0, 'at rest only the field shows, no clipped line of the thread (mockup l-6)');
+  const sheetTop = await browser.evaluate(`document.querySelector('[data-testid=agent-layer-sheet]').getBoundingClientRect().top`);
+  assert.ok(field.y - sheetTop <= 40, `the rest is the field and the handle, no empty band above it (${field.y - sheetTop}px)`);
   await browser.screenshot('one-composer-390-light-rest-tabs.png');
   await click('[data-testid=agent-bar-conversation]');
   await browser.until('Ouvert: half', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'half'`);

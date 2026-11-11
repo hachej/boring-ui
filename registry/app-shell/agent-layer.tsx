@@ -120,6 +120,8 @@ function LibraryButton({ open, text, testId = 'agent-preview-library' }: { reado
 
 // The three fixed snap points: a peek (the file chip, one composer row and a line of the last reply, `PEEK_REM` above the tab bar), 55% and the full height.
 const PEEK_REM = 8;
+/** `composer: 'bar'` (AC-20, mockup l-6): the peek is the one field and the handle, no line of the thread. */
+const PEEK_BAR_REM = 6;
 /** The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60). */
 const Z = { tabs: 20, peek: 30, layer: 40, sheet: 50, point: 60 } as const;
 const HALF = 0.55;
@@ -306,14 +308,14 @@ function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefin
 }
 
 /** The height in px of the tab bar the peek sits above (`--app-shell-tabbar` on the shell root), and one rem. */
-function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): { readonly peekPoint: string; readonly tabbar: number } {
-  const [px, setPx] = useState(PEEK_REM * 16);
+function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>, peekRem: number): { readonly peekPoint: string; readonly tabbar: number } {
+  const [px, setPx] = useState(peekRem * 16);
   const [tabbar, setTabbar] = useState(0);
   useLayoutEffect(() => {
     const measure = () => {
       const tab = probe.current?.offsetHeight ?? 0;
       const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      setPx(Math.round(PEEK_REM * rem + tab));
+      setPx(Math.round(peekRem * rem + tab));
       setTabbar(tab);
     };
     measure();
@@ -321,7 +323,7 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>): { readonly pe
     const observer = typeof ResizeObserver === 'undefined' || !probe.current ? undefined : new ResizeObserver(measure);
     if (observer && probe.current) observer.observe(probe.current);
     return () => { window.removeEventListener('resize', measure); observer?.disconnect(); };
-  }, [probe]);
+  }, [probe, peekRem]);
   return { peekPoint: `${px}px`, tabbar };
 }
 
@@ -348,7 +350,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // `bar` on a phone (AC-20): the one composer is never closed away; at rest it is the peek, the field right above the tabs. Close and Échap come back here.
   const snap: Snap = composer === 'bar' && compact && agent !== undefined && shown === 'agent' && snapState === 'closed' ? 'peek' : snapState;
   const probe = useRef<HTMLDivElement>(null);
-  const { peekPoint, tabbar } = useMeasuredPeek(probe);
+  const { peekPoint, tabbar } = useMeasuredPeek(probe, composer === 'bar' && own !== undefined ? PEEK_BAR_REM : PEEK_REM);
   const triggerUntil = useRef(0);
   const restoreFocus = useRef(false);
   const [side, setSideState] = useState<DockSide>('right');
@@ -1074,7 +1076,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   // The popup is portalled to the body, outside the shell root: it is given the measured tab bar height and the z-values explicitly.
   // `bar` (AC-20): Ouvert on a phone is the half, and the tabs stay in view under it (the popup's part over them is clipped, as at peek).
   const keepTabs = layer.bar && snap === 'half';
-  const style = { '--app-shell-trigger-clear': `${triggerClear}px`, '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-peek-height': `${PEEK_REM}rem`, '--app-shell-z-layer': Z.layer,
+  const style = { '--app-shell-trigger-clear': `${triggerClear}px`, '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-peek-height': `${layer.bar ? PEEK_BAR_REM : PEEK_REM}rem`, '--app-shell-z-layer': Z.layer,
     paddingBottom: peek || keepTabs ? 'calc(var(--drawer-snap-point-offset, 0px) + var(--app-shell-tabbar, 0px))' : 'var(--drawer-snap-point-offset, 0px)',
     ...(pinnedBottom ? { bottom: pinnedBottom } : {}) } as CSSProperties;
   // Entering the modal half or full from the non-modal peek does not rerun Base UI's initial focus: if focus is still on the page, take it to Close.
@@ -1138,7 +1140,8 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
               '[&_[data-testid=composer]_[data-slot=input-group]]:flex-row! [&_[data-testid=composer]_[data-slot=input-group]]:items-center',
               '[&_[data-testid=composer-input]]:min-h-11 [&_[data-testid=composer-input]]:max-h-11 [&_[data-testid=composer-input]]:flex-1 [&_[data-testid=composer-input]]:px-4 [&_[data-testid=composer-input]]:py-2.5',
               voice.phase !== 'starting' && voice.phase !== 'recording' && '[&_[data-testid=composer-controls]]:w-auto [&_[data-testid=composer-controls]]:shrink-0 [&_[data-testid=composer-controls]]:py-0 [&_[data-testid=composer-controls]>span.flex-1]:hidden',
-              '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-annotate]]:hidden'])}>
+              '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-annotate]]:hidden'],
+            peek && layer.bar && '[&_[data-boring=pi-chat]>.relative]:hidden [&_[data-testid=conversation-content]]:hidden')}>
           {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} />}
           {!peek && <VoiceProblem />}
           {peek && recording && <div aria-hidden="true" data-testid="agent-listening" data-phase={voice.phase} className="sr-only">
