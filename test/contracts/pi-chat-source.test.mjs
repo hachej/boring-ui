@@ -502,7 +502,10 @@ test('the "Take a photo" item shows only for attachments that admit images on a 
     export const DropdownMenu = ({ children }) => h('div', null, children);
     export const DropdownMenuTrigger = ({ children, render, ...props }) => h('button', props, children);
     export const DropdownMenuContent = ({ children }) => h('div', { role: 'menu' }, children);
-    export const DropdownMenuItem = ({ children, onClick, ...props }) => h('div', { role: 'menuitem', onClick, ...props }, children);`;
+    export const DropdownMenuItem = ({ children, onClick, ...props }) => h('div', { role: 'menuitem', onClick, ...props }, children);
+    export const DropdownMenuGroup = ({ children }) => h('div', { role: 'group' }, children);
+    export const DropdownMenuLabel = ({ children }) => h('div', null, children);
+    export const DropdownMenuSeparator = () => h('hr');`;
   await build({ entryPoints: [`${root}registry/pi-chat/composer.tsx`], outfile: `${out}/composer-menu-stub.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent',
     plugins: [{ name: 'stub-menu', setup(builder) { builder.onResolve({ filter: /components\/ui\/dropdown-menu$/ }, () => ({ path: 'stub-menu', namespace: 'stub' })); builder.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: stub, loader: 'js', resolveDir: root })); } }] });
   const { Composer, acceptsPhotos } = await import(pathToFileURL(`${out}/composer-menu-stub.mjs`).href);
