@@ -868,7 +868,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const readOnly = barred ? spec.readOnly : undefined;
   const barProps = barred ? {
     ...(readOnly ? { renderComposer: () => <p data-testid="agent-read-only" className="m-0 flex min-h-14 items-center px-4 text-sm text-muted-foreground">{readOnly}</p> } : {}),
-    composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerStart: <ConversationChevron unread={barChat.historyBadge} />,
+    composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerEditLast: true, composerStart: <ConversationChevron unread={barChat.historyBadge} />,
     // While the agent's question waits, the field says so; a typed message answers it (PiChat's own rule).
     ...(barChat.question ? { labels: { ...spec.chatProps?.labels, placeholder: words.answerHere } } : {}),
     ...(spec.voice ? { composerWhenEmpty: <BarMicButton mic={mic} label={words.dictate} />,
