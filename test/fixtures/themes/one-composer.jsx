@@ -93,7 +93,9 @@ const Page = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-c
   <h1 className="text-lg font-medium">{T('Dossier Cèdre (fictif)', 'Cedar file (fictional)')}</h1>
   {Array.from({ length: rows }, (_, index) => <p key={index} role="row" data-testid="page-row" className="flex items-center justify-between rounded-md border p-3">{T('Écriture', 'Entry')} {index + 1}<span>{T(`${(index + 1) * 12},00 €`, `€${(index + 1) * 12}.00`)}</span></p>)}
 </div>;
-const nav = [{ id: 'dossier', label: T('Dossier', 'File'), icon: Icon, render: () => <Page /> }];
+const nav = [{ id: 'dossier', label: T('Dossier', 'File'), icon: Icon, render: () => <Page /> },
+  // `?tabs=1`: a second screen, so a phone shows its bottom tabs (AC-20).
+  ...(params.get('tabs') === '1' ? [{ id: 'pieces', label: T('Pièces', 'Documents'), icon: Icon, render: () => <Page /> }] : [])];
 const attachments = { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })) };
 const slash = { Picker: SlashPicker, commands: [{ name: 'relance', description: T('Rédiger une relance fictive.', 'Draft a fictional reminder.'), run: api => api.setText(T('Relance du dossier Cèdre', 'Reminder for the Cedar file')) }], skills: [] };
 const FILES = ['uploads/releve-janvier.pdf', 'uploads/ecarts-janvier.csv', 'uploads/releve-fevrier.pdf'];
