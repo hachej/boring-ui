@@ -21,8 +21,8 @@ export interface AgentBarChatActions {
 export interface AgentBarChatWords {
   readonly working: string;
   readonly done: string;
-  /** Kept for a form answered from older code; the bar now asks every question of a form. */
-  readonly skipped: string;
+  /** Unused since D-2198: every question of a form is asked and a blank answer is refused, so no question is ever sent unanswered. Kept so older `labels` still type-check. */
+  readonly skipped?: string;
   /** The accessible name of the unread dot (`historyBadge`). */
   readonly unread: string;
   /** A form's step line: « 1 sur 2 ». */
@@ -53,7 +53,7 @@ export interface AgentBarChat {
   readonly onSend: (message: { readonly text: string }) => void;
 }
 
-const words: AgentBarChatWords = { working: 'En cours', done: 'Terminé', skipped: 'Pas de réponse', unread: 'Nouvelle réponse', step: (index, count) => `${index} sur ${count}` };
+const words: AgentBarChatWords = { working: 'En cours', done: 'Terminé', unread: 'Nouvelle réponse', step: (index, count) => `${index} sur ${count}` };
 
 /** A tool call as the chat's tool words read it. */
 type Call = Parameters<typeof liveLabel>[0];
@@ -108,7 +108,7 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
 
   // A form is asked one question at a time; its answers are kept here and sent together, as PiChat's form sends them. None is ever skipped.
   const [form, setForm] = useState<{ readonly id: string | undefined; readonly answers: readonly string[] }>({ id: undefined, answers: [] });
-  const { step: stepWords, skipped } = text;
+  const { step: stepWords } = text;
   const question = useMemo<AgentQuestionData | undefined>(() => {
     if (!asked || !answer || questionId === undefined || settled === questionId) return undefined;
     const parsed = parseQuestion(asked.call);
@@ -120,14 +120,16 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
       return { title: item.question, step: parsed.question ? `${parsed.question} · ${step}` : step, choices: item.options, submit: null,
         ...(index > 0 ? { answered: answers[index - 1]! } : {}),
         onAnswer: ({ text: value }) => {
+          // A blank answer is no answer: the question stays (AC-8, nothing is ever sent as « Pas de réponse »).
+          if (!value.trim()) return;
           const all = [...answers, value];
           if (all.length < parsed.items.length) { setForm({ id: questionId, answers: all }); return; }
           setForm({ id: undefined, answers: [] });
-          onAnswer({ text: formAnswer(parsed.items, all, skipped), source: 'choice' });
+          onAnswer({ text: formAnswer(parsed.items, all, ''), source: 'choice' });
         } };
     }
     return { title: parsed.question, choices: parsed.options, submit: null, onAnswer };
-  }, [asked, answer, questionId, settled, onAnswer, form, stepWords, skipped]);
+  }, [asked, answer, questionId, settled, onAnswer, form, stepWords]);
 
   // `done` after work ends, until the next work starts.
   // Derived while rendering (React's "adjust state on a prop change"), so no effect sets state.

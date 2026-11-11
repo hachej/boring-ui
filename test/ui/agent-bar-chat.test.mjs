@@ -42,6 +42,7 @@ test('AgentBar, AgentQuestion and AgentStatus follow the chat controller through
     import { useAgentBarChat } from './agent-bar/use-agent-bar-chat.ts';
     export function Harness({ controller, actions }) {
       const bar = useAgentBarChat(controller, { actions });
+      globalThis.__question = bar.question;
       return <>{bar.status ? <AgentStatus {...bar.status} /> : null}
         {bar.reply ? <p data-testid="probe-reply" data-used={bar.reply.used.join(',')} data-files={bar.reply.files.join(',')}>{bar.reply.text}</p> : null}
         <button type="button" data-testid="probe-read" onClick={bar.markRead}>read</button>
@@ -119,6 +120,12 @@ test('AgentBar, AgentQuestion and AgentStatus follow the chat controller through
     assert.equal(answers.length, 1);
     assert.equal(answers[0].text, '1. Quel exercice ?\n→ 2026\n\n2. Quel journal ?\n→ Ventes');
     assert.equal(answers[0].text.includes('Pas de réponse'), false);
+  });
+  await t.test('D-2198 AC-8: a blank answer to a form question is not an answer: the question stays, nothing is sent', async () => {
+    await draw(formAsking);
+    await act(async () => { globalThis.__question.onAnswer({ text: '   ', source: 'text' }); });
+    assert.equal(q('agent-question')?.getAttribute('aria-label'), 'Quel exercice ?', 'still the first question');
+    assert.equal(answers.length, 0);
   });
   await t.test('D-2198: a reply after a run is kept with the dot until read; history found at mount is not a new reply', async () => {
     await draw(replied);
