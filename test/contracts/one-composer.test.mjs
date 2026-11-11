@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after, before } from 'node:test';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -48,6 +48,14 @@ before(async () => {
     return { path, base: dirname(path), content: readFileSync(path, 'utf8') };
   } });
   const css = compiler.build(sources.flatMap(source => source.split(/[\s"'`]+/)));
+  // A clickable demo for review (D-2198): the same bundle in one self-contained page, with a small panel that drives the scripted agent.
+  // CI uploads it with the shots (composer-content-shots/one-composer-demo.html). No network, no keys: the agent is the fixture's fake.
+  const panel = `<div id="demo-panel" style="position:fixed;top:8px;right:8px;z-index:100;display:flex;flex-wrap:wrap;gap:6px;max-width:360px;padding:8px;border-radius:10px;background:var(--card);color:var(--foreground);box-shadow:0 4px 16px rgb(0 0 0 / 15%);font:12px system-ui,sans-serif">`
+    + `<b style="width:100%">Démo · agent fictif</b>`
+    + [['tool', 'L’agent lit un fichier'], ['form', 'L’agent pose 2 questions'], ['reply', 'L’agent répond']].map(([kind, label]) => `<button type="button" onclick="window.__run('${kind}')">${label}</button>`).join('')
+    + `<button type="button" onclick="window.__openFile('uploads/ecarts-janvier.csv')">Ouvrir un fichier</button>`
+    + `<button type="button" onclick="document.documentElement.classList.toggle('dark')">Clair / sombre</button></div>`;
+  writeFileSync(join(shots, 'one-composer-demo.html'), `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>One composer · démo</title><style>${css}</style></head><body><div id="root"></div>${panel}<script type="module">${js.replace(/<\/script/gi, '<\\/script')}</script></body></html>`);
   const html = '<!doctype html><html lang="fr"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script type="module" src="/app.js"></script></body></html>';
   server = createServer((req, res) => {
     const path = req.url.split('?')[0];
