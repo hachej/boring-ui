@@ -51,11 +51,11 @@ before(async () => {
   // A clickable demo for review (D-2198): the same bundle in one self-contained page, with a small panel that drives the scripted agent.
   // CI uploads it with the shots (composer-content-shots/one-composer-demo.html). No network, no keys: the agent is the fixture's fake.
   const panel = `<div id="demo-panel" style="position:fixed;left:8px;bottom:8px;z-index:100;display:flex;flex-wrap:wrap;gap:6px;max-width:220px;padding:8px;border-radius:10px;background:var(--card);color:var(--foreground);box-shadow:0 4px 16px rgb(0 0 0 / 15%);font:12px system-ui,sans-serif">`
-    + `<b style="width:100%;cursor:pointer" title="Replier / déplier" onclick="for (const b of this.parentElement.querySelectorAll('button')) b.hidden = !b.hidden">Démo · agent fictif ▾</b>`
-    + [['tool', 'L’agent lit un fichier'], ['form', 'L’agent pose 2 questions'], ['reply', 'L’agent répond']].map(([kind, label]) => `<button type="button" onclick="window.__run('${kind}')">${label}</button>`).join('')
-    + `<button type="button" onclick="window.__openFile('uploads/ecarts-janvier.csv')">Ouvrir un fichier</button>`
-    + `<button type="button" onclick="document.documentElement.classList.toggle('dark')">Clair / sombre</button></div>`;
-  writeFileSync(join(shots, 'one-composer-demo.html'), `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>One composer · démo</title><style>${css}</style></head><body><div id="root"></div>${panel}<script type="module">${js.replace(/<\/script/gi, '<\\/script')}</script></body></html>`);
+    + `<b style="width:100%;cursor:pointer" title="Fold / unfold" onclick="for (const b of this.parentElement.querySelectorAll('button')) b.hidden = !b.hidden">Demo · fictional agent ▾</b>`
+    + [['tool', 'Agent reads a file'], ['form', 'Agent asks 2 questions'], ['reply', 'Agent replies']].map(([kind, label]) => `<button type="button" onclick="window.__run('${kind}')">${label}</button>`).join('')
+    + `<button type="button" onclick="window.__openFile('uploads/ecarts-janvier.csv')">Open a file</button>`
+    + `<button type="button" onclick="document.documentElement.classList.toggle('dark')">Light / dark</button></div>`;
+  writeFileSync(join(shots, 'one-composer-demo.html'), `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>One composer · demo</title><style>${css}</style></head><body><div id="root"></div>${panel}<script>window.__DEMO_LANG = 'en';</script><script type="module">${js.replace(/<\/script/gi, '<\\/script')}</script></body></html>`);
   const html = '<!doctype html><html lang="fr"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><link rel="stylesheet" href="/app.css"></head><body><div id="root"></div><script type="module" src="/app.js"></script></body></html>';
   server = createServer((req, res) => {
     const path = req.url.split('?')[0];
@@ -237,6 +237,13 @@ test('1280: typing keeps the buttons on the last line; a file is a name-only chi
   await click('[data-testid=composer-submit]');
   await browser.until('sent', `window.__sent.length === 1`);
   assert.ok((await browser.evaluate('window.__sent[0]')).includes('@uploads/releve-fevrier.pdf'), 'the file is still sent with the message');
+  // Sent, the file is one of the conversation's files: it lives in the 📎 menu, never twice on screen (Julien, demo review).
+  assert.equal(await count('[data-testid=conversation-files]'), 0, 'no separate « Fichiers » button above the field');
+  await click('[data-testid=composer-bar-attach]');
+  await browser.until('files menu', `!!document.querySelector('[data-testid=conversation-files-list]')`);
+  assert.equal(await count('[data-testid=conversation-files-list] [data-testid=composer-attach]'), 1, 'attach first');
+  assert.ok((await browser.evaluate(`[...document.querySelectorAll('[data-testid=conversation-files-list] [data-testid=conversation-file]')].map(e => e.textContent).join('|')`)).includes('releve-fevrier.pdf'), 'then the conversation\'s files');
+  await browser.press('Escape');
   await open(1280);
   await type('/rel');
   await browser.until('slash list', `!!document.querySelector('[data-testid=slash-item]')`);

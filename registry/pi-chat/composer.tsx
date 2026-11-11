@@ -6,6 +6,7 @@ import { FileTextIcon, Loader2Icon, MessageSquarePlusIcon, XIcon } from '../_sha
 import { AttachmentAction } from '@/components/ui/attachment';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { ConversationFiles } from './conversation-files';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from '@/components/ui/input-group';
 import { Toggle } from '@/components/ui/toggle';
@@ -50,7 +51,7 @@ export interface ComposerFeedback extends ChatSessionFeedback {
 
 /** One file being uploaded (or that failed to upload), shown as a chip until it settles or is dismissed. */
 export type { PendingUpload } from '@hachej/boring-ui-kit/chat-react';
-import type { PendingUpload, ChatSessionFeedback } from '@hachej/boring-ui-kit/chat-react';
+import type { ConversationFile, PendingUpload, ChatSessionFeedback } from '@hachej/boring-ui-kit/chat-react';
 
 export interface ComposerProps {
   /** `/` menu of commands and skills. Absent: no menu and no keyboard trigger. */
@@ -74,6 +75,8 @@ export interface ComposerProps {
   readonly barActions?: boolean | 'attach';
   /** Off by default. On, an uploaded file (`@uploads/…`) shows only as a chip with its name: its token leaves the editable text and is still sent (the shell's one composer, D-2198). */
   readonly fileChips?: boolean;
+  /** With `barActions="attach"`: the conversation's files. The attach button then opens one « Fichiers » menu: « Joindre des fichiers… », then these files (a pick opens one). PiChat then draws no separate files button. */
+  readonly files?: readonly ConversationFile[] | undefined;
   /** Optional host mode/model chips beside the attach control. */
   readonly chips?: ReactNode;
   /** Optional host context above the input. */
@@ -376,7 +379,10 @@ export function Composer(props: ComposerProps) {
   const plusHasItems = barActions ? canPhoto : canAttach || items.length > 0;
   const plusButton = plusHasItems && <PlusActions disabled={disabled || recording} textarea={inner} onAttach={!barActions && canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={!barActions && items.length > 0 ? openCommands : undefined} />;
   // Off: the "+" alone, as before (same element position). On: the bar buttons first.
-  const plus = barActions && canAttach ? <><BarAttach disabled={disabled || recording} onAttach={() => fileInput.current?.click()} quiet={props.barActions === 'attach'} />{plusButton}</> : plusButton;
+  const openFiles = props.barActions === 'attach' ? (props.files ?? []).filter(file => file.open) : [];
+  const attachButton = openFiles.length > 0 ? <ConversationFiles icon files={openFiles} disabled={disabled || recording} attach={() => fileInput.current?.click()} />
+    : <BarAttach disabled={disabled || recording} onAttach={() => fileInput.current?.click()} quiet={props.barActions === 'attach'} />;
+  const plus = barActions && canAttach ? <>{attachButton}{plusButton}</> : plusButton;
   // One child slot either way, so a composer without `start` keeps its exact markup (React ids included).
   const startAndPlus = props.start && !recording ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"

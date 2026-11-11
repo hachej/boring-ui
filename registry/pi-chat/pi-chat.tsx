@@ -312,12 +312,12 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
         <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} conversations={conversations} />
       </div>
       <div>
-        <ConversationFiles files={[...conversationFiles.values()]} />
+        {composerBarActions === 'attach' ? null : <ConversationFiles files={[...conversationFiles.values()]} />}
         <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
         {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
         {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, disabled: composer.disabled || leaving, stopOpen: leaving && !composer.disabled,
           ...(composerRecording === undefined && VoiceStatus && VoiceStop && capturing ? { recordingStatus: <VoiceStatus voice={voice} />, recordingStop: <VoiceStop voice={voice} /> }
-            : { recording: composerRecording ?? (VoiceButton && capturing ? <VoiceButton voice={voice} /> : undefined) }), layout: composerLayout, ...(composerBarActions ? { barActions: composerBarActions } : {}), ...(composerFileChips ? { fileChips: true } : {}),
+            : { recording: composerRecording ?? (VoiceButton && capturing ? <VoiceButton voice={voice} /> : undefined) }), layout: composerLayout, ...(composerBarActions ? { barActions: composerBarActions } : {}), ...(composerFileChips ? { fileChips: true } : {}), ...(composerBarActions === 'attach' ? { files: [...conversationFiles.values()] } : {}),
           placeholder: labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder, barStart, barNote, start: composerStart,
           ...(voiceMessage && VoiceButton && voiceReplacesSend ? { barEnd: tools, whenEmpty: <VoiceButton voice={voice} primary disabled={leaving || state.disposed || !connected || state.send.kind === 'unknown'} /> }
             : { barEnd: voiceMessage && VoiceButton ? <>{tools}<VoiceButton voice={voice} disabled={leaving || state.disposed || !connected || state.send.kind === 'unknown'} /></> : tools }),
