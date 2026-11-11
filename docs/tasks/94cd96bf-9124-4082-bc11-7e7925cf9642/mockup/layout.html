@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>One Composer · Layout</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="kit.css">
+<link rel="stylesheet" href="mock.css">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}main{max-width:1200px;gap:28px}</style>
+</head>
+<body>
+<main>
+<header>
+  <span class="eyebrow">D-2198 · AppShell layout · left: today (real kit 0.4.82 screenshots) · right: target (drawn with the kit's tokens)</span>
+  <h1>Where the composer lives in the page</h1>
+  <p class="muted">Same AppShell for every app, three regions. <b>Sidebar</b> (tabs on a phone): never moves. <b>Content</b>: the screen, with the one composer at its bottom. <b>Right column</b>: one thing at a time, the docked conversation or what the app opens (a file, a job, a record). <a href="index.html">Back to the composer</a>.</p>
+</header>
+
+<section class="block"><div class="row-title"><h3>1 · At rest</h3><span>1280</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><img src="img/today-page-bar.jpg" alt="Today: a page with its own agent bar at the bottom"><span class="cap">The page draws its own bar (AgentBar) at the bottom. The shell's field lives only in the chat.</span></div>
+  <div class="side t"><span class="lbl">Target</span><div id="l1"></div><span class="cap">The shell draws the one field at the bottom centre of the content, max 720 px. The page's scroll ends above it; the sidebar does not move.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>2 · Open the conversation</h3><span>Ouvert · after a send or the chevron</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><div class="none">No such state in Compta or Coach Max: opening the chat docks it on the right (row 3).</div></div>
+  <div class="side t"><span class="lbl">Target</span><div id="l2"></div><span class="cap">The <b>same box grows upward</b>: the thread on top, the field below, <b>one clean border</b> around both, at the field's width (max 720 px), never the page's. About 30 % of the height, Agrandir to 70 %. The page above shrinks; nothing covers it. Échap or the chevron folds it.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>3 · Docked</h3><span>Ancré · « Ancrer à droite »</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><img src="img/today-dock.jpg" alt="Today: the assistant docked right with its own field at the bottom of the dock"><span class="cap">The assistant docks right with its own field. In Compta the page's bar stays at the bottom too: <b>two fields on screen</b>.</span></div>
+  <div class="side t"><span class="lbl">Target</span><div id="l3"></div><span class="cap">Thread and field move together to the right column (~380 px, full height). <b>Nothing stays at the bottom.</b> « Détacher en bas » goes back to Ouvert, Fermer to rest.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>4 · A file opened</h3><span>dropped, attached or cited by the agent · conversation not docked</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><div class="none">The kit has no preview place; each app builds its own, and it competes with the docked chat for the right side.</div></div>
+  <div class="side t"><span class="lbl">Target</span><div id="l4"></div><span class="cap">The file takes the right column; the conversation stays above the field (Ouvert) so you can talk about it. When the conversation is docked, see row 5. The kit gives the place; the app draws the preview.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>5 · A file opened while docked</h3><span>the conversation is in the right column</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><div class="none">The docked chat and an app's own preview compete for the right side.</div></div>
+  <div class="side t"><span class="lbl">Target</span><div id="l4b"></div><span class="cap">The file (or an artifact the agent made) opens <b>in the same column, on top of the conversation</b>. « ← Assistant » goes back to the thread; the file stays one tap away as a chip. The field stays at the bottom of the column the whole time, so you can talk about the file while you look at it. Nothing moves in the page.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>6 · Phone at rest and typing</h3><span>390</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><img src="img/today-390-bar.jpg" alt="Today on a phone: the page bar at the bottom" style="max-width:300px;margin-inline:auto"><span class="cap">The page's bar at the bottom; the chat is a separate drawer with its own field.</span></div>
+  <div class="side t"><span class="lbl">Target</span><div class="phones" id="l5"></div><span class="cap"><b>Above the tabs</b> (D1), with the home-bar inset under the tabs. Typing: the keyboard comes up, the tabs hide, the box rides on the keyboard; the field keeps at least 140 px.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>7 · Phone open and docked</h3><span>390</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><img src="img/today-390-chat.jpg" alt="Today on a phone: the chat drawer with its own field" style="max-width:300px;margin-inline:auto"><span class="cap">The chat opens as a drawer with the two-row composer.</span></div>
+  <div class="side t"><span class="lbl">Target</span><div class="phones" id="l6"></div><span class="cap">Ouvert: the same box grows up to about half the screen, the tabs stay. Ancré: full screen, tabs hidden; Fermer returns. Always the same one-row field.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>8 · Dark</h3></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><img src="img/today-page-bar-dark.jpg" alt="Today in dark: the page bar with a status line"></div>
+  <div class="side t dark-zone" style="background:var(--card)"><span class="lbl">Target</span><div id="l7"></div><span class="cap">The same tokens in dark: folded with a reply waiting.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>9 · The control plane (D-2203)</h3><span>same shell, same composer</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today (its mockup)</span><div class="none">D-2203's mockup draws its own composer under the dashboard (« @D-2219 » to write to a worker, « Discuss » on a card) and a second field on an opened job.</div></div>
+  <div class="side t"><span class="lbl">Target</span><div id="l8"></div><span class="cap">It draws no field and the one field always talks to the app's assistant (D6). « Discuter » on a card puts the task in the field as a chip (<b>@D-2219</b>), the way a cited row does today; the assistant passes the message to that worker and brings its answer back into the same thread. A task's detail (D-2203 calls it a « job »: what it waits on, its checkpoints, Stop and Clean) opens in the right column like a file (D7).</span></div>
+</div></section>
+
+<section class="block">
+  <div class="ask"><b>Your call</b><ul>
+    <li>Picked: <b>D6 · no target in the field</b>. The field always talks to the app's assistant; it relays to a worker named in the message (@D-2219).</li>
+    <li>Picked: <b>D7 · one right column</b>, for the docked conversation or one opened thing (a file, an artifact, a task's detail). Docked, an opened thing stacks on top of the conversation with « ← Assistant » to go back (row 5).</li>
+  </ul></div>
+</section>
+</main>
+<script src="mock.js"></script>
+<script>
+const thread = me('Combien de pièces manquent ?') + ai('Deux : le relevé de février et la facture du loyer.');
+fill('l1', desk({bottom: box()}));
+fill('l2', desk({content: rows(5), bottom: box({open:true, top: thHead() + thread})}));
+fill('l3', desk({right: rcol('Assistant', thread, box({open:true}), ib('bottom','','Détacher en bas') + ib('x','','Fermer'))}));
+fill('l4', desk({content: rows(5), bottom: box({open:true, chips: chip('ecarts-janvier.csv'), top: thHead() + me('Que contient ce fichier ?') + ai('Deux écarts de 12,00 €.')}), right: rcol('ecarts-janvier.csv', '<div class="pv">The app\'s own preview</div>', '', ib('x','','Fermer l’aperçu'))}));
+fill('l4b', desk({right: rcol(`<span style="display:inline-flex;align-items:center;gap:4px">${ib('left','','Retour à l’assistant')}<span style="font-weight:500;color:var(--muted-foreground)">Assistant</span> / ecarts-janvier.csv</span>`, '<div class="pv">The app\'s own preview of ecarts-janvier.csv</div>', box({open:true, chips: chip('ecarts-janvier.csv'), ph:'Demandez…'}), ib('x','','Fermer'))}));
+fill('l5', `<div>${phone(box({ph:'Demandez, ou « / »'}))}</div><div>${phone(box({text:'Combien de pièces manquent', focus:true, action:'send'}), {keyboard:true})}</div>`);
+fill('l6', `<div>${phone(box({open:true, top: thHead() + thread}), {body: rows(6)})}</div><div>${phone('', {full: `<div class="ah" style="display:flex;align-items:center;gap:2px"><span style="flex:1">Assistant</span>${ib('bottom','','Détacher en bas')}${ib('x','','Fermer')}</div><div class="bd" style="gap:8px">${thread}</div><div class="dk">${box({open:true})}</div>`})}</div>`);
+fill('l7', desk({bottom: box({top: replyTop, dot:true})}));
+const cards = `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+ <div style="display:flex;flex-direction:column;gap:6px"><span class="cap">NEEDS YOU · 2</span><div class="rowi" style="flex-direction:column;gap:4px"><span class="cap">Coach Max · D-2219</span><b>Quel jour commence la semaine ?</b><span class="chs"><span>Lundi</span><span>Dimanche</span><span class="on">Discuter</span></span></div></div>
+ <div style="display:flex;flex-direction:column;gap:6px"><span class="cap">WORKING · 3</span><div class="rowi" style="flex-direction:column;gap:2px"><span class="cap">Compta · D-2231</span><b>Export FEC mensuel</b><span class="cap">Verify · CI 7/9</span></div></div>
+ <div style="display:flex;flex-direction:column;gap:6px"><span class="cap">DONE · 9</span><div class="rowi" style="flex-direction:column;gap:2px"><span class="cap">Coach Max · D-2210</span><b>Rappel du soir</b></div></div></div>`;
+fill('l8', desk({title:'Dashboard', sb: side(['Dashboard','Apps','Crew'], 0, 'Studio'), content: cards, bottom: box({open:true, chips: chip('@D-2219 · Quel jour commence la semaine ?'), top: me('@D-2219 La plupart des membres sont en France ?') + ai('<b>PM</b> · J’ai demandé au worker de D-2219 : oui, 92 % en fr-FR, il partirait sur lundi.')})}));
+</script>
+</body>
+</html>
