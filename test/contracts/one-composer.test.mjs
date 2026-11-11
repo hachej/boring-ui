@@ -524,6 +524,7 @@ test('1280, folded: a failed send puts the text back in the field, says so on on
   assert.equal(await inside('[data-testid=agent-send-problem]', '[data-testid=agent-composer-box]'), true, 'in the one box, above the field');
   const line = await rect('[data-testid=agent-send-problem]'), field = await rect('[data-testid=composer]');
   assert.ok(line.bottom <= field.y + 1 && line.h <= 48, `one line above the field (${JSON.stringify(line)})`);
+  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-composer-box] [data-testid=send-blocked], [data-testid=agent-composer-box] [data-testid=send-unknown]')].filter(e => e.getClientRects().length > 0).length`), 0, 'one line: the chat\'s own notice steps aside (AC-12)');
   assert.equal(await count('[data-testid=agent-tray]'), 0, 'nothing opens');
   await browser.screenshot('one-composer-1280-light-send-failed.png');
   await click('[data-testid=agent-send-retry]');

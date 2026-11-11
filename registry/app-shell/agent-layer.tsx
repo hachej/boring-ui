@@ -1155,8 +1155,8 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   </Drawer>;
 }
 
-/** Folded (`composer: 'bar'`): the card on the field says what the agent does, so the chat's own status line and its files list above the field step aside. */
-const FOLDED_FIELD = '[&_[data-testid=preparing]]:hidden [&_[data-testid=composer-dock]_p[data-testid=agent-status]]:hidden [&_[data-testid=conversation-files]]:hidden';
+/** Folded (`composer: 'bar'`): the card on the field says what the agent does, so the chat's own status line, its files list and its send notice (the box's one line says it, AC-12) step aside. */
+const FOLDED_FIELD = '[&_[data-testid=preparing]]:hidden [&_[data-testid=composer-dock]_p[data-testid=agent-status]]:hidden [&_[data-testid=conversation-files]]:hidden [&_[data-testid=send-blocked]]:hidden [&_[data-testid=send-unknown]]:hidden';
 
 /** The panel inside the dock: the same element docked or floating, so a placement change keeps focus and the chats where they are. */
 function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSide }) {
