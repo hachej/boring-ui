@@ -52,7 +52,7 @@ const actions = {
   answer: async (questionId, text) => { window.__answered.push({ questionId, text }); change({ view: runs.tool() }); return { kind: 'answered' }; },
 };
 window.__library = 0;
-const onOpenFile = path => window.__layer.preview({ title: path.split('/').at(-1), library: () => { window.__library += 1; }, content: <div data-testid="fixture-preview" className="p-4 text-sm">Aperçu fictif de {path} : deux écarts de 12,00 €.</div> });
+const onOpenFile = path => window.__layer.preview({ title: path.split('/').at(-1), content: <div data-testid="fixture-preview" className="p-4 text-sm">Aperçu fictif de {path} : deux écarts de 12,00 €.</div> });
 window.__openFile = onOpenFile;
 const Icon = ({ className }) => <svg className={className} viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="currentColor" /></svg>;
 const Probe = () => { const api = useAgentLayer(); useLayoutEffect(() => { window.__layer = api; }); return null; };
@@ -65,6 +65,10 @@ const Page = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-c
 const nav = [{ id: 'dossier', label: 'Dossier', icon: Icon, render: () => <Page /> }];
 const attachments = { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })) };
 const slash = { Picker: SlashPicker, commands: [{ name: 'relance', description: 'Rédiger une relance fictive.', run: api => api.setText('Relance du dossier Cèdre') }], skills: [] };
-const agent = { controller, icon: Icon, label: 'Assistant', library: () => { window.__library += 1; }, voice: { transcribe: async () => 'Texte dicté fictif', send: 'draft' },
+const FILES = ['uploads/releve-janvier.pdf', 'uploads/ecarts-janvier.csv', 'uploads/releve-fevrier.pdf'];
+// The app's navigator for « Bibliothèque » (an app would pass the kit's FileTreeView here); a pick opens the file in the same pane.
+const library = onPicked => <ul data-testid="fixture-library" className="m-0 flex list-none flex-col gap-1 p-2">{FILES.map(path => <li key={path}>
+  <button type="button" data-testid="fixture-library-file" data-path={path} className="w-full rounded-md p-2 text-left text-sm hover:bg-accent" onClick={() => { window.__library += 1; onOpenFile(path); onPicked(); }}>{path.split('/').at(-1)}</button></li>)}</ul>;
+const agent = { controller, icon: Icon, label: 'Assistant', library, voice: { transcribe: async () => 'Texte dicté fictif', send: 'draft' },
   chatProps: { title: 'Assistant', locale: 'fr', actions, attachments, slash, onOpenFile } };
 createRoot(document.getElementById('root')).render(<AppShell layout="screen" locale="fr" title="Compta fictive" nav={nav} route={{ id: 'dossier', onChange() {} }} composer={params.get('composer') ?? 'bar'} rail="icon" agent={agent} />);

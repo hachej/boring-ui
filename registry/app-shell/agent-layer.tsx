@@ -68,8 +68,13 @@ export interface AgentSpec {
   readonly feedback?: FeedbackSession;
   /** Host actions in the layer's title row (before the dock controls, or the snap and close controls when compact), as the screen header's. Two shown, the rest in « … ». Not at peek. */
   readonly headerActions?: readonly ScreenHeaderAction[];
-  /** `composer="bar"` (D-2198): the app's file library. The assistant's header (docked, or above the field) gets a « Bibliothèque » button that calls it; the app opens its list (a file it opens shows with `useAgentLayer().preview`). */
-  readonly library?: (() => void) | undefined;
+  /**
+   * `composer="bar"` (D-2198): the app's library, the same shape as the workspace bar's `library`: the app renders its file navigator (for example
+   * the kit's `FileTreeView`) and calls `onPicked` once a file is chosen. « Bibliothèque » in the assistant's header and in a preview's header opens it
+   * in the right pane, by the preview's rules (over the docked conversation, or the right column); the file the app then opens with
+   * `useAgentLayer().preview` takes its place.
+   */
+  readonly library?: ((onPicked: () => void) => ReactNode) | undefined;
 }
 
 /** Compact: closed, peek, half or full. Expanded: closed or open. */
@@ -100,8 +105,6 @@ export interface AgentLayerApi {
 export interface AgentPreview {
   readonly title: string;
   readonly content: ReactNode;
-  /** The app's file library: with it the preview's header has a « Bibliothèque » button, as the workspace viewer's top bar has (the app opens its own list). */
-  readonly library?: (() => void) | undefined;
 }
 
 /** The preview header's Library button, when the app gives one. */
@@ -223,6 +226,8 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly shownPreview: AgentPreview | null;
   /** The preview sits on top of the docked conversation in the same column (« ← Assistant »), not in a column of its own. */
   readonly previewStacked: boolean;
+  /** Opens `agent.library` in the right pane (undefined without one). */
+  readonly openLibrary: (() => void) | undefined;
 }
 
 type DockSide = 'left' | 'right';
@@ -552,14 +557,27 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     if (next && specs.current.expanded && (specs.current.snap === 'closed' || specs.current.shown !== 'agent')) open('agent');
     return true;
   }, [composer, open]);
+  // « Bibliothèque »: the app's navigator in the right pane, as a preview; a file the app opens from it replaces it, `onPicked` closes it otherwise.
+  const shownRef = useRef<AgentPreview | null>(null);
+  useLayoutEffect(() => { shownRef.current = shownPreview; });
+  const library = agent?.library;
+  const openLibrary = useMemo(() => {
+    if (!library || composer !== 'bar') return undefined;
+    return () => {
+      const words = appShellText(locale ?? specs.current.agent?.chatProps?.locale);
+      const view: { title: string; content: ReactNode } = { title: words.library, content: null };
+      view.content = library(() => { if (shownRef.current === view) preview(null); });
+      preview(view);
+    };
+  }, [library, composer, locale, preview]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- a preview goes with the agent it was opened beside
   useEffect(() => { if (!agent && shownPreview) setPreview(null); }, [agent, shownPreview]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the tray is gone with the content composer (a phone width, a lost agent): the fill state goes with it
   useEffect(() => { if (!trayOpen && grown) setGrown(false); }, [trayOpen, grown]);
   const value = useMemo<Internal>(() => ({
     state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, anchored: anchor !== null, setAnchor, setDropZone, onSent, mode, setMode, moveToDock, registerDock, grown, setGrown, trayOpen, dockOpen,
-    bar, folded, cardSlot, setCardSlot, shownPreview, previewStacked, preview,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen, bar, folded, cardSlot, shownPreview, previewStacked, preview]);
+    bar, folded, cardSlot, setCardSlot, shownPreview, previewStacked, preview, openLibrary,
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen, bar, folded, cardSlot, shownPreview, previewStacked, preview, openLibrary]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -792,7 +810,7 @@ function Header({ text, title, compactSnap, closeRef, controls, className, ...re
   const actions = layer.showing === 'improve' ? [] : layer.agent?.headerActions ?? [];
   // A file stacked on the docked conversation takes the header: « ← <file> » goes back to the thread.
   const file = layer.previewStacked && layer.showing === 'agent' && compactSnap === undefined ? layer.shownPreview : null;
-  const library = layer.bar && layer.showing === 'agent' ? (file?.library ?? layer.agent?.library) : undefined;
+  const library = layer.bar && layer.showing === 'agent' ? layer.openLibrary : undefined;
   return <div data-testid="agent-layer-header" {...rest} className={cn('flex shrink-0 items-center gap-1 px-2 pb-1', className)}>
     {back && <Button variant="ghost" size="icon" data-testid="agent-layer-back" aria-label={text.back} title={text.back} onClick={layer.showAgent}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
     {file && <Button variant="ghost" size="icon" data-testid="agent-preview-back" aria-label={text.backToAssistant} title={text.backToAssistant} onClick={() => layer.preview(null)}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
@@ -1180,7 +1198,7 @@ function ContentTray() {
     <div data-testid="agent-tray-body" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
       <div data-testid="agent-tray-header" className="flex shrink-0 items-center gap-1 pt-1">
         <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{title}</h2>
-        {layer.bar && <LibraryButton open={layer.agent?.library} text={text} testId="agent-layer-library" />}
+        {layer.bar && <LibraryButton open={layer.openLibrary} text={text} testId="agent-layer-library" />}
         <Button variant="ghost" size="icon" data-testid="agent-tray-dock" aria-label={dockLabel} title={dockLabel}
           onClick={moveToDock}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button>
         <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
@@ -1223,7 +1241,7 @@ function PreviewPane({ preview }: { readonly preview: AgentPreview }) {
     className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground', layer.expanded ? 'relative w-[min(32rem,45%)] shrink-0 border-l' : 'fixed inset-0 z-(--app-shell-z-sheet)')}>
     <div className="flex shrink-0 items-center gap-1 px-2 py-2">
       <h2 data-testid="agent-preview-title" className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{preview.title}</h2>
-      <LibraryButton open={preview.library ?? layer.agent?.library} text={text} />
+      <LibraryButton open={preview.title === text.library ? undefined : layer.openLibrary} text={text} />
       <Button variant="ghost" size="icon" data-testid="agent-preview-close" aria-label={text.closePreview} title={text.closePreview} onClick={close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
     </div>
     <div data-testid="agent-preview-body" className="flex min-h-0 flex-1 flex-col overflow-auto">{preview.content}</div>

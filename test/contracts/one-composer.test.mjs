@@ -127,6 +127,12 @@ test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every
   assert.ok(Math.abs(after.bottom - field.bottom) <= 1, 'the field kept its place');
   assert.equal(await inside('[data-testid=transcript]', '[data-testid=agent-tray]'), true);
   assert.equal(await count('[data-testid=agent-tray] [data-testid=agent-layer-library]'), 1, 'the open conversation\'s header has « Bibliothèque »');
+  await click('[data-testid=agent-tray] [data-testid=agent-layer-library]');
+  await browser.until('library from the bottom composer', `!!document.querySelector('[data-testid=agent-preview] [data-testid=fixture-library]')`);
+  const pane = await rect('[data-testid=agent-preview]'), mainColumn = await rect('[data-boring=dock-main]');
+  assert.ok(pane.x >= mainColumn.right - 1, 'from the bottom composer the library opens in the right pane');
+  await click('[data-testid=agent-preview-close]');
+  await browser.until('library closed', `!document.querySelector('[data-testid=agent-preview]')`);
   assert.equal(await inside('[data-testid=agent-tray]', '[data-testid=agent-composer-box]') && await inside(FIELD, '[data-testid=agent-composer-box]'), true, 'Ouvert: the thread and the field in one box (AC-16)');
   const box = await rect('[data-testid=agent-composer-box]'), contentColumn = await rect('[data-boring=dock-main]');
   assert.ok(box.w <= 721 && box.w < contentColumn.w - 100, `the box keeps the field's width, never the page's (${box.w} in ${contentColumn.w})`);
@@ -255,7 +261,11 @@ test('1280: a file opened while the conversation is not docked takes the right c
   assert.ok(preview.x >= main.right - 1 && preview.h >= 700, `the preview is the right column (${JSON.stringify(preview)})`);
   assert.equal(await inside('[data-testid=agent-tray]', '[data-testid=agent-composer-box]'), true, 'the conversation stays above the field');
   await click('[data-testid=agent-preview] [data-testid=agent-preview-library]');
-  assert.equal(await browser.evaluate('window.__library'), 1, 'the header\'s « Bibliothèque » opens the app\'s library');
+  await browser.until('library in the right pane', `!!document.querySelector('[data-testid=agent-preview] [data-testid=fixture-library]')`);
+  assert.equal(await text('[data-testid=agent-preview-title]'), 'Bibliothèque');
+  await browser.evaluate(`document.querySelector('[data-testid=fixture-library-file][data-path="uploads/releve-fevrier.pdf"]').click()`);
+  await browser.until('picked file in the pane', `(document.querySelector('[data-testid=agent-preview-title]')?.textContent ?? '').includes('releve-fevrier.pdf')`);
+  assert.equal(await browser.evaluate('window.__library'), 1, 'one pick');
   await type('Que contient ce fichier ?');
   await click('[data-testid=composer-submit]');
   await browser.until('usable', `window.__sent.includes('Que contient ce fichier ?')`);
@@ -286,7 +296,10 @@ test('1280: a file opened while docked stacks on the conversation in the same co
   assert.equal(await count('[data-testid=agent-layer-header] [data-testid=agent-preview-back]'), 1, 'one header: « ← <file> » is the dock\'s own title row');
   assert.equal(await count('[data-testid=agent-layer-header] [data-testid=agent-layer-title]'), 0, 'no second title row above the file');
   await click('[data-testid=agent-layer-header] [data-testid=agent-layer-library]');
-  assert.equal(await browser.evaluate('window.__library'), 1, '« Bibliothèque » in the assistant\'s header opens the app\'s library');
+  await browser.until('library over the docked chat', `!!document.querySelector('[data-testid=agent-layer] [data-testid=fixture-library]')`);
+  assert.equal(await text('[data-testid=agent-layer-header] [data-testid=agent-preview-title]'), 'Bibliothèque', 'the library takes the dock\'s header, « ← Bibliothèque »');
+  await browser.evaluate(`document.querySelector('[data-testid=agent-layer] [data-testid=fixture-library-file][data-path="uploads/releve-janvier.pdf"]').click()`);
+  await browser.until('picked file over the docked chat', `(document.querySelector('[data-testid=agent-layer-header] [data-testid=agent-preview-title]')?.textContent ?? '').includes('releve-janvier.pdf')`);
   await browser.screenshot('one-composer-1280-light-preview-docked.png');
   await click('[data-testid=agent-preview-back]');
   await browser.until('back to the thread', `!document.querySelector('[data-testid=agent-preview]')`);
