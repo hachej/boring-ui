@@ -54,6 +54,8 @@ export interface AppShellText {
   readonly closePreview: string;
   /** The stacked preview's way back to the docked conversation. */
   readonly backToAssistant: string;
+  /** The field while the agent's question waits. */
+  readonly answerHere: string;
 }
 
 const en: AppShellText = {
@@ -89,6 +91,7 @@ const en: AppShellText = {
   preview: 'Preview',
   closePreview: 'Close the preview',
   backToAssistant: 'Back to the assistant',
+  answerHere: 'Or answer here',
 };
 
 const fr: AppShellText = {
@@ -124,6 +127,7 @@ const fr: AppShellText = {
   preview: 'Aperçu',
   closePreview: 'Fermer l’aperçu',
   backToAssistant: 'Retour à l’assistant',
+  answerHere: 'Ou répondez ici',
 };
 
 const TEXT: Readonly<Record<AppShellLocale, AppShellText>> = { en, fr };

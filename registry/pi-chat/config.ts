@@ -205,6 +205,8 @@ export interface SlashPickerProps {
   readonly items: readonly SlashItem[];
   readonly onSelect: (item: SlashItem) => void;
   readonly onDismiss: () => void;
+  /** The field is the search (`Composer barActions="attach"`): no search box and no source tabs of its own. */
+  readonly bare?: boolean;
 }
 
 /** Props of the mention picker that `MentionsConfig.Picker` carries. */

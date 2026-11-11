@@ -9,7 +9,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from '@/components/ui/input-group';
 import { Toggle } from '@/components/ui/toggle';
-import { hasMention, isLongPaste, kindMentionDraft, mentionedPaths, mentionKind, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery, writeKindMentionDraft } from '@hachej/boring-ui-kit/chat-text';
+import { displayName, hasMention, isLongPaste, kindMentionDraft, mentionedPaths, mentionKind, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery, writeKindMentionDraft } from '@hachej/boring-ui-kit/chat-text';
 import type { PasteToFile, SlashItem } from '@hachej/boring-ui-kit/chat-text';
 import type { AttachmentsConfig, MentionsConfig, PastedText, SlashConfig } from './config';
 import { useChatText } from './labels';
@@ -72,6 +72,8 @@ export interface ComposerProps {
   readonly barNote?: ReactNode;
   /** Off by default. On, "Attach files" and "Commands" are their own buttons left of the field (named by `labels.attachFiles` and `labels.commands`) instead of items of the "+" menu; the "+" stays only for what is left in it (Take a photo). Commands opens the same `/` list as typing `/`. `'attach'`: only Attach files is a bar button; the commands open by typing `/` alone (the shell's `composer: 'bar'`). */
   readonly barActions?: boolean | 'attach';
+  /** Off by default. On, an uploaded file (`@uploads/…`) shows only as a chip with its name: its token leaves the editable text and is still sent (the shell's one composer, D-2198). */
+  readonly fileChips?: boolean;
   /** Optional host mode/model chips beside the attach control. */
   readonly chips?: ReactNode;
   /** Optional host context above the input. */
@@ -234,7 +236,7 @@ function assignRef(ref: Ref<HTMLTextAreaElement>, element: HTMLTextAreaElement |
 /** Prompt composer: auto-growing textarea, Enter to send, one primary Send/Stop button. While the agent works a message is queued. */
 export function Composer(props: ComposerProps) {
   const { attachments, working, sendBlocked, disabled, stopRequested, uploading, canAttach, layout = 'card' } = props;
-  const draft = kindMentionDraft(props.text, props.mentions);
+  const draft = kindMentionDraft(props.text, props.fileChips ? { kinds: props.mentions?.kinds, files: true } : props.mentions);
   const text = draft.text;
   const tokens = useRef(draft.tokens);
   useLayoutEffect(() => { tokens.current = draft.tokens; });
@@ -349,7 +351,7 @@ export function Composer(props: ComposerProps) {
     {chips.length > 0 && <div role="list" data-testid="mention-chips" aria-label={labels.mentionedFiles} className="contents">
       {chips.map(path => {
         const registered = mentionKind(path, props.mentions);
-        const label = registered ? registered.kind.label(registered.path) : props.mentions?.label?.(path) ?? path;
+        const label = registered ? registered.kind.label(registered.path) : props.mentions?.label?.(path) ?? (props.fileChips ? displayName(path) : path);
         return <Chip key={path} data-testid="mention-chip" data-path={path} title={label} className="max-w-full md:max-w-[16rem]"
           media={registered?.kind.icon ?? props.mentions?.icon ?? <FileTextIcon aria-hidden="true" />} label={registered?.kind.open ? <Button variant="link" size="sm" onClick={() => registered.kind.open?.(registered.path)} className="min-w-0 max-w-full justify-start truncate">{label}</Button> : label}
           actions={<RemoveChip label={labels.remove(label)} onClick={() => props.onText(removeMention(props.text, path))} />} />;
@@ -407,7 +409,7 @@ export function Composer(props: ComposerProps) {
   return <form data-testid="composer" data-layout={layout} data-dragging={dragging || undefined} onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
     className={cn('relative flex flex-col gap-2', pill && '@container/composer')}>
     {fileEl}
-    {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
+    {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} {...(props.barActions === 'attach' ? { bare: true } : {})} />}
     {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} header={typeof mentions.pickerHeader === 'function' ? mentions.pickerHeader(trigger!.query) : mentions.pickerHeader} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {pill && !props.recording && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
     {slots ? pill ? <InputGroup className="h-auto">

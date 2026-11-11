@@ -41,7 +41,6 @@ import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { sentFeedbackContent } from '../feedback/sent-content';
 import { CommentBanner, useCommenting, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
-import { AgentQuestion } from '../agent-bar/agent-question';
 import { useAgentBarChat } from '../agent-bar/use-agent-bar-chat';
 import type { AgentBarChat } from '../agent-bar/use-agent-bar-chat';
 import { useBackLayer } from '../utils/back';
@@ -695,7 +694,12 @@ function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly 
     <section data-testid="agent-card" data-state={question ? 'question' : status?.state === 'working' ? 'working' : 'reply'} aria-label={text.assistant}
       className="flex flex-col gap-2 px-3 pt-2.5 pb-3 text-sm text-card-foreground">
       {header && <p role="status" className="m-0 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">{header}</p>}
-      {question && <AgentQuestion key={`${question.step ?? ''}|${question.title}`} question={question} hint={false} className="p-0" />}
+      {question && <div data-testid="agent-question" aria-label={question.title} className="flex flex-col gap-2">
+        {question.step && <p data-testid="agent-question-step" className="m-0 text-xs text-muted-foreground">{question.step}</p>}
+        {question.answered && <p data-testid="agent-question-answered" className="m-0 flex items-center gap-1.5 text-xs text-muted-foreground"><CheckIcon className="size-3.5 shrink-0" aria-hidden="true" />{question.answered}</p>}
+        <p className="m-0 font-semibold">{question.title}</p>
+        <div className="flex flex-wrap gap-1.5">{question.choices.map(choice => <Button key={choice} type="button" variant="outline" size="sm" data-choice="" onClick={() => question.onAnswer({ text: choice, source: 'choice' })}>{choice}</Button>)}</div>
+      </div>}
       {!question && status?.state !== 'working' && reply && <>
         <p data-testid="agent-card-reply" className="m-0 line-clamp-3 whitespace-pre-line">{readable(reply.text)}</p>
         {reply.files.length > 0 && <div role="list" data-testid="agent-card-files" className="flex flex-wrap gap-1.5">
@@ -724,7 +728,9 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const hosted = role === 'agent' && layer.contentComposer && !(barred && layer.dockOpen);
   const openFile = spec.chatProps?.onOpenFile ?? spec.chatProps?.mentions?.open;
   const barProps = barred ? {
-    composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerStart: <ConversationChevron unread={barChat.historyBadge} />,
+    composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerStart: <ConversationChevron unread={barChat.historyBadge} />,
+    // While the agent's question waits, the field says so; a typed message answers it (PiChat's own rule).
+    ...(barChat.question ? { labels: { ...spec.chatProps?.labels, placeholder: words.answerHere } } : {}),
     ...(spec.voice ? { composerWhenEmpty: <TalkButton label={words.dictate} primary /> } : {}),
   } : {};
   // One annotate toggle: pins on desktop, point mode (which hides the layer while the person taps the app) on touch and compact screens.

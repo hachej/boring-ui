@@ -99,13 +99,13 @@ export function mentionKind<Kind>(value: string, config: { readonly kinds?: Read
   return kind ? { kind, path: match![2]! } : undefined;
 }
 
-/** The composer's editable text and hidden app tokens, derived only from the full draft. File tokens remain editable text. */
-export function kindMentionDraft<Kind>(text: string, config: { readonly kinds?: Readonly<Record<string, Kind>> | undefined } | undefined): { readonly text: string; readonly tokens: readonly string[] } {
+/** The composer's editable text and hidden app tokens, derived only from the full draft. File tokens remain editable text, unless `files` is set: then an uploaded file's token (`@uploads/…`) is hidden too and shows only as its chip (the shell's one composer, D-2198). */
+export function kindMentionDraft<Kind>(text: string, config: { readonly kinds?: Readonly<Record<string, Kind>> | undefined; readonly files?: boolean | undefined } | undefined): { readonly text: string; readonly tokens: readonly string[] } {
   const hidden = new Set<number>(), tokens: string[] = [];
   let offset = 0;
   for (const piece of pieces(text, { mentions: true, skills: [] })) {
     const end = offset + piece.text.length;
-    if (piece.kind === 'mention' && mentionKind(piece.value!, config)) {
+    if (piece.kind === 'mention' && (mentionKind(piece.value!, config) || (config?.files === true && isUploadPath(piece.value!)))) {
       tokens.push(piece.text);
       for (let at = offset; at < end; at++) hidden.add(at);
       if (offset > 0 && text[offset - 1] === ' ' && !hidden.has(offset - 1)) hidden.add(offset - 1);

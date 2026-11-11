@@ -2400,7 +2400,8 @@
           ".app-shell [data-one-composer] [data-slot=\"input-group\"], .app-shell [data-one-composer] [data-slot=\"input-group\"]:focus-within": {
             "border-color": "transparent",
             "background-color": "transparent",
-            "box-shadow": "none"
+            "box-shadow": "none",
+            "align-items": "flex-end"
           },
           ".app-shell [data-one-composer] [data-testid=\"composer-input\"]:placeholder-shown": {
             "white-space": "nowrap",

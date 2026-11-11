@@ -202,6 +202,37 @@ test('1280, folded: the card on the field says what the tool does, asks both que
   await oneField('reply read');
 });
 
+test('1280: typing keeps the buttons on the last line; a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
+  await open(1280);
+  await type('Prépare la relance du dossier Cèdre :');
+  for (const line of ['– les deux relevés de février', '– la facture du loyer']) { await browser.press('Enter', { shift: true }); await browser.send('Input.insertText', { text: line }); }
+  await wait(150);
+  const input = await rect(FIELD), send = await rect('[data-testid=composer-submit]');
+  assert.ok(input.h > 40, `the field grew (${input.h}px)`);
+  assert.ok(Math.abs(send.bottom - input.bottom) <= 8, `the action button sits on the last line (${send.bottom} vs ${input.bottom})`);
+  await open(1280);
+  await browser.evaluate(`(() => { const data = new DataTransfer(); data.items.add(new File(['x'], 'releve-fevrier.pdf', { type: 'application/pdf' })); document.querySelector('[data-testid=composer]').dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true })); })()`);
+  await browser.until('file chip', `[...document.querySelectorAll('[data-testid=composer] [data-testid=mention-chip]')].some(e => e.textContent.includes('releve-fevrier.pdf'))`);
+  const chipText = await browser.evaluate(`document.querySelector('[data-testid=composer] [data-testid=mention-chip]').textContent`);
+  assert.ok(!chipText.includes('uploads/'), `the chip names the file only (${chipText})`);
+  assert.ok(!(await browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`)).includes('@uploads/'), 'the field holds no raw @path');
+  await type('Rapproche-le');
+  await click('[data-testid=composer-submit]');
+  await browser.until('sent', `window.__sent.length === 1`);
+  assert.ok((await browser.evaluate('window.__sent[0]')).includes('@uploads/releve-fevrier.pdf'), 'the file is still sent with the message');
+  await open(1280);
+  await type('/rel');
+  await browser.until('slash list', `!!document.querySelector('[data-testid=slash-item]')`);
+  assert.equal(await count('[data-testid=slash-search]'), 0, 'no second search box: the field filters');
+  await open(1280);
+  await browser.evaluate(`window.__run('form')`);
+  await browser.until('question', `!!document.querySelector('[data-testid=agent-card] [data-testid=agent-question]')`);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-input]').getAttribute('placeholder')`), 'Ou répondez ici');
+  assert.equal(await count('[data-testid=agent-card] [data-part=question]'), 0, 'the question is drawn in the box, not as the agent bar\'s coloured card');
+  const step = await rect('[data-testid=agent-question-step]'), boxRect = await rect('[data-testid=agent-composer-box]');
+  assert.ok(step.y >= boxRect.y && step.x >= boxRect.x, 'the first line is inside the box, not clipped');
+});
+
 test('1280: a file opened while the conversation is not docked takes the right column; the conversation stays above the field (AC-18)', { skip, timeout: 120000 }, async () => {
   await open(1280);
   await browser.evaluate(`window.__layer.open('agent')`);
