@@ -98,6 +98,7 @@ test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every
   assert.equal(await count('[data-testid=composer-bar-attach]'), 1, 'attach is a bar button');
   assert.equal(await count('[data-testid=composer-bar-commands]') + await count('[data-testid=composer-plus]'), 0, 'no Actions button and no + menu');
   assert.equal(await actionName(), 'Dicter', 'empty field: the one action button dictates');
+  assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=composer-input]')).whiteSpace`), 'nowrap', 'an empty field is one line: the placeholder never wraps (AC-2)');
   // « / » typed opens the actions.
   await type('/');
   await browser.until('slash list', `!!document.querySelector('[data-testid=slash-item][data-name=relance]')`);
@@ -117,6 +118,11 @@ test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every
   assert.ok(tray.bottom <= after.y + 1, `Ouvert: the thread sits above the field (${tray.bottom} <= ${after.y})`);
   assert.ok(Math.abs(after.bottom - field.bottom) <= 1, 'the field kept its place');
   assert.equal(await inside('[data-testid=transcript]', '[data-testid=agent-tray]'), true);
+  assert.equal(await inside('[data-testid=agent-tray]', '[data-testid=agent-composer-box]') && await inside(FIELD, '[data-testid=agent-composer-box]'), true, 'Ouvert: the thread and the field in one box (AC-16)');
+  const box = await rect('[data-testid=agent-composer-box]'), contentColumn = await rect('[data-boring=dock-main]');
+  assert.ok(box.w <= 721 && box.w < contentColumn.w - 100, `the box keeps the field's width, never the page's (${box.w} in ${contentColumn.w})`);
+  assert.ok(Math.abs((box.x + box.w / 2) - (contentColumn.x + contentColumn.w / 2)) <= 2, 'centred');
+  assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=agent-composer-box] [data-slot=input-group]')).borderTopColor.includes('0, 0, 0, 0') || getComputedStyle(document.querySelector('[data-testid=agent-composer-box] [data-slot=input-group]')).borderTopColor === 'transparent'`), true, 'one frame: the input group draws no border of its own inside the box');
   // Ancré: the thread and the field in the right column, nothing at the bottom.
   await click('[data-testid=agent-tray-dock]');
   await browser.until('Ancré', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
@@ -159,8 +165,9 @@ test('1280, folded: the card on the field says what the tool does, asks both que
   assert.notEqual(status.trim(), 'En cours');
   assert.equal(await inside('[data-testid=agent-card]', '[data-testid=agent-card-slot]'), true, 'joined above the field');
   const card = await rect('[data-testid=agent-card]'), field = await rect('[data-testid=composer]');
-  assert.ok(Math.abs(card.w - field.w) <= 2, `same width as the field (${card.w} vs ${field.w})`);
-  assert.ok(field.y - card.bottom <= 12 && field.y >= card.bottom - 1, `on top of the field (${card.bottom} → ${field.y})`);
+  assert.equal(await inside('[data-testid=agent-card]', '[data-testid=agent-composer-box]'), true, 'the card is inside the same box as the field');
+  assert.ok(field.y - card.bottom <= 12 && field.y >= card.bottom - 1, `right on top of the field (${card.bottom} → ${field.y})`);
+  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-content-composer] [data-testid=conversation-files]')].filter(e => e.getClientRects().length > 0).length`), 0, 'nothing between the card and the field');
   assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-content-composer] [data-testid=preparing], [data-testid=agent-content-composer] p[data-testid=agent-status]')].filter(e => e.getClientRects().length > 0).length`), 0, 'no second status line under the card');
   await browser.evaluate(`window.__run('form')`);
   await browser.until('question 1', `document.querySelector('[data-testid=agent-card] [data-testid=agent-question]')?.getAttribute('aria-label') === 'Quel exercice ?'`);
@@ -181,6 +188,8 @@ test('1280, folded: the card on the field says what the tool does, asks both que
   assert.ok(header.startsWith('Terminé') && header.includes('releve-janvier.pdf'), `« ✓ Terminé · what was used » (${header})`);
   assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=agent-card-reply]')).webkitLineClamp`), '3', 'three clamped lines');
   assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-card-file]')].map(e => e.dataset.path)`), ['uploads/ecarts-janvier.csv'], 'the cited file as a chip');
+  const replyText = await text('[data-testid=agent-card-reply]');
+  assert.ok(replyText.includes('ecarts-janvier.csv') && !replyText.includes('@uploads/'), `the reply names the file, never the raw @path (${replyText})`);
   assert.equal(await count('[data-testid=agent-bar-unread]'), 1, 'a dot on the chevron');
   assert.equal(await count('[data-testid=agent-tray]'), 0, 'the bar did not force-open');
   assert.equal(await dockState(), 'closed');
@@ -193,29 +202,47 @@ test('1280, folded: the card on the field says what the tool does, asks both que
   await oneField('reply read');
 });
 
-test('1280: a file opened while docked shows its preview in the right column and the chat goes back to Ouvert above the field (AC-5)', { skip, timeout: 120000 }, async () => {
+test('1280: a file opened while the conversation is not docked takes the right column; the conversation stays above the field (AC-18)', { skip, timeout: 120000 }, async () => {
+  await open(1280);
+  await browser.evaluate(`window.__layer.open('agent')`);
+  await browser.until('Ouvert', `!!document.querySelector('[data-testid=agent-tray]')`);
+  await browser.evaluate(`window.__openFile('uploads/ecarts-janvier.csv')`);
+  await browser.until('preview', `!!document.querySelector('[data-testid=agent-preview] [data-testid=fixture-preview]')`);
+  await oneField('preview, not docked');
+  const preview = await rect('[data-testid=agent-preview]'), main = await rect('[data-boring=dock-main]');
+  assert.ok(preview.x >= main.right - 1 && preview.h >= 700, `the preview is the right column (${JSON.stringify(preview)})`);
+  assert.equal(await inside('[data-testid=agent-tray]', '[data-testid=agent-composer-box]'), true, 'the conversation stays above the field');
+  await type('Que contient ce fichier ?');
+  await click('[data-testid=composer-submit]');
+  await browser.until('usable', `window.__sent.includes('Que contient ce fichier ?')`);
+  await browser.screenshot('one-composer-1280-light-preview.png');
+  await click('[data-testid=agent-preview-close]');
+  await browser.until('closed', `!document.querySelector('[data-testid=agent-preview]')`);
+  await oneField('preview closed');
+});
+
+test('1280: a file opened while docked stacks on the conversation in the same column; « ← Assistant » goes back; the field stays at the bottom of the column (AC-19)', { skip, timeout: 120000 }, async () => {
   await open(1280);
   await browser.evaluate(`window.__layer.open('agent')`);
   await browser.until('Ouvert', `!!document.querySelector('[data-testid=agent-tray]')`);
   await click('[data-testid=agent-tray-dock]');
   await browser.until('Ancré', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
   await browser.evaluate(`window.__openFile('uploads/ecarts-janvier.csv')`);
-  await browser.until('preview', `!!document.querySelector('[data-testid=agent-preview] [data-testid=fixture-preview]')`);
-  await browser.until('dock steps aside', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'closed' && !!document.querySelector('[data-testid=agent-tray]')`);
-  await oneField('preview');
-  const preview = await rect('[data-testid=agent-preview]'), main = await rect('[data-boring=dock-main]');
-  assert.ok(preview.x >= main.right - 1 && preview.h >= 700, `the preview is the right column (${JSON.stringify(preview)})`);
-  assert.equal(await inside(FIELD, '[data-testid=agent-content-composer]'), true, 'the field is under the page, Ouvert');
-  const tray = await rect('[data-testid=agent-tray]'), field = await rect('[data-testid=composer]');
-  assert.ok(tray.bottom <= field.y + 1, 'the conversation above the field');
-  await type('Que contient ce fichier ?');
-  await click('[data-testid=composer-submit]');
-  await browser.until('usable', `window.__sent.includes('Que contient ce fichier ?')`);
-  await browser.screenshot('one-composer-1280-light-preview.png');
-  await click('[data-testid=agent-preview-close]');
-  await browser.until('dock back', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open' && !document.querySelector('[data-testid=agent-preview]')`);
-  await oneField('preview closed');
-  assert.equal(await inside(FIELD, '[data-testid=agent-layer]'), true, 'the docked assistant comes back');
+  await browser.until('stacked', `document.querySelector('[data-testid=agent-preview]')?.dataset.placement === 'stacked'`);
+  await oneField('preview stacked');
+  assert.equal(await dockState(), 'open', 'the dock stays');
+  assert.equal(await inside('[data-testid=agent-preview]', '[data-testid=agent-layer]'), true, 'the preview is in the docked column');
+  assert.equal(await count('[data-testid=agent-tray]'), 0, 'nothing comes back to the bottom');
+  assert.equal(await inside(FIELD, '[data-testid=agent-layer]'), true, 'the field stays in the column');
+  const preview = await rect('[data-testid=agent-preview]'), input = await rect(FIELD);
+  assert.ok(preview.bottom <= input.y + 1, 'the field is under the preview');
+  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer] [data-testid=conversation-content]')].every(e => e.getClientRects().length === 0)`), true, 'the thread waits under the preview');
+  assert.ok((await text('[data-testid=agent-preview-title]')).includes('ecarts-janvier.csv'));
+  await browser.screenshot('one-composer-1280-light-preview-docked.png');
+  await click('[data-testid=agent-preview-back]');
+  await browser.until('back to the thread', `!document.querySelector('[data-testid=agent-preview]')`);
+  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer] [data-testid=conversation-content]')].some(e => e.getClientRects().length > 0)`), true, 'the thread is back');
+  await oneField('back');
 });
 
 test('Échap closes Ouvert; at 390 the field keeps a usable width and docked takes the full screen (AC-6)', { skip, timeout: 120000 }, async () => {
@@ -227,6 +254,9 @@ test('Échap closes Ouvert; at 390 the field keeps a usable width and docked tak
   await browser.until('closed by Escape', `!document.querySelector('[data-testid=agent-tray]')`);
   await oneField('after Escape');
   await open(390);
+  // At rest on a phone the field comes with the drawer (its place above the tabs is slice 2, AC-20): open it at peek first.
+  await browser.evaluate(`window.__layer.open('agent', 'peek')`);
+  await browser.until('peek', `!!document.querySelector('[data-testid=composer-input]')`);
   await oneField('phone');
   await browser.evaluate(`window.__layer.open('agent', 'full')`);
   await browser.until('full', `document.querySelector('[data-testid=agent-layer-sheet]') && document.querySelector('[data-testid=agent-layer-sheet]').getBoundingClientRect().height > 0`);
@@ -242,7 +272,7 @@ test('1280, folded during a run: nothing floats over the page and the last row s
   await open(1280, 'rows=40');
   await browser.evaluate(`window.__run('tool')`);
   await browser.until('working card', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'working'`);
-  await browser.evaluate(`(() => { const page = document.querySelector('[data-testid=page]'); page.scrollTop = page.scrollHeight; })()`);
+  await browser.evaluate(`(() => { let node = document.querySelector('[data-testid=page-row]:last-of-type'); while (node && !(node.scrollHeight > node.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(node).overflowY))) node = node.parentElement; (node ?? document.scrollingElement).scrollTop = 1e6; })()`);
   await wait(200);
   const rows = await browser.evaluate(`[...document.querySelectorAll('[data-testid=page-row]')].map(e => e.getBoundingClientRect().bottom)`);
   const card = await rect('[data-testid=agent-card]'), page = await rect('[data-testid=agent-page]');
@@ -265,6 +295,13 @@ test('shots: Ambiant, Ouvert, Ancré, collapsed working, collapsed reply and pre
     await browser.until('Ancré', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
     await wait(300);
     await browser.screenshot(`one-composer-1280-${name}-ancre.png`);
+    await browser.evaluate(`window.__openFile('uploads/ecarts-janvier.csv')`);
+    await browser.until('preview', `!!document.querySelector('[data-testid=agent-preview]')`);
+    await wait(200);
+    await browser.screenshot(`one-composer-1280-${name}-preview-docked.png`);
+    await open(1280, query);
+    await browser.evaluate(`window.__layer.open('agent')`);
+    await browser.until('Ouvert', `!!document.querySelector('[data-testid=agent-tray]')`);
     await browser.evaluate(`window.__openFile('uploads/ecarts-janvier.csv')`);
     await browser.until('preview', `!!document.querySelector('[data-testid=agent-preview]')`);
     await wait(200);

@@ -52,6 +52,8 @@ export interface AppShellText {
   /** The file preview's region and its close button. */
   readonly preview: string;
   readonly closePreview: string;
+  /** The stacked preview's way back to the docked conversation. */
+  readonly backToAssistant: string;
 }
 
 const en: AppShellText = {
@@ -86,6 +88,7 @@ const en: AppShellText = {
   of: 'of',
   preview: 'Preview',
   closePreview: 'Close the preview',
+  backToAssistant: 'Back to the assistant',
 };
 
 const fr: AppShellText = {
@@ -120,6 +123,7 @@ const fr: AppShellText = {
   of: 'sur',
   preview: 'Aperçu',
   closePreview: 'Fermer l’aperçu',
+  backToAssistant: 'Retour à l’assistant',
 };
 
 const TEXT: Readonly<Record<AppShellLocale, AppShellText>> = { en, fr };

@@ -67,6 +67,8 @@ test('the item imports only React, its declared packages and the app setup shadc
       if (imported.startsWith('./')) { assert.ok(files.some(file => file.replace(/\.tsx?$/, '') === imported.slice(2)), `${name} imports missing ${imported}`); continue; }
       if (imported === '../_shared/icons') { assert.ok(item.registryDependencies.includes('@boring-ui/_shared')); continue; }
       if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|feedback|utils|dock)\//.test(imported)) continue;
+      // composer="bar" (D-2198) reads the run through the agent bar's adapter and draws its question card.
+      if (/^\.\.\/agent-bar\//.test(imported)) { assert.ok(item.registryDependencies.includes('@boring-ui/agent-bar'), `${name} imports ${imported} without declaring agent-bar`); continue; }
       const ui = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
       if (ui) { assert.ok(SHADCN_BUILTINS.includes(ui[1]), `${name}: ${imported} is not in the app setup`); continue; }
       if (imported === '@/hooks/use-mobile') { assert.ok(SHADCN_BUILTINS.includes('sidebar'), 'use-mobile comes with the sidebar'); continue; }

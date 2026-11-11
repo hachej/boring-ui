@@ -2392,6 +2392,21 @@
           ":where(.app-shell [data-slot=\"screen-body\"][data-bleed]) :where(li, tr, [role=\"row\"]) > :first-child": {
             "padding-inline-start": "var(--screen-gutter, 1rem)"
           }
+        },
+        "@layer utilities": {
+          "[data-one-composer] [data-testid=\"composer-dock\"]": {
+            "padding": "0"
+          },
+          "[data-one-composer] [data-slot=\"input-group\"]": {
+            "border-color": "transparent",
+            "background-color": "transparent",
+            "box-shadow": "none"
+          },
+          "[data-one-composer] [data-testid=\"composer-input\"]:placeholder-shown": {
+            "white-space": "nowrap",
+            "overflow": "hidden",
+            "text-overflow": "ellipsis"
+          }
         }
       },
       "files": [

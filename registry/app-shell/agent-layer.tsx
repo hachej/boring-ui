@@ -22,7 +22,7 @@ import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useChatVoice } from '@hachej/boring-ui-kit/chat-react/voice';
 import type { ChatVoiceHandle as Voice } from '@hachej/boring-ui-kit/chat-react/voice';
-import { appendToDraft, mentionToken, pieces, removeMention } from '@hachej/boring-ui-kit/chat-text';
+import { MENTION_TOKEN, appendToDraft, mentionToken, pieces, removeMention } from '@hachej/boring-ui-kit/chat-text';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { useMedia, usePhone } from '../utils/use-media';
 import { Dock, DockLayout, DockMain } from '../dock/dock';
@@ -212,6 +212,8 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly setCardSlot: (element: HTMLElement | null) => void;
   /** The file preview on show (`AgentLayerApi.preview`), if any. */
   readonly shownPreview: AgentPreview | null;
+  /** The preview sits on top of the docked conversation in the same column (« ← Assistant »), not in a column of its own. */
+  readonly previewStacked: boolean;
 }
 
 type DockSide = 'left' | 'right';
@@ -529,10 +531,10 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // Sending from the content composer shows the thread; a dock already open stays as it is.
   const onSent = useCallback(() => { if (specs.current.snap === 'closed' || specs.current.shown !== 'agent') open('agent'); }, [open]);
   // On a wide content composer the reply is a tray above the field unless the person chose the dock; elsewhere the dock (or the phone's drawer) as before.
-  // `bar`: the right column holds one thing at a time; while a preview is open a docked thread waits above the field.
-  const previewing = bar && expanded && shownPreview !== null;
-  const trayOpen = contentComposer && snap !== 'closed' && shown === 'agent' && (mode === 'tray' || previewing);
-  const dockOpen = snap !== 'closed' && shown !== 'improve' && (!contentComposer || (mode === 'dock' && !previewing));
+  // `bar`: the right column holds one thing at a time (D7). Docked, a preview stacks on top of the conversation in that column; otherwise it takes the column itself.
+  const trayOpen = contentComposer && snap !== 'closed' && shown === 'agent' && mode === 'tray';
+  const dockOpen = snap !== 'closed' && shown !== 'improve' && (!contentComposer || mode === 'dock');
+  const previewStacked = bar && expanded && shownPreview !== null && dockOpen && shown === 'agent';
   const folded = bar && contentComposer && !trayOpen && !dockOpen;
   const preview = useCallback((next: AgentPreview | null) => {
     if (!specs.current.agent || composer !== 'bar') return false;
@@ -547,8 +549,8 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   useEffect(() => { if (!trayOpen && grown) setGrown(false); }, [trayOpen, grown]);
   const value = useMemo<Internal>(() => ({
     state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, anchored: anchor !== null, setAnchor, setDropZone, onSent, mode, setMode, moveToDock, registerDock, grown, setGrown, trayOpen, dockOpen,
-    bar, folded, cardSlot, setCardSlot, shownPreview, preview,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen, bar, folded, cardSlot, shownPreview, preview]);
+    bar, folded, cardSlot, setCardSlot, shownPreview, previewStacked, preview,
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen, bar, folded, cardSlot, shownPreview, previewStacked, preview]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -673,6 +675,13 @@ function ConversationChevron({ unread }: { readonly unread: { readonly label: st
  * a question shows its choices (a form, each question in turn); a reply that came while folded shows « ✓ Terminé · <what it used> », three lines
  * and the files it cites. Nothing floats over the page: the card is in the column's flow, above the field.
  */
+/** A reply's text as a person reads it: a mention (`@uploads/ecarts.csv`) shows as the file's name. */
+const readable = (text: string) => text.replace(MENTION_TOKEN, (_match, before: string, quoted: string | undefined, bare: string | undefined) => {
+  const trail = quoted === undefined ? (bare ?? '').match(/[.,;:!?)\]}'"]+$/)?.[0] ?? '' : '';
+  const path = quoted ?? (bare ?? '').slice(0, (bare ?? '').length - trail.length);
+  return `${before}${path.split('/').at(-1) ?? path}${trail}`;
+});
+
 function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly onOpenFile: ((path: string) => void) | undefined }) {
   const layer = useInternal();
   const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
@@ -682,20 +691,21 @@ function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly 
     ? <><span className="text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{status.text}</span></>
     : reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-(--radius-3xl) bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
       <span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{[text.done, reply.used.join(', ')].filter(Boolean).join(' · ')}</span></> : undefined;
-  return <div className="mx-auto w-full max-w-[720px] px-4">
+  return <>
     <section data-testid="agent-card" data-state={question ? 'question' : status?.state === 'working' ? 'working' : 'reply'} aria-label={text.assistant}
-      className="flex flex-col gap-2 rounded-t-(--radius-xl) bg-card ring-1 ring-border px-3 pt-2 pb-3 text-sm text-card-foreground">
+      className="flex flex-col gap-2 px-3 pt-2.5 pb-3 text-sm text-card-foreground">
       {header && <p role="status" className="m-0 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">{header}</p>}
       {question && <AgentQuestion key={`${question.step ?? ''}|${question.title}`} question={question} hint={false} className="p-0" />}
       {!question && status?.state !== 'working' && reply && <>
-        <p data-testid="agent-card-reply" className="m-0 line-clamp-3 whitespace-pre-line">{reply.text}</p>
+        <p data-testid="agent-card-reply" className="m-0 line-clamp-3 whitespace-pre-line">{readable(reply.text)}</p>
         {reply.files.length > 0 && <div role="list" data-testid="agent-card-files" className="flex flex-wrap gap-1.5">
           {reply.files.map(path => <span role="listitem" key={path}><Button type="button" variant="outline" size="sm" data-testid="agent-card-file" data-path={path} disabled={!onOpenFile} onClick={() => onOpenFile?.(path)}>
             <FileTextIcon data-icon="inline-start" aria-hidden="true" />{path.split('/').at(-1)}</Button></span>)}
         </div>}
       </>}
     </section>
-  </div>;
+    <Separator />
+  </>;
 }
 
 /** One agent's PiChat. It stays mounted while hidden, so its scroll, focus and drafts survive a swap with the other spec. */
@@ -1032,8 +1042,23 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     {floating && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
     {!floating && <Separator orientation="vertical" className={cn('absolute inset-y-0', side === 'right' ? 'left-0' : 'right-0')} />}
     <Header text={text} title={title} controls={controls} className={cn('pt-2', floating && 'cursor-move touch-none select-none')} {...drag} />
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden"><VoiceProblem /><ChatSlot live={open} /></div>
+    {layer.previewStacked && layer.shownPreview && <PreviewStack preview={layer.shownPreview} />}
+    <div className={cn('flex min-h-0 flex-col overflow-hidden', layer.previewStacked ? 'shrink-0 [&_[data-testid=conversation-content]]:hidden' : 'flex-1')}><VoiceProblem /><ChatSlot live={open} /></div>
   </div>;
+}
+
+/** D7, docked: the opened file sits on top of the conversation in its column, under « ← Assistant / <name> »; the arrow goes back to the thread. */
+function PreviewStack({ preview }: { readonly preview: AgentPreview }) {
+  const layer = useInternal();
+  const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
+  return <section data-testid="agent-preview" data-placement="stacked" aria-label={`${text.preview} · ${preview.title}`} className="flex min-h-0 flex-1 flex-col"
+    onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); layer.preview(null); } }}>
+    <div className="flex shrink-0 items-center gap-1 px-2 pb-1">
+      <Button variant="ghost" size="icon" data-testid="agent-preview-back" aria-label={text.backToAssistant} title={text.backToAssistant} onClick={() => layer.preview(null)}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>
+      <h3 data-testid="agent-preview-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold"><span className="font-normal text-muted-foreground">{text.assistant} / </span>{preview.title}</h3>
+    </div>
+    <div data-testid="agent-preview-body" className="flex min-h-0 flex-1 flex-col overflow-auto">{preview.content}</div>
+  </section>;
 }
 
 function AgentDock({ side }: { readonly side: DockSide }) {
@@ -1044,18 +1069,32 @@ function AgentDock({ side }: { readonly side: DockSide }) {
   </Dock>;
 }
 
-/** Folded (`composer: 'bar'`): the card on the field says what the agent does, so the chat's own status line above the field steps aside. */
-const FOLDED_FIELD = '[&_[data-testid=preparing]]:hidden [&_[data-testid=composer-dock]_p[data-testid=agent-status]]:hidden';
+/** Folded (`composer: 'bar'`): the card on the field says what the agent does, so the chat's own status line and its files list above the field step aside. */
+const FOLDED_FIELD = '[&_[data-testid=preparing]]:hidden [&_[data-testid=composer-dock]_p[data-testid=agent-status]]:hidden [&_[data-testid=conversation-files]]:hidden';
+
+/** `composer: 'bar'`: the thread (Ouvert), the folded card and the field in one frame at the field's width, never the page's (AC-16). The inner input group's own frame is cleared by the block's CSS (`[data-one-composer]`). */
+function OneBox({ children }: { readonly children: ReactNode }) {
+  return <div className="shrink-0 px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+    <div data-one-composer="" data-testid="agent-composer-box" className="mx-auto flex w-full max-w-[720px] min-w-0 flex-col overflow-hidden rounded-(--radius-xl) bg-card text-card-foreground ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring">{children}</div>
+  </div>;
+}
 
 /** `composer: 'content'`: the page content, then the field's slot at the bottom; a file dropped anywhere on the column goes to that field. */
 function ContentColumn({ children }: { readonly children: ReactNode }) {
-  const { setComposerSlot, setDropZone, trayOpen, grown, anchored, setCardSlot, bar, folded } = useInternal();
+  const { setComposerSlot, setDropZone, trayOpen, grown, anchored, setCardSlot, bar: barMode, contentComposer, folded } = useInternal();
+  // The box only on a wide screen: on a phone the field lives in the drawer.
+  const bar = barMode && contentComposer;
   // The page keeps one wrapper whether the tray is open or not, so opening it never remounts the screen; Agrandir only hides it.
   return <div ref={setDropZone} data-testid="agent-content" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-    <div data-testid="agent-page" className={cn('flex min-h-0 min-w-0 flex-1 flex-col', trayOpen && grown && !anchored && 'hidden')}>{children}</div>
-    {trayOpen && !anchored && <ContentTray />}
-    {bar && <div ref={setCardSlot} data-testid="agent-card-slot" className="shrink-0 empty:hidden" />}
-    <div ref={setComposerSlot} data-testid="agent-content-composer" className={cn('shrink-0', folded && FOLDED_FIELD)} />
+    <div data-testid="agent-page" className={cn('flex min-h-0 min-w-0 flex-1 flex-col', trayOpen && grown && !anchored && !bar && 'hidden')}>{children}</div>
+    {bar ? <OneBox>
+      {trayOpen && !anchored && <ContentTray />}
+      <div ref={setCardSlot} data-testid="agent-card-slot" className="shrink-0 empty:hidden" />
+      <div ref={setComposerSlot} data-testid="agent-content-composer" className={cn('shrink-0', folded && FOLDED_FIELD)} />
+    </OneBox> : <>
+      {trayOpen && !anchored && <ContentTray />}
+      <div ref={setComposerSlot} data-testid="agent-content-composer" className="shrink-0" />
+    </>}
   </div>;
 }
 
@@ -1076,11 +1115,12 @@ export function AgentComposerAnchor({ className }: { readonly className?: string
     return () => setAnchor(null);
   }, [setAnchor, tray, field, card]);
   if (!layer) return null;
-  return <div data-testid="agent-composer-anchor" className={cn('flex min-w-0 shrink-0 flex-col', className)}>
+  const slots = <>
     <div ref={setTray} data-testid="agent-anchor-tray" className="flex min-w-0 flex-col">{layer.trayOpen && layer.anchored && <ContentTray />}</div>
     <div ref={setCard} data-testid="agent-anchor-card" className="shrink-0 empty:hidden" />
     <div ref={setField} data-testid="agent-anchor-composer" className={cn('shrink-0', layer.folded && FOLDED_FIELD)} />
-  </div>;
+  </>;
+  return <div data-testid="agent-composer-anchor" className={cn('flex min-w-0 shrink-0 flex-col', className)}>{layer.bar && layer.contentComposer ? <OneBox>{slots}</OneBox> : slots}</div>;
 }
 
 /**
@@ -1114,10 +1154,11 @@ function ContentTray() {
   const DockIcon = side === 'left' ? PanelLeftIcon : PanelRightIcon;
   const dockLabel = side === 'left' ? text.dockLeft : text.dockRight;
   // In an anchor the tray sits in the app's column, whose height is not the content column's: a share of the viewport, and Agrandir takes more of it instead of hiding the page.
-  const height = layer.anchored ? (grown ? 'min(70dvh, 720px)' : `min(35dvh, ${TRAY_MAX}px)`) : grown ? undefined : `min(35%, ${TRAY_MAX}px)`;
+  const boxed = layer.bar && layer.contentComposer;
+  const height = boxed ? (grown ? '70dvh' : '30dvh') : layer.anchored ? (grown ? 'min(70dvh, 720px)' : `min(35dvh, ${TRAY_MAX}px)`) : grown ? undefined : `min(35%, ${TRAY_MAX}px)`;
   return <section data-testid="agent-tray" aria-label={title} style={height ? { height } : undefined}
-    className={cn('relative flex min-h-0 min-w-0 flex-col bg-card px-4 text-card-foreground', grown && !layer.anchored ? 'flex-1' : 'shrink-0')}>
-    <Separator className="absolute inset-x-0 top-0" />
+    className={cn('relative flex min-h-0 min-w-0 flex-col bg-card text-card-foreground', boxed ? 'shrink-0 px-3' : 'px-4', !boxed && (grown && !layer.anchored ? 'flex-1' : 'shrink-0'))}>
+    {boxed ? null : <Separator className="absolute inset-x-0 top-0" />}
     <div data-testid="agent-tray-body" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
       <div data-testid="agent-tray-header" className="flex shrink-0 items-center gap-1 pt-1">
         <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{title}</h2>
@@ -1130,6 +1171,7 @@ function ContentTray() {
       <VoiceProblem />
       <ChatSlot />
     </div>
+    {boxed && <Separator />}
   </section>;
 }
 
@@ -1144,7 +1186,7 @@ export function AgentDockLayout({ children }: { readonly children: ReactNode }):
   return <DockLayout storageKey={DOCK_KEY} persist="local" minMain={MIN_MAIN + (layer.besidePanel ? PM_COLUMN : 0)}>
     {layer.side === 'left' && dock}
     <DockMain>{layer.contentColumn ? <ContentColumn>{children}</ContentColumn> : children}</DockMain>
-    {layer.bar && layer.expanded && layer.shownPreview && <PreviewPane preview={layer.shownPreview} />}
+    {layer.bar && layer.expanded && layer.shownPreview && !layer.previewStacked && <PreviewPane preview={layer.shownPreview} />}
     {layer.side === 'right' && dock}
   </DockLayout>;
 }
