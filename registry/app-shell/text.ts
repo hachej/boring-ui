@@ -43,6 +43,8 @@ export interface AppShellText {
   /** `composer: 'bar'` (D-2198): the chevron that unfolds the conversation above the field, the microphone in Send's place, the dock's way back to the bottom. */
   readonly conversation: string;
   readonly dictate: string;
+  /** The one composer's microphone: held past 300 ms, release sends; a tap listens until ■. */
+  readonly releaseToSend: string;
   readonly undock: string;
   /** The folded card: the dot of an unread reply, the run's words, the form's « 1 sur 2 ». */
   readonly unread: string;
@@ -56,6 +58,8 @@ export interface AppShellText {
   readonly backToAssistant: string;
   /** The field while the agent's question waits. */
   readonly answerHere: string;
+  /** AC-12: a send that failed while folded, one line at the top of the box (Réessayer is the chat's own word). */
+  readonly sendFailed: string;
   /** The preview header's way to the app's files. */
   readonly library: string;
 }
@@ -85,6 +89,7 @@ const en: AppShellText = {
   dockRight: 'Dock on the right',
   conversation: 'Conversation',
   dictate: 'Dictate',
+  releaseToSend: 'Release to send',
   undock: 'Move to the bottom',
   unread: 'New reply',
   working: 'Working',
@@ -94,6 +99,7 @@ const en: AppShellText = {
   closePreview: 'Close the preview',
   backToAssistant: 'Back to the assistant',
   answerHere: 'Or answer here',
+  sendFailed: 'The message was not sent: it is back in the field. Try again.',
   library: 'Library',
 };
 
@@ -122,6 +128,7 @@ const fr: AppShellText = {
   dockRight: 'Ancrer à droite',
   conversation: 'Conversation',
   dictate: 'Dicter',
+  releaseToSend: 'Relâche pour envoyer',
   undock: 'Détacher en bas',
   unread: 'Nouvelle réponse',
   working: 'En cours',
@@ -131,6 +138,7 @@ const fr: AppShellText = {
   closePreview: 'Fermer l’aperçu',
   backToAssistant: 'Retour à l’assistant',
   answerHere: 'Ou répondez ici',
+  sendFailed: 'Le message n’est pas parti : il est revenu dans le champ. Réessayez.',
   library: 'Bibliothèque',
 };
 

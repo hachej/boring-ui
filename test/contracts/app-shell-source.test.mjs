@@ -233,7 +233,10 @@ test('AppShellProps has the shell props, optional rail, locale and URL opt-out, 
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'appId', 'compactNav', 'composer', 'layout', 'locale', 'nav', 'overlayBlur', 'panel', 'rail', 'resizable', 'route', 'title']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'appId', 'compactNav', 'composer', 'layout', 'locale', 'nav', 'overlayBlur', 'panel', 'rail', 'resizable', 'route', 'sidebar', 'title']);
+  const sidebar = props.members.find(member => member.name.text === 'sidebar');
+  assert.ok(sidebar.questionToken, 'sidebar is optional (D-2198: only `false`, a single-screen app)');
+  assert.equal(sidebar.type.getText(file), 'false');
   const rail = props.members.find(member => member.name.text === 'rail');
   assert.ok(rail.questionToken, 'rail is optional');
   assert.equal(rail.type.getText(file), "'icon' | 'hover'");

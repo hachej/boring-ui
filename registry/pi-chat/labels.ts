@@ -186,6 +186,12 @@ export const defaultChatLabels = {
   removeHint: 'Remove',
   more: 'More',
   edit: 'Edit',
+  /** `composerEditLast` (D-2198, D3): Escape twice lists the person's messages; a pick forks the conversation before it. */
+  rewindTitle: 'Go back to a message',
+  /** On touch, a long press on one's own message: the text back in the field, or the conversation forked before it. */
+  resumeMessage: 'Resume',
+  rewindHere: 'Go back here',
+  rewindHint: 'The conversation restarts from there in a copy; this one is kept.',
   sending: 'Sending',
   /** Under a message whose send was not confirmed; the notice below offers Check and Retry. */
   notSent: 'Not sent',

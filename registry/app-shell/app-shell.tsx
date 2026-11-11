@@ -38,6 +38,13 @@ export interface AppShellProps {
   readonly rail?: 'icon' | 'hover';
   /** Phone navigation: `tabs` (default) is the bottom tab bar; `sheet` has no bar, the header's leading button opens the sidebar (the nav items, a screen's `sidebar` content and the account) as a sheet. */
   readonly compactNav?: 'tabs' | 'sheet';
+  /**
+   * `false`: a single-screen app. No sidebar at any width and no tabs on a phone: the app's title and the account menu sit in the one top
+   * bar (the screen header), and the screen is centred (at most 48rem). Composes with `composer="bar"` (the field at the bottom centre; the
+   * bar then has no assistant button either: the field's chevron opens the conversation).
+   * Default: the sidebar (and the phone's tabs) as before.
+   */
+  readonly sidebar?: false;
   readonly agent?: AgentSpec;
   /** Where the assistant's field sits on a wide screen: `dock` (default) in the dock under the thread; `content` pinned under the page content, at the content's width, with the dock holding only the thread (a send, or `talkAbout`, opens it); `bar`, the one composer (D-2198): as `content`, one row (chevron, attach, field, Dicter/Envoyer/Arrêter), the work or reply as a card on the folded field, the field going with the thread when docked, and `useAgentLayer().preview`. A phone keeps the peek drawer either way. */
   readonly composer?: AgentComposer;
@@ -100,19 +107,19 @@ function ShellContext({ name }: { readonly name: string }): null {
 function ScreenContent({ item }: { readonly item: NavItem }): ReactNode { return item.render(); }
 
 /** Every screen stays mounted; the ones not on show are `hidden` and do not register a header or a context. */
-function Screens({ items, activeId, scrolls, slot }: { readonly items: readonly NavItem[]; readonly activeId: string; readonly scrolls: boolean; readonly slot: HTMLElement | null }) {
+function Screens({ items, activeId, scrolls, slot, centred }: { readonly items: readonly NavItem[]; readonly activeId: string; readonly scrolls: boolean; readonly slot: HTMLElement | null; readonly centred: boolean }) {
   return <div className="relative min-h-0 flex-1">
     {items.map(item => <ScreenActiveContext.Provider key={item.id} value={item.id === activeId}><ScreenHeaderSlotContext.Provider value={item.id === activeId ? slot : null}>
-      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={scrolls ? 'h-full overflow-y-auto overscroll-contain' : 'h-full overflow-hidden'}><ScreenContent item={item} /></div>
+      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={scrolls ? 'h-full overflow-y-auto overscroll-contain' : 'h-full overflow-hidden'}>{centred ? <div data-testid="screen-centred" className="mx-auto flex h-full w-full max-w-3xl flex-col"><ScreenContent item={item} /></div> : <ScreenContent item={item} />}</div>
     </ScreenHeaderSlotContext.Provider></ScreenActiveContext.Provider>)}
   </div>;
 }
 
-function Shell({ resizable, appId, compactNav, layout, rail, title, nav, agent, panel, account, route, text }: { readonly resizable: AppShellProps['resizable']; readonly appId: string | undefined; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
+function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title, nav, agent, panel, account, route, text }: { readonly single: boolean; readonly bar: boolean; readonly resizable: AppShellProps['resizable']; readonly appId: string | undefined; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
   const improve = panel && panel.menu !== false ? panel.label ?? text.improve : undefined;
   const Layout = panel?.Layout ?? NoPanelLayout;
   const compact = useIsCompact();
-  const sheet = compact && compactNav === 'sheet';
+  const sheet = compact && compactNav === 'sheet' && !single;
   const [accountOpen, setAccountOpen] = useState(false);
   // The header's slot for the screen on show (an embedded AgentWorkspace puts its bar's controls there).
   const [slot, setSlot] = useState<HTMLElement | null>(null);
@@ -133,13 +140,13 @@ function Shell({ resizable, appId, compactNav, layout, rail, title, nav, agent, 
   </> : null;
   // The structure is the same compact or expanded, so a resize never remounts a screen.
   return <ResizableSidebarProvider data-testid="app-shell" resizable={resizable} app={appId || title} person={account?.email} defaultOpen={today} {...paneOpen} className="app-shell h-dvh min-h-0 overflow-hidden">
-    {(!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} identity={{ app: appId || title, person: account?.email }} title={title} items={nav} activeId={active.id} onChange={choose} agent={agent} account={account} improve={improve} text={text} />}
+    {!single && (!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} identity={{ app: appId || title, person: account?.email }} title={title} items={nav} activeId={active.id} onChange={choose} agent={agent} account={account} improve={improve} text={text} />}
     <AgentDockLayout>
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-card">
-      <Layout screen={active.label} navigation={compact && !sheet ? <TabBar items={nav} activeId={active.id} onChange={choose} text={text} /> : undefined}>
+      <Layout screen={active.label} navigation={compact && !sheet && !single ? <TabBar items={nav} activeId={active.id} onChange={choose} text={text} /> : undefined}>
         <ShellContext name={active.label} />
-        <ScreenHeader fallbackTitle={active.label} compact={compact} avatar={avatar} menu={sheet} screenSidebar={compact && !sheet && active.sidebar ? <ScreenSidebarSheet key={active.id} item={active} text={text} /> : undefined} text={text} slotRef={setSlot} />
-        <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} />
+        <ScreenHeader fallbackTitle={single ? title : active.label} compact={compact} leadingAvatar={single} trigger={!(single && bar)} avatar={avatar} menu={sheet} screenSidebar={compact && !sheet && active.sidebar ? <ScreenSidebarSheet key={active.id} item={active} text={text} /> : undefined} text={text} slotRef={setSlot} />
+        <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} centred={single} />
       </Layout>
       </div>
     </AgentDockLayout>
@@ -152,11 +159,11 @@ const never = () => () => {};
 export function AppShell(props: AppShellProps) {
   const { layout, rail = 'icon', compactNav = 'tabs', agent, panel, title, nav, account, route } = props;
   if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `panel` for the product manager)');
-  const text = appShellText(props.locale ?? agent?.chatProps?.locale ?? (panel?.locale as AppShellLocale | undefined));
+  const text = { ...appShellText(props.locale ?? agent?.chatProps?.locale ?? (panel?.locale as AppShellLocale | undefined)), ...agent?.words };
   useOverlayBlur(props.overlayBlur ?? false);
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;
   return <AgentLayerProvider agent={agent} composer={props.composer} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title} modeIdentity={{ app: props.appId || title, person: account?.email, screen: layout === 'screen' }}>
-    <HeaderProvider><Shell resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} /></HeaderProvider>
+    <HeaderProvider><Shell single={props.sidebar === false} bar={props.composer === 'bar'} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} /></HeaderProvider>
   </AgentLayerProvider>;
 }

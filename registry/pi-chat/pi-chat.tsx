@@ -3,7 +3,7 @@
 import { useKeyboardInset, useBelowLg, useToastOffset } from '../utils/use-media';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { viewHasEarlier } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
@@ -27,7 +27,8 @@ import { ConversationHistory, TranscriptHistory } from './history';
 import { TranscriptChunk } from './message';
 import { markLeads } from './rows';
 import type { Row } from './rows';
-import { MessageQueue } from './queue';
+import { MessageQueue, useEditLast } from './queue';
+import type { OwnMessageActions } from './queue';
 import { ChatNotices, ChatConnectionNotice, ChatStatusLine } from './notice';
 import { PAGE_FIRST, PAGE_MORE, useChatSession, useCursorInOpened, useRowChunks, useTranscript } from './session';
 import { useChatDraft } from './use-chat-draft';
@@ -153,6 +154,11 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly composerFileChips?: boolean;
   /** A shell-owned capture uses the same recording-row replacement as native voice messages. */
   readonly composerRecording?: ReactNode;
+  /** A shell-owned capture laid out as when idle (`Composer recordingStatus` and `recordingStop`): the status in the text's place, the stop in the action button's. Wins over `composerRecording`. */
+  /** Off by default. On, the field edits the person's last messages the Claude Code way (`useEditLast`: ↑ recalls, ↑ or Échap takes a queued
+   * message back, Échap stops a run, Échap twice lists the messages and a pick forks before it with `conversations.fork`). The shell's one composer turns it on. */
+  readonly composerEditLast?: boolean;
+  readonly composerRecordingSlots?: { readonly status: ReactNode; readonly stop: ReactNode } | undefined;
   /** Shared host composer presentation over the normal kit session props. */
   readonly renderComposer?: (props: ComposerProps) => ReactNode;
   /** A conversation title, separate from the agent name, with optional click-to-rename. */
@@ -217,7 +223,7 @@ const noVoice: VoiceRecorderHook = () => silent;
 function NoVoiceBubble(_: { readonly pending: PendingVoice | undefined }) { return null; }
 
 function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, voiceReplay, targetLabel, sentContent, messageStyle = 'default', answeredBy, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, composerWhenEmpty, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerHost, dropZone, onSent, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', composerBarActions, composerFileChips, composerRecording, renderComposer, conversationTitle, onRenameTitle, feedback, sendContext, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', composerBarActions, composerFileChips, composerRecording, composerRecordingSlots, composerEditLast = false, renderComposer, conversationTitle, onRenameTitle, feedback, sendContext, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
   useChatPlacement(controller, placement);
@@ -231,12 +237,18 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const fork = useRef(conversations?.fork);
   useLayoutEffect(() => { fork.current = conversations?.fork; });
   const canFork = Boolean(conversations?.fork);
-  const rowExtras = useMemo(() => canFork || messageStyle === 'messaging' || answeredBy ? { ...(canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : {}), ...(messageStyle === 'messaging' ? { messageStyle } : {}), ...(answeredBy ? { answeredBy } : {}) } : undefined, [canFork, messageStyle, answeredBy]);
+  // `composerEditLast`: a long press on an own message reaches the edit-last actions, which need the session (set below, after it).
+  const own = useRef<OwnMessageActions | undefined>(undefined);
+  const rowExtras = useMemo(() => canFork || messageStyle === 'messaging' || answeredBy || composerEditLast ? { ...(canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : {}), ...(messageStyle === 'messaging' ? { messageStyle } : {}), ...(answeredBy ? { answeredBy } : {}),
+    ...(composerEditLast ? { ownMessage: { resume: (key: string) => own.current?.resume(key), rewind: (key: string) => own.current?.rewind(key) } } : {}) } : undefined, [canFork, messageStyle, answeredBy, composerEditLast]);
   const session = useChatSession({ controller, activeController: active, mode, presentation, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => { if (timeline) timeline.afterSend?.(); else scrollToBottom.current(); onSent?.(); }, feedback, sendContext, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
   const { state, derived, rows: nativeRows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   // New or fork is on its way: nothing may go to this conversation (D-1499).
   const leaving = conversations?.creating === true;
+  const editLast = useEditLast({ on: composerEditLast, rows: nativeRows, queued, queueActions, working, stop: composer.onStop, setText: text => controller.setText(text),
+    fork: conversations?.fork, startNew: conversations?.onNew, focus: () => textarea.current?.focus() });
+  useLayoutEffect(() => { own.current = editLast.own; });
   // The list is refreshed slowly while idle (D-1638); a running turn can title or move its conversation, so refresh every 4 s meanwhile and once more when it ends.
   // Only while the page is visible, and once on return; a host that already polls (`polling`) keeps its one clock.
   const reload = useRef(conversations?.reload);
@@ -313,10 +325,13 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
       </div>
       <div>
         {composerBarActions === 'attach' ? null : <ConversationFiles files={[...conversationFiles.values()]} />}
+        {editLast.rewind}
         <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
         {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
         {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, disabled: composer.disabled || leaving, stopOpen: leaving && !composer.disabled,
-          ...(composerRecording === undefined && VoiceStatus && VoiceStop && capturing ? { recordingStatus: <VoiceStatus voice={voice} />, recordingStop: <VoiceStop voice={voice} /> }
+          ...(composerEditLast ? { onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => { editLast.onKeyDown(event); if (!event.defaultPrevented) composer.onKeyDown?.(event); } } : {}),
+          ...(composerRecordingSlots ? { recordingStatus: composerRecordingSlots.status, recordingStop: composerRecordingSlots.stop }
+            : composerRecording === undefined && VoiceStatus && VoiceStop && capturing ? { recordingStatus: <VoiceStatus voice={voice} />, recordingStop: <VoiceStop voice={voice} /> }
             : { recording: composerRecording ?? (VoiceButton && capturing ? <VoiceButton voice={voice} /> : undefined) }), layout: composerLayout, ...(composerBarActions ? { barActions: composerBarActions } : {}), ...(composerFileChips ? { fileChips: true } : {}), ...(composerBarActions === 'attach' ? { files: [...conversationFiles.values()] } : {}),
           placeholder: labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder, barStart, barNote, start: composerStart,
           ...(voiceMessage && VoiceButton && voiceReplacesSend ? { barEnd: tools, whenEmpty: <VoiceButton voice={voice} primary disabled={leaving || state.disposed || !connected || state.send.kind === 'unknown'} /> }

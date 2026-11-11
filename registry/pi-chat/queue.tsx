@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import type { ChatDraft } from '@hachej/boring-ui-kit/native-chat';
 import { CornerDownRightIcon, EllipsisIcon, ListEndIcon, PencilIcon, RouteIcon, Trash2Icon } from '../_shared/icons';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -100,3 +101,122 @@ export function MessageQueue({ items, sending = [], withdraw, actions }: {
     {failed && <Alert variant="destructive" data-testid="queue-error"><AlertDescription>{failed}</AlertDescription></Alert>}
   </section>;
 }
+
+/** On touch (D3): a long press on the person's own message. `resume` puts its text back in the field; `rewind` forks the conversation before it. */
+export interface OwnMessageActions { readonly resume: (rowKey: string) => void; readonly rewind: (rowKey: string) => void }
+
+/** One of the person's own messages, newest first, with the reply entry a fork before it starts at (none for the first message). */
+interface OwnMessage { readonly key: string; readonly text: string; readonly forkAt: string | undefined }
+type EditLastRow = { readonly key: string; readonly type: string; readonly message?: unknown; readonly entryId?: string; readonly local?: string };
+
+/** The person's sent messages in a transcript's rows, newest first. */
+export function ownMessages(rows: readonly EditLastRow[]): readonly OwnMessage[] {
+  const out: OwnMessage[] = [];
+  let forkAt: string | undefined;
+  for (const row of rows) {
+    if (row.type === 'assistant' && row.entryId) forkAt = row.entryId;
+    if (row.type !== 'user' || row.local) continue;
+    const text = queuedText({ content: (row.message as { content?: unknown } | undefined)?.content } as QueuedMessage).trim();
+    if (text) out.push({ key: row.key, text, forkAt });
+  }
+  return out.reverse();
+}
+
+const TWICE_MS = 700;
+
+/**
+ * Edit last, the Claude Code way (D-2198, D3; `PiChat composerEditLast`). In the field: ↑ while it is empty recalls the person's earlier
+ * messages as a draft (↑ again goes further back, ↓ comes forward; a recalled message is sent as a new one); ↑ or Échap while messages wait
+ * in the queue takes the last one back into the field; Échap while the agent works stops it; Échap twice in an empty field lists the person's
+ * messages, and a pick forks the conversation before that message (`conversations.fork`, the old conversation is kept) with it in the field.
+ * An open `/` or `@` list keeps its own keys.
+ */
+export function useEditLast({ on, rows, queued, queueActions, working, stop, setText, fork, startNew, focus }: {
+  readonly on: boolean;
+  readonly rows: readonly EditLastRow[];
+  readonly queued: readonly QueuedMessage[];
+  readonly queueActions: QueueActions | undefined;
+  readonly working: boolean;
+  readonly stop: () => void;
+  readonly setText: (text: string) => void;
+  readonly fork: ((atEntryId: string) => Promise<void>) | undefined;
+  readonly startNew: (() => void) | undefined;
+  readonly focus: () => void;
+}): { readonly onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void; readonly rewind: ReactNode; readonly own: OwnMessageActions } {
+  const recall = useRef({ index: -1, text: '' });
+  const escapedAt = useRef(0);
+  const [listing, setListing] = useState(false);
+  const messages = ownMessages(rows);
+  const show = (index: number) => {
+    const text = index < 0 ? '' : messages[index]!.text;
+    recall.current = { index, text };
+    setText(text);
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!on || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.nativeEvent.isComposing) return;
+    const field = event.currentTarget;
+    if (field.getAttribute('aria-expanded') === 'true') return;
+    const value = field.value;
+    const recalled = recall.current.index >= 0 && value === recall.current.text;
+    if (!recalled) recall.current = { index: -1, text: '' };
+    const last = queued.at(-1);
+    const edit = queueActions?.edit;
+    if (event.key === 'ArrowUp') {
+      if (last && edit && value === '') { event.preventDefault(); void edit(last).catch(() => {}); return; }
+      if ((value === '' || recalled) && recall.current.index + 1 < messages.length) { event.preventDefault(); show(recall.current.index + 1); }
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      if (recalled) { event.preventDefault(); show(recall.current.index - 1); }
+      return;
+    }
+    if (event.key !== 'Escape') return;
+    if (last && edit) { event.preventDefault(); void edit(last).catch(() => {}); return; }
+    if (working) { event.preventDefault(); stop(); return; }
+    if (value !== '' || messages.length === 0) { escapedAt.current = 0; return; }
+    const now = Date.now();
+    if (now - escapedAt.current < TWICE_MS) { event.preventDefault(); escapedAt.current = 0; setListing(true); return; }
+    escapedAt.current = now;
+  };
+  const close = () => { setListing(false); focus(); };
+  const pick = (message: OwnMessage) => {
+    setListing(false);
+    setText(message.text);
+    if (message.forkAt && fork) void fork(message.forkAt).catch(() => {});
+    else if (!message.forkAt && startNew) startNew();
+    focus();
+  };
+  const rewind = on && listing && messages.length > 0 ? <RewindList messages={messages} onPick={pick} onClose={close} /> : null;
+  const byKey = (key: string) => messages.find(message => message.key === key);
+  const own: OwnMessageActions = {
+    resume: key => { const message = byKey(key); if (message) { setText(message.text); focus(); } },
+    rewind: key => { const message = byKey(key); if (message) pick(message); },
+  };
+  return { onKeyDown, rewind, own };
+}
+
+/** Échap twice: the person's messages, newest first, above the field. ↑ ↓ move, Enter picks, Échap closes. */
+function RewindList({ messages, onPick, onClose }: { readonly messages: readonly OwnMessage[]; readonly onPick: (message: OwnMessage) => void; readonly onClose: () => void }) {
+  const { labels } = useChatText();
+  const list = useRef<HTMLDivElement>(null);
+  useEffect(() => { list.current?.querySelector<HTMLElement>('[data-testid=rewind-item]')?.focus(); }, []);
+  const move = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    const items = [...(list.current?.querySelectorAll<HTMLElement>('[data-testid=rewind-item]') ?? [])];
+    const at = items.indexOf(document.activeElement as HTMLElement);
+    items[Math.max(0, Math.min(items.length - 1, at + (event.key === 'ArrowDown' ? 1 : -1)))]?.focus();
+  };
+  return <div className="pb-2"><Card data-testid="rewind-list" size="sm" onKeyDown={move}>
+    <CardContent className="flex flex-col gap-1">
+      <p className="m-0 text-xs font-medium">{labels.rewindTitle}</p>
+      <p className="m-0 text-xs text-muted-foreground">{labels.rewindHint}</p>
+      <div ref={list} role="group" aria-label={labels.rewindTitle} className="flex max-h-60 flex-col overflow-y-auto">
+        {messages.map(message => <Button key={message.key} type="button" variant="ghost" size="sm" data-testid="rewind-item" onClick={() => onPick(message)} className="justify-start">
+          <span className="min-w-0 truncate">{message.text}</span></Button>)}
+      </div>
+    </CardContent>
+  </Card></div>;
+}
+
