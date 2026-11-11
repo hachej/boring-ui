@@ -55,7 +55,8 @@ export interface AgentBarChat {
 
 const words: AgentBarChatWords = { working: 'En cours', done: 'Terminé', skipped: 'Pas de réponse', unread: 'Nouvelle réponse', step: (index, count) => `${index} sur ${count}` };
 
-type Call = { readonly type: 'toolCall'; readonly id: string; readonly name: string; readonly arguments: Record<string, unknown> };
+/** A tool call as the chat's tool words read it. */
+type Call = Parameters<typeof liveLabel>[0];
 type Entry = { readonly model?: readonly { readonly role: string; readonly content?: unknown; readonly toolCallId?: string }[] };
 const record = (value: unknown): Record<string, unknown> | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 
@@ -69,7 +70,7 @@ function lastTurn(entries: readonly Entry[]): { readonly calls: readonly Call[];
     if (message.role !== 'assistant' || !Array.isArray(message.content)) continue;
     for (const part of message.content as unknown[]) {
       const call = record(part);
-      if (call?.['type'] === 'toolCall' && typeof call['id'] === 'string' && typeof call['name'] === 'string') calls.push({ type: 'toolCall', id: call['id'], name: call['name'], arguments: record(call['arguments']) ?? {} });
+      if (call?.['type'] === 'toolCall' && typeof call['id'] === 'string' && typeof call['name'] === 'string') calls.push({ type: 'toolCall', id: call['id'], name: call['name'], arguments: (record(call['arguments']) ?? {}) as Call['arguments'] });
     }
   }
   return { calls, done };

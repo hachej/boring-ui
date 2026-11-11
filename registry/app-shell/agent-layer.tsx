@@ -664,7 +664,7 @@ function ConversationChevron({ unread }: { readonly unread: { readonly label: st
   return <span className="relative inline-flex shrink-0">
     <Button type="button" variant="ghost" size="icon" data-testid="agent-bar-conversation" aria-label={text.conversation} title={text.conversation} aria-expanded={open}
       onClick={() => { if (open) layer.close(); else layer.open('agent'); }}>{open ? <ChevronDownIcon data-icon="inline-start" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>
-    {unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-primary" />}
+    {unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-(--radius-3xl) bg-primary" />}
   </span>;
 }
 
@@ -680,11 +680,11 @@ function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly 
   if (!question && status?.state !== 'working' && !reply) return null;
   const header = question ? undefined : status?.state === 'working'
     ? <><span className="text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{status.text}</span></>
-    : reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
+    : reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-(--radius-3xl) bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
       <span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{[text.done, reply.used.join(', ')].filter(Boolean).join(' · ')}</span></> : undefined;
   return <div className="mx-auto w-full max-w-[720px] px-4">
     <section data-testid="agent-card" data-state={question ? 'question' : status?.state === 'working' ? 'working' : 'reply'} aria-label={text.assistant}
-      className="flex flex-col gap-2 rounded-t-(--radius-xl) border border-b-0 bg-card px-3 pt-2 pb-3 text-sm text-card-foreground">
+      className="flex flex-col gap-2 rounded-t-(--radius-xl) bg-card ring-1 ring-border px-3 pt-2 pb-3 text-sm text-card-foreground">
       {header && <p role="status" className="m-0 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">{header}</p>}
       {question && <AgentQuestion key={`${question.step ?? ''}|${question.title}`} question={question} hint={false} className="p-0" />}
       {!question && status?.state !== 'working' && reply && <>
