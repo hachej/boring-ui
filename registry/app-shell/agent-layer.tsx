@@ -692,7 +692,7 @@ function ConversationChevron({ unread }: { readonly unread: { readonly label: st
   const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
   const open = layer.trayOpen || layer.dockOpen;
   return <span className="relative inline-flex shrink-0">
-    <Button type="button" variant="ghost" size="icon" data-testid="agent-bar-conversation" aria-label={text.conversation} title={text.conversation} aria-expanded={open}
+    <Button type="button" variant="secondary" size="icon" data-testid="agent-bar-conversation" aria-label={text.conversation} title={text.conversation} aria-expanded={open}
       onClick={() => { if (open) layer.close(); else layer.open('agent'); }}>{open ? <ChevronDownIcon data-icon="inline-start" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>
     {unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-(--radius-3xl) bg-primary" />}
   </span>;
@@ -1112,7 +1112,7 @@ function AgentDock({ side }: { readonly side: DockSide }) {
 /** `composer: 'bar'`: the thread (Ouvert), the folded card and the field in one frame at the field's width, never the page's (AC-16). The inner input group's own frame is cleared by the block's CSS (`.app-shell [data-one-composer]`). */
 function OneBox({ children }: { readonly children: ReactNode }) {
   return <div className="shrink-0 bg-card px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-    <div data-one-composer="" data-testid="agent-composer-box" className="mx-auto flex w-full max-w-[720px] min-w-0 flex-col overflow-hidden rounded-(--radius-2xl) bg-card text-card-foreground ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring">{children}</div>
+    <div data-one-composer="" data-testid="agent-composer-box" className="mx-auto flex w-full max-w-[720px] min-w-0 flex-col overflow-hidden rounded-(--radius-3xl) bg-card text-card-foreground ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring">{children}</div>
   </div>;
 }
 

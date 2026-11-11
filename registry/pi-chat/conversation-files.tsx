@@ -26,7 +26,7 @@ export function ConversationFiles({ files, attach, icon = false, disabled = fals
   if (!available.length) return null;
   const listTrigger = <Button variant="outline" data-testid="conversation-files" className="mb-3 max-w-full gap-2"><ShapesIcon data-icon="inline-start" aria-hidden="true" />{labels.artifacts}<span className="text-muted-foreground">· {available.length}</span></Button>;
   const trigger = icon
-    ? <Button variant="ghost" size="icon" data-testid="composer-bar-attach" aria-label={labels.artifacts} title={labels.artifacts} disabled={disabled}><icons.attach data-icon="inline-start" aria-hidden="true" /></Button>
+    ? <Button variant="secondary" size="icon" data-testid="composer-bar-attach" aria-label={labels.artifacts} title={labels.artifacts} disabled={disabled}><icons.attach data-icon="inline-start" aria-hidden="true" /></Button>
     : listTrigger;
   const attachItem = (Item: 'menu' | 'drawer') => attach ? Item === 'menu'
     ? <><DropdownMenuItem data-testid="composer-attach" className="min-h-8 pointer-coarse:min-h-12" onClick={() => { setOpen(false); attach(); }}><icons.attach data-icon="inline-start" aria-hidden="true" />{labels.attachFiles}</DropdownMenuItem><DropdownMenuSeparator /></>

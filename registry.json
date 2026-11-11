@@ -2413,6 +2413,9 @@
           },
           ".app-shell [data-one-composer] [data-boring=\"pi-chat-composer\"], .app-shell [data-one-composer] [data-boring=\"pi-chat\"]": {
             "background-color": "var(--card)"
+          },
+          ".app-shell [data-one-composer] [data-slot=\"input-group\"] [data-slot=\"button\"]": {
+            "border-radius": "var(--radius-3xl)"
           }
         }
       },

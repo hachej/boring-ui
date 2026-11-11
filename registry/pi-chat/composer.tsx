@@ -174,7 +174,7 @@ function useCoarsePointer(): boolean {
 /** `barActions`: Attach files as a direct bar button, first in the bar row (label and icon from the app). */
 function BarAttach({ disabled, onAttach, quiet = false }: { readonly disabled: boolean; readonly onAttach: () => void; readonly quiet?: boolean }) {
   const { labels, icons } = useChatText();
-  return <Button type="button" variant={quiet ? 'ghost' : 'outline'} size="icon" data-testid="composer-bar-attach" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
+  return <Button type="button" variant={quiet ? 'secondary' : 'outline'} size="icon" data-testid="composer-bar-attach" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
     <icons.attach data-icon="inline-start" aria-hidden="true" /></Button>;
 }
 
