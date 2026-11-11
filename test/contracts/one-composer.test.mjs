@@ -453,3 +453,62 @@ test('composer="content" (Coach Max) is unchanged: no chevron, no card, the fiel
   assert.equal(await inside(FIELD, '[data-testid=agent-content-composer]'), true, 'content mode keeps the field under the page');
   assert.equal(await browser.evaluate(`window.__layer.preview({ title: 'x', content: null })`), false, 'no preview outside composer="bar"');
 });
+
+const mouse = (type, x, y) => browser.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 });
+const center = async selector => { const box = await rect(selector); return [box.x + box.w / 2, box.y + box.h / 2]; };
+const atRest = `document.querySelector('[data-testid=agent-talk]')?.dataset.state === 'idle' && !document.querySelector('[data-testid=agent-talk-status]')`;
+
+test('1280: Dicter: a tap listens until ■ and leaves the words in the field; a hold says « Relâche pour envoyer » and release sends; a slide off or Échap sends nothing; nothing opens (AC-10, AC-11, AC-25)', { skip, timeout: 120000 }, async () => {
+  await open(1280);
+  // A tap: ✕, « À l'écoute… » and ■ in the action button's place; ■ puts the words in the field, nothing is sent.
+  let [x, y] = await center('[data-testid=agent-talk]');
+  await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y);
+  await browser.until('listening', `!!document.querySelector('[data-testid=agent-talk-stop]') && !!document.querySelector('[data-testid=agent-talk-listening]')`);
+  assert.equal(await count('[data-testid=agent-talk-cancel]'), 1, '✕ cancels');
+  assert.equal(await inside('[data-testid=agent-talk-status]', '[data-testid=agent-composer-box]'), true, 'in the one box');
+  await browser.screenshot('one-composer-1280-light-dictate.png');
+  await click('[data-testid=agent-talk-stop]');
+  await browser.until('words in the field', `document.querySelector('[data-testid=composer-input]')?.value === 'Texte dicté fictif'`);
+  assert.deepEqual(await browser.evaluate('window.__sent'), [], 'a tap never sends');
+  assert.equal(await count('[data-testid=agent-tray]'), 0, 'nothing opens');
+  assert.equal(await dockState(), 'closed');
+  await browser.evaluate(`window.__setText('')`);
+  await browser.until('rest', atRest);
+  // A tap, then ✕: nothing in the field, nothing sent.
+  [x, y] = await center('[data-testid=agent-talk]');
+  await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y);
+  await browser.until('listening again', `!!document.querySelector('[data-testid=agent-talk-cancel]')`);
+  await click('[data-testid=agent-talk-cancel]');
+  await browser.until('cancelled', atRest);
+  await wait(300);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`), '', '✕ leaves nothing');
+  // A hold: « Relâche pour envoyer »; release sends at once and the box stays folded with the work.
+  [x, y] = await center('[data-testid=agent-talk]');
+  await mouse('mousePressed', x, y);
+  await browser.until('holding', `!!document.querySelector('[data-testid=agent-talk-release]')`);
+  assert.equal(await text('[data-testid=agent-talk-release]'), 'Relâche pour envoyer');
+  await browser.screenshot('one-composer-1280-light-hold.png');
+  await mouse('mouseReleased', x, y);
+  await browser.until('sent on release', `window.__sent.includes('Texte dicté fictif')`);
+  await browser.until('working on the field', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'working'`);
+  assert.equal(await count('[data-testid=agent-tray]'), 0, 'a hold-send opens nothing');
+  await browser.until('the run ends', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply' && ${atRest}`);
+  // A hold, then a slide off: cancelled, nothing sent.
+  [x, y] = await center('[data-testid=agent-talk]');
+  await mouse('mousePressed', x, y);
+  await browser.until('holding to slide', `!!document.querySelector('[data-testid=agent-talk-release]')`);
+  await mouse('mouseMoved', x, y - 120);
+  await browser.until('slid off', `!document.querySelector('[data-testid=agent-talk-status]')`);
+  await mouse('mouseReleased', x, y - 120);
+  // A hold, then Échap: cancelled, nothing sent.
+  [x, y] = await center('[data-testid=agent-talk]');
+  await mouse('mousePressed', x, y);
+  await browser.until('holding for Escape', `!!document.querySelector('[data-testid=agent-talk-release]')`);
+  await browser.press('Escape');
+  await browser.until('Escape cancels', `!document.querySelector('[data-testid=agent-talk-status]')`);
+  await mouse('mouseReleased', x, y);
+  await wait(500);
+  assert.deepEqual(await browser.evaluate('window.__sent'), ['Texte dicté fictif'], 'only the released hold was sent');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`), '', 'the cancelled holds left nothing in the field');
+});
+

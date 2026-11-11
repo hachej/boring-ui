@@ -43,6 +43,9 @@ export interface AppShellText {
   /** `composer: 'bar'` (D-2198): the chevron that unfolds the conversation above the field, the microphone in Send's place, the dock's way back to the bottom. */
   readonly conversation: string;
   readonly dictate: string;
+  /** The one composer's microphone: held past 300 ms, release sends; a tap listens until ■. */
+  readonly releaseToSend: string;
+  readonly listening: string;
   readonly undock: string;
   /** The folded card: the dot of an unread reply, the run's words, the form's « 1 sur 2 ». */
   readonly unread: string;
@@ -85,6 +88,8 @@ const en: AppShellText = {
   dockRight: 'Dock on the right',
   conversation: 'Conversation',
   dictate: 'Dictate',
+  releaseToSend: 'Release to send',
+  listening: 'Listening…',
   undock: 'Move to the bottom',
   unread: 'New reply',
   working: 'Working',
@@ -122,6 +127,8 @@ const fr: AppShellText = {
   dockRight: 'Ancrer à droite',
   conversation: 'Conversation',
   dictate: 'Dicter',
+  releaseToSend: 'Relâche pour envoyer',
+  listening: 'À l’écoute…',
   undock: 'Détacher en bas',
   unread: 'Nouvelle réponse',
   working: 'En cours',
