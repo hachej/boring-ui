@@ -122,6 +122,7 @@ test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every
   const box = await rect('[data-testid=agent-composer-box]'), contentColumn = await rect('[data-boring=dock-main]');
   assert.ok(box.w <= 721 && box.w < contentColumn.w - 100, `the box keeps the field's width, never the page's (${box.w} in ${contentColumn.w})`);
   assert.ok(Math.abs((box.x + box.w / 2) - (contentColumn.x + contentColumn.w / 2)) <= 2, 'centred');
+  assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=agent-composer-box]')).backgroundColor === getComputedStyle(document.body).backgroundColor && getComputedStyle(document.querySelector('[data-testid=agent-composer-box] [data-boring=pi-chat-composer]')).backgroundColor === getComputedStyle(document.body).backgroundColor`), true, 'the box and the field take the page background (Julien, proof review)');
   assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=agent-composer-box] [data-slot=input-group]')).borderTopColor.includes('0, 0, 0, 0') || getComputedStyle(document.querySelector('[data-testid=agent-composer-box] [data-slot=input-group]')).borderTopColor === 'transparent'`), true, 'one frame: the input group draws no border of its own inside the box');
   // Ancré: the thread and the field in the right column, nothing at the bottom.
   await click('[data-testid=agent-tray-dock]');
