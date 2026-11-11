@@ -11,12 +11,13 @@
 import { createPortal } from 'react-dom';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, CSSProperties, HTMLAttributes, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, Ref, RefObject } from 'react';
-import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Loader2Icon, MicIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, XIcon } from '../_shared/icons';
+import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, Loader2Icon, MicIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, XIcon } from '../_shared/icons';
 // Behaviour only: Base UI's keyboard-inset provider for the host drawer's content. It renders nothing visible.
 import * as BaseDrawerParts from '@base-ui/react/drawer';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { Spinner } from '@/components/ui/spinner';
 import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useChatVoice } from '@hachej/boring-ui-kit/chat-react/voice';
@@ -40,6 +41,9 @@ import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { sentFeedbackContent } from '../feedback/sent-content';
 import { CommentBanner, useCommenting, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
+import { AgentQuestion } from '../agent-bar/agent-question';
+import { useAgentBarChat } from '../agent-bar/use-agent-bar-chat';
+import type { AgentBarChat } from '../agent-bar/use-agent-bar-chat';
 import { useBackLayer } from '../utils/back';
 import { parseAgentLink } from './agent-link';
 import { sidebarKey } from './sidebar-resize';
@@ -83,6 +87,18 @@ export interface AgentLayerApi {
   /** Open the real chat with one card mention. Call directly from a click or swipe release to grant microphone permission. False without an agent. */
   readonly talkAbout: (mention: string, options?: { readonly voice?: boolean; readonly at?: 'half' | 'full' }) => boolean;
   readonly expanded: boolean;
+  /**
+   * `composer: 'bar'` (D-2198): shows the app's preview of a file (dropped, attached or cited) in the right column, or full screen on a phone. The column holds one
+   * thing at a time: a docked assistant goes back above the field (Ouvert) while the preview is open, and comes back when it closes. `null` closes it.
+   * False (nothing shown) without `composer: 'bar'` or an agent.
+   */
+  readonly preview: (preview: AgentPreview | null) => boolean;
+}
+
+/** What `useAgentLayer().preview` shows: the app's own view of the file, under its title. */
+export interface AgentPreview {
+  readonly title: string;
+  readonly content: ReactNode;
 }
 
 // The three fixed snap points: a peek (the file chip, one composer row and a line of the last reply, `PEEK_REM` above the tab bar), 55% and the full height.
@@ -167,7 +183,7 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly setComposerSlot: (element: HTMLElement | null) => void;
   /** An `AgentComposerAnchor` is mounted: the field and the tray are drawn there, not in the full-width slot. */
   readonly anchored: boolean;
-  readonly setAnchor: (anchor: { readonly tray: HTMLElement; readonly field: HTMLElement } | null) => void;
+  readonly setAnchor: (anchor: { readonly tray: HTMLElement; readonly field: HTMLElement; readonly card: HTMLElement } | null) => void;
   readonly setDropZone: (element: HTMLElement | null) => void;
   /** The content composer sent a message: the thread opens in the dock. */
   readonly onSent: () => void;
@@ -187,6 +203,15 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly trayOpen: boolean;
   /** The thread is on show in the dock (the dock's own `open`). */
   readonly dockOpen: boolean;
+  /** `composer: 'bar'`: the one composer (D-2198). */
+  readonly bar: boolean;
+  /** `composer: 'bar'` on a wide screen with the conversation folded: the reply card sits on the field. */
+  readonly folded: boolean;
+  /** Where the folded card is drawn, right above the field (set by `ContentColumn` or `AgentComposerAnchor`). */
+  readonly cardSlot: HTMLElement | null;
+  readonly setCardSlot: (element: HTMLElement | null) => void;
+  /** The file preview on show (`AgentLayerApi.preview`), if any. */
+  readonly shownPreview: AgentPreview | null;
 }
 
 type DockSide = 'left' | 'right';
@@ -195,9 +220,12 @@ type AgentMode = 'tray' | 'dock';
 /**
  * Where the assistant's field sits on a wide screen. `dock` (default): inside the dock, under the thread. `content`: pinned under the page
  * content, at the content's width, with the dock holding only the thread (one controller, one thread, the same chat as the phone's peek).
+ * `bar` (D-2198), the one composer: the same field under the page, drawn as one row (the conversation's chevron, attach, the field and one
+ * action button, Dicter, Envoyer or Arrêter; `/` opens the actions), the conversation's work or reply as a card on the field while it is folded,
+ * and docked, the field goes with the thread to the right column (nothing stays at the bottom). `useAgentLayer().preview` fills that column.
  * Below the wide breakpoint nothing changes: the peek drawer.
  */
-export type AgentComposer = 'dock' | 'content';
+export type AgentComposer = 'dock' | 'content' | 'bar';
 /** The dock's remembered state lives under this prefix (DockLayout's storageKey): `<key>.agent.floating`, `.width`, and the side. */
 const DOCK_KEY = 'boring.app-shell';
 const SIDE_KEY = `${DOCK_KEY}.agent.side`;
@@ -240,9 +268,9 @@ const controllerOf = (spec: AgentSpec | ShellPanel | undefined) => spec && ('con
 
 /** The layer's state and controls. */
 export function useAgentLayer(): AgentLayerApi {
-  const { state, showing, open, closeShowing: close, talkAbout, expanded, agent: spec } = useInternal();
+  const { state, showing, open, closeShowing: close, talkAbout, expanded, agent: spec, preview } = useInternal();
   const agent = spec?.controller;
-  return useMemo(() => ({ state, showing, open, close, talkAbout, expanded, agent }), [state, showing, open, close, talkAbout, expanded, agent]);
+  return useMemo(() => ({ state, showing, open, close, talkAbout, expanded, agent, preview }), [state, showing, open, close, talkAbout, expanded, agent, preview]);
 }
 
 /** Push-to-talk uses the same dictation lifecycle as page targeting, over the existing composer/controller. */
@@ -282,7 +310,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const [dockFloating, setDockFloating] = useState(false);
   const [columnSlot, setComposerSlot] = useState<HTMLElement | null>(null);
   // The app's own column (`AgentComposerAnchor`) takes the field and the tray from the full-width slot while it is mounted.
-  const [anchor, setAnchor] = useState<{ readonly tray: HTMLElement; readonly field: HTMLElement } | null>(null);
+  const [anchor, setAnchor] = useState<{ readonly tray: HTMLElement; readonly field: HTMLElement; readonly card: HTMLElement } | null>(null);
   const composerSlot = anchor?.field ?? columnSlot;
   const [dropZone, setDropZone] = useState<HTMLElement | null>(null);
   const composerSlotRef = useRef<HTMLElement | null>(null);
@@ -310,11 +338,15 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const registerDock = useCallback((api: DockApi | null) => { dockApi.current = api; }, []);
   // The tray's Dock: this thread goes to the docked side pane whatever placement was persisted (a floated dock stays floated only for the dock's own controls).
   const moveToDock = useCallback(() => { restoreFocus.current = true; dockApi.current?.dock(); setMode('dock'); }, [setMode]);
-  const contentColumn = composer === 'content' && agent !== undefined;
+  const contentColumn = (composer === 'content' || composer === 'bar') && agent !== undefined;
   const contentComposer = contentColumn && expanded;
-  const specs = useRef({ agent, improve, snap, shown, pmOpen, together, contentComposer, mode });
+  const bar = composer === 'bar' && agent !== undefined;
+  const [columnCard, setCardSlot] = useState<HTMLElement | null>(null);
+  const cardSlot = anchor?.card ?? columnCard;
+  const [shownPreview, setPreview] = useState<AgentPreview | null>(null);
+  const specs = useRef({ agent, improve, snap, shown, pmOpen, together, contentComposer, mode, expanded });
   // eslint-disable-next-line react-hooks/refs -- latest-value ref: open/lend/showAgent may be called from a child's layout effect, before this component's own effects run
-  specs.current = { agent, improve, snap, shown, pmOpen, together, contentComposer, mode };
+  specs.current = { agent, improve, snap, shown, pmOpen, together, contentComposer, mode, expanded };
   // Another person's choice (the account switched, no remount) can take the tray or the dock away from under the focus: the one field is the stable control to land on.
   const refocusField = useRef(false);
   useLayoutEffect(() => {
@@ -497,13 +529,26 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // Sending from the content composer shows the thread; a dock already open stays as it is.
   const onSent = useCallback(() => { if (specs.current.snap === 'closed' || specs.current.shown !== 'agent') open('agent'); }, [open]);
   // On a wide content composer the reply is a tray above the field unless the person chose the dock; elsewhere the dock (or the phone's drawer) as before.
-  const trayOpen = contentComposer && snap !== 'closed' && shown === 'agent' && mode === 'tray';
-  const dockOpen = snap !== 'closed' && shown !== 'improve' && (!contentComposer || mode === 'dock');
+  // `bar`: the right column holds one thing at a time; while a preview is open a docked thread waits above the field.
+  const previewing = bar && expanded && shownPreview !== null;
+  const trayOpen = contentComposer && snap !== 'closed' && shown === 'agent' && (mode === 'tray' || previewing);
+  const dockOpen = snap !== 'closed' && shown !== 'improve' && (!contentComposer || (mode === 'dock' && !previewing));
+  const folded = bar && contentComposer && !trayOpen && !dockOpen;
+  const preview = useCallback((next: AgentPreview | null) => {
+    if (!specs.current.agent || composer !== 'bar') return false;
+    setPreview(next);
+    // The conversation stays at hand above the field, to talk about the file.
+    if (next && specs.current.expanded && (specs.current.snap === 'closed' || specs.current.shown !== 'agent')) open('agent');
+    return true;
+  }, [composer, open]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a preview goes with the agent it was opened beside
+  useEffect(() => { if (!agent && shownPreview) setPreview(null); }, [agent, shownPreview]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the tray is gone with the content composer (a phone width, a lost agent): the fill state goes with it
   useEffect(() => { if (!trayOpen && grown) setGrown(false); }, [trayOpen, grown]);
   const value = useMemo<Internal>(() => ({
     state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, anchored: anchor !== null, setAnchor, setDropZone, onSent, mode, setMode, moveToDock, registerDock, grown, setGrown, trayOpen, dockOpen,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen]);
+    bar, folded, cardSlot, setCardSlot, shownPreview, preview,
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen, bar, folded, cardSlot, shownPreview, preview]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -595,11 +640,11 @@ export function AgentTrigger({ className, children }: { readonly className?: str
   </Button>;
 }
 
-/** Tap to start; while active, this same control is the composer's replacement recording row. */
-function TalkButton() {
+/** Tap to start; while active, this same control is the composer's replacement recording row. In the bar it stands in Send's place, named « Dicter ». */
+function TalkButton({ label, primary = false }: { readonly label?: string; readonly primary?: boolean }) {
   const { voice } = useInternal();
   const busy = voice.phase === 'transcribing';
-  return <VoiceMessageButton testId="agent-talk" disabled={busy || (voice.phase === 'idle' && voice.canStart === false)} voice={{
+  return <VoiceMessageButton testId="agent-talk" primary={primary} {...(label ? { label } : {})} disabled={busy || (voice.phase === 'idle' && voice.canStart === false)} voice={{
     ...voice, phase: busy ? 'processing' : voice.phase, canStart: voice.canStart !== false,
     pending: voice.pending ?? [], captureSequence: voice.captureSequence ?? 0,
   }} />;
@@ -611,10 +656,67 @@ function VoiceProblem() {
   return voice.problem ? <p role="alert" data-testid="agent-voice-problem" className="m-0 shrink-0 px-3 pb-1 text-xs leading-4 text-destructive">{voice.problem}</p> : null;
 }
 
+/** `composer: 'bar'`: the chevron at the start of the field. It unfolds the conversation above the field and folds it back; a dot while a reply is unread. */
+function ConversationChevron({ unread }: { readonly unread: { readonly label: string } | undefined }) {
+  const layer = useInternal();
+  const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
+  const open = layer.trayOpen || layer.dockOpen;
+  return <span className="relative inline-flex shrink-0">
+    <Button type="button" variant="ghost" size="icon" data-testid="agent-bar-conversation" aria-label={text.conversation} title={text.conversation} aria-expanded={open}
+      onClick={() => { if (open) layer.close(); else layer.open('agent'); }}>{open ? <ChevronDownIcon data-icon="inline-start" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>
+    {unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full bg-primary" />}
+  </span>;
+}
+
+/**
+ * `composer: 'bar'`, folded: one card joined to the top of the field, at its width. While the agent works its header is what the running tool does;
+ * a question shows its choices (a form, each question in turn); a reply that came while folded shows « ✓ Terminé · <what it used> », three lines
+ * and the files it cites. Nothing floats over the page: the card is in the column's flow, above the field.
+ */
+function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly onOpenFile: ((path: string) => void) | undefined }) {
+  const layer = useInternal();
+  const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
+  const { question, status, reply } = bar;
+  if (!question && status?.state !== 'working' && !reply) return null;
+  const header = question ? undefined : status?.state === 'working'
+    ? <><span className="text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{status.text}</span></>
+    : reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
+      <span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{[text.done, reply.used.join(', ')].filter(Boolean).join(' · ')}</span></> : undefined;
+  return <div className="mx-auto w-full max-w-[720px] px-4">
+    <section data-testid="agent-card" data-state={question ? 'question' : status?.state === 'working' ? 'working' : 'reply'} aria-label={text.assistant}
+      className="flex flex-col gap-2 rounded-t-(--radius-xl) border border-b-0 bg-card px-3 pt-2 pb-3 text-sm text-card-foreground">
+      {header && <p role="status" className="m-0 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">{header}</p>}
+      {question && <AgentQuestion key={`${question.step ?? ''}|${question.title}`} question={question} hint={false} className="p-0" />}
+      {!question && status?.state !== 'working' && reply && <>
+        <p data-testid="agent-card-reply" className="m-0 line-clamp-3 whitespace-pre-line">{reply.text}</p>
+        {reply.files.length > 0 && <div role="list" data-testid="agent-card-files" className="flex flex-wrap gap-1.5">
+          {reply.files.map(path => <span role="listitem" key={path}><Button type="button" variant="outline" size="sm" data-testid="agent-card-file" data-path={path} disabled={!onOpenFile} onClick={() => onOpenFile?.(path)}>
+            <FileTextIcon data-icon="inline-start" aria-hidden="true" />{path.split('/').at(-1)}</Button></span>)}
+        </div>}
+      </>}
+    </section>
+  </div>;
+}
+
 /** One agent's PiChat. It stays mounted while hidden, so its scroll, focus and drafts survive a swap with the other spec. */
 function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly visible: boolean; readonly role: Which }) {
   const layer = useInternal();
   const locale = layer.locale ?? spec.chatProps?.locale;
+  const words = appShellText(locale);
+  // `composer: 'bar'`: the folded card and the chevron's dot read the same chat as the thread, through the agent bar's own adapter.
+  const barChat = useAgentBarChat(spec.controller, { actions: spec.chatProps?.actions, toolLabels: chatTextFor(locale).labels,
+    labels: { working: words.working, done: words.done, unread: words.unread, step: (index, count) => `${index} ${words.of} ${count}` } });
+  const barred = role === 'agent' && layer.bar && layer.contentComposer;
+  const { markRead } = barChat;
+  const unfolded = barred && !layer.folded;
+  useEffect(() => { if (unfolded) markRead(); }, [unfolded, markRead]);
+  // Docked, the bar's field goes with the thread: nothing stays at the bottom.
+  const hosted = role === 'agent' && layer.contentComposer && !(barred && layer.dockOpen);
+  const openFile = spec.chatProps?.onOpenFile ?? spec.chatProps?.mentions?.open;
+  const barProps = barred ? {
+    composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerStart: <ConversationChevron unread={barChat.historyBadge} />,
+    ...(spec.voice ? { composerWhenEmpty: <TalkButton label={words.dictate} primary /> } : {}),
+  } : {};
   // One annotate toggle: pins on desktop, point mode (which hides the layer while the person taps the app) on touch and compact screens.
   const feedback = useComposerFeedback(spec.feedback);
   const pointing = usePointing(spec.feedback);
@@ -622,8 +724,9 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
-    <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(role === 'agent' && layer.contentComposer ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
-      {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: layer.voice.phase === 'starting' || layer.voice.phase === 'recording' ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
+    <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...barProps} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
+      {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: barred ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: layer.voice.phase === 'starting' || layer.voice.phase === 'recording' ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
+    {barred && layer.folded && layer.cardSlot && createPortal(<FoldedCard bar={barChat} onOpenFile={openFile} />, layer.cardSlot)}
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
     {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden">
@@ -910,7 +1013,12 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   const act = (run: () => void) => () => { restoreFocusRef.current = true; run(); };
   const control = (id: string, label: string, Icon: ComponentType<{ className?: string }>, run: () => void) =>
     <Button variant="ghost" size="icon" key={id} data-testid={`agent-layer-${id}`} data-dock-control="" aria-label={label} title={label} onClick={act(run)}><Icon data-icon="inline-start" aria-hidden="true" /></Button>;
-  const controls = <>
+  // `composer: 'bar'`: one way out besides Fermer, back to the bottom (Ouvert); the field goes back under the page with the thread.
+  const undock = () => {
+    layer.setMode('tray');
+    requestAnimationFrame(() => layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true }));
+  };
+  const controls = layer.bar ? <Button variant="ghost" size="icon" data-testid="agent-layer-undock" data-dock-control="" aria-label={text.undock} title={text.undock} onClick={undock}><PanelBottomIcon data-icon="inline-start" aria-hidden="true" /></Button> : <>
     {!floating && control('float', text.float, PictureInPicture2Icon, () => api.float())}
     {(floating || side === 'right') && control('dock-left', text.dockLeft, PanelLeftIcon, () => { layer.setSide('left'); api.dock(); })}
     {(floating || side === 'left') && control('dock-right', text.dockRight, PanelRightIcon, () => { layer.setSide('right'); api.dock(); })}
@@ -936,14 +1044,18 @@ function AgentDock({ side }: { readonly side: DockSide }) {
   </Dock>;
 }
 
+/** Folded (`composer: 'bar'`): the card on the field says what the agent does, so the chat's own status line above the field steps aside. */
+const FOLDED_FIELD = '[&_[data-testid=preparing]]:hidden [&_[data-testid=composer-dock]_p[data-testid=agent-status]]:hidden';
+
 /** `composer: 'content'`: the page content, then the field's slot at the bottom; a file dropped anywhere on the column goes to that field. */
 function ContentColumn({ children }: { readonly children: ReactNode }) {
-  const { setComposerSlot, setDropZone, trayOpen, grown, anchored } = useInternal();
+  const { setComposerSlot, setDropZone, trayOpen, grown, anchored, setCardSlot, bar, folded } = useInternal();
   // The page keeps one wrapper whether the tray is open or not, so opening it never remounts the screen; Agrandir only hides it.
   return <div ref={setDropZone} data-testid="agent-content" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
     <div data-testid="agent-page" className={cn('flex min-h-0 min-w-0 flex-1 flex-col', trayOpen && grown && !anchored && 'hidden')}>{children}</div>
     {trayOpen && !anchored && <ContentTray />}
-    <div ref={setComposerSlot} data-testid="agent-content-composer" className="shrink-0" />
+    {bar && <div ref={setCardSlot} data-testid="agent-card-slot" className="shrink-0 empty:hidden" />}
+    <div ref={setComposerSlot} data-testid="agent-content-composer" className={cn('shrink-0', folded && FOLDED_FIELD)} />
   </div>;
 }
 
@@ -956,16 +1068,18 @@ export function AgentComposerAnchor({ className }: { readonly className?: string
   const layer = useContext(LayerContext);
   const [tray, setTray] = useState<HTMLElement | null>(null);
   const [field, setField] = useState<HTMLElement | null>(null);
+  const [card, setCard] = useState<HTMLElement | null>(null);
   const setAnchor = layer?.setAnchor;
   useLayoutEffect(() => {
-    if (!setAnchor || !tray || !field) return;
-    setAnchor({ tray, field });
+    if (!setAnchor || !tray || !field || !card) return;
+    setAnchor({ tray, field, card });
     return () => setAnchor(null);
-  }, [setAnchor, tray, field]);
+  }, [setAnchor, tray, field, card]);
   if (!layer) return null;
   return <div data-testid="agent-composer-anchor" className={cn('flex min-w-0 shrink-0 flex-col', className)}>
     <div ref={setTray} data-testid="agent-anchor-tray" className="flex min-w-0 flex-col">{layer.trayOpen && layer.anchored && <ContentTray />}</div>
-    <div ref={setField} data-testid="agent-anchor-composer" className="shrink-0" />
+    <div ref={setCard} data-testid="agent-anchor-card" className="shrink-0 empty:hidden" />
+    <div ref={setField} data-testid="agent-anchor-composer" className={cn('shrink-0', layer.folded && FOLDED_FIELD)} />
   </div>;
 }
 
@@ -1030,8 +1144,28 @@ export function AgentDockLayout({ children }: { readonly children: ReactNode }):
   return <DockLayout storageKey={DOCK_KEY} persist="local" minMain={MIN_MAIN + (layer.besidePanel ? PM_COLUMN : 0)}>
     {layer.side === 'left' && dock}
     <DockMain>{layer.contentColumn ? <ContentColumn>{children}</ContentColumn> : children}</DockMain>
+    {layer.bar && layer.expanded && layer.shownPreview && <PreviewPane preview={layer.shownPreview} />}
     {layer.side === 'right' && dock}
   </DockLayout>;
+}
+
+/**
+ * `useAgentLayer().preview`: the app's view of a file, in the right column on a wide screen (the conversation waits above the field) and over
+ * the whole screen on a phone. Fermer l'aperçu (or Escape inside it) closes it; the app draws the content.
+ */
+function PreviewPane({ preview }: { readonly preview: AgentPreview }) {
+  const layer = useInternal();
+  const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
+  const close = () => layer.preview(null);
+  return <aside data-testid="agent-preview" aria-label={`${text.preview} · ${preview.title}`}
+    onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); close(); } }}
+    className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground', layer.expanded ? 'relative w-[min(32rem,45%)] shrink-0 border-l' : 'fixed inset-0 z-(--app-shell-z-sheet)')}>
+    <div className="flex shrink-0 items-center gap-1 px-2 py-2">
+      <h2 data-testid="agent-preview-title" className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{preview.title}</h2>
+      <Button variant="ghost" size="icon" data-testid="agent-preview-close" aria-label={text.closePreview} title={text.closePreview} onClick={close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
+    </div>
+    <div data-testid="agent-preview-body" className="flex min-h-0 flex-1 flex-col overflow-auto">{preview.content}</div>
+  </aside>;
 }
 
 /** The layer itself: the drawer on a phone (the wide dock is `AgentDockLayout`). Placed once by the shell, for point mode on both. */
@@ -1051,6 +1185,7 @@ export function AgentLayer(): ReactElement | null {
   // aside; on a wide screen at the top, the dock beside the app. The note bubble is here only while pointing (else inside the layer).
   return <>
     {!layer.expanded && <CompactSheet pointing={session !== undefined} />}
+    {layer.bar && !layer.expanded && layer.shownPreview && <PreviewPane preview={layer.shownPreview} />}
     {commenting && <CommentBanner session={commenting} bottomOffset={`${layer.tabbar}px`} className="z-[60]" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
     {session && <NoteBubble session={session} {...(transcribe ? { transcribe } : {})} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
   </>;

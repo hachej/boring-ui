@@ -234,6 +234,8 @@ export interface VoiceMessageButtonProps {
   readonly disabled?: boolean;
   readonly primary?: boolean;
   readonly testId?: string;
+  /** The button's name instead of `labels.voiceRecord` (the shell's bar calls it « Dicter »). */
+  readonly label?: string;
 }
 /** Props of a pending voice message bubble that `VoiceMessageConfig.Bubble` carries. */
 export interface PendingVoiceBubbleProps { readonly pending: PendingVoice | undefined }

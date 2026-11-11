@@ -70,8 +70,8 @@ export interface ComposerProps {
   /** Extra controls in the bar (the model and effort pill) and a short note beside them. */
   readonly barStart?: ReactNode;
   readonly barNote?: ReactNode;
-  /** Off by default. On, "Attach files" and "Commands" are their own buttons left of the field (named by `labels.attachFiles` and `labels.commands`) instead of items of the "+" menu; the "+" stays only for what is left in it (Take a photo). Commands opens the same `/` list as typing `/`. */
-  readonly barActions?: boolean;
+  /** Off by default. On, "Attach files" and "Commands" are their own buttons left of the field (named by `labels.attachFiles` and `labels.commands`) instead of items of the "+" menu; the "+" stays only for what is left in it (Take a photo). Commands opens the same `/` list as typing `/`. `'attach'`: only Attach files is a bar button; the commands open by typing `/` alone (the shell's `composer: 'bar'`). */
+  readonly barActions?: boolean | 'attach';
   /** Optional host mode/model chips beside the attach control. */
   readonly chips?: ReactNode;
   /** Optional host context above the input. */
@@ -369,7 +369,7 @@ export function Composer(props: ComposerProps) {
   const marked = props.markMentionQuery && mentionOpen && trigger ? <QueryBackdrop text={text} start={trigger.start} end={trigger.end} /> : null;
   // eslint-disable-next-line react-hooks/refs -- renderInput receives event callbacks, not ref values; an input calls them only on interaction
   const input = props.renderInput?.({ text, onText, onCaret: setCaret, onSend: () => { if (canSubmit && !menuOpen) props.onSend(); } }) ?? props.input ?? (props.placeholderContent || marked ? <div data-slot="composer-field" className="relative flex min-h-16 w-full min-w-0 flex-1">{marked}{textareaEl}{!text && props.placeholderContent && <span aria-hidden="true" data-slot="composer-placeholder" className="pointer-events-none absolute inset-x-3 top-2 text-xs text-muted-foreground">{props.placeholderContent}</span>}</div> : textareaEl);
-  const barActions = props.barActions === true;
+  const barActions = props.barActions === true || props.barActions === 'attach';
   // With `barActions`, attach and commands are bar buttons; the "+" stays only when Take a photo is left in it.
   const plusHasItems = barActions ? canPhoto : canAttach || items.length > 0;
   const plusButton = plusHasItems && <PlusActions disabled={disabled || recording} textarea={inner} onAttach={!barActions && canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={!barActions && items.length > 0 ? openCommands : undefined} />;
@@ -394,7 +394,7 @@ export function Composer(props: ComposerProps) {
     {!slots && props.barNote}
     {!slots && uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
     {!pill && <span className="min-w-0 flex-1" />}
-    {!slots && barActions && items.length > 0 && <BarCommands disabled={disabled || recording} onCommands={openCommands} />}
+    {!slots && props.barActions === true && items.length > 0 && <BarCommands disabled={disabled || recording} onCommands={openCommands} />}
     {slots ? !stopInSend && props.recordingStop !== undefined && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.recordingStop}</div>
       : props.barEnd && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.barEnd}</div>}
     {!slots && working && hasContent && <Button variant="ghost" size="icon" data-testid="composer-queue" aria-label={labels.queue} title={labels.queue} disabled={!canSubmit} onClick={props.onSend} className="shrink-0">

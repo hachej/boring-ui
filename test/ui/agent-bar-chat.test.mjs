@@ -19,6 +19,11 @@ const asking = { entries: [user, round(2, assistant([ask('q', QUESTION)]))], doc
 const answeredRunning = { entries: [user, round(2, assistant([ask('q', QUESTION)])), round(3, result(JSON.stringify({ kind: 'answered', answer: 'Port du sud' })))], docs: running };
 const working = { entries: [user], docs: running };
 const idle = { entries: [user, round(2, assistant([{ type: 'text', text: 'Fait.' }]))], docs: {} };
+// D-2198: a read that publishes its progress, a two-question form, a reply that cites a file.
+const reading = { entries: [user, round(2, assistant([{ type: 'toolCall', id: 'r', name: 'read', arguments: { path: 'uploads/releve-fictif.pdf' } }]))], docs: { 'pi.live': { run: { taskId: 1 }, tools: [{ callId: 'r', status: 'running', details: { progress: '3 lignes sur 9' } }] } } };
+const FORM = { question: 'Deux précisions', questions: [{ question: 'Quel exercice ?', options: ['2025', '2026'] }, { question: 'Quel journal ?', options: ['Achats', 'Ventes'] }] };
+const formAsking = { entries: [user, round(2, assistant([ask('q', FORM)]))], docs: running };
+const replied = { entries: [user, round(2, assistant([{ type: 'toolCall', id: 'r', name: 'read', arguments: { path: 'uploads/releve-fictif.pdf' } }])), round(3, { role: 'toolResult', toolCallId: 'r', toolName: 'read', content: [{ type: 'text', text: '9 lignes' }], isError: false, timestamp: 2 }), round(4, assistant([{ type: 'text', text: 'Rapproché. Voir @uploads/ecarts-fictifs.csv.' }]))], docs: {} };
 
 test('AgentBar, AgentQuestion and AgentStatus follow the chat controller through useAgentBarChat', { timeout: 30000 }, async t => {
   assert.ok(existsSync(HOOK), 'registry/agent-bar/use-agent-bar-chat.ts exists (the supported way to drive AgentBar from a chat controller)');
@@ -37,7 +42,10 @@ test('AgentBar, AgentQuestion and AgentStatus follow the chat controller through
     import { useAgentBarChat } from './agent-bar/use-agent-bar-chat.ts';
     export function Harness({ controller, actions }) {
       const bar = useAgentBarChat(controller, { actions });
-      return <>{bar.status ? <AgentStatus {...bar.status} /> : null}<AgentBar onSend={bar.onSend} {...(bar.question ? { question: bar.question } : {})} /></>;
+      return <>{bar.status ? <AgentStatus {...bar.status} /> : null}
+        {bar.reply ? <p data-testid="probe-reply" data-used={bar.reply.used.join(',')} data-files={bar.reply.files.join(',')}>{bar.reply.text}</p> : null}
+        <button type="button" data-testid="probe-read" onClick={bar.markRead}>read</button>
+        <AgentBar onSend={bar.onSend} onHistory={() => {}} {...(bar.historyBadge ? { historyBadge: bar.historyBadge } : {})} {...(bar.question ? { question: bar.question } : {})} /></>;
     }`, resolveDir: new URL('../../registry/', import.meta.url).pathname, loader: 'tsx' }, outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', loader: { '.css': 'empty' } });
   const { Harness } = await import(output.href);
   const element = document.createElement('div'); document.body.append(element); const root = createRoot(element);
@@ -91,6 +99,40 @@ test('AgentBar, AgentQuestion and AgentStatus follow the chat controller through
     await publish(idle);
     assert.equal(q('agent-status')?.getAttribute('data-state'), 'done');
     assert.equal(q('agent-status-spinner'), null);
+  });
+  await t.test('D-2198: while a tool runs the status is its own words and progress, not « En cours »', async () => {
+    await draw(reading);
+    const words = element.querySelector('[data-testid=agent-status]')?.textContent ?? '';
+    assert.equal(words.includes('Lecture uploads/releve-fictif.pdf · 3 lignes sur 9'), true, words);
+    assert.equal(words.includes('En cours'), false);
+  });
+  await t.test('D-2198: a two-question form asks both questions in turn and answers them together, never « Pas de réponse »', async () => {
+    await draw(formAsking);
+    assert.equal(q('agent-question')?.getAttribute('aria-label'), 'Quel exercice ?');
+    assert.equal(q('agent-question-step')?.textContent, 'Deux précisions · 1 sur 2');
+    await act(async () => { [...element.querySelectorAll('[data-choice]')].find(node => node.textContent === '2026').dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
+    assert.equal(answers.length, 0, 'nothing is answered before the last question');
+    assert.equal(q('agent-question')?.getAttribute('aria-label'), 'Quel journal ?');
+    assert.equal(q('agent-question-step')?.textContent, 'Deux précisions · 2 sur 2');
+    assert.equal(q('agent-question-answered')?.textContent.includes('2026'), true);
+    await act(async () => { [...element.querySelectorAll('[data-choice]')].find(node => node.textContent === 'Ventes').dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
+    assert.equal(answers.length, 1);
+    assert.equal(answers[0].text, '1. Quel exercice ?\n→ 2026\n\n2. Quel journal ?\n→ Ventes');
+    assert.equal(answers[0].text.includes('Pas de réponse'), false);
+  });
+  await t.test('D-2198: a reply after a run is kept with the dot until read; history found at mount is not a new reply', async () => {
+    await draw(replied);
+    assert.equal(q('probe-reply'), null, 'the history is not unread');
+    assert.equal(q('agent-bar-history-badge'), null);
+    await draw(reading);
+    await publish(replied);
+    assert.equal(q('probe-reply')?.textContent, 'Rapproché. Voir @uploads/ecarts-fictifs.csv.');
+    assert.equal(q('probe-reply')?.getAttribute('data-used'), 'releve-fictif.pdf', 'what the run used');
+    assert.equal(q('probe-reply')?.getAttribute('data-files'), 'uploads/ecarts-fictifs.csv', 'the file it cites');
+    assert.equal(q('agent-bar-history-badge')?.getAttribute('aria-label'), 'Nouvelle réponse');
+    await act(async () => { q('probe-read').dispatchEvent(new window.MouseEvent('click', { bubbles: true })); });
+    assert.equal(q('probe-reply'), null, 'read');
+    assert.equal(q('agent-bar-history-badge'), null);
   });
   await t.test('no run and no question: no status line; the bar text is sent like the composer sends it', async () => {
     await draw({ entries: [], docs: {} });

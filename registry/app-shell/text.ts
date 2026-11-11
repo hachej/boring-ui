@@ -40,6 +40,18 @@ export interface AppShellText {
   readonly float: string;
   readonly dockLeft: string;
   readonly dockRight: string;
+  /** `composer: 'bar'` (D-2198): the chevron that unfolds the conversation above the field, the microphone in Send's place, the dock's way back to the bottom. */
+  readonly conversation: string;
+  readonly dictate: string;
+  readonly undock: string;
+  /** The folded card: the dot of an unread reply, the run's words, the form's « 1 sur 2 ». */
+  readonly unread: string;
+  readonly working: string;
+  readonly done: string;
+  readonly of: string;
+  /** The file preview's region and its close button. */
+  readonly preview: string;
+  readonly closePreview: string;
 }
 
 const en: AppShellText = {
@@ -65,6 +77,15 @@ const en: AppShellText = {
   float: 'Float over the app',
   dockLeft: 'Dock on the left',
   dockRight: 'Dock on the right',
+  conversation: 'Conversation',
+  dictate: 'Dictate',
+  undock: 'Move to the bottom',
+  unread: 'New reply',
+  working: 'Working',
+  done: 'Done',
+  of: 'of',
+  preview: 'Preview',
+  closePreview: 'Close the preview',
 };
 
 const fr: AppShellText = {
@@ -90,6 +111,15 @@ const fr: AppShellText = {
   float: 'Flotter sur l’app',
   dockLeft: 'Ancrer à gauche',
   dockRight: 'Ancrer à droite',
+  conversation: 'Conversation',
+  dictate: 'Dicter',
+  undock: 'Détacher en bas',
+  unread: 'Nouvelle réponse',
+  working: 'En cours',
+  done: 'Terminé',
+  of: 'sur',
+  preview: 'Aperçu',
+  closePreview: 'Fermer l’aperçu',
 };
 
 const TEXT: Readonly<Record<AppShellLocale, AppShellText>> = { en, fr };
