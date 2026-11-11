@@ -50,8 +50,8 @@ before(async () => {
   const css = compiler.build(sources.flatMap(source => source.split(/[\s"'`]+/)));
   // A clickable demo for review (D-2198): the same bundle in one self-contained page, with a small panel that drives the scripted agent.
   // CI uploads it with the shots (composer-content-shots/one-composer-demo.html). No network, no keys: the agent is the fixture's fake.
-  const panel = `<div id="demo-panel" style="position:fixed;top:8px;right:8px;z-index:100;display:flex;flex-wrap:wrap;gap:6px;max-width:360px;padding:8px;border-radius:10px;background:var(--card);color:var(--foreground);box-shadow:0 4px 16px rgb(0 0 0 / 15%);font:12px system-ui,sans-serif">`
-    + `<b style="width:100%">Démo · agent fictif</b>`
+  const panel = `<div id="demo-panel" style="position:fixed;left:8px;bottom:8px;z-index:100;display:flex;flex-wrap:wrap;gap:6px;max-width:220px;padding:8px;border-radius:10px;background:var(--card);color:var(--foreground);box-shadow:0 4px 16px rgb(0 0 0 / 15%);font:12px system-ui,sans-serif">`
+    + `<b style="width:100%;cursor:pointer" title="Replier / déplier" onclick="for (const b of this.parentElement.querySelectorAll('button')) b.hidden = !b.hidden">Démo · agent fictif ▾</b>`
     + [['tool', 'L’agent lit un fichier'], ['form', 'L’agent pose 2 questions'], ['reply', 'L’agent répond']].map(([kind, label]) => `<button type="button" onclick="window.__run('${kind}')">${label}</button>`).join('')
     + `<button type="button" onclick="window.__openFile('uploads/ecarts-janvier.csv')">Ouvrir un fichier</button>`
     + `<button type="button" onclick="document.documentElement.classList.toggle('dark')">Clair / sombre</button></div>`;
