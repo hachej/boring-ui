@@ -52,11 +52,13 @@ const controller = {
   setAttachments: attachments => change({ draft: { ...snapshot.draft, attachments, version: snapshot.draft.version + 1 } }),
   send: async () => {
     const text = snapshot.draft.text;
+    // `window.__failNext`: the next send is refused, as a real controller does it: the text stays in the field and `send` says why.
+    if (window.__failNext) { window.__failNext = false; change({ send: { kind: 'blocked', reason: 'Hors ligne (fictif)' } }); return undefined; }
     window.__sent.push(text);
     const next = snapshot.view.entries.length + 1;
     // As a real run: the agent works a moment, then replies.
     const asked = [...snapshot.view.entries, say(next, text)];
-    change({ draft: { text: '', attachments: [], version: snapshot.draft.version + 1 }, view: { entries: asked, docs: live() } });
+    change({ send: { kind: 'idle' }, draft: { text: '', attachments: [], version: snapshot.draft.version + 1 }, view: { entries: asked, docs: live() } });
     setTimeout(() => change({ view: { entries: [...asked, reply(next + 1, T('Réponse fictive : noté.', 'Fictional reply: noted.'))], docs: {} } }), 800);
   },
   connect: async () => {}, stop: async () => {}, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {},
@@ -98,6 +100,6 @@ const FILES = ['uploads/releve-janvier.pdf', 'uploads/ecarts-janvier.csv', 'uplo
 // The app's navigator for « Bibliothèque » (an app would pass the kit's FileTreeView here); a pick opens the file in the same pane.
 const library = onPicked => <ul data-testid="fixture-library" className="m-0 flex list-none flex-col gap-1 p-2">{FILES.map(path => <li key={path}>
   <button type="button" data-testid="fixture-library-file" data-path={path} className="w-full rounded-md p-2 text-left text-sm hover:bg-accent" onClick={() => { window.__library += 1; onOpenFile(path); onPicked(); }}>{path.split('/').at(-1)}</button></li>)}</ul>;
-const agent = { controller, icon: Icon, label: 'Assistant', library, voice: { transcribe: async () => 'Texte dicté fictif', send: 'draft' },
+const agent = { controller, icon: Icon, label: 'Assistant', library, ...(params.get('readonly') === '1' ? { readOnly: T('Lecture seule : votre rôle permet de lire, pas d’écrire (fictif).', 'Read only: your role may read, not write (fictional).') } : {}), voice: { transcribe: async () => 'Texte dicté fictif', send: 'draft' },
   chatProps: { title: 'Assistant', locale: LOCALE, labels: { placeholder: T('Demandez, ou « / » pour une action', 'Ask anything, or « / » for an action') }, actions, attachments, slash, onOpenFile } };
 createRoot(document.getElementById('root')).render(<AppShell layout="screen" locale={LOCALE} title={T('Compta fictive', 'Demo books')} nav={nav} route={{ id: 'dossier', onChange() {} }} composer={params.get('composer') ?? 'bar'} rail="icon" agent={agent} />);

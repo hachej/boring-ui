@@ -59,6 +59,8 @@ export interface AppShellText {
   readonly backToAssistant: string;
   /** The field while the agent's question waits. */
   readonly answerHere: string;
+  /** AC-12: a send that failed while folded, one line at the top of the box (Réessayer is the chat's own word). */
+  readonly sendFailed: string;
   /** The preview header's way to the app's files. */
   readonly library: string;
 }
@@ -99,6 +101,7 @@ const en: AppShellText = {
   closePreview: 'Close the preview',
   backToAssistant: 'Back to the assistant',
   answerHere: 'Or answer here',
+  sendFailed: 'The message was not sent: it is back in the field. Try again.',
   library: 'Library',
 };
 
@@ -138,6 +141,7 @@ const fr: AppShellText = {
   closePreview: 'Fermer l’aperçu',
   backToAssistant: 'Retour à l’assistant',
   answerHere: 'Ou répondez ici',
+  sendFailed: 'Le message n’est pas parti : il est revenu dans le champ. Réessayez.',
   library: 'Bibliothèque',
 };
 
