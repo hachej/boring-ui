@@ -126,7 +126,7 @@
       "chart-4": "oklch(0.6 0.18 15)",
       "chart-5": "oklch(0.57 0.12 300)",
       "shell": "var(--background)",
-      "text-body": "0.75rem",
+      "text-body": "0.8125rem",
       "text-title": "0.875rem",
       "text-chat": "0.9375rem",
       "text-chat--line-height": "1.6",

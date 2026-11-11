@@ -125,7 +125,7 @@ test('shipped CSS objects are checked as declarations, not quoted JSON keys', t 
 
 test('the theme gives the type roles and the sidebar surface as tokens, bound to the Tailwind size and colour utilities', () => {
   const theme = JSON.parse(readFileSync(join(designRoot, 'registry.json'), 'utf8')).items.find(item => item.name === 'theme').cssVars;
-  assert.equal(theme.light['text-body'], '0.75rem');
+  assert.equal(theme.light['text-body'], '0.8125rem');
   assert.equal(theme.light['text-title'], '0.875rem');
   assert.equal(theme.theme['text-xs'], 'var(--text-body)');
   assert.equal(theme.theme['text-sm'], 'var(--text-title)');

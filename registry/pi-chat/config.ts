@@ -205,6 +205,8 @@ export interface SlashPickerProps {
   readonly items: readonly SlashItem[];
   readonly onSelect: (item: SlashItem) => void;
   readonly onDismiss: () => void;
+  /** The field is the search (`Composer barActions="attach"`): no search box and no source tabs of its own. */
+  readonly bare?: boolean;
 }
 
 /** Props of the mention picker that `MentionsConfig.Picker` carries. */
@@ -234,6 +236,8 @@ export interface VoiceMessageButtonProps {
   readonly disabled?: boolean;
   readonly primary?: boolean;
   readonly testId?: string;
+  /** The button's name instead of `labels.voiceRecord` (the shell's bar calls it « Dicter »). */
+  readonly label?: string;
 }
 /** Props of a pending voice message bubble that `VoiceMessageConfig.Bubble` carries. */
 export interface PendingVoiceBubbleProps { readonly pending: PendingVoice | undefined }

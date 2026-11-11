@@ -39,7 +39,7 @@ export interface AppShellProps {
   /** Phone navigation: `tabs` (default) is the bottom tab bar; `sheet` has no bar, the header's leading button opens the sidebar (the nav items, a screen's `sidebar` content and the account) as a sheet. */
   readonly compactNav?: 'tabs' | 'sheet';
   readonly agent?: AgentSpec;
-  /** Where the assistant's field sits on a wide screen: `dock` (default) in the dock under the thread; `content` pinned under the page content, at the content's width, with the dock holding only the thread (a send, or `talkAbout`, opens it). A phone keeps the peek drawer either way. */
+  /** Where the assistant's field sits on a wide screen: `dock` (default) in the dock under the thread; `content` pinned under the page content, at the content's width, with the dock holding only the thread (a send, or `talkAbout`, opens it); `bar`, the one composer (D-2198): as `content`, one row (chevron, attach, field, Dicter/Envoyer/Arrêter), the work or reply as a card on the folded field, the field going with the thread when docked, and `useAgentLayer().preview`. A phone keeps the peek drawer either way. */
   readonly composer?: AgentComposer;
   /** Consume agent/open/input launch parameters on mount (default). `false` leaves the URL and layer untouched. */
   readonly agentLink?: false;

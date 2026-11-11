@@ -18,7 +18,7 @@ const ALL = '__all__';
  * The `/` picker, ported from v2's `SlashCommandPicker`: a search box seeded from what was typed after `/`, filter chips
  * (All, built-in, skills, plugin names), then rows with a name, badges and a one line description.
  */
-export function SlashPicker({ query, items, onSelect, onDismiss }: SlashPickerProps) {
+export function SlashPicker({ query, items, onSelect, onDismiss, bare = false }: SlashPickerProps) {
   const { labels } = useChatText();
   const [group, setGroup] = useState(ALL);
   const [search, setSearch] = useState(query);
@@ -39,7 +39,7 @@ export function SlashPicker({ query, items, onSelect, onDismiss }: SlashPickerPr
 
   const optionId = (index: number) => `pi-chat-slash-${index}`;
   return <ComposerSuggestions testId="slash-menu" onDismiss={onDismiss}>
-    <InputGroup>
+    {!bare && <><InputGroup>
       <InputGroupAddon><SearchIcon aria-hidden="true" /></InputGroupAddon>
       <InputGroupInput className="max-sm:min-h-11 pointer-coarse:min-h-11" aria-label={labels.searchCommands} data-testid="slash-search" type="text" autoComplete="off" spellCheck={false} value={search}
         onChange={event => { setSearch(event.currentTarget.value); setActive(0); }} placeholder={labels.searchCommands} />
@@ -47,7 +47,7 @@ export function SlashPicker({ query, items, onSelect, onDismiss }: SlashPickerPr
     <div role="tablist" aria-label={labels.filterBySource} className="flex flex-wrap gap-1">
       {[ALL, ...groups].map(name => <Button key={name} size="xs" variant={group === name ? 'secondary' : 'ghost'} role="tab" aria-selected={group === name} data-testid="slash-chip" data-group={name === ALL ? 'all' : name}
         onMouseDown={event => { event.preventDefault(); setGroup(name); setActive(0); }}>{name === ALL ? labels.allSources : labels.slashGroup(name)}</Button>)}
-    </div>
+    </div></>}
     {filtered.length === 0
       ? <div data-testid="slash-empty" className="text-xs text-muted-foreground">{labels.noCommands}</div>
       : <ul ref={list} role="listbox" aria-label={labels.commands} className="m-0 flex max-h-[min(20rem,45dvh)] list-none flex-col overflow-y-auto p-0">

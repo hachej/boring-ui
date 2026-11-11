@@ -118,8 +118,8 @@ for (const primitives of ['shadcn/ui', 'examples/app-shell/components/ui']) for 
         expect(`${width} compact <html> sm/xs/icon-sm/icon-xs`, ['sm', 'xs', 'icon-sm', 'icon-xs'].map(size => page.buttons[size].h), small);
         await browser.evaluate(`document.documentElement.removeAttribute('data-density')`);
       }
-      // The Select trigger is a button (no keyboard opens, so iOS does not zoom): it keeps the 12px of a button at every width.
-      expect(`${width} select trigger font`, [normal.trigger.font, compact.trigger.font], ['12px', '12px']);
+      // The Select trigger is a button (no keyboard opens, so iOS does not zoom): it keeps the 13px of a button at every width (the theme's --text-body, D-2198).
+      expect(`${width} select trigger font`, [normal.trigger.font, compact.trigger.font], ['13px', '13px']);
       await browser.screenshot(`control-height-${width}.png`);
     }
     assert.deepEqual(violations, []);

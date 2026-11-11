@@ -128,7 +128,7 @@
           "chart-4": "oklch(0.6 0.18 15)",
           "chart-5": "oklch(0.57 0.12 300)",
           "shell": "var(--background)",
-          "text-body": "0.75rem",
+          "text-body": "0.8125rem",
           "text-title": "0.875rem",
           "text-chat": "0.9375rem",
           "text-chat--line-height": "1.6",
@@ -959,7 +959,7 @@
       "name": "agent-bar",
       "type": "registry:block",
       "title": "Agent bar",
-      "description": "The voice-first bar for an agent that works in the background: a pill with a history arrow, the field, a mic (tap to listen, hold to talk and release to send) and send, an optional quoted-row chip, AgentStatus, the one-line spinner or check above it, and the question card the agent asks above the bar (`question`: choices with one preselected, answered by a tap or from the bar). `useAgentBarChat(controller, { actions })` drives the bar, the question and the status from the chat controller PiChat takes. Dictation and the hold gesture are the kit's; the app supplies `transcribe` (or a live `stream`, which shows the words as they come) and `onSend`. Optional `attachments` (drop on the bar, paste, a pick button, the same chips as PiChat) and `slash` (typing / or an Actions button opens the commands list), both off by default.",
+      "description": "The voice-first bar for an agent that works in the background: a pill with a history arrow, the field, a mic (tap to listen, hold to talk and release to send) and send, an optional quoted-row chip, AgentStatus, the one-line spinner or check above it, and the question card the agent asks above the bar (`question`: choices with one preselected, answered by a tap or from the bar). `useAgentBarChat(controller, { actions })` drives the bar, the question and the status from the chat controller PiChat takes: the status reads the running tool's words, a form asks each question in turn, and a reply that came while folded is kept (`reply`, `historyBadge`) until `markRead`. Dictation and the hold gesture are the kit's; the app supplies `transcribe` (or a live `stream`, which shows the words as they come) and `onSend`. Optional `attachments` (drop on the bar, paste, a pick button, the same chips as PiChat) and `slash` (typing / or an Actions button opens the commands list), both off by default.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.4.82",
         "react@^19.0.0"
@@ -2345,7 +2345,7 @@
       "name": "app-shell",
       "type": "registry:block",
       "title": "App shell: layouts, list/detail and agent layer",
-      "description": "AppShell with three layouts. B \"workspace\" puts a ListDetail on a screen (phone: the list, then the detail as a stack step with Back; wide: a 20rem list and the detail side by side, sidebar as an icon rail). C \"chat\" wraps the app's own AgentWorkspace (untouched, passed as the nav item's render; install the pi-app item yourself) in the same sidebar, account menu and header; it takes no shell agent. A \"screen\": one screen at a time, every screen kept mounted. On a phone bottom tabs (at most four; more give three plus a « Plus » sheet) and an avatar button that opens the account sheet; on a wide screen the shadcn sidebar (icon rail, NavUser). One header per screen through useScreenHeader (title, subtitle, back, up to two actions, the rest behind « … »). The account menu holds « Améliorer l'app » (the improve agent), the app's own entries and sign out. AppSheet is the one bottom sheet (one open at a time, Back closes it). It mounts the AgentLayer: one agent's PiChat above the app (phone: a drawer with peek, half and full snap points; wide: a right panel), the improve agent in the same layer, optional push-to-talk and point mode. Also useAgentContext and readAgentContext (the screen on show travels as `context` with each submit) and useBackLayer, the one Back manager. Built on explicitly pinned Base UI drawer and dropdown-menu recipes, plus the sidebar and avatar of the host's own shadcn style.",
+      "description": "AppShell with three layouts. B \"workspace\" puts a ListDetail on a screen (phone: the list, then the detail as a stack step with Back; wide: a 20rem list and the detail side by side, sidebar as an icon rail). C \"chat\" wraps the app's own AgentWorkspace (untouched, passed as the nav item's render; install the pi-app item yourself) in the same sidebar, account menu and header; it takes no shell agent. A \"screen\": one screen at a time, every screen kept mounted. On a phone bottom tabs (at most four; more give three plus a « Plus » sheet) and an avatar button that opens the account sheet; on a wide screen the shadcn sidebar (icon rail, NavUser). One header per screen through useScreenHeader (title, subtitle, back, up to two actions, the rest behind « … »). The account menu holds « Améliorer l'app » (the improve agent), the app's own entries and sign out. AppSheet is the one bottom sheet (one open at a time, Back closes it). It mounts the AgentLayer: one agent's PiChat above the app (phone: a drawer with peek, half and full snap points; wide: a right panel), the improve agent in the same layer, optional push-to-talk and point mode. `composer=\"bar\"` makes the shell's composer the one field of the app: under the page, one row (chevron, attach, field, Dicter/Envoyer/Arrêter), the work, a question or an unread reply as a card on the folded field, the thread above it (Ouvert) or both in the right column (Ancré), and `useAgentLayer().preview` for a file. Also useAgentContext and readAgentContext (the screen on show travels as `context` with each submit) and useBackLayer, the one Back manager. Built on explicitly pinned Base UI drawer and dropdown-menu recipes, plus the sidebar and avatar of the host's own shadcn style.",
       "dependencies": [
         "@hachej/boring-feedback@^0.4.82",
         "@hachej/boring-ui-kit@^0.4.82",
@@ -2362,7 +2362,8 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.82/r/feedback.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.82/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.82/r/button.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.82/r/_shared.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.82/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.82/r/agent-bar.json"
       ],
       "css": {
         "@layer base": {
@@ -2390,6 +2391,42 @@
           },
           ":where(.app-shell [data-slot=\"screen-body\"][data-bleed]) :where(li, tr, [role=\"row\"]) > :first-child": {
             "padding-inline-start": "var(--screen-gutter, 1rem)"
+          }
+        },
+        "@layer utilities": {
+          ".app-shell [data-one-composer] [data-testid=\"composer-dock\"]": {
+            "padding": "0"
+          },
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"composer-input\"]:placeholder-shown": {
+            "white-space": "nowrap",
+            "overflow": "hidden",
+            "text-overflow": "ellipsis"
+          },
+          ".app-shell [data-one-composer] [data-boring=\"pi-chat-composer\"], .app-shell [data-one-composer] [data-boring=\"pi-chat\"]": {
+            "background-color": "var(--card)"
+          },
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"input-group\"] [data-slot=\"button\"]": {
+            "border-radius": "var(--radius-3xl)"
+          },
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"input-group\"]": {
+            "align-items": "flex-end",
+            "padding": "0.5rem",
+            "gap": "0.375rem",
+            "min-height": "3.5rem"
+          },
+          ".app-shell [data-one-composer] [data-slot=\"input-group\"], .app-shell [data-one-composer] [data-slot=\"input-group\"]:focus-within": {
+            "border-color": "transparent",
+            "background-color": "transparent",
+            "box-shadow": "none"
+          },
+          ".app-shell [data-one-dock] [data-slot=\"input-group\"]": {
+            "border-radius": "var(--radius-3xl)",
+            "border-color": "var(--border)",
+            "background-color": "var(--card)",
+            "box-shadow": "none"
+          },
+          ".app-shell [data-one-dock] [data-slot=\"input-group\"]:focus-within": {
+            "border-color": "var(--ring)"
           }
         }
       },

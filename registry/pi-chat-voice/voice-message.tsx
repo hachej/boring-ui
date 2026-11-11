@@ -54,10 +54,10 @@ export function RecordingStop({ voice, testId = 'voice-message-record' }: Pick<V
   return <Button variant="default" size="icon" data-testid={testId} data-state={voice.phase} aria-label={labels.voiceStop} title={labels.voiceStop} onClick={voice.finish} disabled={voice.phase === 'starting'} className="shrink-0"><SquareIcon weight="fill" aria-hidden="true" /></Button>;
 }
 
-export function VoiceMessageButton({ voice, disabled, primary = false, testId = 'voice-message-record' }: VoiceMessageButtonProps) {
+export function VoiceMessageButton({ voice, disabled, primary = false, testId = 'voice-message-record', label }: VoiceMessageButtonProps) {
   const { labels } = useChatText();
   if (voice.phase === 'starting' || voice.phase === 'recording') return <RecordingBar voice={voice} testId={testId} />;
-  return <Button onClick={voice.start} variant={primary ? 'default' : 'ghost'} size="icon" className="shrink-0" data-testid={testId} data-state={voice.phase} disabled={disabled || !voice.canStart || voice.phase !== 'idle'} aria-label={labels.voiceRecord} title={labels.voiceRecord}><MicIcon aria-hidden="true" /></Button>;
+  return <Button onClick={voice.start} variant={primary ? 'default' : 'ghost'} size="icon" className="shrink-0" data-testid={testId} data-state={voice.phase} disabled={disabled || !voice.canStart || voice.phase !== 'idle'} aria-label={label ?? labels.voiceRecord} title={label ?? labels.voiceRecord}><MicIcon aria-hidden="true" /></Button>;
 }
 
 export function PendingVoiceBubble({ pending }: PendingVoiceBubbleProps) {

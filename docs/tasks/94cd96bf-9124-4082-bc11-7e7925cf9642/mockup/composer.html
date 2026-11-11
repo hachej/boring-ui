@@ -1,0 +1,107 @@
+<title>One Composer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="kit.css">
+<link rel="stylesheet" href="mock.css">
+<style>main{max-width:1200px;gap:28px}</style>
+<main>
+<header>
+  <span class="eyebrow">D-2198 · the composer · left: today (real kit 0.4.82 screenshots) · right: target (drawn with the kit's tokens)</span>
+  <h1>One composer, state by state</h1>
+  <p class="muted">Today an app has two fields: the chat's composer (two rows, « + », Send) and the page's own bar (Compta, Coach Max). The target is one field, owned by the shell, one row, one action button. The pages around it: <a href="layout.html">layout</a>.</p>
+</header>
+
+<section class="block"><div class="row-title"><h3>1 · At rest</h3><span>nothing typed</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><img src="img/today-shell.png" alt="Today's chat composer: two rows, a plus button and Send"><img src="img/today-bar.png" alt="Today's page bar: chevron, attach, field, actions, mic and send"><span class="cap"><b>Two fields.</b> The chat's composer (top) and the page's bar (bottom). Each has its own buttons.</span></div>
+  <div class="side t"><span class="lbl">Target</span><div id="s1"></div><span class="cap">One row: <b>chevron</b> (opens the conversation) · <b>attach</b> · the field · <b>one action button</b>, here Dicter because the field is empty. No « + », no Actions button.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>2 · Typing</h3><span>one line, then several</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><img src="img/today-shell-chip.png" alt="Today's chat composer focused with a cited row chip"><span class="cap">Focus outlines the chat's box; Send turns dark once there is text. The bar keeps mic and send side by side.</span></div>
+  <div class="side t"><span class="lbl">Target</span><div id="s2"></div><span class="cap">First character: <b>Dicter becomes Envoyer</b>, same place and size. Enter sends, Shift+Enter is a new line (on a phone, Return is Envoyer). The field grows upward to 6 lines, then scrolls inside; the buttons stay on the last line.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>3 · Files</h3><span>drop, paste or attach</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><img src="img/today-bar.png" alt="Today's bar with two file chips above it"><span class="cap">The bar's chips float above the pill, outside it. The chat puts them inside its own box.</span></div>
+  <div class="side t"><span class="lbl">Target</span><div id="s3"></div><span class="cap">Chips go <b>inside the box</b>, above the text. Uploading shows a spinner and holds Envoyer. A file alone can be sent. Tapping a chip opens the app's preview in the right column.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>4 · Actions</h3><span>« / »</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><img src="img/today-plus.png" alt="Today's chat composer with the plus menu open on Attach files"><img src="img/today-slash.png" alt="Today's commands list with a search box"><span class="cap">The chat hides actions behind « + »; the bar has an Actions button; both open a list with its own search box.</span></div>
+  <div class="side t"><span class="lbl">Target</span><div id="s4"></div><span class="cap"><b>« / » typed in the field</b> opens the app's actions above the box. Typing filters, ↑ ↓ moves, Enter picks, Échap closes and keeps the text. No second search box.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>5 · The agent works</h3><span>sending, then streaming</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><img src="img/today-working.png" alt="Today: Agent is working above the chat composer, with a stop button"><span class="cap">« Agent is working » (or « En cours » in the bar). It never says what the agent does.</span></div>
+  <div class="side t"><span class="lbl">Target</span><div id="s5"></div><span class="cap">Conversation folded: a card <b>in the same box</b> says what the tool does, in its own words. The button is <b>Arrêter</b>. Unfolded, the same words show in the thread.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>6 · The agent asks</h3><span>a question, or a form of several</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><img src="img/today-question-bar.png" alt="Today's bar question card in a bright accent colour with choices"><img src="img/today-question-chat.png" alt="Today's chat question card"><span class="cap">Two different cards. The bar shows only the first question of a form and answers the others « Pas de réponse ».</span></div>
+  <div class="side t"><span class="lbl">Target</span><div id="s6"></div><span class="cap">The question sits in the box, above the field. A form asks <b>each question in turn</b> (« 1 sur 2 », then « 2 sur 2 » with the first answer), then sends them together. Typing in the field answers in your own words.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>7 · A reply while folded</h3><span>you went back to work</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><img src="img/today-done.png" alt="Today: a one-line status Tarte vérifiée above the bar"><span class="cap">A one-line status. The reply itself is not shown; you have to open the chat.</span></div>
+  <div class="side t"><span class="lbl">Target</span><div id="s7"></div><span class="cap">The box does not open by itself. The reply shows in the box: « ✓ Terminé · what it used », 3 lines, the files it cites. <b>A dot on the chevron</b> until you open the conversation.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>8 · Dictation</h3><span>tap, or hold</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><img src="img/today-listening.png" alt="Today's bar while listening: cancel, a waveform, stop and send"><span class="cap">The bar listens with ✕, a waveform, ■ and ↑. The chat has a separate voice-message recorder.</span></div>
+  <div class="side t"><span class="lbl">Target</span><div id="s8"></div><span class="cap">Tap Dicter: ✕ · waveform · ■, the words show above as they come. ■ puts them in the field to review, then Envoyer. Hold Dicter instead: release sends at once, slide off cancels.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>9 · Hold to send, on a phone</h3><span>as in Coach Max (D5)</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today (Coach Max's bar)</span><img src="img/today-390-hold.jpg" alt="Today in Coach Max: holding the mic shows Relâche pour envoyer with a waveform" style="max-width:300px;margin-inline:auto"><span class="cap">Press and hold the mic: « Relâche pour envoyer » and a waveform. Release sends; sliding off cancels. Only Coach Max's bar has it.</span></div>
+  <div class="side t"><span class="lbl">Target, every app</span><div class="phones" id="s8b"></div><span class="cap"><b>1 · Press and hold Dicter</b> (past 300 ms): the row becomes « Relâche pour envoyer » and a waveform, and the words show above as they come. <b>2 · Release</b>: the message is sent at once, with no review, and the box opens (Ouvert) with your bubble; the button is Arrêter. Sliding more than 24 px off the button, Échap or leaving the page cancels and sends nothing. A short tap keeps the dictate-then-review flow (row 8).</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>10 · A send fails</h3></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><div class="none">The chat shows a notice above its box; the bar shows nothing. No screenshot.</div></div>
+  <div class="side t"><span class="lbl">Target</span><div id="s9"></div><span class="cap">The text goes back in the field, the line above says what to do, <b>Réessayer</b> sends it again. Nothing is lost.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>11 · Read only</h3><span>a role that may only read, or no agent</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><div class="none">The bar is hidden; the chat is disabled without a reason. No screenshot.</div></div>
+  <div class="side t"><span class="lbl">Target</span><div id="s10"></div><span class="cap">The box stays in place with one line saying why. Nothing can be focused.</span></div>
+</div></section>
+
+<section class="block"><div class="row-title"><h3>12 · Edit last</h3><span>the way Claude Code does it (D3)</span></div>
+<div class="cmp">
+  <div class="side"><span class="lbl">Today</span><div class="none">↑ does nothing. A sent message cannot be taken back; you send a correction.</div></div>
+  <div class="side t"><span class="lbl">Target</span><div id="s11"></div><span class="cap"><b>↑ in the empty field</b> brings back your earlier messages as a draft (sent as a new one). A message sent while the agent works waits in the queue; <b>↑ or Échap</b> pulls it back. <b>Échap</b> stops a run. <b>Échap twice</b> lists your messages: pick one, the conversation goes back to it (the old branch is kept) and it is in the field. On a phone: long press « Reprendre » or « Revenir ici ».</span></div>
+</div></section>
+
+<section class="block">
+  <div class="ask"><b>Your call</b><ul>
+    <li>Picked: D1 above the phone tabs · D2 one action button · D3 edit last as in row 12 · D4 thread ~30 % of the screen, Agrandir 70 % · D5 tap and hold the mic (hold sends on release, row 9).</li>
+    <li>D6: no target in the field; the assistant relays to workers. Open on the layout page: D7 one right column.</li>
+  </ul></div>
+</section>
+</main>
+<script src="mock.js"></script>
+<script>
+fill('s1', stage(box()));
+fill('s2', stage(box({text:'Combien de pièces manquent au dossier', focus:true, action:'send'})) + stage(box({text:'Prépare la relance du dossier Cèdre :\n– les deux relevés de février\n– la facture du loyer\n– le contrat d’assurance', focus:true, action:'send'})));
+fill('s3', stage(box({chips:chip('releve-fevrier.pdf','up')+chip('photo-ticket.jpg','img'), action:'sendoff'})) + stage(box({chips:chip('releve-fevrier.pdf'), text:'Rapproche-le', action:'send'})));
+fill('s4', stage(`<div class="list"><div class="on"><b>/relance</b><small>Rédiger une relance</small></div><div><b>/releve</b><small>Rapprocher un relevé</small></div></div>` + box({text:'/rel', focus:true, action:'send'})));
+fill('s5', stage(box({top:working(), action:'stop'})) + stage(box({open:true, action:'stop', top:thHead()+me('Rapproche le relevé de janvier')+ai(working())})));
+fill('s6', stage(box({ph:'Ou répondez ici', top:`<div class="hd">Deux précisions · 1 sur 2</div><div class="q">Quel exercice ?</div><div class="chs"><span>2025</span><span>2026</span></div>`})) + stage(box({ph:'Ou répondez ici', top:`<div class="hd">Deux précisions · 2 sur 2 · <span class="ok">${ic('check')}</span> 2026</div><div class="q">Quel journal ?</div><div class="chs"><span>Achats</span><span>Ventes</span></div>`})));
+fill('s7', stage(box({top:replyTop, dot:true})));
+fill('s8', stage(`<div class="line">Je vous écoute… <span style="opacity:.55">combien de pièces</span></div>` + box({wave:true})) + stage(box({text:'Combien de pièces manquent ?', focus:true, action:'send'})));
+fill('s8b', `<div>${phone(`<div class="line">Je vous écoute… <span style="opacity:.55">combien de pièces</span></div>` + box({hold:true}), {body: rows(10)})}</div><div>${phone(box({open:true, action:'stop', top: thHead() + me('Combien de pièces manquent ?') + ai(working('Lecture du dossier Cèdre'))}), {body: rows(5)})}</div>`);
+fill('s9', stage(`<div class="line e">${ic('alert').replace('<svg','<svg width="14" height="14"')} Pas de connexion. Le message est gardé. <a>Réessayer</a></div>` + box({err:true, text:'Combien de pièces manquent ?', action:'send'})));
+fill('s10', stage(`<div class="line">${ic('lock').replace('<svg','<svg width="14" height="14"')} Lecture seule : vous ne pouvez pas écrire à l’assistant dans ce dossier.</div>` + box({off:true, ph:'Lecture seule', action:'none'})));
+fill('s11', stage(box({open:true, text:'Relance le dossier Cèdre', focus:true, action:'send', top:thHead(false)+me('Relance le dossier Cèdre')+ai('Brouillon prêt : relance polie, échéance au 30.')})) + stage(`<div class="list"><div class="on"><b>Combien de pièces manquent ?</b><small>il y a 9 min</small></div><div><b>Relance le dossier Cèdre</b><small>il y a 2 min</small></div></div>` + box({open:true})));
+</script>

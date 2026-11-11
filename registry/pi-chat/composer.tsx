@@ -6,10 +6,11 @@ import { FileTextIcon, Loader2Icon, MessageSquarePlusIcon, XIcon } from '../_sha
 import { AttachmentAction } from '@/components/ui/attachment';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { ConversationFiles } from './conversation-files';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupAddon, InputGroupTextarea } from '@/components/ui/input-group';
 import { Toggle } from '@/components/ui/toggle';
-import { hasMention, isLongPaste, kindMentionDraft, mentionedPaths, mentionKind, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery, writeKindMentionDraft } from '@hachej/boring-ui-kit/chat-text';
+import { displayName, hasMention, isLongPaste, kindMentionDraft, mentionedPaths, mentionKind, mentionToken, mentionTrigger, removeMention, slashItems, slashQuery, writeKindMentionDraft } from '@hachej/boring-ui-kit/chat-text';
 import type { PasteToFile, SlashItem } from '@hachej/boring-ui-kit/chat-text';
 import type { AttachmentsConfig, MentionsConfig, PastedText, SlashConfig } from './config';
 import { useChatText } from './labels';
@@ -50,7 +51,7 @@ export interface ComposerFeedback extends ChatSessionFeedback {
 
 /** One file being uploaded (or that failed to upload), shown as a chip until it settles or is dismissed. */
 export type { PendingUpload } from '@hachej/boring-ui-kit/chat-react';
-import type { PendingUpload, ChatSessionFeedback } from '@hachej/boring-ui-kit/chat-react';
+import type { ConversationFile, PendingUpload, ChatSessionFeedback } from '@hachej/boring-ui-kit/chat-react';
 
 export interface ComposerProps {
   /** `/` menu of commands and skills. Absent: no menu and no keyboard trigger. */
@@ -70,8 +71,12 @@ export interface ComposerProps {
   /** Extra controls in the bar (the model and effort pill) and a short note beside them. */
   readonly barStart?: ReactNode;
   readonly barNote?: ReactNode;
-  /** Off by default. On, "Attach files" and "Commands" are their own buttons left of the field (named by `labels.attachFiles` and `labels.commands`) instead of items of the "+" menu; the "+" stays only for what is left in it (Take a photo). Commands opens the same `/` list as typing `/`. */
-  readonly barActions?: boolean;
+  /** Off by default. On, "Attach files" and "Commands" are their own buttons left of the field (named by `labels.attachFiles` and `labels.commands`) instead of items of the "+" menu; the "+" stays only for what is left in it (Take a photo). Commands opens the same `/` list as typing `/`. `'attach'`: only Attach files is a bar button; the commands open by typing `/` alone (the shell's `composer: 'bar'`). */
+  readonly barActions?: boolean | 'attach';
+  /** Off by default. On, an uploaded file (`@uploads/…`) shows only as a chip with its name: its token leaves the editable text and is still sent (the shell's one composer, D-2198). */
+  readonly fileChips?: boolean;
+  /** With `barActions="attach"`: the conversation's files. The attach button then opens one « Fichiers » menu: « Joindre des fichiers… », then these files (a pick opens one). PiChat then draws no separate files button. */
+  readonly files?: readonly ConversationFile[] | undefined;
   /** Optional host mode/model chips beside the attach control. */
   readonly chips?: ReactNode;
   /** Optional host context above the input. */
@@ -167,9 +172,9 @@ function useCoarsePointer(): boolean {
 }
 
 /** `barActions`: Attach files as a direct bar button, first in the bar row (label and icon from the app). */
-function BarAttach({ disabled, onAttach }: { readonly disabled: boolean; readonly onAttach: () => void }) {
+function BarAttach({ disabled, onAttach, quiet = false }: { readonly disabled: boolean; readonly onAttach: () => void; readonly quiet?: boolean }) {
   const { labels, icons } = useChatText();
-  return <Button type="button" variant="outline" size="icon" data-testid="composer-bar-attach" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
+  return <Button type="button" variant={quiet ? 'secondary' : 'outline'} size="icon" data-testid="composer-bar-attach" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
     <icons.attach data-icon="inline-start" aria-hidden="true" /></Button>;
 }
 
@@ -234,7 +239,7 @@ function assignRef(ref: Ref<HTMLTextAreaElement>, element: HTMLTextAreaElement |
 /** Prompt composer: auto-growing textarea, Enter to send, one primary Send/Stop button. While the agent works a message is queued. */
 export function Composer(props: ComposerProps) {
   const { attachments, working, sendBlocked, disabled, stopRequested, uploading, canAttach, layout = 'card' } = props;
-  const draft = kindMentionDraft(props.text, props.mentions);
+  const draft = kindMentionDraft(props.text, props.fileChips ? { kinds: props.mentions?.kinds, files: true } : props.mentions);
   const text = draft.text;
   const tokens = useRef(draft.tokens);
   useLayoutEffect(() => { tokens.current = draft.tokens; });
@@ -349,7 +354,7 @@ export function Composer(props: ComposerProps) {
     {chips.length > 0 && <div role="list" data-testid="mention-chips" aria-label={labels.mentionedFiles} className="contents">
       {chips.map(path => {
         const registered = mentionKind(path, props.mentions);
-        const label = registered ? registered.kind.label(registered.path) : props.mentions?.label?.(path) ?? path;
+        const label = registered ? registered.kind.label(registered.path) : props.mentions?.label?.(path) ?? (props.fileChips ? displayName(path) : path);
         return <Chip key={path} data-testid="mention-chip" data-path={path} title={label} className="max-w-full md:max-w-[16rem]"
           media={registered?.kind.icon ?? props.mentions?.icon ?? <FileTextIcon aria-hidden="true" />} label={registered?.kind.open ? <Button variant="link" size="sm" onClick={() => registered.kind.open?.(registered.path)} className="min-w-0 max-w-full justify-start truncate">{label}</Button> : label}
           actions={<RemoveChip label={labels.remove(label)} onClick={() => props.onText(removeMention(props.text, path))} />} />;
@@ -369,12 +374,15 @@ export function Composer(props: ComposerProps) {
   const marked = props.markMentionQuery && mentionOpen && trigger ? <QueryBackdrop text={text} start={trigger.start} end={trigger.end} /> : null;
   // eslint-disable-next-line react-hooks/refs -- renderInput receives event callbacks, not ref values; an input calls them only on interaction
   const input = props.renderInput?.({ text, onText, onCaret: setCaret, onSend: () => { if (canSubmit && !menuOpen) props.onSend(); } }) ?? props.input ?? (props.placeholderContent || marked ? <div data-slot="composer-field" className="relative flex min-h-16 w-full min-w-0 flex-1">{marked}{textareaEl}{!text && props.placeholderContent && <span aria-hidden="true" data-slot="composer-placeholder" className="pointer-events-none absolute inset-x-3 top-2 text-xs text-muted-foreground">{props.placeholderContent}</span>}</div> : textareaEl);
-  const barActions = props.barActions === true;
+  const barActions = props.barActions === true || props.barActions === 'attach';
   // With `barActions`, attach and commands are bar buttons; the "+" stays only when Take a photo is left in it.
   const plusHasItems = barActions ? canPhoto : canAttach || items.length > 0;
   const plusButton = plusHasItems && <PlusActions disabled={disabled || recording} textarea={inner} onAttach={!barActions && canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={!barActions && items.length > 0 ? openCommands : undefined} />;
   // Off: the "+" alone, as before (same element position). On: the bar buttons first.
-  const plus = barActions && canAttach ? <><BarAttach disabled={disabled || recording} onAttach={() => fileInput.current?.click()} />{plusButton}</> : plusButton;
+  const openFiles = props.barActions === 'attach' ? (props.files ?? []).filter(file => file.open) : [];
+  const attachButton = openFiles.length > 0 ? <ConversationFiles icon files={openFiles} disabled={disabled || recording} attach={() => fileInput.current?.click()} />
+    : <BarAttach disabled={disabled || recording} onAttach={() => fileInput.current?.click()} quiet={props.barActions === 'attach'} />;
+  const plus = barActions && canAttach ? <>{attachButton}{plusButton}</> : plusButton;
   // One child slot either way, so a composer without `start` keeps its exact markup (React ids included).
   const startAndPlus = props.start && !recording ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
@@ -394,7 +402,7 @@ export function Composer(props: ComposerProps) {
     {!slots && props.barNote}
     {!slots && uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
     {!pill && <span className="min-w-0 flex-1" />}
-    {!slots && barActions && items.length > 0 && <BarCommands disabled={disabled || recording} onCommands={openCommands} />}
+    {!slots && props.barActions === true && items.length > 0 && <BarCommands disabled={disabled || recording} onCommands={openCommands} />}
     {slots ? !stopInSend && props.recordingStop !== undefined && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.recordingStop}</div>
       : props.barEnd && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.barEnd}</div>}
     {!slots && working && hasContent && <Button variant="ghost" size="icon" data-testid="composer-queue" aria-label={labels.queue} title={labels.queue} disabled={!canSubmit} onClick={props.onSend} className="shrink-0">
@@ -407,7 +415,7 @@ export function Composer(props: ComposerProps) {
   return <form data-testid="composer" data-layout={layout} data-dragging={dragging || undefined} onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
     className={cn('relative flex flex-col gap-2', pill && '@container/composer')}>
     {fileEl}
-    {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} />}
+    {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} {...(props.barActions === 'attach' ? { bare: true } : {})} />}
     {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} header={typeof mentions.pickerHeader === 'function' ? mentions.pickerHeader(trigger!.query) : mentions.pickerHeader} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {pill && !props.recording && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
     {slots ? pill ? <InputGroup className="h-auto">
