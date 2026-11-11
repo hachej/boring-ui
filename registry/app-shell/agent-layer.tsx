@@ -11,7 +11,7 @@
 import { createPortal } from 'react-dom';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, CSSProperties, HTMLAttributes, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, Ref, RefObject } from 'react';
-import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, Loader2Icon, MicIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, XIcon } from '../_shared/icons';
+import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, LibraryIcon, Loader2Icon, MicIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, XIcon } from '../_shared/icons';
 // Behaviour only: Base UI's keyboard-inset provider for the host drawer's content. It renders nothing visible.
 import * as BaseDrawerParts from '@base-ui/react/drawer';
 import { Button } from '@/components/ui/button';
@@ -98,6 +98,14 @@ export interface AgentLayerApi {
 export interface AgentPreview {
   readonly title: string;
   readonly content: ReactNode;
+  /** The app's file library: with it the preview's header has a « Bibliothèque » button, as the workspace viewer's top bar has (the app opens its own list). */
+  readonly library?: (() => void) | undefined;
+}
+
+/** The preview header's Library button, when the app gives one. */
+function LibraryButton({ preview, text }: { readonly preview: AgentPreview; readonly text: AppShellText }) {
+  if (!preview.library) return null;
+  return <Button variant="ghost" size="sm" data-testid="agent-preview-library" onClick={preview.library}><LibraryIcon data-icon="inline-start" aria-hidden="true" />{text.library}</Button>;
 }
 
 // The three fixed snap points: a peek (the file chip, one composer row and a line of the last reply, `PEEK_REM` above the tab bar), 55% and the full height.
@@ -1062,6 +1070,7 @@ function PreviewStack({ preview }: { readonly preview: AgentPreview }) {
     <div className="flex shrink-0 items-center gap-1 px-2 pb-1">
       <Button variant="ghost" size="icon" data-testid="agent-preview-back" aria-label={text.backToAssistant} title={text.backToAssistant} onClick={() => layer.preview(null)}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>
       <h3 data-testid="agent-preview-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold"><span className="font-normal text-muted-foreground">{text.assistant} / </span>{preview.title}</h3>
+      <LibraryButton preview={preview} text={text} />
     </div>
     <div data-testid="agent-preview-body" className="flex min-h-0 flex-1 flex-col overflow-auto">{preview.content}</div>
   </section>;
@@ -1210,6 +1219,7 @@ function PreviewPane({ preview }: { readonly preview: AgentPreview }) {
     className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground', layer.expanded ? 'relative w-[min(32rem,45%)] shrink-0 border-l' : 'fixed inset-0 z-(--app-shell-z-sheet)')}>
     <div className="flex shrink-0 items-center gap-1 px-2 py-2">
       <h2 data-testid="agent-preview-title" className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{preview.title}</h2>
+      <LibraryButton preview={preview} text={text} />
       <Button variant="ghost" size="icon" data-testid="agent-preview-close" aria-label={text.closePreview} title={text.closePreview} onClick={close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
     </div>
     <div data-testid="agent-preview-body" className="flex min-h-0 flex-1 flex-col overflow-auto">{preview.content}</div>

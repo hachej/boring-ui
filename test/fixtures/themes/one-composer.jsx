@@ -51,7 +51,8 @@ window.__run = kind => change({ view: runs[kind]() });
 const actions = {
   answer: async (questionId, text) => { window.__answered.push({ questionId, text }); change({ view: runs.tool() }); return { kind: 'answered' }; },
 };
-const onOpenFile = path => window.__layer.preview({ title: path.split('/').at(-1), content: <div data-testid="fixture-preview" className="p-4 text-sm">Aperçu fictif de {path} : deux écarts de 12,00 €.</div> });
+window.__library = 0;
+const onOpenFile = path => window.__layer.preview({ title: path.split('/').at(-1), library: () => { window.__library += 1; }, content: <div data-testid="fixture-preview" className="p-4 text-sm">Aperçu fictif de {path} : deux écarts de 12,00 €.</div> });
 window.__openFile = onOpenFile;
 const Icon = ({ className }) => <svg className={className} viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="currentColor" /></svg>;
 const Probe = () => { const api = useAgentLayer(); useLayoutEffect(() => { window.__layer = api; }); return null; };

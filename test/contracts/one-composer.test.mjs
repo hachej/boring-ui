@@ -244,6 +244,8 @@ test('1280: a file opened while the conversation is not docked takes the right c
   const preview = await rect('[data-testid=agent-preview]'), main = await rect('[data-boring=dock-main]');
   assert.ok(preview.x >= main.right - 1 && preview.h >= 700, `the preview is the right column (${JSON.stringify(preview)})`);
   assert.equal(await inside('[data-testid=agent-tray]', '[data-testid=agent-composer-box]'), true, 'the conversation stays above the field');
+  await click('[data-testid=agent-preview] [data-testid=agent-preview-library]');
+  assert.equal(await browser.evaluate('window.__library'), 1, 'the header\'s « Bibliothèque » opens the app\'s library');
   await type('Que contient ce fichier ?');
   await click('[data-testid=composer-submit]');
   await browser.until('usable', `window.__sent.includes('Que contient ce fichier ?')`);
@@ -270,6 +272,7 @@ test('1280: a file opened while docked stacks on the conversation in the same co
   assert.ok(preview.bottom <= input.y + 1, 'the field is under the preview');
   assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer] [data-testid=conversation-content]')].every(e => e.getClientRects().length === 0)`), true, 'the thread waits under the preview');
   assert.ok((await text('[data-testid=agent-preview-title]')).includes('ecarts-janvier.csv'));
+  assert.equal(await count('[data-testid=agent-preview] [data-testid=agent-preview-library]'), 1, 'the library button stacked too');
   await browser.screenshot('one-composer-1280-light-preview-docked.png');
   await click('[data-testid=agent-preview-back]');
   await browser.until('back to the thread', `!document.querySelector('[data-testid=agent-preview]')`);

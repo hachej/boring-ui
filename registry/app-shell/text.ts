@@ -56,6 +56,8 @@ export interface AppShellText {
   readonly backToAssistant: string;
   /** The field while the agent's question waits. */
   readonly answerHere: string;
+  /** The preview header's way to the app's files. */
+  readonly library: string;
 }
 
 const en: AppShellText = {
@@ -92,6 +94,7 @@ const en: AppShellText = {
   closePreview: 'Close the preview',
   backToAssistant: 'Back to the assistant',
   answerHere: 'Or answer here',
+  library: 'Library',
 };
 
 const fr: AppShellText = {
@@ -128,6 +131,7 @@ const fr: AppShellText = {
   closePreview: 'Fermer l’aperçu',
   backToAssistant: 'Retour à l’assistant',
   answerHere: 'Ou répondez ici',
+  library: 'Bibliothèque',
 };
 
 const TEXT: Readonly<Record<AppShellLocale, AppShellText>> = { en, fr };
