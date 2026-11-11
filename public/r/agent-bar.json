@@ -4,14 +4,14 @@
   "title": "Agent bar",
   "description": "The voice-first bar for an agent that works in the background: a pill with a history arrow, the field, a mic (tap to listen, hold to talk and release to send) and send, an optional quoted-row chip, AgentStatus, the one-line spinner or check above it, and the question card the agent asks above the bar (`question`: choices with one preselected, answered by a tap or from the bar). `useAgentBarChat(controller, { actions })` drives the bar, the question and the status from the chat controller PiChat takes: the status reads the running tool's words, a form asks each question in turn, and a reply that came while folded is kept (`reply`, `historyBadge`) until `markRead`. Dictation and the hold gesture are the kit's; the app supplies `transcribe` (or a live `stream`, which shows the words as they come) and `onSend`. Optional `attachments` (drop on the bar, paste, a pick button, the same chips as PiChat) and `slash` (typing / or an Actions button opens the commands list), both off by default.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.4.83",
+    "@hachej/boring-ui-kit@^0.4.84",
     "react@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.83/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.83/r/_shared.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.83/r/pi-chat-voice.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.83/r/pi-chat.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.84/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.84/r/_shared.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.84/r/pi-chat-voice.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.84/r/pi-chat.json"
   ],
   "files": [
     {
