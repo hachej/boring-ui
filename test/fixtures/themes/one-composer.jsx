@@ -25,6 +25,7 @@ const history = [say(1, T('Où en est le dossier Cèdre ?', 'Where is the Cedar 
 let snapshot = { identity: { runtimeId: 'fictional', scopeId: 'one-composer', principalId: 'fictional-reader' }, conversationId: 'one-composer', connection: { kind: 'connected' },
   view: { entries: history, docs: {} }, draft: { text: '', attachments: [], version: 0 }, outbox: [], echo: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
 const listeners = new Set();
+const live = tools => ({ 'pi.live': { run: { taskId: 7 }, ...(tools ? { tools } : {}) } });
 const change = patch => { snapshot = { ...snapshot, ...patch }; for (const listener of listeners) listener(); };
 const controller = {
   getSnapshot: () => snapshot, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
@@ -34,7 +35,10 @@ const controller = {
     const text = snapshot.draft.text;
     window.__sent.push(text);
     const next = snapshot.view.entries.length + 1;
-    change({ draft: { text: '', attachments: [], version: snapshot.draft.version + 1 }, view: { entries: [...snapshot.view.entries, say(next, text), reply(next + 1, T('Réponse fictive : noté.', 'Fictional reply: noted.'))], docs: {} } });
+    // As a real run: the agent works a moment, then replies.
+    const asked = [...snapshot.view.entries, say(next, text)];
+    change({ draft: { text: '', attachments: [], version: snapshot.draft.version + 1 }, view: { entries: asked, docs: live() } });
+    setTimeout(() => change({ view: { entries: [...asked, reply(next + 1, T('Réponse fictive : noté.', 'Fictional reply: noted.'))], docs: {} } }), 800);
   },
   connect: async () => {}, stop: async () => {}, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {},
 };
@@ -47,7 +51,6 @@ const FORM = EN ? { question: 'Two details', questions: [{ question: 'Which year
 const form = entry(13, assistant([{ type: 'toolCall', id: 'q1', name: 'ask_user', arguments: FORM }]));
 const REPLY = EN ? 'The January statement has 40 lines, all reconciled.\nTwo gaps are noted in @uploads/ecarts-janvier.csv.\nNothing else to do for January.\nA fourth line the card cuts.'
   : 'Le relevé de janvier compte 40 lignes, toutes rapprochées.\nDeux écarts sont notés dans @uploads/ecarts-janvier.csv.\nRien d’autre à faire pour janvier.\nUne quatrième ligne que la carte coupe.';
-const live = tools => ({ 'pi.live': { run: { taskId: 7 }, ...(tools ? { tools } : {}) } });
 const runs = {
   tool: () => ({ entries: [...history, ask, read], docs: live([{ callId: 'c1', taskId: 8, status: 'running', details: { progress: '12 lignes sur 40' } }]) }),
   form: () => ({ entries: [...history, ask, read, readDone, form], docs: live() }),

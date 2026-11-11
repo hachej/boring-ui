@@ -197,7 +197,7 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly anchored: boolean;
   readonly setAnchor: (anchor: { readonly tray: HTMLElement; readonly field: HTMLElement; readonly card: HTMLElement } | null) => void;
   readonly setDropZone: (element: HTMLElement | null) => void;
-  /** The content composer sent a message: the thread opens in the dock. */
+  /** The content composer sent a message: the thread opens in the dock (`bar` on a wide screen: it stays folded, the card shows the work and the reply). */
   readonly onSent: () => void;
   /** Set by a dock control: the next placement or side change puts focus back on the panel's first dock control. */
   readonly restoreFocus: { current: boolean };
@@ -543,7 +543,11 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const besidePanel = together && improveOpen;
   const setSlot = setComposerSlot;
   // Sending from the content composer shows the thread; a dock already open stays as it is.
-  const onSent = useCallback(() => { if (specs.current.snap === 'closed' || specs.current.shown !== 'agent') open('agent'); }, [open]);
+  // `bar` on a wide screen: a send never opens the conversation; the work and then the reply show on the field (Julien). The chevron opens it.
+  const onSent = useCallback(() => {
+    if (bar && specs.current.expanded) return;
+    if (specs.current.snap === 'closed' || specs.current.shown !== 'agent') open('agent');
+  }, [open, bar]);
   // On a wide content composer the reply is a tray above the field unless the person chose the dock; elsewhere the dock (or the phone's drawer) as before.
   // `bar`: the right column holds one thing at a time (D7). Docked, a preview stacks on top of the conversation in that column; otherwise it takes the column itself.
   const trayOpen = contentComposer && snap !== 'closed' && shown === 'agent' && mode === 'tray';
@@ -1086,7 +1090,8 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     {!floating && <Separator orientation="vertical" className={cn('absolute inset-y-0', side === 'right' ? 'left-0' : 'right-0')} />}
     <Header text={text} title={title} controls={controls} className={cn('pt-2', floating && 'cursor-move touch-none select-none')} {...drag} />
     {layer.previewStacked && layer.shownPreview && <PreviewStack preview={layer.shownPreview} />}
-    <div className={cn('flex min-h-0 flex-col overflow-hidden', layer.previewStacked ? cn('shrink-0 [&_[data-testid=conversation-content]]:hidden', FOLDED_FIELD) : 'flex-1')}><VoiceProblem /><ChatSlot live={open} /></div>
+    {/* `bar`: the docked field is the bottom one, frame and all (`.app-shell [data-one-dock]`): one composer wherever it sits (Julien). */}
+    <div {...(layer.bar ? { 'data-one-dock': '' } : {})} className={cn('flex min-h-0 flex-col overflow-hidden', layer.previewStacked ? cn('shrink-0 [&_[data-testid=conversation-content]]:hidden', FOLDED_FIELD) : 'flex-1')}><VoiceProblem /><ChatSlot live={open} /></div>
   </div>;
 }
 

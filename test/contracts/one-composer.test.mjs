@@ -118,9 +118,16 @@ test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every
   assert.equal(await actionName(), 'Envoyer', 'text in the field: the one action button sends');
   const field = await rect('[data-testid=composer]');
   await click('[data-testid=composer-submit]');
+  // A send leaves the bar folded: the work, then the reply, show on the field; the conversation opens only from the chevron (Julien).
+  await browser.until('working on the field', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'working'`);
+  assert.equal(await count('[data-testid=agent-tray]'), 0, 'a send does not open the conversation');
+  assert.equal(await dockState(), 'closed', 'nor the dock');
+  await browser.until('reply on the field', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply' && document.querySelector('[data-testid=agent-card-reply]').textContent.includes('Réponse fictive : noté.')`);
+  assert.equal(await count('[data-testid=agent-tray]'), 0, 'the reply does not open it either');
+  assert.deepEqual(await browser.evaluate('window.__sent'), ['Combien de pièces manquent ?']);
+  await click('[data-testid=agent-bar-conversation]');
   await browser.until('Ouvert', `!!document.querySelector('[data-testid=agent-tray]')`);
   await browser.until('reply in the thread', `document.querySelector('[data-testid=agent-tray]').textContent.includes('Réponse fictive : noté.')`);
-  assert.deepEqual(await browser.evaluate('window.__sent'), ['Combien de pièces manquent ?']);
   await oneField('open');
   const tray = await rect('[data-testid=agent-tray]'), after = await rect('[data-testid=composer]');
   assert.ok(tray.bottom <= after.y + 1, `Ouvert: the thread sits above the field (${tray.bottom} <= ${after.y})`);
@@ -145,10 +152,16 @@ test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every
   assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=composer-bar-attach]')).borderTopWidth === '0px' || getComputedStyle(document.querySelector('[data-testid=composer-bar-attach]')).borderTopColor.includes('0, 0, 0, 0')`), true, 'the attach button has no border in the one composer');
   assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=agent-composer-box] [data-slot=input-group]')).borderTopColor.includes('0, 0, 0, 0') || getComputedStyle(document.querySelector('[data-testid=agent-composer-box] [data-slot=input-group]')).borderTopColor === 'transparent'`), true, 'one frame: the input group draws no border of its own inside the box');
   // Ancré: the thread and the field in the right column, nothing at the bottom.
+  // The field's look, measured here and again docked: the same composer wherever it sits (Julien's invariant).
+  const look = framed => browser.evaluate(`(() => { const row = document.querySelector('[data-testid=composer] [data-slot=input-group]'); const frame = ${framed ? "document.querySelector('[data-testid=agent-composer-box]')" : 'row'};
+    const s = getComputedStyle(row), f = getComputedStyle(frame), chevron = getComputedStyle(document.querySelector('[data-testid=agent-bar-conversation]'));
+    return { height: Math.round(row.getBoundingClientRect().height), padding: s.padding, gap: s.columnGap, radius: f.borderTopLeftRadius, background: f.backgroundColor, button: chevron.borderTopLeftRadius, buttonBackground: chevron.backgroundColor }; })()`);
+  const bottomLook = await look(true);
   await click('[data-testid=agent-tray-dock]');
   await browser.until('Ancré', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
   await wait(300);
   await oneField('docked');
+  assert.deepEqual(await look(false), bottomLook, 'docked, the field looks as it does at the bottom');
   assert.equal(await inside(FIELD, '[data-testid=agent-layer]'), true, 'docked: the field is in the right column');
   assert.equal(await inside('[data-testid=transcript]', '[data-testid=agent-layer]'), true, 'with the thread');
   assert.equal(await browser.evaluate(`document.querySelector('[data-boring=dock-main] [data-testid=composer-input]') === null`), true, 'no field at the bottom of the page');
