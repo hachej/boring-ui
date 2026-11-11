@@ -708,7 +708,7 @@ function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly 
         {question.step && <p data-testid="agent-question-step" className="m-0 text-xs text-muted-foreground">{question.step}</p>}
         {question.answered && <p data-testid="agent-question-answered" className="m-0 flex items-center gap-1.5 text-xs text-muted-foreground"><CheckIcon className="size-3.5 shrink-0" aria-hidden="true" />{question.answered}</p>}
         <p className="m-0 text-base font-semibold">{question.title}</p>
-        <div className="flex flex-wrap gap-2">{question.choices.map(choice => <Button key={choice} type="button" variant="outline" data-choice="" className="rounded-(--radius-3xl) px-4" onClick={() => question.onAnswer({ text: choice, source: 'choice' })}>{choice}</Button>)}</div>
+        <div className="flex flex-wrap gap-2">{question.choices.map(choice => <Button key={choice} type="button" variant="outline" data-choice="" onClick={() => question.onAnswer({ text: choice, source: 'choice' })}>{choice}</Button>)}</div>
       </div>}
       {!question && status?.state !== 'working' && reply && <>
         <p data-testid="agent-card-reply" className="m-0 line-clamp-3 whitespace-pre-line">{readable(reply.text)}</p>
