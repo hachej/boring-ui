@@ -1006,6 +1006,9 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   </Drawer>;
 }
 
+/** Folded (`composer: 'bar'`): the card on the field says what the agent does, so the chat's own status line and its files list above the field step aside. */
+const FOLDED_FIELD = '[&_[data-testid=preparing]]:hidden [&_[data-testid=composer-dock]_p[data-testid=agent-status]]:hidden [&_[data-testid=conversation-files]]:hidden';
+
 /** The panel inside the dock: the same element docked or floating, so a placement change keeps focus and the chats where they are. */
 function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSide }) {
   const layer = useInternal();
@@ -1064,7 +1067,7 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     {!floating && <Separator orientation="vertical" className={cn('absolute inset-y-0', side === 'right' ? 'left-0' : 'right-0')} />}
     <Header text={text} title={title} controls={controls} className={cn('pt-2', floating && 'cursor-move touch-none select-none')} {...drag} />
     {layer.previewStacked && layer.shownPreview && <PreviewStack preview={layer.shownPreview} />}
-    <div className={cn('flex min-h-0 flex-col overflow-hidden', layer.previewStacked ? 'shrink-0 [&_[data-testid=conversation-content]]:hidden' : 'flex-1')}><VoiceProblem /><ChatSlot live={open} /></div>
+    <div className={cn('flex min-h-0 flex-col overflow-hidden', layer.previewStacked ? cn('shrink-0 [&_[data-testid=conversation-content]]:hidden', FOLDED_FIELD) : 'flex-1')}><VoiceProblem /><ChatSlot live={open} /></div>
   </div>;
 }
 
@@ -1086,8 +1089,6 @@ function AgentDock({ side }: { readonly side: DockSide }) {
   </Dock>;
 }
 
-/** Folded (`composer: 'bar'`): the card on the field says what the agent does, so the chat's own status line and its files list above the field step aside. */
-const FOLDED_FIELD = '[&_[data-testid=preparing]]:hidden [&_[data-testid=composer-dock]_p[data-testid=agent-status]]:hidden [&_[data-testid=conversation-files]]:hidden';
 
 /** `composer: 'bar'`: the thread (Ouvert), the folded card and the field in one frame at the field's width, never the page's (AC-16). The inner input group's own frame is cleared by the block's CSS (`.app-shell [data-one-composer]`). */
 function OneBox({ children }: { readonly children: ReactNode }) {

@@ -281,6 +281,7 @@ test('1280: a file opened while docked stacks on the conversation in the same co
   const preview = await rect('[data-testid=agent-preview]'), input = await rect(FIELD);
   assert.ok(preview.bottom <= input.y + 1, 'the field is under the preview');
   assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer] [data-testid=conversation-content]')].every(e => e.getClientRects().length === 0)`), true, 'the thread waits under the preview');
+  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer] [data-testid=conversation-files], [data-testid=agent-layer] [data-testid=preparing]')].filter(e => e.getClientRects().length > 0).length`), 0, 'under the file only the field: no files button, no status line (Julien, demo review)');
   assert.ok((await text('[data-testid=agent-preview-title]')).includes('ecarts-janvier.csv'));
   assert.equal(await count('[data-testid=agent-layer-header] [data-testid=agent-preview-back]'), 1, 'one header: « ← <file> » is the dock\'s own title row');
   assert.equal(await count('[data-testid=agent-layer-header] [data-testid=agent-layer-title]'), 0, 'no second title row above the file');
