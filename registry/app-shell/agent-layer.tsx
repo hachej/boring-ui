@@ -11,7 +11,7 @@
 import { createPortal } from 'react-dom';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, CSSProperties, HTMLAttributes, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, Ref, RefObject } from 'react';
-import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, LibraryIcon, Loader2Icon, MicIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, XIcon } from '../_shared/icons';
+import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, LibraryIcon, Loader2Icon, MicIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, SquareIcon, XIcon } from '../_shared/icons';
 // Behaviour only: Base UI's keyboard-inset provider for the host drawer's content. It renders nothing visible.
 import * as BaseDrawerParts from '@base-ui/react/drawer';
 import { Button } from '@/components/ui/button';
@@ -31,7 +31,7 @@ import type { DockApi } from '../dock/dock';
 import { PiChat } from '../pi-chat/pi-chat';
 import type { PiChatProps } from '../pi-chat/pi-chat';
 import type { VoiceMessageConfig } from '../pi-chat/config';
-import { useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
+import { useHoldToRecord, useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
 import { voiceClock } from '../pi-chat/config';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { PendingVoiceBubble, VoiceMessageButton } from '../pi-chat-voice/voice-message';
@@ -174,6 +174,8 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly triggerUntil: { current: number };
   readonly voice: Voice;
   readonly talkRecording: boolean;
+  /** `bar`: the microphone was held and released, so the words it brings are sent at once instead of waiting in the field (AC-11). */
+  readonly holdSend: { current: boolean };
   /** The peek height in px: `PEEK_REM` plus the tab bar the peek sits above. */
   readonly peekPoint: string;
   /** The measured tab bar height in px, given explicitly to the parts portalled to the body (they cannot inherit the shell's variables). */
@@ -478,8 +480,14 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     return () => clearTimeout(timer);
   }, [host, open, firstAgentLink]);
 
+  const holdSend = useRef(false);
   const voice = useVoice(agent, locale, outcome => {
-    if (outcome === 'drafted') { toAgent(); setSnapState('half'); }
+    if (outcome !== 'drafted') return;
+    // A hold in the one composer: release sends the words, and like any send it opens nothing (AC-11, AC-25).
+    if (holdSend.current) { holdSend.current = false; void specs.current.agent?.controller.send().catch(() => {}); return; }
+    // A tap in the one composer: the words wait in the field for review, where the person is.
+    if (bar) return;
+    toAgent(); setSnapState('half');
   });
   const [talkRecording, setTalkRecording] = useState(false);
   const cancelTalkRecording = useCallback(() => {
@@ -581,7 +589,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   useEffect(() => { if (!trayOpen && grown) setGrown(false); }, [trayOpen, grown]);
   const value = useMemo<Internal>(() => ({
     state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, anchored: anchor !== null, setAnchor, setDropZone, onSent, mode, setMode, moveToDock, registerDock, grown, setGrown, trayOpen, dockOpen,
-    bar, folded, cardSlot, setCardSlot, shownPreview, previewStacked, preview, openLibrary,
+    bar, folded, cardSlot, setCardSlot, shownPreview, previewStacked, preview, openLibrary, holdSend,
   }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen, bar, folded, cardSlot, shownPreview, previewStacked, preview, openLibrary]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
@@ -684,6 +692,78 @@ function TalkButton({ label, primary = false }: { readonly label?: string; reado
   }} />;
 }
 
+/** A press shorter than this is a tap (listen until ■); longer is a hold (release sends). */
+const HOLD_SEND_MS = 300;
+type MicMode = 'idle' | 'press' | 'listening' | 'holding';
+interface BarMic { readonly mode: MicMode; readonly hold: ReturnType<typeof useHoldToRecord>; readonly finish: () => void; readonly cancel: () => void }
+
+/** `composer: 'bar'` (D5, AC-10, AC-11): one microphone for tap and hold, as the agent bar. A tap listens until ■ and leaves the words in the field;
+ * a press held past 300 ms says « Relâche pour envoyer » and release sends; a slide off, Échap or a hidden page cancels and sends nothing. */
+function useBarMic(): BarMic {
+  const { voice, holdSend } = useInternal();
+  const [mode, setMode] = useState<MicMode>('idle');
+  const pressedAt = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const capturing = voice.phase === 'starting' || voice.phase === 'recording';
+  const cancel = useCallback(() => { clearTimeout(timer.current); holdSend.current = false; setMode('idle'); voice.cancel(); }, [voice, holdSend]);
+  const finish = useCallback(() => { clearTimeout(timer.current); setMode('idle'); voice.finish(); }, [voice]);
+  const hold = useHoldToRecord({
+    start: () => {
+      if (voice.canStart === false) return;
+      pressedAt.current = Date.now(); holdSend.current = false; setMode('press');
+      clearTimeout(timer.current); timer.current = setTimeout(() => setMode('holding'), HOLD_SEND_MS);
+      voice.start();
+    },
+    finish: () => {
+      clearTimeout(timer.current);
+      // The attempt already ended (a refused microphone): nothing listens, nothing is sent.
+      if (!capturing) { setMode('idle'); return; }
+      if (Date.now() - pressedAt.current < HOLD_SEND_MS) { setMode('listening'); return; }
+      holdSend.current = true; finish();
+    },
+    cancel,
+  }, voice.phase === 'transcribing', { pressBounds: true });
+  // The mode only means something while the microphone is open.
+  return { mode: capturing ? mode : 'idle', hold, finish, cancel };
+}
+
+/** The action button's place: « Dicter » at rest and during a hold (the pressed button stays mounted, or the browser never delivers its release), ■ while a tap listens. */
+function BarMicButton({ mic, label }: { readonly mic: BarMic; readonly label: string }) {
+  const layer = useInternal();
+  const { labels } = chatTextFor(layer.locale ?? layer.agent?.chatProps?.locale);
+  const { ref, ...gesture } = mic.hold;
+  // The kit hook guards touchstart only on the node it first saw; the microphone remounts after ■, so bind the node it has now.
+  useEffect(() => {
+    const node = ref.current;
+    const keep = (event: Event) => { if (event.cancelable) event.preventDefault(); };
+    node?.addEventListener('touchstart', keep, { passive: false });
+    return () => node?.removeEventListener('touchstart', keep);
+  });
+  if (mic.mode === 'listening') return <Button key="stop" type="button" size="icon" data-testid="agent-talk-stop" aria-label={labels.voiceStop} title={labels.voiceStop} onClick={mic.finish} disabled={layer.voice.phase === 'starting'} className="shrink-0"><SquareIcon data-icon="inline-start" aria-hidden="true" /></Button>;
+  const busy = layer.voice.phase === 'transcribing';
+  return <Button key="mic" ref={ref} type="button" size="icon" data-testid="agent-talk" data-state={mic.mode === 'holding' ? 'holding' : layer.voice.phase} aria-label={label} title={label}
+    disabled={busy || (layer.voice.phase === 'idle' && layer.voice.canStart === false)} className="shrink-0 touch-none select-none" {...gesture}>
+    {busy ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : mic.mode === 'holding' ? <SquareIcon data-icon="inline-start" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}</Button>;
+}
+
+/** In the text's place while the microphone is open: ✕ (cancel) and the level, with « À l’écoute… », or « Relâche pour envoyer » during a hold. */
+function BarMicStatus({ mic }: { readonly mic: BarMic }) {
+  const layer = useInternal();
+  const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
+  const { labels } = chatTextFor(layer.locale ?? layer.agent?.chatProps?.locale);
+  const { voice } = layer;
+  const holding = mic.mode === 'holding';
+  return <div data-testid="agent-talk-status" data-state={holding ? 'holding' : 'listening'} className="flex w-full min-w-0 items-center gap-2">
+    {!holding && <Button type="button" variant="secondary" size="icon" data-testid="agent-talk-cancel" aria-label={labels.voiceCancel} title={labels.voiceCancel} onClick={mic.cancel} className="shrink-0"><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+    <span role="status" aria-live="polite" data-testid={holding ? 'agent-talk-release' : 'agent-talk-listening'} className="min-w-0 shrink-0 truncate text-muted-foreground">{holding ? text.releaseToSend : text.listening}</span>
+    <span className="shrink-0 tabular-nums text-muted-foreground">{voiceClock(voice.seconds)}</span>
+    {voice.levels.length > 0 && <div data-testid="agent-talk-wave" aria-hidden="true" className="flex h-6 min-w-0 flex-1 items-center justify-end gap-0.5 overflow-hidden">
+      {voice.levels.map((level, index) => <span key={index} className="w-1 shrink-0 bg-muted-foreground" style={{ height: `${Math.max(5, Math.sqrt(Math.min(1, level)) * 100)}%` }} />)}
+    </div>}
+  </div>;
+}
+
 /** What went wrong with the microphone, in the flow under the title row (never over the messages). */
 function VoiceProblem() {
   const { voice } = useInternal();
@@ -760,11 +840,14 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   // Docked, the bar's field goes with the thread: nothing stays at the bottom.
   const hosted = role === 'agent' && layer.contentComposer && !(barred && layer.dockOpen);
   const openFile = spec.chatProps?.onOpenFile ?? spec.chatProps?.mentions?.open;
+  const mic = useBarMic();
+  const capturing = layer.voice.phase === 'starting' || layer.voice.phase === 'recording';
   const barProps = barred ? {
     composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerStart: <ConversationChevron unread={barChat.historyBadge} />,
     // While the agent's question waits, the field says so; a typed message answers it (PiChat's own rule).
     ...(barChat.question ? { labels: { ...spec.chatProps?.labels, placeholder: words.answerHere } } : {}),
-    ...(spec.voice ? { composerWhenEmpty: <TalkButton label={words.dictate} primary /> } : {}),
+    ...(spec.voice ? { composerWhenEmpty: <BarMicButton mic={mic} label={words.dictate} />,
+      ...(capturing ? { composerRecordingSlots: { status: <BarMicStatus mic={mic} />, stop: <BarMicButton mic={mic} label={words.dictate} /> } } : {}) } : {}),
   } : {};
   // One annotate toggle: pins on desktop, point mode (which hides the layer while the person taps the app) on touch and compact screens.
   const feedback = useComposerFeedback(spec.feedback);
@@ -774,7 +857,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
     <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...barProps} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
-      {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: barred ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: layer.voice.phase === 'starting' || layer.voice.phase === 'recording' ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
+      {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: barred ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: capturing && !barred ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
     {barred && layer.folded && layer.cardSlot && createPortal(<FoldedCard bar={barChat} onOpenFile={openFile} />, layer.cardSlot)}
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}

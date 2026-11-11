@@ -153,6 +153,8 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly composerFileChips?: boolean;
   /** A shell-owned capture uses the same recording-row replacement as native voice messages. */
   readonly composerRecording?: ReactNode;
+  /** A shell-owned capture laid out as when idle (`Composer recordingStatus` and `recordingStop`): the status in the text's place, the stop in the action button's. Wins over `composerRecording`. */
+  readonly composerRecordingSlots?: { readonly status: ReactNode; readonly stop: ReactNode } | undefined;
   /** Shared host composer presentation over the normal kit session props. */
   readonly renderComposer?: (props: ComposerProps) => ReactNode;
   /** A conversation title, separate from the agent name, with optional click-to-rename. */
@@ -217,7 +219,7 @@ const noVoice: VoiceRecorderHook = () => silent;
 function NoVoiceBubble(_: { readonly pending: PendingVoice | undefined }) { return null; }
 
 function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, voiceReplay, targetLabel, sentContent, messageStyle = 'default', answeredBy, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, composerWhenEmpty, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerHost, dropZone, onSent, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
-  onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', composerBarActions, composerFileChips, composerRecording, renderComposer, conversationTitle, onRenameTitle, feedback, sendContext, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
+  onOpenImage, onCopy, onComposerKeyDown, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', composerBarActions, composerFileChips, composerRecording, composerRecordingSlots, renderComposer, conversationTitle, onRenameTitle, feedback, sendContext, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
   useChatPlacement(controller, placement);
@@ -316,7 +318,8 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
         <MessageQueue items={queued} sending={state.outbox} withdraw={actions?.withdraw} actions={queueActions} />
         {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
         {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, disabled: composer.disabled || leaving, stopOpen: leaving && !composer.disabled,
-          ...(composerRecording === undefined && VoiceStatus && VoiceStop && capturing ? { recordingStatus: <VoiceStatus voice={voice} />, recordingStop: <VoiceStop voice={voice} /> }
+          ...(composerRecordingSlots ? { recordingStatus: composerRecordingSlots.status, recordingStop: composerRecordingSlots.stop }
+            : composerRecording === undefined && VoiceStatus && VoiceStop && capturing ? { recordingStatus: <VoiceStatus voice={voice} />, recordingStop: <VoiceStop voice={voice} /> }
             : { recording: composerRecording ?? (VoiceButton && capturing ? <VoiceButton voice={voice} /> : undefined) }), layout: composerLayout, ...(composerBarActions ? { barActions: composerBarActions } : {}), ...(composerFileChips ? { fileChips: true } : {}), ...(composerBarActions === 'attach' ? { files: [...conversationFiles.values()] } : {}),
           placeholder: labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder, barStart, barNote, start: composerStart,
           ...(voiceMessage && VoiceButton && voiceReplacesSend ? { barEnd: tools, whenEmpty: <VoiceButton voice={voice} primary disabled={leaving || state.disposed || !connected || state.send.kind === 'unknown'} /> }

@@ -16,6 +16,25 @@ const LOCALE = EN ? 'en' : 'fr';
 if (params.get('dark') === '1') document.documentElement.classList.add('dark');
 try { for (const key of Object.keys(localStorage)) if (key.startsWith('boring-ui:sidebar-agent-mode') || key.startsWith('boring.app-shell.agent.')) localStorage.removeItem(key); } catch { /* none */ }
 window.__sent = [];
+// The fake microphone (as the agent bar's fixture): getUserMedia hands out one track, MediaRecorder hands over one chunk when it stops; the
+// fixture's `transcribe` answers « Texte dicté fictif ». Web Audio is removed so the kit's capture takes the MediaRecorder path.
+Object.defineProperty(window, 'AudioContext', { configurable: true, value: undefined });
+Object.defineProperty(window, 'webkitAudioContext', { configurable: true, value: undefined });
+Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
+  const track = { stop() {} };
+  return { getTracks: () => [track], getAudioTracks: () => [track] };
+} } });
+class FakeRecorder extends EventTarget {
+  static isTypeSupported() { return true; }
+  constructor() { super(); this.state = 'inactive'; this.mimeType = 'audio/webm'; }
+  start() { this.state = 'recording'; }
+  stop() {
+    this.state = 'inactive';
+    const chunk = new Event('dataavailable'); chunk.data = new Blob(['fictional audio'], { type: 'audio/webm' }); this.dispatchEvent(chunk);
+    this.dispatchEvent(new Event('stop'));
+  }
+}
+window.MediaRecorder = FakeRecorder;
 window.__answered = [];
 const assistant = (content, stopReason = content.some(part => part.type === 'toolCall') ? 'toolUse' : 'stop') => ({ role: 'assistant', content, api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason, timestamp: 2 });
 const entry = (id, model) => ({ id, kind: 'message', byTaskId: 7, model: [model] });
@@ -57,6 +76,7 @@ const runs = {
   reply: () => ({ entries: [...history, ask, read, readDone, entry(14, assistant([{ type: 'text', text: REPLY }]))], docs: {} }),
 };
 window.__run = kind => change({ view: runs[kind]() });
+window.__setText = text => controller.setText(text);
 const actions = {
   answer: async (questionId, text) => { window.__answered.push({ questionId, text }); change({ view: runs.tool() }); return { kind: 'answered' }; },
 };
