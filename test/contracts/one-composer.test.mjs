@@ -512,3 +512,35 @@ test('1280: Dicter: a tap listens until ■ and leaves the words in the field; a
   assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`), '', 'the cancelled holds left nothing in the field');
 });
 
+test('1280, folded: a failed send puts the text back in the field, says so on one line at the top of the box, and Réessayer sends it (AC-12)', { skip, timeout: 120000 }, async () => {
+  await open(1280);
+  await type('Relance le dossier Cèdre');
+  await browser.evaluate('window.__failNext = true');
+  await click('[data-testid=composer-submit]');
+  await browser.until('problem line', `!!document.querySelector('[data-testid=agent-send-problem]')`);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`), 'Relance le dossier Cèdre', 'the text is back in the field');
+  assert.deepEqual(await browser.evaluate('window.__sent'), []);
+  assert.equal(await inside('[data-testid=agent-send-problem]', '[data-testid=agent-composer-box]'), true, 'in the one box, above the field');
+  const line = await rect('[data-testid=agent-send-problem]'), field = await rect('[data-testid=composer]');
+  assert.ok(line.bottom <= field.y + 1 && line.h <= 48, `one line above the field (${JSON.stringify(line)})`);
+  assert.equal(await count('[data-testid=agent-tray]'), 0, 'nothing opens');
+  await browser.screenshot('one-composer-1280-light-send-failed.png');
+  await click('[data-testid=agent-send-retry]');
+  await browser.until('sent again', `window.__sent.includes('Relance le dossier Cèdre')`);
+  await browser.until('line gone', `!document.querySelector('[data-testid=agent-send-problem]')`);
+});
+
+test('1280: read only, the box stays in place with one line giving the reason; nothing in it can be focused (AC-13)', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'readonly=1');
+  assert.equal(await text('[data-testid=agent-read-only]'), 'Lecture seule : votre rôle permet de lire, pas d’écrire (fictif).');
+  assert.equal(await inside('[data-testid=agent-read-only]', '[data-testid=agent-composer-box]'), true, 'in the same box');
+  const box = await rect('[data-testid=agent-composer-box]'), column = await rect('[data-boring=dock-main]');
+  assert.ok(Math.abs(box.bottom - column.bottom) < 40 && box.w <= 721, `the box keeps its place (${JSON.stringify(box)})`);
+  assert.equal(await count(FIELD), 0, 'no field');
+  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-composer-box] *')].filter(e => e.tabIndex >= 0 && !e.disabled && e.getClientRects().length > 0).length`), 0, 'nothing focusable in the box');
+  await browser.evaluate(`window.__run('reply')`);
+  await wait(300);
+  assert.equal(await count('[data-testid=agent-card]'), 0, 'no card to act on');
+  await browser.screenshot('one-composer-1280-light-read-only.png');
+});
+

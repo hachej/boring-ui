@@ -9,7 +9,7 @@
 // Host concern: Pi has no layout. The chat is the borrowed NativeChatController rendered by PiChat; the screen context travels as the
 // submit's `context` (agent-context.ts). Nothing here is configurable beyond AgentSpec.
 import { createPortal } from 'react-dom';
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentType, CSSProperties, HTMLAttributes, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, Ref, RefObject } from 'react';
 import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, LibraryIcon, Loader2Icon, MicIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, SquareIcon, XIcon } from '../_shared/icons';
 // Behaviour only: Base UI's keyboard-inset provider for the host drawer's content. It renders nothing visible.
@@ -75,6 +75,9 @@ export interface AgentSpec {
    * `useAgentLayer().preview` takes its place.
    */
   readonly library?: ((onPicked: () => void) => ReactNode) | undefined;
+  /** `composer: 'bar'` (AC-13): the person may only read (a role without writing, an assistant switched off). The box stays in place with this
+   * one line, the reason, instead of the field; nothing in it can be focused. Absent: the field as usual. */
+  readonly readOnly?: string | undefined;
 }
 
 /** Compact: closed, peek, half or full. Expanded: closed or open. */
@@ -794,6 +797,26 @@ const readable = (text: string) => text.replace(MENTION_TOKEN, (_match, before: 
   return `${before}${path.split('/').at(-1) ?? path}${trail}`;
 });
 
+/** AC-12, folded: a send that failed says so on one line at the top of the box, with Réessayer. A refused message is already back in the field
+ * (the controller restores it): Réessayer sends it again; an attempt of unknown outcome is retried as the same request (no double send). */
+function SendProblem({ controller }: { readonly controller: NativeChatController }) {
+  const layer = useInternal();
+  const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
+  const { labels } = chatTextFor(layer.locale ?? layer.agent?.chatProps?.locale);
+  const read = () => controller.getSnapshot().send;
+  const send = useSyncExternalStore(controller.subscribe, read, read);
+  if (send.kind !== 'blocked' && send.kind !== 'unknown') return null;
+  const retryable = send.kind === 'blocked' || !('retryable' in send) || send.retryable !== false;
+  const retry = () => { void (send.kind === 'unknown' ? controller.retrySameRequest() : controller.send()).catch(() => {}); };
+  return <>
+    <p role="alert" data-testid="agent-send-problem" data-state={send.kind} className="m-0 flex min-w-0 items-center gap-2 px-3 py-2 text-xs text-destructive">
+      <span className="min-w-0 flex-1 truncate">{text.sendFailed}</span>
+      {retryable && <Button type="button" size="sm" variant="outline" data-testid="agent-send-retry" onClick={retry}>{labels.retry}</Button>}
+    </p>
+    <Separator />
+  </>;
+}
+
 function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly onOpenFile: ((path: string) => void) | undefined }) {
   const layer = useInternal();
   const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
@@ -842,7 +865,9 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const openFile = spec.chatProps?.onOpenFile ?? spec.chatProps?.mentions?.open;
   const mic = useBarMic();
   const capturing = layer.voice.phase === 'starting' || layer.voice.phase === 'recording';
+  const readOnly = barred ? spec.readOnly : undefined;
   const barProps = barred ? {
+    ...(readOnly ? { renderComposer: () => <p data-testid="agent-read-only" className="m-0 flex min-h-14 items-center px-4 text-sm text-muted-foreground">{readOnly}</p> } : {}),
     composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerStart: <ConversationChevron unread={barChat.historyBadge} />,
     // While the agent's question waits, the field says so; a typed message answers it (PiChat's own rule).
     ...(barChat.question ? { labels: { ...spec.chatProps?.labels, placeholder: words.answerHere } } : {}),
@@ -858,7 +883,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
     <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...barProps} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
       {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: barred ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: capturing && !barred ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
-    {barred && layer.folded && layer.cardSlot && createPortal(<FoldedCard bar={barChat} onOpenFile={openFile} />, layer.cardSlot)}
+    {barred && !readOnly && layer.folded && layer.cardSlot && createPortal(<><SendProblem controller={spec.controller} /><FoldedCard bar={barChat} onOpenFile={openFile} /></>, layer.cardSlot)}
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
     {spec.feedback && visible && !pointing && <div className="shrink-0 px-2 pb-2 empty:hidden">
