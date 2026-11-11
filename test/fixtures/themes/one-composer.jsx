@@ -65,6 +65,6 @@ const Page = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-c
 const nav = [{ id: 'dossier', label: 'Dossier', icon: Icon, render: () => <Page /> }];
 const attachments = { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })) };
 const slash = { Picker: SlashPicker, commands: [{ name: 'relance', description: 'Rédiger une relance fictive.', run: api => api.setText('Relance du dossier Cèdre') }], skills: [] };
-const agent = { controller, icon: Icon, label: 'Assistant', voice: { transcribe: async () => 'Texte dicté fictif', send: 'draft' },
+const agent = { controller, icon: Icon, label: 'Assistant', library: () => { window.__library += 1; }, voice: { transcribe: async () => 'Texte dicté fictif', send: 'draft' },
   chatProps: { title: 'Assistant', locale: 'fr', actions, attachments, slash, onOpenFile } };
 createRoot(document.getElementById('root')).render(<AppShell layout="screen" locale="fr" title="Compta fictive" nav={nav} route={{ id: 'dossier', onChange() {} }} composer={params.get('composer') ?? 'bar'} rail="icon" agent={agent} />);

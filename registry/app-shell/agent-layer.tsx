@@ -68,6 +68,8 @@ export interface AgentSpec {
   readonly feedback?: FeedbackSession;
   /** Host actions in the layer's title row (before the dock controls, or the snap and close controls when compact), as the screen header's. Two shown, the rest in « … ». Not at peek. */
   readonly headerActions?: readonly ScreenHeaderAction[];
+  /** `composer="bar"` (D-2198): the app's file library. The assistant's header (docked, or above the field) gets a « Bibliothèque » button that calls it; the app opens its list (a file it opens shows with `useAgentLayer().preview`). */
+  readonly library?: (() => void) | undefined;
 }
 
 /** Compact: closed, peek, half or full. Expanded: closed or open. */
@@ -103,9 +105,9 @@ export interface AgentPreview {
 }
 
 /** The preview header's Library button, when the app gives one. */
-function LibraryButton({ preview, text }: { readonly preview: AgentPreview; readonly text: AppShellText }) {
-  if (!preview.library) return null;
-  return <Button variant="ghost" size="sm" data-testid="agent-preview-library" onClick={preview.library}><LibraryIcon data-icon="inline-start" aria-hidden="true" />{text.library}</Button>;
+function LibraryButton({ open, text, testId = 'agent-preview-library' }: { readonly open: (() => void) | undefined; readonly text: AppShellText; readonly testId?: string }) {
+  if (!open) return null;
+  return <Button variant="ghost" size="sm" data-testid={testId} onClick={open}><LibraryIcon data-icon="inline-start" aria-hidden="true" />{text.library}</Button>;
 }
 
 // The three fixed snap points: a peek (the file chip, one composer row and a line of the last reply, `PEEK_REM` above the tab bar), 55% and the full height.
@@ -705,8 +707,8 @@ function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly 
       {question && <div data-testid="agent-question" aria-label={question.title} className="flex flex-col gap-2">
         {question.step && <p data-testid="agent-question-step" className="m-0 text-xs text-muted-foreground">{question.step}</p>}
         {question.answered && <p data-testid="agent-question-answered" className="m-0 flex items-center gap-1.5 text-xs text-muted-foreground"><CheckIcon className="size-3.5 shrink-0" aria-hidden="true" />{question.answered}</p>}
-        <p className="m-0 font-semibold">{question.title}</p>
-        <div className="flex flex-wrap gap-1.5">{question.choices.map(choice => <Button key={choice} type="button" variant="outline" size="sm" data-choice="" onClick={() => question.onAnswer({ text: choice, source: 'choice' })}>{choice}</Button>)}</div>
+        <p className="m-0 text-base font-semibold">{question.title}</p>
+        <div className="flex flex-wrap gap-2">{question.choices.map(choice => <Button key={choice} type="button" variant="outline" data-choice="" className="rounded-(--radius-3xl) px-4" onClick={() => question.onAnswer({ text: choice, source: 'choice' })}>{choice}</Button>)}</div>
       </div>}
       {!question && status?.state !== 'working' && reply && <>
         <p data-testid="agent-card-reply" className="m-0 line-clamp-3 whitespace-pre-line">{readable(reply.text)}</p>
@@ -788,9 +790,14 @@ function Header({ text, title, compactSnap, closeRef, controls, className, ...re
   const layer = useInternal();
   const back = layer.showing === 'improve' && layer.agent;
   const actions = layer.showing === 'improve' ? [] : layer.agent?.headerActions ?? [];
+  // A file stacked on the docked conversation takes the header: « ← <file> » goes back to the thread.
+  const file = layer.previewStacked && layer.showing === 'agent' && compactSnap === undefined ? layer.shownPreview : null;
+  const library = layer.bar && layer.showing === 'agent' ? (file?.library ?? layer.agent?.library) : undefined;
   return <div data-testid="agent-layer-header" {...rest} className={cn('flex shrink-0 items-center gap-1 px-2 pb-1', className)}>
     {back && <Button variant="ghost" size="icon" data-testid="agent-layer-back" aria-label={text.back} title={text.back} onClick={layer.showAgent}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
-    <h2 data-testid="agent-layer-title" className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{title}</h2>
+    {file && <Button variant="ghost" size="icon" data-testid="agent-preview-back" aria-label={text.backToAssistant} title={text.backToAssistant} onClick={() => layer.preview(null)}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+    <h2 data-testid={file ? 'agent-preview-title' : 'agent-layer-title'} className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{file ? file.title : title}</h2>
+    <LibraryButton open={library} text={text} testId="agent-layer-library" />
     {actions.length > 0 && <HeaderActions actions={actions} compact={compactSnap !== undefined} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
     {compactSnap === 'half' && <Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button>}
     {compactSnap === 'full' && <Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button>}
@@ -1067,12 +1074,7 @@ function PreviewStack({ preview }: { readonly preview: AgentPreview }) {
   const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
   return <section data-testid="agent-preview" data-placement="stacked" aria-label={`${text.preview} · ${preview.title}`} className="flex min-h-0 flex-1 flex-col"
     onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); layer.preview(null); } }}>
-    <div className="flex shrink-0 items-center gap-1 px-2 pb-1">
-      <Button variant="ghost" size="icon" data-testid="agent-preview-back" aria-label={text.backToAssistant} title={text.backToAssistant} onClick={() => layer.preview(null)}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>
-      <h3 data-testid="agent-preview-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold"><span className="font-normal text-muted-foreground">{text.assistant} / </span>{preview.title}</h3>
-      <LibraryButton preview={preview} text={text} />
-    </div>
-    <div data-testid="agent-preview-body" className="flex min-h-0 flex-1 flex-col overflow-auto">{preview.content}</div>
+        <div data-testid="agent-preview-body" className="flex min-h-0 flex-1 flex-col overflow-auto">{preview.content}</div>
   </section>;
 }
 
@@ -1177,6 +1179,7 @@ function ContentTray() {
     <div data-testid="agent-tray-body" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
       <div data-testid="agent-tray-header" className="flex shrink-0 items-center gap-1 pt-1">
         <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{title}</h2>
+        {layer.bar && <LibraryButton open={layer.agent?.library} text={text} testId="agent-layer-library" />}
         <Button variant="ghost" size="icon" data-testid="agent-tray-dock" aria-label={dockLabel} title={dockLabel}
           onClick={moveToDock}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button>
         <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
@@ -1219,7 +1222,7 @@ function PreviewPane({ preview }: { readonly preview: AgentPreview }) {
     className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground', layer.expanded ? 'relative w-[min(32rem,45%)] shrink-0 border-l' : 'fixed inset-0 z-(--app-shell-z-sheet)')}>
     <div className="flex shrink-0 items-center gap-1 px-2 py-2">
       <h2 data-testid="agent-preview-title" className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{preview.title}</h2>
-      <LibraryButton preview={preview} text={text} />
+      <LibraryButton open={preview.library ?? layer.agent?.library} text={text} />
       <Button variant="ghost" size="icon" data-testid="agent-preview-close" aria-label={text.closePreview} title={text.closePreview} onClick={close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
     </div>
     <div data-testid="agent-preview-body" className="flex min-h-0 flex-1 flex-col overflow-auto">{preview.content}</div>

@@ -118,6 +118,7 @@ test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every
   assert.ok(tray.bottom <= after.y + 1, `Ouvert: the thread sits above the field (${tray.bottom} <= ${after.y})`);
   assert.ok(Math.abs(after.bottom - field.bottom) <= 1, 'the field kept its place');
   assert.equal(await inside('[data-testid=transcript]', '[data-testid=agent-tray]'), true);
+  assert.equal(await count('[data-testid=agent-tray] [data-testid=agent-layer-library]'), 1, 'the open conversation\'s header has « Bibliothèque »');
   assert.equal(await inside('[data-testid=agent-tray]', '[data-testid=agent-composer-box]') && await inside(FIELD, '[data-testid=agent-composer-box]'), true, 'Ouvert: the thread and the field in one box (AC-16)');
   const box = await rect('[data-testid=agent-composer-box]'), contentColumn = await rect('[data-boring=dock-main]');
   assert.ok(box.w <= 721 && box.w < contentColumn.w - 100, `the box keeps the field's width, never the page's (${box.w} in ${contentColumn.w})`);
@@ -272,7 +273,10 @@ test('1280: a file opened while docked stacks on the conversation in the same co
   assert.ok(preview.bottom <= input.y + 1, 'the field is under the preview');
   assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer] [data-testid=conversation-content]')].every(e => e.getClientRects().length === 0)`), true, 'the thread waits under the preview');
   assert.ok((await text('[data-testid=agent-preview-title]')).includes('ecarts-janvier.csv'));
-  assert.equal(await count('[data-testid=agent-preview] [data-testid=agent-preview-library]'), 1, 'the library button stacked too');
+  assert.equal(await count('[data-testid=agent-layer-header] [data-testid=agent-preview-back]'), 1, 'one header: « ← <file> » is the dock\'s own title row');
+  assert.equal(await count('[data-testid=agent-layer-header] [data-testid=agent-layer-title]'), 0, 'no second title row above the file');
+  await click('[data-testid=agent-layer-header] [data-testid=agent-layer-library]');
+  assert.equal(await browser.evaluate('window.__library'), 1, '« Bibliothèque » in the assistant\'s header opens the app\'s library');
   await browser.screenshot('one-composer-1280-light-preview-docked.png');
   await click('[data-testid=agent-preview-back]');
   await browser.until('back to the thread', `!document.querySelector('[data-testid=agent-preview]')`);
