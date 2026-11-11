@@ -808,7 +808,7 @@ function SendProblem({ controller }: { readonly controller: NativeChatController
   const read = () => controller.getSnapshot().send;
   const send = useSyncExternalStore(controller.subscribe, read, read);
   if (send.kind !== 'blocked' && send.kind !== 'unknown') return null;
-  const retryable = send.kind === 'blocked' || !('retryable' in send) || send.retryable !== false;
+  const retryable = send.kind === 'blocked' || (send as { readonly retryable?: boolean }).retryable !== false;
   const retry = () => { void (send.kind === 'unknown' ? controller.retrySameRequest() : controller.send()).catch(() => {}); };
   return <>
     <p role="alert" data-testid="agent-send-problem" data-state={send.kind} className="m-0 flex min-w-0 items-center gap-2 px-3 py-2 text-xs text-destructive">
