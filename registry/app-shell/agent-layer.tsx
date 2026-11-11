@@ -550,16 +550,17 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const dockOpen = snap !== 'closed' && shown !== 'improve' && (!contentComposer || mode === 'dock');
   const previewStacked = bar && expanded && shownPreview !== null && dockOpen && shown === 'agent';
   const folded = bar && contentComposer && !trayOpen && !dockOpen;
+  // What was last asked to show, set at once (not after the render): a pick in the library that opens a file and then calls `onPicked` sees the file.
+  const shownRef = useRef<AgentPreview | null>(null);
   const preview = useCallback((next: AgentPreview | null) => {
     if (!specs.current.agent || composer !== 'bar') return false;
+    shownRef.current = next;
     setPreview(next);
     // The conversation stays at hand above the field, to talk about the file.
     if (next && specs.current.expanded && (specs.current.snap === 'closed' || specs.current.shown !== 'agent')) open('agent');
     return true;
   }, [composer, open]);
   // « Bibliothèque »: the app's navigator in the right pane, as a preview; a file the app opens from it replaces it, `onPicked` closes it otherwise.
-  const shownRef = useRef<AgentPreview | null>(null);
-  useLayoutEffect(() => { shownRef.current = shownPreview; });
   const library = agent?.library;
   const openLibrary = useMemo(() => {
     if (!library || composer !== 'bar') return undefined;
@@ -571,7 +572,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     };
   }, [library, composer, locale, preview]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- a preview goes with the agent it was opened beside
-  useEffect(() => { if (!agent && shownPreview) setPreview(null); }, [agent, shownPreview]);
+  useEffect(() => { if (!agent && shownPreview) { shownRef.current = null; setPreview(null); } }, [agent, shownPreview]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the tray is gone with the content composer (a phone width, a lost agent): the fill state goes with it
   useEffect(() => { if (!trayOpen && grown) setGrown(false); }, [trayOpen, grown]);
   const value = useMemo<Internal>(() => ({
