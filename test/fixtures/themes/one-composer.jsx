@@ -76,5 +76,5 @@ const FILES = ['uploads/releve-janvier.pdf', 'uploads/ecarts-janvier.csv', 'uplo
 const library = onPicked => <ul data-testid="fixture-library" className="m-0 flex list-none flex-col gap-1 p-2">{FILES.map(path => <li key={path}>
   <button type="button" data-testid="fixture-library-file" data-path={path} className="w-full rounded-md p-2 text-left text-sm hover:bg-accent" onClick={() => { window.__library += 1; onOpenFile(path); onPicked(); }}>{path.split('/').at(-1)}</button></li>)}</ul>;
 const agent = { controller, icon: Icon, label: 'Assistant', library, voice: { transcribe: async () => 'Texte dicté fictif', send: 'draft' },
-  chatProps: { title: 'Assistant', locale: LOCALE, actions, attachments, slash, onOpenFile } };
+  chatProps: { title: 'Assistant', locale: LOCALE, labels: { placeholder: T('Demandez, ou « / » pour une action', 'Ask anything, or « / » for an action') }, actions, attachments, slash, onOpenFile } };
 createRoot(document.getElementById('root')).render(<AppShell layout="screen" locale={LOCALE} title={T('Compta fictive', 'Demo books')} nav={nav} route={{ id: 'dossier', onChange() {} }} composer={params.get('composer') ?? 'bar'} rail="icon" agent={agent} />);
