@@ -169,9 +169,9 @@ function useCoarsePointer(): boolean {
 }
 
 /** `barActions`: Attach files as a direct bar button, first in the bar row (label and icon from the app). */
-function BarAttach({ disabled, onAttach }: { readonly disabled: boolean; readonly onAttach: () => void }) {
+function BarAttach({ disabled, onAttach, quiet = false }: { readonly disabled: boolean; readonly onAttach: () => void; readonly quiet?: boolean }) {
   const { labels, icons } = useChatText();
-  return <Button type="button" variant="outline" size="icon" data-testid="composer-bar-attach" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
+  return <Button type="button" variant={quiet ? 'ghost' : 'outline'} size="icon" data-testid="composer-bar-attach" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
     <icons.attach data-icon="inline-start" aria-hidden="true" /></Button>;
 }
 
@@ -376,7 +376,7 @@ export function Composer(props: ComposerProps) {
   const plusHasItems = barActions ? canPhoto : canAttach || items.length > 0;
   const plusButton = plusHasItems && <PlusActions disabled={disabled || recording} textarea={inner} onAttach={!barActions && canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={!barActions && items.length > 0 ? openCommands : undefined} />;
   // Off: the "+" alone, as before (same element position). On: the bar buttons first.
-  const plus = barActions && canAttach ? <><BarAttach disabled={disabled || recording} onAttach={() => fileInput.current?.click()} />{plusButton}</> : plusButton;
+  const plus = barActions && canAttach ? <><BarAttach disabled={disabled || recording} onAttach={() => fileInput.current?.click()} quiet={props.barActions === 'attach'} />{plusButton}</> : plusButton;
   // One child slot either way, so a composer without `start` keeps its exact markup (React ids included).
   const startAndPlus = props.start && !recording ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"

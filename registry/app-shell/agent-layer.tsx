@@ -702,7 +702,7 @@ function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly 
       <span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{[text.done, reply.used.join(', ')].filter(Boolean).join(' · ')}</span></> : undefined;
   return <>
     <section data-testid="agent-card" data-state={question ? 'question' : status?.state === 'working' ? 'working' : 'reply'} aria-label={text.assistant}
-      className="flex flex-col gap-2 px-3 pt-2.5 pb-3 text-sm text-foreground">
+      className="flex flex-col gap-2 px-3 pt-2.5 pb-3 text-sm text-card-foreground">
       {header && <p role="status" className="m-0 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">{header}</p>}
       {question && <div data-testid="agent-question" aria-label={question.title} className="flex flex-col gap-2">
         {question.step && <p data-testid="agent-question-step" className="m-0 text-xs text-muted-foreground">{question.step}</p>}
@@ -1091,8 +1091,8 @@ const FOLDED_FIELD = '[&_[data-testid=preparing]]:hidden [&_[data-testid=compose
 
 /** `composer: 'bar'`: the thread (Ouvert), the folded card and the field in one frame at the field's width, never the page's (AC-16). The inner input group's own frame is cleared by the block's CSS (`.app-shell [data-one-composer]`). */
 function OneBox({ children }: { readonly children: ReactNode }) {
-  return <div className="shrink-0 px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-    <div data-one-composer="" data-testid="agent-composer-box" className="mx-auto flex w-full max-w-[720px] min-w-0 flex-col overflow-hidden rounded-(--radius-xl) bg-background text-foreground ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring">{children}</div>
+  return <div className="shrink-0 bg-card px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+    <div data-one-composer="" data-testid="agent-composer-box" className="mx-auto flex w-full max-w-[720px] min-w-0 flex-col overflow-hidden rounded-(--radius-xl) bg-card text-card-foreground ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring">{children}</div>
   </div>;
 }
 
@@ -1174,7 +1174,7 @@ function ContentTray() {
   const boxed = layer.bar && layer.contentComposer;
   const height = boxed ? (grown ? '70dvh' : '30dvh') : layer.anchored ? (grown ? 'min(70dvh, 720px)' : `min(35dvh, ${TRAY_MAX}px)`) : grown ? undefined : `min(35%, ${TRAY_MAX}px)`;
   return <section data-testid="agent-tray" aria-label={title} style={height ? { height } : undefined}
-    className={cn('relative flex min-h-0 min-w-0 flex-col', boxed ? 'shrink-0 bg-background px-3 text-foreground' : 'bg-card px-4 text-card-foreground', !boxed && (grown && !layer.anchored ? 'flex-1' : 'shrink-0'))}>
+    className={cn('relative flex min-h-0 min-w-0 flex-col', boxed ? 'shrink-0 bg-card px-3 text-card-foreground' : 'bg-card px-4 text-card-foreground', !boxed && (grown && !layer.anchored ? 'flex-1' : 'shrink-0'))}>
     {boxed ? null : <Separator className="absolute inset-x-0 top-0" />}
     <div data-testid="agent-tray-body" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
       <div data-testid="agent-tray-header" className="flex shrink-0 items-center gap-1 pt-1">

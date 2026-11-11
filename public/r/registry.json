@@ -2409,7 +2409,7 @@
             "text-overflow": "ellipsis"
           },
           ".app-shell [data-one-composer] [data-boring=\"pi-chat-composer\"], .app-shell [data-one-composer] [data-boring=\"pi-chat\"]": {
-            "background-color": "var(--background)"
+            "background-color": "var(--card)"
           }
         }
       },
