@@ -340,8 +340,7 @@ test('Échap closes Ouvert; at 390 the field keeps a usable width and docked tak
   await browser.until('closed by Escape', `!document.querySelector('[data-testid=agent-tray]')`);
   await oneField('after Escape');
   await open(390);
-  // At rest on a phone the field comes with the drawer (its place above the tabs is slice 2, AC-20): open it at peek first.
-  await browser.evaluate(`window.__layer.open('agent', 'peek')`);
+  // At rest on a phone the one field is already there, above the tabs (AC-20).
   await browser.until('peek', `!!document.querySelector('[data-testid=composer-input]')`);
   await oneField('phone');
   await browser.evaluate(`window.__layer.open('agent', 'full')`);
@@ -420,8 +419,7 @@ test('shots: Ambiant, Ouvert, Ancré, collapsed working, collapsed reply and pre
     await browser.until('question card', `!!document.querySelector('[data-testid=agent-card] [data-testid=agent-question]')`);
     await browser.screenshot(`one-composer-1280-${name}-question.png`);
     // A phone has the drawer: peek is Ambiant, half Ouvert, full Ancré; the preview covers the screen.
-    await open(390, query);
-    await browser.evaluate(`window.__layer.open('agent', 'peek')`);
+    await open(390, query ? `${query}&tabs=1` : 'tabs=1');
     await wait(700);
     await browser.screenshot(`one-composer-390-${name}-ambiant.png`);
     await browser.evaluate(`window.__layer.open('agent', 'half')`);
@@ -595,5 +593,37 @@ test('1280: edit last the Claude Code way: ↑ recalls, ↓ comes back, Échap s
   assert.equal(await text('[data-testid=own-message-rewind]'), 'Revenir ici');
   await click('[data-testid=own-message-resume]');
   await browser.until('resumed', `document.querySelector('[data-testid=composer-input]').value === 'Où en est le dossier Cèdre ?'`);
+});
+
+test('390: the one field rests above the tabs; the chevron opens half with the tabs kept; full hides them; the drawer has the same one-row field (AC-20)', { skip, timeout: 120000 }, async () => {
+  await open(390, 'tabs=1');
+  const tabs = '[data-testid=tabbar]';
+  const tabbar = await browser.evaluate(`(() => { const e = [...document.querySelectorAll(${js(tabs)})].find(e => e.getClientRects().length > 0); if (!e) return null; const r = e.getBoundingClientRect(); return { y: r.y, h: r.height, x: r.x + r.width / 2 }; })()`);
+  assert.ok(tabbar && tabbar.h > 0, 'the phone shows its tabs');
+  await browser.until('the field at rest', `!!document.querySelector('[data-testid=composer-input]')`);
+  assert.equal(await dockState(), 'peek', 'at rest: the peek');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer]').dataset.layout`), 'pill', 'the same one-row field as on a computer');
+  assert.equal(await count('[data-testid=agent-bar-conversation]'), 1, 'with the chevron');
+  assert.equal(await actionName(), 'Dicter');
+  const field = await rect('[data-testid=composer]');
+  assert.ok(field.bottom <= tabbar.y + 1, `the field sits above the tabs (${field.bottom} <= ${tabbar.y})`);
+  const tabHit = () => browser.evaluate(`(() => { const e = document.elementFromPoint(${tabbar.x}, ${tabbar.y + tabbar.h / 2}); return !!e && !!e.closest(${js(tabs)}); })()`);
+  assert.equal(await tabHit(), true, 'the tabs are in view at rest');
+  await browser.screenshot('one-composer-390-light-rest-tabs.png');
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('Ouvert: half', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'half'`);
+  await wait(700);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]').getAttribute('aria-expanded')`), 'true');
+  assert.equal(await tabHit(), true, 'Ouvert keeps the tabs in view');
+  const open = await rect('[data-testid=composer]');
+  assert.ok(open.bottom <= tabbar.y + 1, `Ouvert: the field sits above the tabs (${open.bottom} <= ${tabbar.y})`);
+  await browser.screenshot('one-composer-390-light-ouvert-tabs.png');
+  await browser.evaluate(`window.__layer.open('agent', 'full')`);
+  await browser.until('full', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'full'`);
+  await wait(700);
+  assert.equal(await tabHit(), false, 'full screen hides the tabs');
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('back to rest', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'peek'`);
+  await oneField('phone at rest again');
 });
 
