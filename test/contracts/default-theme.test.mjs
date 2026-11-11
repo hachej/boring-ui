@@ -28,7 +28,7 @@ test('default theme source and published output expose the original surface, typ
     const { theme, light, dark } = item.cssVars;
     assert.deepEqual(JSON.stringify(item.css).match(/--[a-z-]+/g).filter((key, at, all) => all.indexOf(key) === at), ['--control-h', '--control-min', '--screen-gutter']);
     assert.equal(light.radius, '0.5rem');
-    assert.equal(light['text-body'], '0.75rem');
+    assert.equal(light['text-body'], '0.8125rem');
     assert.equal(light['text-title'], '0.875rem');
     assert.equal(theme['text-xs'], 'var(--text-body)');
     assert.equal(theme['text-sm'], 'var(--text-title)');

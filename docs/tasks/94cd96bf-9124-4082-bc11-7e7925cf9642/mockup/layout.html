@@ -83,9 +83,9 @@
 const thread = me('Combien de pièces manquent ?') + ai('Deux : le relevé de février et la facture du loyer.');
 fill('l1', desk({bottom: box()}));
 fill('l2', desk({content: rows(5), bottom: box({open:true, top: thHead() + thread})}));
-fill('l3', desk({right: rcol('Assistant', thread, box({open:true}), ib('bottom','','Détacher en bas') + ib('x','','Fermer'))}));
-fill('l4', desk({content: rows(5), bottom: box({open:true, chips: chip('ecarts-janvier.csv'), top: thHead() + me('Que contient ce fichier ?') + ai('Deux écarts de 12,00 €.')}), right: rcol('ecarts-janvier.csv', '<div class="pv">The app\'s own preview</div>', '', ib('x','','Fermer l’aperçu'))}));
-fill('l4b', desk({right: rcol(`<span style="display:inline-flex;align-items:center;gap:4px">${ib('left','','Retour à l’assistant')}<span style="font-weight:500;color:var(--muted-foreground)">Assistant</span> / ecarts-janvier.csv</span>`, '<div class="pv">The app\'s own preview of ecarts-janvier.csv</div>', box({open:true, chips: chip('ecarts-janvier.csv'), ph:'Demandez…'}), ib('x','','Fermer'))}));
+fill('l3', desk({right: rcol('Assistant', thread, box({open:true}), lib + ib('bottom','','Détacher en bas') + ib('x','','Fermer'))}));
+fill('l4', desk({content: rows(5), bottom: box({open:true, chips: chip('ecarts-janvier.csv'), top: thHead() + me('Que contient ce fichier ?') + ai('Deux écarts de 12,00 €.')}), right: rcol('ecarts-janvier.csv', '<div class="pv">The app\'s own preview</div>', '', lib + ib('x','','Fermer l’aperçu'))}));
+fill('l4b', desk({right: rcol(`<span style="display:inline-flex;align-items:center;gap:4px">${ib('left','','Retour à l’assistant')}ecarts-janvier.csv</span>`, '<div class="pv">The app\'s own preview of ecarts-janvier.csv</div>', box({open:true, chips: chip('ecarts-janvier.csv'), ph:'Demandez…'}), lib + ib('x','','Fermer'))}));
 fill('l5', `<div>${phone(box({ph:'Demandez, ou « / »'}))}</div><div>${phone(box({text:'Combien de pièces manquent', focus:true, action:'send'}), {keyboard:true})}</div>`);
 fill('l6', `<div>${phone(box({open:true, top: thHead() + thread}), {body: rows(6)})}</div><div>${phone('', {full: `<div class="ah" style="display:flex;align-items:center;gap:2px"><span style="flex:1">Assistant</span>${ib('bottom','','Détacher en bas')}${ib('x','','Fermer')}</div><div class="bd" style="gap:8px">${thread}</div><div class="dk">${box({open:true})}</div>`})}</div>`);
 fill('l7', desk({bottom: box({top: replyTop, dot:true})}));

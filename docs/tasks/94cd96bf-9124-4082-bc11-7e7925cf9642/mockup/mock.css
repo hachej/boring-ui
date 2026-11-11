@@ -14,7 +14,7 @@
 
 /* the target composer */
 .st{background:var(--background);border-radius:calc(var(--radius) - 2px);border:1px solid var(--border);padding:14px 12px;display:flex;flex-direction:column;justify-content:flex-end;gap:8px}
-.bx{background:var(--card);border:1px solid var(--border);border-radius:calc(var(--radius) + 4px);box-shadow:0 1px 2px oklch(0 0 0 / 6%);display:flex;flex-direction:column;overflow:hidden;max-width:720px;width:100%;margin-inline:auto}
+.bx{background:var(--background);border:1px solid var(--border);border-radius:calc(var(--radius) + 4px);box-shadow:0 1px 2px oklch(0 0 0 / 6%);display:flex;flex-direction:column;overflow:hidden;max-width:720px;width:100%;margin-inline:auto}
 .bx.focus{border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 25%,transparent)}
 .bx.err{border-color:var(--destructive)}
 .bx.off{opacity:.6}

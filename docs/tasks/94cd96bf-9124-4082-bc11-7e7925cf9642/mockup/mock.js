@@ -9,6 +9,7 @@ const P = {
   right:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>', bottom:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18"/>',
   lock:'<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>', alert:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>',
   left:'<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+  book:'<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>',
   expand:'<path d="m7 15 5-5 5 5"/><path d="m7 9 5-5 5 5"/>', pencil:'<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>',
 };
 const ic = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
@@ -43,4 +44,5 @@ function phone(dock, {keyboard=false, tabs=true, title='Dossier Cèdre', body=ro
   if (full) return `<div class="ph"><div class="nt"></div>${full}<div class="hm"><i></i></div></div>`;
   return `<div class="ph"><div class="nt"></div><div class="ah">${title}</div><div class="bd">${body}</div>${dock?`<div class="dk">${dock}</div>`:''}${keyboard?kb:''}${tabs&&!keyboard?'<div class="tb"><span class="on">Dossiers</span><span>À traiter</span><span>Clients</span></div>':''}${keyboard?'':'<div class="hm"><i></i></div>'}</div>`;
 }
+const lib = '<span class="chip" style="border-color:transparent">' + ic('book') + 'Bibliothèque</span>';
 const fill = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
