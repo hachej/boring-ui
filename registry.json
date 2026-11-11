@@ -2426,8 +2426,7 @@
             "box-shadow": "none"
           },
           ".app-shell [data-one-dock] [data-slot=\"input-group\"]:focus-within": {
-            "border-color": "var(--ring)",
-            "box-shadow": "0 0 0 1px var(--ring)"
+            "border-color": "var(--ring)"
           }
         }
       },
