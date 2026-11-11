@@ -78,6 +78,8 @@ export interface AgentSpec {
   /** `composer: 'bar'` (AC-13): the person may only read (a role without writing, an assistant switched off). The box stays in place with this
    * one line, the reason, instead of the field; nothing in it can be focused. Absent: the field as usual. */
   readonly readOnly?: string | undefined;
+  /** The shell's own words for this assistant (Dicter, Conversation, Détacher en bas, Bibliothèque…) over the locale's defaults (AC-21). */
+  readonly words?: Partial<AppShellText> | undefined;
 }
 
 /** Compact: closed, peek, half or full. Expanded: closed or open. */
@@ -286,6 +288,9 @@ function onShow(current: { readonly improve: ShellPanel | undefined; readonly sn
 }
 
 const controllerOf = (spec: AgentSpec | ShellPanel | undefined) => spec && ('controller' in spec ? spec.controller : spec.identity);
+
+/** The layer's words: the locale's defaults, then the app's own (`agent.words`). */
+const shellWords = (locale: AppShellLocale | undefined, agent: AgentSpec | undefined): AppShellText => agent?.words ? { ...appShellText(locale), ...agent.words } : appShellText(locale);
 
 /** The layer's state and controls. */
 export function useAgentLayer(): AgentLayerApi {
@@ -582,7 +587,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const openLibrary = useMemo(() => {
     if (!library || composer !== 'bar') return undefined;
     return () => {
-      const words = appShellText(locale ?? specs.current.agent?.chatProps?.locale);
+      const words = shellWords(locale ?? specs.current.agent?.chatProps?.locale, specs.current.agent);
       const view: { title: string; content: ReactNode } = { title: words.library, content: null };
       view.content = library(() => { if (shownRef.current === view) preview(null); });
       preview(view);
@@ -616,7 +621,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
 export function AgentTrigger({ className, children }: { readonly className?: string; readonly children?: ReactNode }) {
   const layer = useInternal();
   const { agent, voice } = layer;
-  const text = appShellText(layer.locale ?? agent?.chatProps?.locale);
+  const text = shellWords(layer.locale ?? agent?.chatProps?.locale, agent);
   const hold = useRef<{ timer: ReturnType<typeof setTimeout> | undefined; held: boolean; id: number } | null>(null);
   const voiceRef = useRef(voice);
   useLayoutEffect(() => { voiceRef.current = voice; });
@@ -705,18 +710,18 @@ interface BarMic { readonly mode: MicMode; readonly hold: ReturnType<typeof useH
 /** `composer: 'bar'` (D5, AC-10, AC-11): one microphone for tap and hold, as the agent bar. A tap listens until ■ and leaves the words in the field;
  * a press held past 300 ms says « Relâche pour envoyer » and release sends; a slide off, Échap or a hidden page cancels and sends nothing. */
 function useBarMic(): BarMic {
-  const { voice, holdSend } = useInternal();
+  const { voice, holdSend: holdSendRef } = useInternal();
   const [mode, setMode] = useState<MicMode>('idle');
   const pressedAt = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   const capturing = voice.phase === 'starting' || voice.phase === 'recording';
-  const cancel = useCallback(() => { clearTimeout(timer.current); holdSend.current = false; setMode('idle'); voice.cancel(); }, [voice, holdSend]);
+  const cancel = useCallback(() => { clearTimeout(timer.current); holdSendRef.current = false; setMode('idle'); voice.cancel(); }, [voice, holdSendRef]);
   const finish = useCallback(() => { clearTimeout(timer.current); setMode('idle'); voice.finish(); }, [voice]);
   const hold = useHoldToRecord({
     start: () => {
       if (voice.canStart === false) return;
-      pressedAt.current = Date.now(); holdSend.current = false; setMode('press');
+      pressedAt.current = Date.now(); holdSendRef.current = false; setMode('press');
       clearTimeout(timer.current); timer.current = setTimeout(() => setMode('holding'), HOLD_SEND_MS);
       voice.start();
     },
@@ -725,7 +730,7 @@ function useBarMic(): BarMic {
       // The attempt already ended (a refused microphone): nothing listens, nothing is sent.
       if (!capturing) { setMode('idle'); return; }
       if (Date.now() - pressedAt.current < HOLD_SEND_MS) { setMode('listening'); return; }
-      holdSend.current = true; finish();
+      holdSendRef.current = true; finish();
     },
     cancel,
   }, voice.phase === 'transcribing', { pressBounds: true });
@@ -752,10 +757,10 @@ function BarMicButton({ mic, label }: { readonly mic: BarMic; readonly label: st
     {busy ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : mic.mode === 'holding' ? <SquareIcon data-icon="inline-start" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}</Button>;
 }
 
-/** In the text's place while the microphone is open: ✕ (cancel) and the level, with « À l’écoute… », or « Relâche pour envoyer » during a hold. */
+/** In the text's place while the microphone is open: ✕ (cancel) and the level, with « J’écoute… », or « Relâche pour envoyer » during a hold. */
 function BarMicStatus({ mic }: { readonly mic: BarMic }) {
   const layer = useInternal();
-  const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
+  const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const { labels } = chatTextFor(layer.locale ?? layer.agent?.chatProps?.locale);
   const { voice } = layer;
   const holding = mic.mode === 'holding';
@@ -778,7 +783,7 @@ function VoiceProblem() {
 /** `composer: 'bar'`: the chevron at the start of the field. It unfolds the conversation above the field and folds it back; a dot while a reply is unread. */
 function ConversationChevron({ unread }: { readonly unread: { readonly label: string } | undefined }) {
   const layer = useInternal();
-  const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
+  const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const open = layer.expanded ? layer.trayOpen || layer.dockOpen : layer.snap === 'half' || layer.snap === 'full';
   return <span className="relative inline-flex shrink-0">
     <Button type="button" variant="secondary" size="icon" data-testid="agent-bar-conversation" aria-label={text.conversation} title={text.conversation} aria-expanded={open}
@@ -803,7 +808,7 @@ const readable = (text: string) => text.replace(MENTION_TOKEN, (_match, before: 
  * (the controller restores it): Réessayer sends it again; an attempt of unknown outcome is retried as the same request (no double send). */
 function SendProblem({ controller }: { readonly controller: NativeChatController }) {
   const layer = useInternal();
-  const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
+  const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const { labels } = chatTextFor(layer.locale ?? layer.agent?.chatProps?.locale);
   const read = () => controller.getSnapshot().send;
   const send = useSyncExternalStore(controller.subscribe, read, read);
@@ -821,7 +826,7 @@ function SendProblem({ controller }: { readonly controller: NativeChatController
 
 function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly onOpenFile: ((path: string) => void) | undefined }) {
   const layer = useInternal();
-  const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
+  const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const { question, status, reply } = bar;
   if (!question && status?.state !== 'working' && !reply) return null;
   const header = question ? undefined : status?.state === 'working'
@@ -854,7 +859,7 @@ function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly 
 function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly visible: boolean; readonly role: Which }) {
   const layer = useInternal();
   const locale = layer.locale ?? spec.chatProps?.locale;
-  const words = appShellText(locale);
+  const words = shellWords(locale, layer.agent);
   // `composer: 'bar'`: the folded card and the chevron's dot read the same chat as the thread, through the agent bar's own adapter.
   const barChat = useAgentBarChat(spec.controller, { actions: spec.chatProps?.actions, toolLabels: chatTextFor(locale).labels,
     labels: { working: words.working, done: words.done, unread: words.unread, step: (index, count) => `${index} ${words.of} ${count}` } });
@@ -886,7 +891,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
     <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...barProps} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
-      {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: barred ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: capturing && !oneRow ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
+      {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: oneRow ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: capturing && !oneRow ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
     {barred && !readOnly && layer.folded && layer.cardSlot && createPortal(<><SendProblem controller={spec.controller} /><FoldedCard bar={barChat} onOpenFile={openFile} /></>, layer.cardSlot)}
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
@@ -945,7 +950,7 @@ function useTitle(): { text: AppShellText; title: string } {
   const layer = useInternal();
   const improve = layer.showing === 'improve' ? layer.improve : undefined;
   const spec = improve ? undefined : layer.agent;
-  const text = appShellText(layer.locale ?? (improve ? (improve.locale as AppShellLocale | undefined) : undefined) ?? layer.agent?.chatProps?.locale);
+  const text = shellWords(layer.locale ?? (improve ? (improve.locale as AppShellLocale | undefined) : undefined) ?? layer.agent?.chatProps?.locale, layer.agent);
   const title = improve ? improve.label ?? text.improve : (spec?.chatProps?.labels?.title ?? text.assistant);
   return { text, title };
 }
@@ -1090,10 +1095,13 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
     const early = setTimeout(take, 60), late = setTimeout(take, 520);
     return () => { clearTimeout(early); clearTimeout(late); };
   }, [peek, open]);
-  return <Drawer open={open} modal={!peek} showSwipeHandle swipeDirection="down" snapPoints={points} snapPoint={value}
+  // `bar` at half the page stays usable around the sheet (the tabs above all), as at peek: the sheet is not modal there.
+  return <Drawer open={open} modal={!peek && !keepTabs} showSwipeHandle swipeDirection="down" snapPoints={points} snapPoint={value}
     onOpenChange={(next, details) => {
       if (next) return;
       if (isOverlayEvent(details)) { details.cancel(); return; }
+      // A tap on the tabs kept under the half switches screens; it is not a press outside the conversation.
+      if (keepTabs && details.reason === 'outside-press' && details.event?.target instanceof Element && details.event.target.closest('[data-testid=tabbar]')) { details.cancel(); return; }
       const outcome = nextSnapOnClose(details.reason, hasPeek);
       if (outcome === 'close') { closing.current = true; layer.close(); return; }
       details.cancel();
@@ -1213,7 +1221,7 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
 /** D7, docked: the opened file sits on top of the conversation in its column, under « ← Assistant / <name> »; the arrow goes back to the thread. */
 function PreviewStack({ preview }: { readonly preview: AgentPreview }) {
   const layer = useInternal();
-  const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
+  const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   return <section data-testid="agent-preview" data-placement="stacked" aria-label={`${text.preview} · ${preview.title}`} className="flex min-h-0 flex-1 flex-col"
     onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); layer.preview(null); } }}>
         <div data-testid="agent-preview-body" className="flex min-h-0 flex-1 flex-col overflow-auto">{preview.content}</div>
@@ -1231,7 +1239,9 @@ function AgentDock({ side }: { readonly side: DockSide }) {
 
 /** `composer: 'bar'`: the thread (Ouvert), the folded card and the field in one frame at the field's width, never the page's (AC-16). The inner input group's own frame is cleared by the block's CSS (`.app-shell [data-one-composer]`). */
 function OneBox({ children }: { readonly children: ReactNode }) {
-  return <div className="shrink-0 bg-card px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+  // Docked (AC-17) the field and the thread are in the right column: the box stays mounted, empty and out of sight, so nothing stays at the bottom.
+  const { dockOpen } = useInternal();
+  return <div className={cn('shrink-0 bg-card px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]', dockOpen && 'hidden')}>
     <div data-one-composer="" data-testid="agent-composer-box" className="mx-auto flex w-full max-w-[720px] min-w-0 flex-col overflow-hidden rounded-(--radius-3xl) bg-card text-card-foreground ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring">{children}</div>
   </div>;
 }
@@ -1355,7 +1365,7 @@ export function AgentDockLayout({ children }: { readonly children: ReactNode }):
  */
 function PreviewPane({ preview }: { readonly preview: AgentPreview }) {
   const layer = useInternal();
-  const text = appShellText(layer.locale ?? layer.agent?.chatProps?.locale);
+  const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const close = () => layer.preview(null);
   return <aside data-testid="agent-preview" aria-label={`${text.preview} · ${preview.title}`}
     onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); close(); } }}

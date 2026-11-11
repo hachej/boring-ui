@@ -152,7 +152,7 @@ const never = () => () => {};
 export function AppShell(props: AppShellProps) {
   const { layout, rail = 'icon', compactNav = 'tabs', agent, panel, title, nav, account, route } = props;
   if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `panel` for the product manager)');
-  const text = appShellText(props.locale ?? agent?.chatProps?.locale ?? (panel?.locale as AppShellLocale | undefined));
+  const text = { ...appShellText(props.locale ?? agent?.chatProps?.locale ?? (panel?.locale as AppShellLocale | undefined)), ...agent?.words };
   useOverlayBlur(props.overlayBlur ?? false);
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;

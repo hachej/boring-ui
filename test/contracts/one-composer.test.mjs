@@ -95,6 +95,8 @@ const type = async value => {
 };
 const FIELD = '[data-testid=composer-input]';
 const oneField = async step => assert.equal(await count(FIELD), 1, `exactly one message field in the DOM (${step})`);
+// AC-2: the row is the chevron, attach, the field and one action button; nothing else can be pressed in it.
+const rowControls = () => browser.evaluate(`[...document.querySelectorAll('[data-testid=composer] [data-slot=input-group] button, [data-testid=composer] [data-slot=input-group] textarea')].filter(e => e.getClientRects().length > 0).map(e => e.dataset.testid || e.getAttribute('aria-label'))`);
 
 test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every step, and the right button says Dicter, Envoyer, Arrêter (AC-1, AC-2, AC-3)', { skip, timeout: 120000 }, async () => {
   await open(1280);
@@ -106,6 +108,7 @@ test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every
   assert.equal(await count('[data-testid=composer-bar-attach]'), 1, 'attach is a bar button');
   assert.equal(await count('[data-testid=composer-bar-commands]') + await count('[data-testid=composer-plus]'), 0, 'no Actions button and no + menu');
   assert.equal(await actionName(), 'Dicter', 'empty field: the one action button dictates');
+  assert.deepEqual(await rowControls(), ['agent-bar-conversation', 'composer-bar-attach', 'composer-input', 'agent-talk'], 'one row: chevron, attach, field, one action (AC-2)');
   assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=composer-input]')).whiteSpace`), 'nowrap', 'an empty field is one line: the placeholder never wraps (AC-2)');
   // « / » typed opens the actions.
   await type('/');
@@ -458,7 +461,7 @@ const atRest = `document.querySelector('[data-testid=agent-talk]')?.dataset.stat
 
 test('1280: Dicter: a tap listens until ■ and leaves the words in the field; a hold says « Relâche pour envoyer » and release sends; a slide off or Échap sends nothing; nothing opens (AC-10, AC-11, AC-25)', { skip, timeout: 120000 }, async () => {
   await open(1280);
-  // A tap: ✕, « À l'écoute… » and ■ in the action button's place; ■ puts the words in the field, nothing is sent.
+  // A tap: ✕, « J’écoute… » and ■ in the action button's place; ■ puts the words in the field, nothing is sent.
   let [x, y] = await center('[data-testid=agent-talk]');
   await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y);
   await browser.until('listening', `!!document.querySelector('[data-testid=agent-talk-stop]') && !!document.querySelector('[data-testid=agent-talk-listening]')`);
@@ -564,16 +567,17 @@ test('1280: edit last the Claude Code way: ↑ recalls, ↓ comes back, Échap s
   await browser.press('Escape');
   await browser.until('stopped', `window.__stops === 1`);
   // Échap twice in an empty field: the person's messages, newest first; a pick forks before it with the message in the field.
+  // (`__run('tool')` replaced the thread with the scripted turn « Rapproche le relevé de janvier. » after the history.)
   await browser.until('rest', `document.querySelector('[data-testid=agent-card]')?.dataset.state !== 'working'`);
   await browser.evaluate(`document.querySelector('[data-testid=composer-input]').focus()`);
   await browser.press('Escape'); await browser.press('Escape');
   await browser.until('rewind list', `!!document.querySelector('[data-testid=rewind-list]')`);
-  assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=rewind-item]')].map(e => e.textContent)`), ['Combien de pièces manquent ?', 'Où en est le dossier Cèdre ?']);
+  assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=rewind-item]')].map(e => e.textContent)`), ['Rapproche le relevé de janvier.', 'Où en est le dossier Cèdre ?']);
   assert.equal(await inside('[data-testid=rewind-list]', '[data-testid=agent-composer-box]'), true, 'above the field, in the box');
   await browser.screenshot('one-composer-1280-light-rewind.png');
   await click('[data-testid=rewind-item]');
   await browser.until('forked', `(window.__forked ?? []).length === 1`);
-  assert.equal(await value(), 'Combien de pièces manquent ?', 'the picked message is in the field');
+  assert.equal(await value(), 'Rapproche le relevé de janvier.', 'the picked message is in the field');
   assert.equal(await count('[data-testid=rewind-list]'), 0);
   // The first message has no reply before it: a new conversation, with it in the field.
   await browser.evaluate(`window.__setText('')`);
@@ -605,6 +609,7 @@ test('390: the one field rests above the tabs; the chevron opens half with the t
   assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer]').dataset.layout`), 'pill', 'the same one-row field as on a computer');
   assert.equal(await count('[data-testid=agent-bar-conversation]'), 1, 'with the chevron');
   assert.equal(await actionName(), 'Dicter');
+  assert.deepEqual(await rowControls(), ['agent-bar-conversation', 'composer-bar-attach', 'composer-input', 'agent-talk'], 'the phone row is the same one row: one microphone (AC-2, AC-20)');
   const field = await rect('[data-testid=composer]');
   assert.ok(field.bottom <= tabbar.y + 1, `the field sits above the tabs (${field.bottom} <= ${tabbar.y})`);
   const tabHit = () => browser.evaluate(`(() => { const e = document.elementFromPoint(${tabbar.x}, ${tabbar.y + tabbar.h / 2}); return !!e && !!e.closest(${js(tabs)}); })()`);
@@ -615,9 +620,15 @@ test('390: the one field rests above the tabs; the chevron opens half with the t
   await wait(700);
   assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]').getAttribute('aria-expanded')`), 'true');
   assert.equal(await tabHit(), true, 'Ouvert keeps the tabs in view');
-  const open = await rect('[data-testid=composer]');
-  assert.ok(open.bottom <= tabbar.y + 1, `Ouvert: the field sits above the tabs (${open.bottom} <= ${tabbar.y})`);
+  const opened = await rect('[data-testid=composer]');
+  assert.ok(opened.bottom <= tabbar.y + 1, `Ouvert: the field sits above the tabs (${opened.bottom} <= ${tabbar.y})`);
   await browser.screenshot('one-composer-390-light-ouvert-tabs.png');
+  // A tap on the other tab switches screens and leaves the conversation open (it used to fold the sheet instead).
+  const pieces = await browser.evaluate(`(() => { const e = [...document.querySelectorAll('[data-testid=tabbar] [role=tab]')].find(t => t.textContent.includes('Pièces')); const r = e.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+  await mouse('mousePressed', ...pieces); await mouse('mouseReleased', ...pieces);
+  await browser.until('tab pressed', `window.__route === 'pieces'`);
+  await wait(300);
+  assert.equal(await dockState(), 'half', 'a tab tap keeps Ouvert');
   await browser.evaluate(`window.__layer.open('agent', 'full')`);
   await browser.until('full', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'full'`);
   await wait(700);
@@ -625,5 +636,108 @@ test('390: the one field rests above the tabs; the chevron opens half with the t
   await click('[data-testid=agent-bar-conversation]');
   await browser.until('back to rest', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'peek'`);
   await oneField('phone at rest again');
+});
+
+// A software keyboard, as a phone reports it: the visual viewport shrinks from the bottom (`?kb=1` installs the stand-in before the page runs).
+const KEYBOARD = `if (location.search.includes('kb=1')) { const real = window.visualViewport; const fake = new EventTarget(); let inset = 0;
+  for (const key of ['width', 'offsetLeft', 'pageLeft', 'pageTop']) Object.defineProperty(fake, key, { get: () => real[key] });
+  Object.defineProperty(fake, 'height', { get: () => window.innerHeight - inset }); Object.defineProperty(fake, 'offsetTop', { get: () => 0 }); Object.defineProperty(fake, 'scale', { get: () => 1 });
+  Object.defineProperty(window, 'visualViewport', { configurable: true, get: () => fake });
+  window.__keyboard = px => { inset = px; fake.dispatchEvent(new Event('resize')); window.dispatchEvent(new Event('resize')); }; }`;
+
+test('390: with the keyboard up the tabs hide, the box sits on the keyboard and the text keeps at least 140 px; the tabs keep the home-bar inset under them (AC-20)', { skip, timeout: 120000 }, async () => {
+  const { identifier } = await browser.send('Page.addScriptToEvaluateOnNewDocument', { source: KEYBOARD });
+  try {
+    await open(390, 'tabs=1&kb=1');
+    assert.match(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=tabbar]')).getPropertyValue('padding-bottom') + '|' + [...document.styleSheets].flatMap(s => { try { return [...s.cssRules].map(r => r.cssText); } catch { return []; } }).filter(t => t.includes('--app-shell-safe-bottom')).join(' ')`), /safe-area-inset-bottom/, 'the tab bar pads the home-bar inset (env(safe-area-inset-bottom)) under its tabs');
+    await browser.evaluate(`document.querySelector('[data-testid=composer-input]').focus()`);
+    await browser.evaluate('window.__keyboard(320)');
+    await wait(800);
+    const kbTop = 844 - 320;
+    const shown = await browser.evaluate(`(() => { const t = document.querySelector('[data-testid=tabbar]').getBoundingClientRect(); const f = document.querySelector('[data-testid=composer]').getBoundingClientRect(); const i = document.querySelector('[data-testid=composer-input]').getBoundingClientRect(); return { tabsTop: t.top, tabsBottom: t.bottom, fieldBottom: f.bottom, input: i.width, state: document.querySelector('[data-testid=agent-layer]')?.dataset.state }; })()`);
+    await browser.screenshot('one-composer-390-light-keyboard.png');
+    assert.ok(shown.tabsTop >= kbTop - 1, `the tabs are under the keyboard, out of sight (${shown.tabsTop} >= ${kbTop})`);
+    assert.ok(shown.fieldBottom <= kbTop + 1 && kbTop - shown.fieldBottom <= 24, `the box sits on the keyboard (${shown.fieldBottom} vs ${kbTop})`);
+    assert.ok(shown.input >= 140, `the text keeps at least 140 px (${shown.input})`);
+  } finally { await browser.send('Page.removeScriptToEvaluateOnNewDocument', { identifier }); }
+});
+
+test('AC-21: the shell\'s words are French defaults the app overrides; 44 px targets on touch; a visible focus; tokens in light and dark', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'words=1');
+  assert.equal(await actionName(), 'Parler', 'the app\'s word for Dicter');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]').getAttribute('aria-label')`), 'Le fil', 'the app\'s word for the chevron');
+  // Focus by keyboard: the box draws a visible ring.
+  const ring = () => browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=agent-composer-box]')).boxShadow`);
+  const resting = await ring();
+  await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]').focus()`);
+  await browser.press('Tab'); await browser.press('Tab');
+  assert.equal(await browser.evaluate(`document.activeElement?.dataset.testid`), 'composer-input', 'Tab reaches the field');
+  assert.notEqual(await ring(), resting, `focus shows on the box (${resting} → ${await ring()})`);
+  // Tokens: the box follows the theme in dark (no fixed colour).
+  const colours = () => browser.evaluate(`[document.querySelector('[data-testid=agent-composer-box]'), document.querySelector('[data-testid=composer-input]')].map(e => getComputedStyle(e).backgroundColor + ' ' + getComputedStyle(e).color).join('|')`);
+  const light = await colours();
+  await open(1280, 'dark=1');
+  assert.notEqual(await colours(), light, 'dark has its own colours');
+  // Touch: every control of the phone's row and the drawer's header is at least 44 px.
+  await open(390, 'tabs=1');
+  await browser.evaluate(`window.__layer.open('agent', 'half')`);
+  await wait(700);
+  const small = await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer-sheet] button')].filter(e => e.getClientRects().length > 0 && !e.closest('[data-testid=transcript]')).map(e => { const r = e.getBoundingClientRect(); return [e.dataset.testid || e.getAttribute('aria-label'), Math.round(r.width), Math.round(r.height)]; }).filter(([, w, h]) => w < 44 || h < 44)`);
+  assert.deepEqual(small, [], 'no control under 44 px on touch');
+});
+
+test('1280: « Discuter » on a task puts it as a mention chip in the one field and the message goes to the app\'s assistant; no second field (AC-22)', { skip, timeout: 120000 }, async () => {
+  await open(1280);
+  assert.equal(await browser.evaluate(`window.__layer.talkAbout('@task:D-2219')`), true);
+  await browser.until('task chip', `[...document.querySelectorAll('[data-testid=composer] [data-testid=mention-chip]')].some(e => e.dataset.path === 'task:D-2219')`);
+  await oneField('talkAbout');
+  assert.equal(await text('[data-testid=composer] [data-testid=mention-chip]'), 'D-2219', 'the chip names the task');
+  assert.ok(!(await browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`)).includes('@task:'), 'no raw token in the field (no target in the field, D6)');
+  await type('Relance-la');
+  await click('[data-testid=composer-submit]');
+  await browser.until('sent', `window.__sent.length === 1`);
+  assert.ok((await browser.evaluate('window.__sent[0]')).includes('@task:D-2219'), `the message, with the task, goes to the one assistant (${await browser.evaluate('JSON.stringify(window.__sent)')})`);
+  await browser.until('reply in the same thread', `!!document.querySelector('[data-testid=agent-tray]') && document.querySelector('[data-testid=agent-tray]').textContent.includes('Réponse fictive : noté.')`);
+  await oneField('after the reply');
+  assert.equal(await count('[data-testid=composer]'), 1, 'one composer, one conversation');
+});
+
+test('1440: the geometry: the field at most 720 px at the bottom centre, the page ends above it, the sidebar never moves; Ouvert ~30 %, Agrandir ~70 %; Ancré a ~380 px full-height column (AC-15, AC-16, AC-17)', { skip, timeout: 120000 }, async () => {
+  await open(1440);
+  const H = 800;
+  const sidebar = async () => browser.evaluate(`(() => { const e = document.querySelector('[data-slot=sidebar-container]') ?? document.querySelector('[data-slot=sidebar]'); if (!e) return null; const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)]; })()`);
+  const rail = await sidebar();
+  assert.ok(rail, 'the fixture has a sidebar to watch');
+  // AC-15, at rest.
+  const box = await rect('[data-testid=agent-composer-box]'), main = await rect('[data-boring=dock-main]'), page = await rect('[data-testid=agent-page]');
+  assert.ok(Math.abs(box.w - 720) <= 1, `the field's box is 720 px wide on a wide column (${box.w})`);
+  assert.ok(Math.abs((box.x + box.w / 2) - (main.x + main.w / 2)) <= 2, 'centred in the content column');
+  assert.ok(main.bottom - box.bottom >= 0 && main.bottom - box.bottom < 24, `at the bottom (${main.bottom - box.bottom}px)`);
+  assert.ok(page.bottom <= box.y + 1, `the page's scroll ends above the composer stack (${page.bottom} <= ${box.y})`);
+  // AC-16: Ouvert, one box at the field's width; the thread about 30 % of the height, Agrandir 70 %; the page shrinks above it.
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('Ouvert', `!!document.querySelector('[data-testid=agent-tray]')`);
+  await wait(200);
+  let tray = await rect('[data-testid=agent-tray]'), openBox = await rect('[data-testid=agent-composer-box]'), openPage = await rect('[data-testid=agent-page]');
+  assert.ok(Math.abs(tray.h - 0.3 * H) <= 0.03 * H, `Ouvert: the thread takes ~30 % (${tray.h}px of ${H})`);
+  assert.ok(Math.abs(openBox.w - 720) <= 1 && Math.abs(openBox.x - box.x) <= 1, 'the open box keeps the field\'s width and place');
+  assert.ok(openPage.bottom <= openBox.y + 1 && openPage.h > 0, 'the page shrinks above the box, never under it');
+  assert.deepEqual(await sidebar(), rail, 'the sidebar did not move (Ouvert)');
+  await click('[data-testid=agent-tray-grow]');
+  await wait(200);
+  tray = await rect('[data-testid=agent-tray]'); openPage = await rect('[data-testid=agent-page]');
+  assert.ok(Math.abs(tray.h - 0.7 * H) <= 0.03 * H, `Agrandir: ~70 % (${tray.h}px of ${H})`);
+  assert.ok(openPage.h > 0 && openPage.bottom <= (await rect('[data-testid=agent-composer-box]')).y + 1, 'the page still shows above, never covered');
+  await browser.screenshot('one-composer-1440-light-agrandir.png');
+  // AC-17: Ancré, a full-height right column of about 380 px with the thread and the field; nothing at the bottom.
+  await click('[data-testid=agent-tray-dock]');
+  await browser.until('Ancré', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  await wait(300);
+  const column = await rect('[data-testid=agent-layer]');
+  assert.ok(Math.abs(column.w - 380) <= 20, `the docked column is ~380 px (${column.w})`);
+  assert.ok(column.h >= H - 2 && column.right >= 1440 - 1, `full height, at the right edge (${JSON.stringify(column)})`);
+  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-boring=dock-main] [data-testid=agent-composer-box]')].filter(e => e.getClientRects().length > 0).length`), 0, 'nothing stays at the bottom, not even an empty frame');
+  assert.deepEqual(await sidebar(), rail, 'the sidebar did not move (Ancré)');
+  await browser.screenshot('one-composer-1440-light-ancre.png');
 });
 
