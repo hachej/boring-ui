@@ -107,8 +107,8 @@ test('bundled compact primitives: rendered defaults, states, keyboard behavior a
         check(touch.wrappers.every((h, i) => h === touch.native[i]), `${width}-${mode} NativeSelect wrapper follows the select: ${JSON.stringify(touch)}`);
         check([touch.input, touch.button, touch.select].every(h => h === 44) && touch.native[0] === 44, `${width}-${mode} Select, Input, Button and NativeSelect in a row are equal at 44px: ${JSON.stringify(touch)}`);
       }
-      check(result.ordinaryFields.length === 4 && result.ordinaryFields.every(n => n.fontSize === '12px'), `${label} ordinary FieldLabel/FieldTitle/description/error must be 12px: ${JSON.stringify(result.ordinaryFields)}`);
-      for (const key of ['cardCopy', 'emptyCopy', 'button', 'select', 'tab', 'row']) check(result[key].fontSize === '12px', `${label} ${key}: expected 12px, got ${result[key].fontSize}`);
+      check(result.ordinaryFields.length === 4 && result.ordinaryFields.every(n => n.fontSize === '13px'), `${label} ordinary FieldLabel/FieldTitle/description/error must be 13px: ${JSON.stringify(result.ordinaryFields)}`);
+      for (const key of ['cardCopy', 'emptyCopy', 'button', 'select', 'tab', 'row']) check(result[key].fontSize === '13px', `${label} ${key}: expected 13px, got ${result[key].fontSize}`);
       for (const key of ['cardTitle', 'emptyTitle']) check(result[key].fontSize === '14px', `${label} ${key}: expected 14px, got ${result[key].fontSize}`);
       check(result.card.shadow === 'none' && result.card.border === '0px', `${label} Card must be flat`);
       check(result.card.radius === '8px', `${label} Card radius`);
@@ -120,7 +120,7 @@ test('bundled compact primitives: rendered defaults, states, keyboard behavior a
       check(Number(result.disabled.opacity) <= 0.5, `${label} disabled opacity`);
       check(result.cell.color === result.body.color, `${label} settled table foreground inherits body`);
       check(result.outline.background === (mode === 'dark' ? vars.dark.card : vars.light.card), `${label} outline uses card, not primary fill`);
-      for (const [name, value] of Object.entries(result.chatBody)) check(value.fontSize === (name.includes('textarea') ? (width === 390 ? '16px' : '14px') : '12px'), `${label} ${name} chat body font ${value.fontSize}`);
+      for (const [name, value] of Object.entries(result.chatBody)) check(value.fontSize === (name.includes('textarea') ? (width === 390 ? '16px' : '14px') : '13px'), `${label} ${name} chat body font ${value.fontSize}`);
       for (const value of result.neutralContrast) check(value.ratio >= 4.5, `${label} muted-foreground/${value.surface} contrast ${value.ratio} below 4.5:1`);
       check(result.destructiveButtonContrast >= 4.5, `${label} enabled destructive Button contrast ${result.destructiveButtonContrast} below 4.5:1`);
       for (const value of result.statusContrast) for (const key of ['badge', 'description']) check(value[key] >= 4.5, `${label} ${value.status} ${key} contrast ${value[key]} below 4.5:1`);
@@ -153,7 +153,7 @@ test('bundled compact primitives: rendered defaults, states, keyboard behavior a
       await click('[data-testid="role-menu"]');
       await browser.until('all ordinary menu roles mounted', `!!document.querySelector('[data-slot=dropdown-menu-radio-item]')`);
       result.ordinaryMenu = await browser.evaluate(`[...document.querySelectorAll('[data-slot=dropdown-menu-item],[data-slot=dropdown-menu-checkbox-item],[data-slot=dropdown-menu-radio-item],[data-slot=dropdown-menu-sub-trigger]')].map(n=>({slot:n.dataset.slot,fontSize:getComputedStyle(n).fontSize}))`);
-      check(result.ordinaryMenu.length === 4 && result.ordinaryMenu.every(n => n.fontSize === '12px'), `${label} item/checkbox/radio/submenu must be 12px: ${JSON.stringify(result.ordinaryMenu)}`);
+      check(result.ordinaryMenu.length === 4 && result.ordinaryMenu.every(n => n.fontSize === '13px'), `${label} item/checkbox/radio/submenu must be 13px: ${JSON.stringify(result.ordinaryMenu)}`);
       await browser.screenshot(`ordinary-menu-${label}.png`);
       await browser.press('Escape');
       await click('[data-slot="tabs-trigger"]');
