@@ -313,6 +313,26 @@ test('shots: Ambiant, Ouvert, Ancré, collapsed working, collapsed reply and pre
     await browser.evaluate(`window.__run('reply')`);
     await browser.until('reply card', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply'`);
     await browser.screenshot(`one-composer-1280-${name}-collapsed-reply.png`);
+    // The composer's own states, for the expected-vs-delivered proof (AC-24): typing on several lines, a file, « / », a question.
+    await open(1280, query);
+    await type('Prépare la relance du dossier Cèdre :');
+    for (const line of ['– les deux relevés de février', '– la facture du loyer', '– le contrat d’assurance']) { await browser.press('Enter', { shift: true }); await browser.send('Input.insertText', { text: line }); }
+    await wait(150);
+    await browser.screenshot(`one-composer-1280-${name}-typing.png`);
+    await open(1280, query);
+    await browser.evaluate(`(() => { const data = new DataTransfer(); data.items.add(new File(['x'], 'releve-fevrier.pdf', { type: 'application/pdf' })); document.querySelector('[data-testid=composer]').dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true })); })()`);
+    await browser.until('file chip', `!!document.querySelector('[data-testid=composer] [data-testid=attachment], [data-testid=composer] [data-testid=mention-chip], [data-testid=composer] [data-testid=upload-chip]')`, 10000).catch(() => {});
+    await type('Rapproche-le');
+    await wait(150);
+    await browser.screenshot(`one-composer-1280-${name}-files.png`);
+    await open(1280, query);
+    await type('/rel');
+    await browser.until('slash list', `!!document.querySelector('[data-testid=slash-item]')`);
+    await browser.screenshot(`one-composer-1280-${name}-slash.png`);
+    await open(1280, query);
+    await browser.evaluate(`window.__run('form')`);
+    await browser.until('question card', `!!document.querySelector('[data-testid=agent-card] [data-testid=agent-question]')`);
+    await browser.screenshot(`one-composer-1280-${name}-question.png`);
     // A phone has the drawer: peek is Ambiant, half Ouvert, full Ancré; the preview covers the screen.
     await open(390, query);
     await browser.evaluate(`window.__layer.open('agent', 'peek')`);
