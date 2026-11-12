@@ -68,7 +68,7 @@ async function flowGuard(n, prevResult) {
 function score(n, v, p, commit, note = '') {
   const cells = KEYS.map(k => v?.grades?.[k] ?? '-'), nums = cells.filter(x => typeof x === 'number');
   const up = v && p ? KEYS.filter(k => v.grades[k] > (p.grades[k] ?? 0)).join(', ') || 'none' : '-', down = v && p ? KEYS.filter(k => v.grades[k] < (p.grades[k] ?? 0)).join(', ') || 'none' : '-';
-  const file = join(HOME, 'scoreboard.md'); mkdirSync(HOME, { recursive: true });
+  const file = join(HOME, DRY ? 'scoreboard.dry.md' : 'scoreboard.md'); mkdirSync(HOME, { recursive: true });
   if (!existsSync(file)) writeFileSync(file, `| round | ${KEYS.join(' | ')} | lowest | improved | worse | commit |\n|${'---|'.repeat(KEYS.length + 5)}\n`);
   appendFileSync(file, `| ${n} | ${cells.join(' | ')} | ${nums.length ? Math.min(...nums) : '-'} | ${up} | ${down} | ${commit}${note ? ' ' + note : ''} |\n`);
 }
