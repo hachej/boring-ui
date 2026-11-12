@@ -2437,6 +2437,36 @@
           "target": "components/app-shell/agent-layer.tsx"
         },
         {
+          "path": "registry/app-shell/layer-context.ts",
+          "type": "registry:lib",
+          "target": "components/app-shell/layer-context.ts"
+        },
+        {
+          "path": "registry/app-shell/agent-trigger.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-trigger.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-bar-parts.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-bar-parts.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-chats.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-chats.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-compact.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-compact.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-placements.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-placements.tsx"
+        },
+        {
           "path": "registry/app-shell/agent-context.ts",
           "type": "registry:lib",
           "target": "components/app-shell/agent-context.ts"

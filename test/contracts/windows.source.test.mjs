@@ -19,7 +19,7 @@ test('windows ships its component and shared hook, depends only on utils and sha
   const utils = JSON.parse(readFileSync(resolve(root, 'public/r/utils.json'), 'utf8'));
   assert.equal(utils.files.find(entry => entry.path === files[1])?.content, readFileSync(resolve(root, files[1]), 'utf8'));
   assert.ok(manifest.items.find(entry => entry.name === 'app-shell').registryDependencies.includes('@boring-ui/utils'));
-  const shell = readFileSync(resolve(root, 'registry/app-shell/agent-layer.tsx'), 'utf8');
+  const shell = readFileSync(resolve(root, 'registry/app-shell/agent-placements.tsx'), 'utf8');
   assert.match(shell, /import \{ useDraggable \} from '\.\.\/utils\/use-draggable'/);
   assert.doesNotMatch(shell.slice(shell.indexOf('function DockPanel')), /setPointerCapture|dx:|dy:/);
 });

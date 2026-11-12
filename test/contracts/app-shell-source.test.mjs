@@ -559,7 +559,7 @@ test('agent-target registry source is listed and equals the shipped item', () =>
 });
 
 test('the shell gives an agent with feedback the card of a sent report, and a host may replace it', () => {
-  const layer = readFileSync(`${root}registry/app-shell/agent-layer.tsx`, 'utf8');
+  const layer = readFileSync(`${root}registry/app-shell/agent-chats.tsx`, 'utf8');
   assert.match(layer, /spec\.feedback && !spec\.chatProps\?\.sentContent \? \{ sentContent: sentFeedbackContent \}/);
 });
 
