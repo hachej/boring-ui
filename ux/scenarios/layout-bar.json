@@ -554,29 +554,48 @@
      "motion": true,
      "until": "visible:agent-tray|agent-layer[data-state=half]"
     },
-    {
-     "do": "tap",
-     "target": "history-open",
-     "say": "Look for « Historique » in the header",
-     "gap": "PiChat's History button (history-open) is not in the bar layout: no list of earlier conversations, no « New conversation », no way back to an earlier one.",
-     "until": "visible:history-open",
-     "expect": "A list of earlier conversations opens, the current one marked, with New."
-    },
-    {
-     "do": "focus",
-     "target": "composer-input",
-     "say": "Closest thing: click in the field",
-     "only": "1440"
-    },
-    {
-     "do": "press",
-     "key": "Escape Escape",
-     "say": "Closest thing: Escape twice lists my own messages",
-     "only": "1440",
-     "motion": true,
-     "until": "visible:rewind-list",
-     "expect": "The person's earlier messages are listed above the field."
-    }
+    { "do": "tap", "target": "history-open", "say": "Tap « Historique » in the conversation's header", "motion": true, "until": "visible:conversations & visible:conversation-row[data-active=true]", "expect": "The earlier conversations are listed, the open one marked, with « Nouvelle »." },
+    { "do": "tap", "target": "conversation-row[data-conversation-id=tva]", "say": "Open « TVA du trimestre »", "motion": true, "until": "gone:conversations & text:transcript~4 120,00", "expect": "The list closes and the conversation shows that earlier exchange." },
+    { "do": "tap", "target": "history-open", "say": "Open the list again", "until": "visible:conversation-row[data-conversation-id=tva][data-active=true]", "expect": "« TVA du trimestre » is now the one marked." },
+    { "do": "tap", "target": "conversation-new", "say": "Tap « Nouvelle »", "motion": true, "until": "gone:conversations & eval:!(document.querySelector('[data-testid=transcript]')?.textContent ?? '').includes('4 120,00')", "expect": "An empty conversation starts; the field is still the one at the bottom." },
+    { "do": "tap", "target": "history-open", "say": "Open the list once more", "until": "visible:conversation-row[data-conversation-id=tva] & count:conversation-row>=7", "expect": "The new conversation is listed and the earlier one is still there." },
+    { "do": "press", "key": "Escape", "say": "Press Échap", "until": "gone:conversations", "focus": "history-open", "expect": "The list closes and focus is back on « Historique »." }
+   ]
+  },
+  {
+   "id": "F16",
+   "name": "A file from a reply, closed with Échap",
+   "steps": [
+    { "do": "type", "target": "composer-input", "text": "Rapproche le relevé de janvier", "say": "Ask the assistant to reconcile January" },
+    { "do": "tap", "target": "composer-submit", "say": "Send", "until": "visible:agent-card-file", "timeout": 14000, "expect": "The reply cites a file." },
+    { "do": "tap", "target": "agent-card-file", "say": "Open the cited file", "motion": true, "until": "visible:fixture-preview", "focus": "agent-preview-close", "expect": "The file opens and focus moves into it." },
+    { "do": "press", "key": "Escape", "say": "Press Échap", "motion": true, "until": "gone:fixture-preview", "focus": { "390": "agent-card-file", "1440": "composer-input" }, "expect": "The file closes and focus is back on the chip that opened it, or in the field when the chip has gone (the conversation opened)." }
+   ]
+  },
+  {
+   "id": "F17",
+   "name": "The library from the bar, a wider preview kept",
+   "only": "1440",
+   "steps": [
+    { "do": "tap", "target": "agent-bar-conversation", "say": "Open the conversation", "until": "visible:agent-tray" },
+    { "do": "tap", "target": "agent-layer-library", "say": "Tap « Bibliothèque »", "motion": true, "until": "visible:fixture-library & eval:(window.__pw = document.querySelector('[data-dock=preview]')?.getBoundingClientRect().width ?? 0) > 0", "expect": "The library opens in the right column." },
+    { "do": "focus", "target": "[role=separator]:has(+ [data-dock=preview])", "say": "Focus the column's edge" },
+    { "do": "press", "key": "ArrowLeft ArrowLeft ArrowLeft ArrowLeft", "say": "Widen it with the arrow keys", "until": "eval:(window.__pw2 = document.querySelector('[data-dock=preview]').getBoundingClientRect().width) > window.__pw + 40", "expect": "The column grows; the page beside it narrows." },
+    { "do": "tap", "text": "uploads", "say": "Unfold « uploads »", "until": "text:fixture-library~ecarts-janvier.csv" },
+    { "do": "tap", "text": "ecarts-janvier.csv", "say": "Open « ecarts-janvier.csv »", "motion": true, "until": "visible:fixture-preview & text:agent-preview-title~ecarts-janvier.csv", "expect": "The file takes the library's place, at the same width." },
+    { "do": "tap", "target": "agent-preview-close", "say": "Close it", "until": "gone:agent-preview" },
+    { "do": "tap", "target": "agent-layer-library", "say": "Open the library again", "until": "visible:fixture-library & eval:Math.abs(document.querySelector('[data-dock=preview]').getBoundingClientRect().width - window.__pw2) < 2", "expect": "The column comes back at the width I chose." }
+   ]
+  },
+  {
+   "id": "F18",
+   "name": "History in the docked column",
+   "only": "1440",
+   "steps": [
+    { "do": "tap", "target": "agent-bar-conversation", "say": "Open the conversation", "until": "visible:agent-tray" },
+    { "do": "tap", "target": "agent-tray-dock", "say": "Dock it to the right", "motion": true, "until": "visible:agent-layer[data-state=open]" },
+    { "do": "tap", "target": "history-open", "say": "Tap « Historique »", "motion": true, "until": "visible:conversations", "expect": "The list opens in the column, under its header." },
+    { "do": "tap", "target": "conversation-row[data-conversation-id=relance]", "say": "Open « Relances clients de décembre »", "until": "gone:conversations & text:transcript~Trois relances", "expect": "The docked column shows that conversation." }
    ]
   },
   {

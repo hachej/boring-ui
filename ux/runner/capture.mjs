@@ -58,7 +58,7 @@ export async function step(h, s, def, ctx) {
   while (Date.now() - from < settleMax) { if (await page.evaluate(QUIET)) break; await sleep(50); }
   const timing = await page.evaluate(TIMING), after = await page.evaluate(snap(watch));
   const moved = (a, b) => a && b ? { dx: Math.abs(a.x - b.x), dy: Math.abs(a.y - b.y), dh: Math.abs(a.h - b.h) } : null;
-  Object.assign(rec, { firstChangeMs: timing.first, settledMs: timing.settled, cls: timing.cls, repeats: h.repeats, target: h.target, focusAfter: after.focus, expectFocus: def.focus ?? null,
+  Object.assign(rec, { firstChangeMs: timing.first, settledMs: timing.settled, cls: timing.cls, repeats: h.repeats, target: h.target, focusAfter: after.focus, expectFocus: pick(def.focus, h.viewport) ?? null,
     moved: Object.fromEntries(watch.map(([name]) => [name, moved(before.watched[name], after.watched[name])])), scrollBefore: before.scroll, scrollAfter: after.scroll,
     offscreen: after.offscreen, overlaps: after.overlaps, truncated: after.truncated, horizontalScroll: after.horizontalScroll, keepScroll: def.keepScroll ?? null });
   if (ctx.shot) rec.frame = await ctx.shot(`${rec.say}${rec.ok ? '' : def.gap ? ' (NOT IN THE KIT)' : ' (FAILED)'}`, timing.settled, `first change ${timing.first ?? '-'} ms · settled ${timing.settled ?? '-'} ms · layout shift ${timing.cls}`);
