@@ -1,6 +1,7 @@
 {
  "target": "component:conversation-list",
  "title": "The conversation list",
+ "summary": "The list of past conversations: a card on a wide screen, a bottom drawer on a phone, with New, search and an Archived filter.",
  "purpose": "The kit's list of past conversations (ConversationHistory of pi-chat, which wraps ConversationList): a card on a wide screen, a bottom drawer on a phone, with New, search, the Archived filter and row actions (rename, archive, delete), fed by the `conversations` config of invented items on a neutral page. The History button around it is the consumer's own.",
  "fixture": {
   "entry": "ux/fixtures/component-conversation-list.jsx",

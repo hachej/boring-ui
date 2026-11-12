@@ -1,6 +1,7 @@
 {
  "target": "component:reply-card",
  "title": "The reply and question card",
+ "summary": "What shows a reply or a question: one-tap choices, a short form and a reply\u0027s file chip.",
  "purpose": "What shows a reply or a question, alone on a neutral page. The folded reply card of the bar layout (FoldedCard in registry/app-shell/agent-layer.tsx) is INTERNAL and not exported, so it is not rendered here: this mounts the closest exported things, PiChat's message list (a reply with its file chip) with the question card (pi-chat-question QuestionCard, one question and a form) and the stand-alone InlineQuestion. The composer is hidden (renderComposer) so the card is alone.",
  "fixture": {
   "entry": "ux/fixtures/component-reply-card.jsx",

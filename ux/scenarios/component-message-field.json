@@ -1,6 +1,7 @@
 {
  "target": "component:message-field",
  "title": "The message field",
+ "summary": "The message field: text, attachments, the slash list and dictation in one pill.",
  "purpose": "The kit's message field alone: the Composer inside PiChat (composerLayout 'pill', attach button, file chips, slash list, tap-to-record microphone) on a neutral page over a fake controller. The thread above it only shows what was sent. It is the field the bar layout is made of; read-only is the host's own note passed as renderComposer, as AppShell does.",
  "fixture": {
   "entry": "ux/fixtures/component-message-field.jsx",
