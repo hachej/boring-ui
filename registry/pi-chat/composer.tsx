@@ -131,6 +131,8 @@ export interface ComposerProps {
   // Both or neither: the laid-out recording needs the status and the stop; one alone is ignored (a `recording` row still shows).
   /** The stop control, in the microphone's place: the trailing slot where `whenEmpty` or `barEnd` sit when idle. */
   readonly recordingStop?: ReactNode;
+  /** With the laid-out recording and the `pill` layout: keep the message field mounted (inert, out of sight) beside the status: one field in every state. */
+  readonly keepFieldWhileRecording?: boolean;
   /** The optional Feedback button and chip. */
   readonly feedback?: ComposerFeedback | undefined;
 }
@@ -422,7 +424,7 @@ export function Composer(props: ComposerProps) {
       <InputGroupAddon>{startAndPlus}</InputGroupAddon>
       <div data-slot="composer-recording" data-testid="composer-recording" className="flex min-w-0 flex-1 items-center gap-2 self-stretch">{props.recordingStatus}
         {/* One field in every state: the message field stays in the DOM while the microphone is open (out of sight and out of reach); the status above is what shows in its place. */}
-        <div inert aria-hidden="true" className="sr-only">{input}</div></div>
+        {props.keepFieldWhileRecording && <div inert aria-hidden="true" className="sr-only">{input}</div>}</div>
       <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>
     </InputGroup> : <InputGroup>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}

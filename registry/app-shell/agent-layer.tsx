@@ -928,7 +928,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
     // While the agent's question waits, the field says so; a typed message answers it (PiChat's own rule).
     ...(barChat.question ? { labels: { ...chatWordLabels(spec.words), ...spec.chatProps?.labels, placeholder: words.answerHere } } : {}),
     ...(spec.voice ? { composerWhenEmpty: <BarMicButton mic={mic} label={words.dictate} />,
-      ...(capturing ? { composerRecordingSlots: { status: <BarMicStatus mic={mic} />, stop: <BarMicButton mic={mic} label={words.dictate} /> } } : {}) } : {}),
+      ...(capturing ? { composerRecordingSlots: { status: <BarMicStatus mic={mic} />, stop: <BarMicButton mic={mic} label={words.dictate} />, keepField: true } } : {}) } : {}),
   } : {};
   // The app's words for the chat (`agent.words`) under the labels it passes itself; the question's placeholder above keeps its own.
   const wordLabels = role === 'agent' && !barChat.question ? chatWordLabels(spec.words) : {};
