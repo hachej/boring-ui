@@ -3,6 +3,7 @@
 // The agent layer's shared state and words: the public types, the internal context every part reads (`useInternal`), the shell's constants.
 import { createContext, useContext } from 'react';
 import type { ComponentType, ReactNode } from 'react';
+import type { PresentedArtifact } from '../pi-artifacts/artifact';
 import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatVoiceHandle as Voice } from '@hachej/boring-ui-kit/chat-react/voice';
@@ -32,10 +33,18 @@ export interface AgentSpec {
   /**
    * `composer="bar"` (D-2198): the app's library, the same shape as the workspace bar's `library`: the app renders its file navigator (for example
    * the kit's `FileTreeView`) and calls `onPicked` once a file is chosen. « Bibliothèque » in the assistant's header and in a preview's header opens it
-   * in the right pane, by the preview's rules (over the docked conversation, or the right column); the file the app then opens with
-   * `useAgentLayer().preview` takes its place.
+   * in the right pane, by the pane's rules (over the docked conversation, or the right column). A file the app then opens with `useAgentLayer().pane`
+   * goes on top of it (« ← Bibliothèque »). `onPicked({ path, files })` lets the kit open the file in its own viewer (`files`) with the list it was
+   * picked from (previous and next step through it); `onPicked()` alone closes the library when nothing was opened.
    */
-  readonly library?: ((onPicked: () => void) => ReactNode) | undefined;
+  readonly library?: ((onPicked: (file?: { readonly path: string; readonly files?: readonly string[] | undefined }) => void) => ReactNode) | undefined;
+  /**
+   * `composer: 'bar'`: how the kit reads a file the app names (attached to a message, cited in a reply, in the library, on a page) to show it in the
+   * pane in its own viewer (`LocalFileViewer`: an image with zoom, a PDF by page, a CSV as a table, Markdown, text and code, a video). With it, a file
+   * chip, a library pick and the agent's `present` open there; `chatProps.onOpenFile` and `pane.push({ title, content })` stay the app's override.
+   * Resolve `{ blob, revision }` to let the pane acknowledge a `present` of that revision once its viewer shows it.
+   */
+  readonly files?: { readonly read: (path: string) => Promise<Blob | { readonly blob: Blob; readonly revision: string }> } | undefined;
   /** `composer: 'bar'` (AC-13): the person may only read (a role without writing, an assistant switched off). The box stays in place with this
    * one line, the reason, instead of the field; nothing in it can be focused. Absent: the field as usual. */
   readonly readOnly?: string | undefined;
@@ -87,7 +96,36 @@ export interface AgentLayerApi {
    * False (nothing shown) without `composer: 'bar'` or an agent.
    */
   readonly preview: (preview: AgentPreview | null) => boolean;
+  /** `composer: 'bar'`: the right pane's back stack (`preview` is `pane.push`, `preview(null)` is `pane.close()`). */
+  readonly pane: AgentPane;
 }
+
+/** What `useAgentLayer().pane.push` shows: the app's own view under its title, or a file the kit opens in its viewer (`AgentSpec.files`). */
+export type PaneItem = AgentPreview | {
+  readonly file: string;
+  /** The back control's word for it (default: the file's name). */
+  readonly title?: string | undefined;
+  /** The set it was opened from (the files of one reply, a folder, a detail's attachments): previous and next step through it, « 2 / 5 ». */
+  readonly files?: readonly string[] | undefined;
+};
+
+/** The right pane: one place with a back stack, whatever put content there (the app's detail views, a file, the library, the agent's `present`). */
+export interface AgentPane {
+  /** Shows `item` on top (opening the pane); its back control returns to what was under it, as it was. False when it cannot be shown. */
+  push(item: PaneItem): boolean;
+  /** One step back: the entry under the top, or the pane closes. */
+  back(): void;
+  /** Closes the pane, whatever it holds. */
+  close(): void;
+  /** How many entries the pane holds (0: closed). */
+  readonly depth: number;
+}
+
+/** One entry of the pane's stack: what it shows, its title (the back control of the entry above says it) and the control that opened it (focus returns there). */
+export type PaneEntry = { readonly id: number; readonly title: string; readonly opener: HTMLElement | null } & (
+  | { readonly kind: 'view'; readonly content: ReactNode }
+  | { readonly kind: 'library'; readonly content: ReactNode }
+  | { readonly kind: 'file'; readonly path: string; readonly files: readonly string[]; readonly revision?: string | undefined });
 
 /** What `useAgentLayer().preview` shows: the app's own view of the file, under its title. */
 export interface AgentPreview {
@@ -187,12 +225,25 @@ export interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly setPhoneCard: (element: HTMLElement | null) => void;
   readonly cardPx: number;
   readonly setCardPx: (px: number) => void;
-  /** The file preview on show (`AgentLayerApi.preview`), if any. */
-  readonly shownPreview: AgentPreview | null;
-  /** The preview sits on top of the docked conversation in the same column (« ← Assistant »), not in a column of its own. */
-  readonly previewStacked: boolean;
+  /** The right pane's entries, the top one last (`AgentLayerApi.pane`). */
+  readonly stack: readonly PaneEntry[];
+  /** The pane sits on top of the docked conversation in the same column (« ← Assistant »), not in a column of its own. */
+  readonly paneStacked: boolean;
   /** Opens `agent.library` in the right pane (undefined without one). */
   readonly openLibrary: (() => void) | undefined;
+  /** Opens a file the person chose in the chat (a chip, a mention) in the pane, with the set it belongs to; undefined when the kit cannot read files. */
+  readonly openFile: ((path: string, files?: readonly string[]) => void) | undefined;
+  /** The pane's previous or next file of the set the top entry was opened from. */
+  readonly step: (offset: -1 | 1) => void;
+  /** The chat's artifact cards and the agent's `present` route here (PiChat's `artifacts`), with the viewer's mount report for the acknowledgement. */
+  readonly presented: PanePresent | undefined;
+}
+
+/** The pane's side of the agent's `present` (useArtifactFollow): open a card's artifact, which card is on show, and the viewer's mount report. */
+export interface PanePresent {
+  readonly open: (artifact: PresentedArtifact) => void;
+  readonly isOpen: (artifact: PresentedArtifact) => boolean;
+  readonly shown: (shown: { readonly path: string; readonly revision: string; readonly hidden?: true }) => void;
 }
 
 export type DockSide = 'left' | 'right';
@@ -203,7 +254,7 @@ export type AgentMode = 'tray' | 'dock';
  * content, at the content's width, with the dock holding only the thread (one controller, one thread, the same chat as the phone's peek).
  * `bar` (D-2198), the one composer: the same field under the page, drawn as one row (the conversation's chevron, attach, the field and one
  * action button, Dicter, Envoyer or Arrêter; `/` opens the actions), the conversation's work or reply as a card on the field while it is folded,
- * and docked, the field goes with the thread to the right column (nothing stays at the bottom). `useAgentLayer().preview` fills that column.
+ * and docked, the field goes with the thread to the right column (nothing stays at the bottom). `useAgentLayer().pane` fills that column.
  * Below the wide breakpoint nothing changes: the peek drawer.
  */
 export type AgentComposer = 'dock' | 'content' | 'bar';

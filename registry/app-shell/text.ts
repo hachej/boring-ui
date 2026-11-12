@@ -64,6 +64,14 @@ export interface AppShellText {
   readonly library: string;
   /** The edge between the page and the preview column (`composer: 'bar'`): drag it, or use the arrow keys, to resize the column. */
   readonly resizePreview: string;
+  /** The pane's back control: « Retour à » and the title of what is under (the file goes back to « Écriture du 09/01 »). */
+  readonly backTo: string;
+  /** Previous and next through the files the pane's file was opened from (a reply's, a folder's, a detail's attachments). */
+  readonly previousFile: string;
+  readonly nextFile: string;
+  /** A file the kit opens in its viewer, while it is read, and when it cannot be read. */
+  readonly fileLoading: string;
+  readonly fileUnavailable: string;
 }
 
 const en: AppShellText = {
@@ -104,6 +112,11 @@ const en: AppShellText = {
   sendFailed: 'The message was not sent: it is back in the field. Try again.',
   library: 'Library',
   resizePreview: 'Resize the preview',
+  backTo: 'Back to',
+  previousFile: 'Previous file',
+  nextFile: 'Next file',
+  fileLoading: 'Opening…',
+  fileUnavailable: 'This file cannot be opened.',
 };
 
 const fr: AppShellText = {
@@ -144,6 +157,11 @@ const fr: AppShellText = {
   sendFailed: 'Le message n’est pas parti : il est revenu dans le champ. Réessayez.',
   library: 'Bibliothèque',
   resizePreview: 'Redimensionner l’aperçu',
+  backTo: 'Retour à',
+  previousFile: 'Fichier précédent',
+  nextFile: 'Fichier suivant',
+  fileLoading: 'Ouverture…',
+  fileUnavailable: 'Ce fichier ne peut pas être ouvert.',
 };
 
 const TEXT: Readonly<Record<AppShellLocale, AppShellText>> = { en, fr };

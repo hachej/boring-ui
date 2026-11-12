@@ -63,7 +63,13 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   useEffect(() => { if (unfolded) markRead(); }, [unfolded, markRead]);
   // Docked, the bar's field goes with the thread: nothing stays at the bottom.
   const hosted = role === 'agent' && layer.contentComposer && !(barred && layer.dockOpen);
-  const openFile = spec.chatProps?.onOpenFile ?? spec.chatProps?.mentions?.open;
+  // A file chip opens in the app's own way when it gives one (`onOpenFile`), else in the pane's viewer when the kit can read files (`agent.files`).
+  const ownOpen = spec.chatProps?.onOpenFile ?? spec.chatProps?.mentions?.open;
+  const kitOpen = role === 'agent' && !ownOpen ? layer.openFile : undefined;
+  const openFile = ownOpen ?? kitOpen;
+  // The agent's `present` and the chat's artifact cards open in the pane too, unless the app routes artifacts itself.
+  const presented = role === 'agent' && !spec.chatProps?.artifacts ? layer.presented : undefined;
+  const chatProps = kitOpen || presented ? { ...spec.chatProps, ...(kitOpen ? { onOpenFile: (path: string) => kitOpen(path) } : {}), ...(presented ? { artifacts: { open: presented.open, isOpen: presented.isOpen } } : {}) } : spec.chatProps;
   const mic = useBarMic();
   const capturing = layer.voice.phase === 'starting' || layer.voice.phase === 'recording';
   const readOnly = oneRow ? spec.readOnly : undefined;
@@ -84,7 +90,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
-    <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...barProps} {...(Object.keys(wordLabels).length > 0 ? { labels: { ...wordLabels, ...spec.chatProps?.labels } } : {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
+    <PiChat {...withChatPlugins(chatProps ?? {})} {...barProps} {...(Object.keys(wordLabels).length > 0 ? { labels: { ...wordLabels, ...spec.chatProps?.labels } } : {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
       {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: oneRow ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: capturing && !oneRow ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
     {barred && !readOnly && layer.folded && layer.cardSlot && createPortal(<><SendProblem controller={spec.controller} /><FoldedCard bar={barChat} onOpenFile={openFile} /></>, layer.cardSlot)}
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
@@ -124,14 +130,11 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
   const layer = useInternal();
   const back = layer.showing === 'improve' && layer.agent;
   const actions = layer.showing === 'improve' ? [] : layer.agent?.headerActions ?? [];
-  // A file stacked on the docked conversation takes the header: « ← <file> » goes back to the thread.
-  const file = layer.previewStacked && layer.showing === 'agent' && compactSnap === undefined ? layer.shownPreview : null;
   const library = layer.bar && layer.showing === 'agent' ? layer.openLibrary : undefined;
   return <div data-testid="agent-layer-header" {...rest} className={cn('flex shrink-0 items-center gap-1 px-2 pb-1', className)}>
     {back && <Button variant="ghost" size="icon" data-testid="agent-layer-back" aria-label={text.back} title={text.back} onClick={layer.showAgent}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
-    {file && <Button variant="ghost" size="icon" data-testid="agent-preview-back" aria-label={text.backToAssistant} title={text.backToAssistant} onClick={() => layer.preview(null)}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
-    <h2 data-testid={file ? 'agent-preview-title' : 'agent-layer-title'} className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{file ? file.title : title}</h2>
-    {!file && <HistoryButton />}
+    <h2 data-testid="agent-layer-title" className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{title}</h2>
+    <HistoryButton />
     <LibraryButton open={library} text={text} testId="agent-layer-library" />
     {actions.length > 0 && <HeaderActions actions={actions} compact={compactSnap !== undefined} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
     {compactSnap === 'half' && <Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button>}

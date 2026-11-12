@@ -158,7 +158,7 @@ export function SendProblem({ controller }: { readonly controller: NativeChatCon
   </>;
 }
 
-export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly onOpenFile: ((path: string) => void) | undefined }) {
+export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly onOpenFile: ((path: string, files: readonly string[]) => void) | undefined }) {
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const { question, status, reply } = bar;
@@ -182,7 +182,7 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
         {/* A tap on the reply opens the conversation, as the chevron does (the chevron stays the way for a keyboard). */}
         <p data-testid="agent-card-reply" onClick={() => layer.open('agent')} className="m-0 line-clamp-3 cursor-pointer whitespace-pre-line">{readable(reply.text)}</p>
         {(reply.files.length > 0 || action) && <div role="list" data-testid="agent-card-files" className="flex flex-wrap items-center gap-1.5">
-          {reply.files.map(path => <span role="listitem" key={path}><Button type="button" variant="outline" size="sm" data-testid="agent-card-file" data-path={path} disabled={!onOpenFile} onClick={() => onOpenFile?.(path)}>
+          {reply.files.map(path => <span role="listitem" key={path}><Button type="button" variant="outline" size="sm" data-testid="agent-card-file" data-path={path} disabled={!onOpenFile} onClick={() => onOpenFile?.(path, reply.files)}>
             <FileTextIcon data-icon="inline-start" aria-hidden="true" />{path.split('/').at(-1)}</Button></span>)}
           {action && <span role="listitem" className="ml-auto"><Button type="button" variant="ghost" size="sm" data-testid="agent-card-action" onClick={action.onSelect} className="pointer-coarse:min-h-11">{action.label}</Button></span>}
         </div>}

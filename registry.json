@@ -2363,7 +2363,12 @@
         "@boring-ui/utils",
         "@boring-ui/button",
         "@boring-ui/_shared",
-        "@boring-ui/agent-bar"
+        "@boring-ui/agent-bar",
+        "@boring-ui/viewer-frame",
+        "@boring-ui/viewer-pdf",
+        "@boring-ui/viewer-code",
+        "@boring-ui/pi-chat-markdown",
+        "@boring-ui/pi-artifacts"
       ],
       "css": {
         "@layer base": {
@@ -2465,6 +2470,11 @@
           "path": "registry/app-shell/agent-placements.tsx",
           "type": "registry:component",
           "target": "components/app-shell/agent-placements.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-pane.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-pane.tsx"
         },
         {
           "path": "registry/app-shell/agent-context.ts",

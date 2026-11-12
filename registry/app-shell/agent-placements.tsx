@@ -15,11 +15,12 @@ import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { CommentBanner, useCommenting, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
 import { useBackLayer } from '../utils/back';
-import { DOCK_KEY, FOLDED_FIELD, LayerContext, MIN_MAIN, PM_COLUMN, TRAY_MAX, shellWords, useInternal } from './layer-context';
-import type { AgentPreview, DockSide } from './layer-context';
+import { DOCK_KEY, FOLDED_FIELD, LayerContext, MIN_MAIN, PM_COLUMN, TRAY_MAX, useInternal } from './layer-context';
+import type { DockSide } from './layer-context';
 import { OneBox, VoiceProblem } from './agent-bar-parts';
 import { ChatSlot, Header, HistoryButton, LibraryButton, useTitle } from './agent-chats';
 import { CompactSheet } from './agent-compact';
+import { PaneDock, PaneStack } from './agent-pane';
 
 /** The panel inside the dock: the same element docked or floating, so a placement change keeps focus and the chats where they are. */
 function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSide }) {
@@ -33,6 +34,18 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   const { setDockFloating } = layer;
   useLayoutEffect(() => { setDockFloating(floating); return () => setDockFloating(false); }, [floating, setDockFloating]);
   const box = useRef<HTMLDivElement>(null);
+  // How tall the field is at the bottom of the column: the stacked pane stops above it.
+  const [fieldHeight, setFieldHeight] = useState(0);
+  const stacked = layer.paneStacked;
+  useLayoutEffect(() => {
+    const field = stacked ? box.current?.querySelector<HTMLElement>('[data-testid=composer-dock]') : null;
+    if (!field) return;
+    const measure = () => setFieldHeight(field.offsetHeight);
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    observer?.observe(field);
+    return () => observer?.disconnect();
+  }, [stacked]);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   useEffect(() => {
     if (!open) return;
@@ -82,20 +95,14 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
         : 'h-full min-w-0 flex-1 bg-background text-foreground')}>
     {floating && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
     {!floating && <Separator orientation="vertical" className={cn('absolute inset-y-0', side === 'right' ? 'left-0' : 'right-0')} />}
-    <Header text={text} title={title} controls={controls} className={cn('pt-2', floating && 'cursor-move touch-none select-none')} {...drag} />
-    {layer.previewStacked && layer.shownPreview && <PreviewStack preview={layer.shownPreview} />}
+    {/* The pane over the docked conversation brings its own bar (« ← Assistant », the title, Fermer): the layer's title row steps aside. */}
+    {/* The pane over the docked conversation lies on top of it, down to the field: nothing under it moves, so back finds the thread as it was.
+        Its own bar (« ← Assistant », the title, Fermer) is the column's title row then; the layer's keeps its place, unseen. */}
+    <Header text={text} title={title} controls={controls} className={cn('pt-2', floating && 'cursor-move touch-none select-none', layer.paneStacked && 'invisible')} {...(layer.paneStacked ? { inert: true } : {})} {...drag} />
+    {layer.paneStacked && <div className="absolute inset-x-0 top-0 z-10 flex flex-col bg-background" style={{ bottom: fieldHeight }}><PaneStack placement="stacked" assistant={title} /></div>}
     {/* `bar`: the docked field is the bottom one, frame and all (`.app-shell [data-one-dock]`): one composer wherever it sits (Julien). */}
-    <div {...(layer.bar ? { 'data-one-dock': '' } : {})} className={cn('flex min-h-0 flex-col overflow-hidden', layer.previewStacked ? cn('shrink-0 [&_[data-testid=conversation-content]]:hidden', FOLDED_FIELD) : 'flex-1')}><VoiceProblem /><ChatSlot live={open} /></div>
+    <div {...(layer.bar ? { 'data-one-dock': '' } : {})} className={cn('flex min-h-0 flex-col overflow-hidden', 'flex-1', layer.paneStacked && cn('[&_[data-testid=conversation-content]]:invisible', FOLDED_FIELD))}><VoiceProblem /><ChatSlot live={open} /></div>
   </div>;
-}
-
-/** D7, docked: the opened file sits on top of the conversation in its column, under « ← Assistant / <name> »; the arrow goes back to the thread. */
-function PreviewStack({ preview }: { readonly preview: AgentPreview }) {
-  const layer = useInternal();
-  const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  return <section data-testid="agent-preview" data-placement="stacked" aria-label={`${text.preview} · ${preview.title}`} className="flex min-h-0 flex-1 flex-col">
-        <div data-testid="agent-preview-body" className="flex min-h-0 flex-1 flex-col overflow-auto">{preview.content}</div>
-  </section>;
 }
 
 function AgentDock({ side }: { readonly side: DockSide }) {
@@ -209,47 +216,21 @@ function ContentTray() {
  */
 export function AgentDockLayout({ children }: { readonly children: ReactNode }): ReactElement {
   const layer = useInternal();
+  const { title } = useTitle();
   const dock = layer.expanded && (layer.agent || layer.improve) ? <AgentDock side={layer.side} /> : null;
   // The PM column sits inside the main content: while it is open beside the dock, the dock leaves the screen its least width beside it.
   return <DockLayout storageKey={DOCK_KEY} persist="local" minMain={MIN_MAIN + (layer.besidePanel ? PM_COLUMN : 0)}>
     {layer.side === 'left' && dock}
     <DockMain>{layer.contentColumn ? <ContentColumn>{children}</ContentColumn> : children}</DockMain>
-    {layer.bar && layer.expanded && layer.shownPreview && !layer.previewStacked && <PreviewDock preview={layer.shownPreview} />}
+    {layer.bar && layer.expanded && layer.stack.length > 0 && !layer.paneStacked && <PaneDock assistant={title} />}
     {layer.side === 'right' && dock}
   </DockLayout>;
-}
-
-/** The wide preview column: the kit's `Dock`, as the docked conversation, so it resizes by drag or arrow keys and keeps its width. */
-function PreviewDock({ preview }: { readonly preview: AgentPreview }) {
-  const layer = useInternal();
-  const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  return <Dock id="preview" side="right" defaultWidth={512} minWidth={320} open onOpenChange={next => { if (!next) layer.preview(null); }} labels={{ region: `${text.preview} · ${preview.title}`, resize: text.resizePreview }}>
-    <PreviewPane preview={preview} />
-  </Dock>;
-}
-
-/**
- * `useAgentLayer().preview`: the app's view of a file, in the right column on a wide screen (the conversation waits above the field) and over
- * the whole screen on a phone. Fermer l'aperçu or Échap (the provider's) closes it; the app draws the content.
- */
-function PreviewPane({ preview }: { readonly preview: AgentPreview }) {
-  const layer = useInternal();
-  const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  const close = () => layer.preview(null);
-  return <aside data-testid="agent-preview" aria-label={`${text.preview} · ${preview.title}`}
-    className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground', layer.expanded ? 'relative h-full flex-1' : 'fixed inset-0 z-(--app-shell-z-sheet)')}>
-    <div className="flex shrink-0 items-center gap-1 px-2 py-2">
-      <h2 data-testid="agent-preview-title" className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{preview.title}</h2>
-      <LibraryButton open={preview.title === text.library ? undefined : layer.openLibrary} text={text} />
-      <Button variant="ghost" size="icon" data-testid="agent-preview-close" aria-label={text.closePreview} title={text.closePreview} onClick={close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
-    </div>
-    <div data-testid="agent-preview-body" className="flex min-h-0 flex-1 flex-col overflow-auto">{preview.content}</div>
-  </aside>;
 }
 
 /** The layer itself: the drawer on a phone (the wide dock is `AgentDockLayout`). Placed once by the shell, for point mode on both. */
 export function AgentLayer(): ReactElement | null {
   const layer = useInternal();
+  const { title } = useTitle();
   const pointingAgent = usePointing(layer.agent?.feedback);
   const session = pointingAgent ? layer.agent?.feedback : undefined;
   const commentingAgent = useCommenting(layer.agent?.feedback);
@@ -264,7 +245,7 @@ export function AgentLayer(): ReactElement | null {
   // aside; on a wide screen at the top, the dock beside the app. The note bubble is here only while pointing (else inside the layer).
   return <>
     {!layer.expanded && <CompactSheet pointing={session !== undefined} />}
-    {layer.bar && !layer.expanded && layer.shownPreview && <PreviewPane preview={layer.shownPreview} />}
+    {layer.bar && !layer.expanded && layer.stack.length > 0 && <PaneStack placement="screen" assistant={title} />}
     {commenting && <CommentBanner session={commenting} bottomOffset={`${layer.tabbar}px`} className="z-[60]" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
     {session && <NoteBubble session={session} {...(transcribe ? { transcribe } : {})} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
   </>;

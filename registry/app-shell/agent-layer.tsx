@@ -26,9 +26,10 @@ import { closeShellLayer, registerAgentLayerCloser } from './shell-layer';
 import type { AppShellLocale } from './text';
 import { AgentContextProvider } from './agent-context';
 import type { ShellPanel } from './shell-panel';
-import { LayerContext, PEEK_BAR_REM, PEEK_REM, SIDE_KEY, TOGETHER_QUERY, Z, shellWords, useInternal } from './layer-context';
+import { LayerContext, PEEK_BAR_REM, PEEK_REM, SIDE_KEY, TOGETHER_QUERY, Z, useInternal } from './layer-context';
 import type { AgentComposer, AgentLayerApi, AgentLayerState, AgentMode, AgentPreview, AgentSpec, DockSide, Internal, Snap, Which } from './layer-context';
 import { Chats } from './agent-chats';
+import { usePane } from './agent-pane';
 export { AgentTrigger } from './agent-trigger';
 export { AgentComposerAnchor, AgentDockLayout, AgentLayer } from './agent-placements';
 export { isOverlayEvent, nextSnapOnClose } from './agent-compact';
@@ -61,9 +62,9 @@ function onShow(current: { readonly improve: ShellPanel | undefined; readonly sn
 const controllerOf = (spec: AgentSpec | ShellPanel | undefined) => spec && ('controller' in spec ? spec.controller : spec.identity);
 /** The layer's state and controls. */
 export function useAgentLayer(): AgentLayerApi {
-  const { state, showing, open, closeShowing: close, talkAbout, expanded, agent: spec, preview } = useInternal();
+  const { state, showing, open, closeShowing: close, talkAbout, expanded, agent: spec, preview, pane } = useInternal();
   const agent = spec?.controller;
-  return useMemo(() => ({ state, showing, open, close, talkAbout, expanded, agent, preview }), [state, showing, open, close, talkAbout, expanded, agent, preview]);
+  return useMemo(() => ({ state, showing, open, close, talkAbout, expanded, agent, preview, pane }), [state, showing, open, close, talkAbout, expanded, agent, preview, pane]);
 }
 
 /** Push-to-talk uses the same dictation lifecycle as page targeting, over the existing composer/controller. */
@@ -140,7 +141,6 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const [columnCard, setCardSlot] = useState<HTMLElement | null>(null);
   const [phoneCard, setPhoneCard] = useState<HTMLElement | null>(null);
   const cardSlot = anchor?.card ?? columnCard ?? (composer === 'bar' ? phoneCard : null);
-  const [shownPreview, setPreview] = useState<AgentPreview | null>(null);
   const specs = useRef({ agent, improve, snap, shown, pmOpen, together, contentComposer, mode, expanded });
   // eslint-disable-next-line react-hooks/refs -- latest-value ref: open/lend/showAgent may be called from a child's layout effect, before this component's own effects run
   specs.current = { agent, improve, snap, shown, pmOpen, together, contentComposer, mode, expanded };
@@ -336,74 +336,24 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     if (specs.current.snap === 'closed' || specs.current.shown !== 'agent') open('agent');
   }, [open, bar]);
   // On a wide content composer the reply is a tray above the field unless the person chose the dock; elsewhere the dock (or the phone's drawer) as before.
-  // `bar`: the right column holds one thing at a time (D7). Docked, a preview stacks on top of the conversation in that column; otherwise it takes the column itself.
+  // `bar`: the right column holds one thing at a time (D7). Docked, the pane stacks on top of the conversation in that column; otherwise it takes the column itself.
   const trayOpen = contentComposer && snap !== 'closed' && shown === 'agent' && mode === 'tray';
   const dockOpen = snap !== 'closed' && shown !== 'improve' && (!contentComposer || mode === 'dock');
-  const previewStacked = bar && expanded && shownPreview !== null && dockOpen && shown === 'agent';
   // Folded: the card of the work and the reply sits on the field: above it in the column on a wide screen, in the drawer's peek on a phone.
   const folded = bar && (contentComposer ? !trayOpen && !dockOpen : snap === 'peek' && shown === 'agent');
-  const returnFocus = useRef<HTMLElement | null>(null);
-  // What was last asked to show, set at once (not after the render): a pick in the library that opens a file and then calls `onPicked` sees the file.
-  const shownRef = useRef<AgentPreview | null>(null);
-  const preview = useCallback((next: AgentPreview | null) => {
-    if (!specs.current.agent || composer !== 'bar') return false;
-    // Where focus goes back when the file closes: the control that opened it (else the field, when that control is gone).
-    if (next && !shownRef.current && document.activeElement instanceof HTMLElement && !document.activeElement.closest('[data-testid=agent-preview]')) returnFocus.current = document.activeElement;
-    shownRef.current = next;
-    setPreview(next);
-    // The conversation stays at hand above the field, to talk about the file.
-    if (next && specs.current.expanded && (specs.current.snap === 'closed' || specs.current.shown !== 'agent')) open('agent');
-    return true;
-  }, [composer, open]);
-  // « Bibliothèque »: the app's navigator in the right pane, as a preview; a file the app opens from it replaces it, `onPicked` closes it otherwise.
-  const library = agent?.library;
-  const openLibrary = useMemo(() => {
-    if (!library || composer !== 'bar') return undefined;
-    return () => {
-      const words = shellWords(locale ?? specs.current.agent?.chatProps?.locale, specs.current.agent);
-      const view: { title: string; content: ReactNode } = { title: words.library, content: null };
-      view.content = library(() => { if (shownRef.current === view) preview(null); });
-      preview(view);
-    };
-  }, [library, composer, locale, preview]);
-  // An opened file takes focus (its close control), so Échap and the keyboard work in it at once; closed, focus goes back to where it came from.
-  useEffect(() => {
-    if (shownPreview) {
-      const active = document.activeElement;
-      if (active && active !== document.body && active.closest('[data-testid=agent-preview]')) return;
-      const frame = requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid=agent-preview] [data-testid=agent-preview-close], [data-testid=agent-preview-back]')?.focus({ preventScroll: true }));
-      return () => cancelAnimationFrame(frame);
-    }
-    const back = returnFocus.current;
-    returnFocus.current = null;
-    if (!back) return;
-    const active = document.activeElement;
-    if (active && active !== document.body && !active.closest('[data-testid=agent-preview]')) return;
-    const target = back.isConnected && back.getClientRects().length > 0 ? back
-      : composerSlotRef.current?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? host?.querySelector<HTMLElement>('[data-spec=agent] [data-testid=composer-input]');
-    target?.focus({ preventScroll: true });
-  }, [shownPreview, host]);
-  // Échap closes the file from anywhere but the field (whose Échap stops a run or lists the messages) and an open menu, list or dialog.
-  useEffect(() => {
-    if (!shownPreview) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest('[data-testid=composer-input]') || document.querySelector('[data-testid=conversations], [role=menu], [role=listbox], [role=alertdialog]')) return;
-      event.preventDefault();
-      setPreview(null); shownRef.current = null;
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [shownPreview]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- a preview goes with the agent it was opened beside
-  useEffect(() => { if (!agent && shownPreview) { shownRef.current = null; setPreview(null); } }, [agent, shownPreview]);
+  const uncover = useCallback(() => { if (specs.current.snap === 'half' || specs.current.snap === 'full') setSnapState('peek'); }, []);
+  const field = useCallback(() => composerSlotRef.current?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? host?.querySelector<HTMLElement>('[data-spec=agent] [data-testid=composer-input]'), [host]);
+  // The right pane and its back stack (agent-pane.tsx): `preview` is a push, `preview(null)` closes it.
+  const { stack, pane, openLibrary, openFile, step, presented } = usePane({ agent, bar, compact, locale: locale ?? agent?.chatProps?.locale, field, uncover,
+    storageKey: sidebarKey('agent-pane', modeIdentity?.app, modeIdentity?.person) });
+  const preview = useCallback((next: AgentPreview | null) => { if (next) return pane.push(next); if (!bar) return false; pane.close(); return true; }, [pane, bar]);
+  const paneStacked = bar && expanded && stack.length > 0 && dockOpen && shown === 'agent';
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the tray is gone with the content composer (a phone width, a lost agent): the fill state goes with it
   useEffect(() => { if (!trayOpen && grown) setGrown(false); }, [trayOpen, grown]);
   const value = useMemo<Internal>(() => ({
     state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, anchored: anchor !== null, setAnchor, setDropZone, onSent, mode, setMode, moveToDock, registerDock, grown, setGrown, trayOpen, dockOpen,
-    bar, folded, cardSlot, setCardSlot, setPhoneCard, cardPx, setCardPx, shownPreview, previewStacked, preview, openLibrary, holdSend,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen, bar, folded, cardSlot, shownPreview, previewStacked, preview, openLibrary, cardPx]);
+    bar, folded, cardSlot, setCardSlot, setPhoneCard, cardPx, setCardPx, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, holdSend,
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen, bar, folded, cardSlot, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, cardPx]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
