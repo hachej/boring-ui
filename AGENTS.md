@@ -1,5 +1,7 @@
 # Working here
 
+Start every task with `/boring-stack:boring-mode <app> <task>` in Claude Code; a conductor's sub-agent is `subagent_type: boring-stack:builder` with the task as its brief. It reads the task and tells you which other skills and playbooks to use and what proof the task must end with. Codex and other agents: read `boring-mode/SKILL.md` from your skills folder (`~/.agents/skills`) first.
+
 Read [README.md](README.md), [INVARIANTS.md](INVARIANTS.md), [PI-COMPLEMENT.md](docs/architecture/PI-COMPLEMENT.md), [SPEC.md](docs/architecture/SPEC.md), [PRODUCT-REQUIREMENTS.md](docs/architecture/PRODUCT-REQUIREMENTS.md), [ROADMAP.md](docs/architecture/ROADMAP.md) and [REDACTION.md](docs/stress-tests/REDACTION.md) first. Hub work also reads [HUB-M1.md](docs/compatibility/HUB-M1.md); UI/workspace work reads [LEGACY-UI.md](docs/compatibility/LEGACY-UI.md).
 
 - This repo has partial runtime implementation and build/typecheck tooling. Read docs/contracts/SCAFFOLD.md and docs/implementation/PARTIAL.md for implemented behavior and remaining qualifications. Interface/native-smoke tests alone are not runtime qualification. Import native types rather than copying them.
