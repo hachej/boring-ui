@@ -62,6 +62,7 @@ footer{margin-top:56px;font-size:.8rem;color:var(--muted-foreground)}
   .bar{padding:8px 16px;position:sticky;top:0;background:var(--background);z-index:10}.bar .brand-sm,.bar .menu{display:inline-block}
   main{padding:18px 16px 56px}h1{font-size:1.45rem}
   .toolbar{flex-direction:column;align-items:stretch}.seg button{flex:1}
+  .try{flex-wrap:nowrap;overflow-x:auto;margin-inline:-16px;padding:0 16px 4px}.try button{white-space:nowrap;flex:none}
 }
 @media (prefers-reduced-motion:reduce){.side{transition:none}}`;
 }
