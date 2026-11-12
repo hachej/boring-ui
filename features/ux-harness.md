@@ -26,11 +26,11 @@ Preconditions: `npm ci && npm run build`, `CHROMIUM` set to a Chromium binary, `
 - `ux-judge`: `node ux/runner/cli.mjs judge --target layout:bar --from .cache/ux/layout-bar` (calls a model; needs the `claude` CLI).
 - `ux-loop`: `node ux/runner/loop.mjs --target layout:bar --dry-run` runs the guards and one capture with no model call.
 - `ux-showcase`: `node ux/runner/cli.mjs site --from .cache/ux --out .cache/site`, then open `.cache/site/index.html`.
-- `ux-scripted-agent`: open a fixture page with `?demo=1` and type « Rapproche le relevé de janvier »; any other text gets the script's plain fallback sentence.
+- `ux-scripted-agent`: open a fixture page with `?demo=1` and type “Reconcile the January statement”; any other text gets the script's plain fallback sentence.
 
 ## Gotchas
 
 - Only `judge` and `loop` call a model. Capture, check and site never do, and the site never carries a grade.
-- A flow step the kit cannot do carries `gap` and shows as « not in the kit yet »; do not invent a component to pass it.
+- A flow step the kit cannot do carries `gap` and shows as “not in the kit yet”; do not invent a component to pass it.
 - `check` thresholds live in the scenario, not in the runner; do not weaken a scenario to make a round pass (the loop protects `ux/scenarios/`).
 - Fixtures must carry invented data only: `test/ux-invented-data.test.mjs` fails on a real e-mail domain, a key-like string or a denied name.

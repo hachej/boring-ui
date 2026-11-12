@@ -43,4 +43,4 @@ ONLY this JSON object, no code fence, no text before or after:
 }
 ```
 
-Three problems per criterion, even one graded 9 (then the three smallest flaws). Write in English; quote UI strings as they appear (French).
+Three problems per criterion, even one graded 9 (then the three smallest flaws). Write in English; quote UI strings as they appear.
