@@ -42,11 +42,11 @@ async function visit() {
   return new Blob(chunks, { type: 'video/webm' });
 }
 
-const RELEVE_JANVIER = [['Relevé de compte · janvier 2026', 'Atelier Brun SARL (fictif)', '02/01 Virement Maison Delorme 1 240,00', '03/01 Prélèvement EDF Pro -186,40'],
+const RELEVE_JANVIER = [['Relevé de compte · janvier 2026', 'Atelier Brun SARL (fictif)', '02/01 Virement Maison Delorme 1 240,00', '03/01 Prélèvement Énergie Pro -186,40'],
   ['Relevé de compte · page 2', '28/01 Virement Cabinet Roux 1 980,00', '30/01 Frais de tenue de compte -14,50', 'Solde au 31/01 : 8 412,10']];
 const MAKERS = {
   'uploads/releve-janvier.pdf': () => pdf(RELEVE_JANVIER),
-  'uploads/releve-fevrier.pdf': () => pdf([['Relevé de compte · février 2026', 'Atelier Brun SARL (fictif)', '03/02 Prélèvement EDF Pro -191,20'], ['Relevé de compte · page 2', 'Solde au 28/02 : 9 006,40']]),
+  'uploads/releve-fevrier.pdf': () => pdf([['Relevé de compte · février 2026', 'Atelier Brun SARL (fictif)', '03/02 Prélèvement Énergie Pro -191,20'], ['Relevé de compte · page 2', 'Solde au 28/02 : 9 006,40']]),
   'uploads/ecarts-janvier.csv': () => text('Date;Libellé;Écart;Statut\n09/01;Carte Garage du Port;"12,00 €";À justifier\n15/01;Carte Restaurant Le Cèdre;"-12,00 €";À justifier\n', 'text/csv'),
   'factures/facture-delorme-0112.pdf': () => pdf([['Facture 0112 · Maison Delorme (fictive)', 'Prestation de conseil 1 050,00', 'Total TTC 1 368,00']]),
   'factures/facture-axiom-0108.pdf': () => pdf([['Facture 0108 · Assurance Axiom (fictive)', 'Prime mensuelle 212,00']]),
