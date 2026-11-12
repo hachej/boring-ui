@@ -36,6 +36,7 @@ import { voiceClock } from '../pi-chat/config';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { PendingVoiceBubble, VoiceMessageButton } from '../pi-chat-voice/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
+import type { ChatLabels } from '../pi-chat/labels';
 import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
 import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { sentFeedbackContent } from '../feedback/sent-content';
@@ -78,9 +79,32 @@ export interface AgentSpec {
   /** `composer: 'bar'` (AC-13): the person may only read (a role without writing, an assistant switched off). The box stays in place with this
    * one line, the reason, instead of the field; nothing in it can be focused. Absent: the field as usual. */
   readonly readOnly?: string | undefined;
-  /** The shell's own words for this assistant (Dicter, Conversation, Détacher en bas, Bibliothèque…) over the locale's defaults (AC-21). */
-  readonly words?: Partial<AppShellText> | undefined;
+  /** The shell's own words for this assistant (Dicter, Conversation, Détacher en bas, Bibliothèque…) over the locale's defaults (AC-21). Also every word the
+   * one composer shows from the chat (`AgentWords`): the field's placeholder, Envoyer, Arrêter, Joindre, Réessayer, the microphone's ✕ and ■, the empty conversation. */
+  readonly words?: AgentWords | undefined;
+  /** `composer: 'bar'` (kit 0.4.85): one app action on the folded reply card, beside the files it cites (for example « Annuler » to undo what the agent just did). The app
+   * shows it by giving it and takes it away by passing nothing; `onSelect` runs when it is pressed and the conversation stays folded. */
+  readonly replyAction?: { readonly label: string; readonly onSelect: () => void } | undefined;
+  /** `composer: 'bar'` (kit 0.4.85): the app's words on the working card, per phase. `tool` is the tool that runs (absent while the agent thinks), `text` the default words.
+   * Return the words, or nothing to keep the default. */
+  readonly workingWords?: ((phase: { readonly tool?: string; readonly stage?: string; readonly text: string }) => string | undefined) | undefined;
 }
+
+/** The chat's own words an app may override through `agent.words`, next to the shell's (`AppShellText`): all of them are what the one composer shows. */
+const CHAT_WORD_KEYS = ['placeholder', 'placeholderWorking', 'messageInput', 'send', 'sendHint', 'stop', 'queue', 'add', 'attachFiles', 'takePhoto', 'commands', 'retry', 'voiceStop', 'voiceCancel', 'emptyDescription'] as const;
+export type AgentWords = Partial<AppShellText> & Partial<Pick<ChatLabels, (typeof CHAT_WORD_KEYS)[number]>> & {
+  /** The empty conversation's title (« Conversation » by default). */
+  readonly emptyTitle?: string;
+};
+/** The chat words an app gave in `agent.words`, as chat labels (`emptyTitle` is the chat's `title`). */
+const chatWordLabels = (words: AgentWords | undefined): Partial<ChatLabels> => {
+  const labels: Record<string, string> = {};
+  for (const key of CHAT_WORD_KEYS) { const word = words?.[key]; if (typeof word === 'string') labels[key] = word; }
+  if (words?.emptyTitle) labels['title'] = words.emptyTitle;
+  return labels as Partial<ChatLabels>;
+};
+/** The chat's words as this composer shows them: the locale's, then the app's `agent.words`. */
+const composerLabels = (locale: AppShellLocale | undefined, agent: AgentSpec | undefined): ChatLabels => ({ ...chatTextFor(locale ?? agent?.chatProps?.locale).labels, ...chatWordLabels(agent?.words) });
 
 /** Compact: closed, peek, half or full. Expanded: closed or open. */
 export type AgentLayerState = 'closed' | 'peek' | 'half' | 'full' | 'open';
@@ -231,6 +255,10 @@ interface Internal extends Omit<AgentLayerApi, 'agent'> {
   /** Where the folded card is drawn, right above the field (set by `ContentColumn` or `AgentComposerAnchor`). */
   readonly cardSlot: HTMLElement | null;
   readonly setCardSlot: (element: HTMLElement | null) => void;
+  /** `bar` on a phone: the card's place in the drawer's peek, and the height the peek grows by while the card shows. */
+  readonly setPhoneCard: (element: HTMLElement | null) => void;
+  readonly cardPx: number;
+  readonly setCardPx: (px: number) => void;
   /** The file preview on show (`AgentLayerApi.preview`), if any. */
   readonly shownPreview: AgentPreview | null;
   /** The preview sits on top of the docked conversation in the same column (« ← Assistant »), not in a column of its own. */
@@ -292,7 +320,7 @@ function onShow(current: { readonly improve: ShellPanel | undefined; readonly sn
 const controllerOf = (spec: AgentSpec | ShellPanel | undefined) => spec && ('controller' in spec ? spec.controller : spec.identity);
 
 /** The layer's words: the locale's defaults, then the app's own (`agent.words`). */
-const shellWords = (locale: AppShellLocale | undefined, agent: AgentSpec | undefined): AppShellText => agent?.words ? { ...appShellText(locale), ...agent.words } : appShellText(locale);
+const shellWords = (locale: AppShellLocale | undefined, agent: AgentSpec | undefined): AppShellText => agent?.words ? { ...appShellText(locale), ...agent.words } as AppShellText : appShellText(locale);
 
 /** The layer's state and controls. */
 export function useAgentLayer(): AgentLayerApi {
@@ -308,14 +336,14 @@ function useVoice(agent: AgentSpec | undefined, locale: AppShellLocale | undefin
 }
 
 /** The height in px of the tab bar the peek sits above (`--app-shell-tabbar` on the shell root), and one rem. */
-function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>, peekRem: number): { readonly peekPoint: string; readonly tabbar: number } {
+function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>, peekRem: number, extra = 0): { readonly peekPoint: string; readonly tabbar: number } {
   const [px, setPx] = useState(peekRem * 16);
   const [tabbar, setTabbar] = useState(0);
   useLayoutEffect(() => {
     const measure = () => {
       const tab = probe.current?.offsetHeight ?? 0;
       const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      setPx(Math.round(peekRem * rem + tab));
+      setPx(Math.round(peekRem * rem + tab + extra));
       setTabbar(tab);
     };
     measure();
@@ -323,7 +351,7 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>, peekRem: numbe
     const observer = typeof ResizeObserver === 'undefined' || !probe.current ? undefined : new ResizeObserver(measure);
     if (observer && probe.current) observer.observe(probe.current);
     return () => { window.removeEventListener('resize', measure); observer?.disconnect(); };
-  }, [probe, peekRem]);
+  }, [probe, peekRem, extra]);
   return { peekPoint: `${px}px`, tabbar };
 }
 
@@ -349,8 +377,10 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const [shown, setShown] = useState<Which>(agent ? 'agent' : 'improve');
   // `bar` on a phone (AC-20): the one composer is never closed away; at rest it is the peek, the field right above the tabs. Close and Échap come back here.
   const snap: Snap = composer === 'bar' && compact && agent !== undefined && shown === 'agent' && snapState === 'closed' ? 'peek' : snapState;
+  // The phone's peek grows by the card's height, so the card shows above the field and the field stays where it was relative to the tabs.
+  const [cardPx, setCardPx] = useState(0);
   const probe = useRef<HTMLDivElement>(null);
-  const { peekPoint, tabbar } = useMeasuredPeek(probe, composer === 'bar' && own !== undefined ? PEEK_BAR_REM : PEEK_REM);
+  const { peekPoint, tabbar } = useMeasuredPeek(probe, composer === 'bar' && own !== undefined ? PEEK_BAR_REM : PEEK_REM, compact ? cardPx : 0);
   const triggerUntil = useRef(0);
   const restoreFocus = useRef(false);
   const [side, setSideState] = useState<DockSide>('right');
@@ -372,7 +402,8 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const contentComposer = contentColumn && expanded;
   const bar = composer === 'bar' && agent !== undefined;
   const [columnCard, setCardSlot] = useState<HTMLElement | null>(null);
-  const cardSlot = anchor?.card ?? columnCard;
+  const [phoneCard, setPhoneCard] = useState<HTMLElement | null>(null);
+  const cardSlot = anchor?.card ?? columnCard ?? (composer === 'bar' ? phoneCard : null);
   const [shownPreview, setPreview] = useState<AgentPreview | null>(null);
   const specs = useRef({ agent, improve, snap, shown, pmOpen, together, contentComposer, mode, expanded });
   // eslint-disable-next-line react-hooks/refs -- latest-value ref: open/lend/showAgent may be called from a child's layout effect, before this component's own effects run
@@ -573,7 +604,8 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const trayOpen = contentComposer && snap !== 'closed' && shown === 'agent' && mode === 'tray';
   const dockOpen = snap !== 'closed' && shown !== 'improve' && (!contentComposer || mode === 'dock');
   const previewStacked = bar && expanded && shownPreview !== null && dockOpen && shown === 'agent';
-  const folded = bar && contentComposer && !trayOpen && !dockOpen;
+  // Folded: the card of the work and the reply sits on the field: above it in the column on a wide screen, in the drawer's peek on a phone.
+  const folded = bar && (contentComposer ? !trayOpen && !dockOpen : snap === 'peek' && shown === 'agent');
   // What was last asked to show, set at once (not after the render): a pick in the library that opens a file and then calls `onPicked` sees the file.
   const shownRef = useRef<AgentPreview | null>(null);
   const preview = useCallback((next: AgentPreview | null) => {
@@ -601,8 +633,8 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   useEffect(() => { if (!trayOpen && grown) setGrown(false); }, [trayOpen, grown]);
   const value = useMemo<Internal>(() => ({
     state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, anchored: anchor !== null, setAnchor, setDropZone, onSent, mode, setMode, moveToDock, registerDock, grown, setGrown, trayOpen, dockOpen,
-    bar, folded, cardSlot, setCardSlot, shownPreview, previewStacked, preview, openLibrary, holdSend,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen, bar, folded, cardSlot, shownPreview, previewStacked, preview, openLibrary]);
+    bar, folded, cardSlot, setCardSlot, setPhoneCard, cardPx, setCardPx, shownPreview, previewStacked, preview, openLibrary, holdSend,
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen, bar, folded, cardSlot, shownPreview, previewStacked, preview, openLibrary, cardPx]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
@@ -715,11 +747,20 @@ function useBarMic(): BarMic {
   const { voice, holdSend: holdSendRef } = useInternal();
   const [mode, setMode] = useState<MicMode>('idle');
   const pressedAt = useRef(0);
+  const releasedEarly = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   const capturing = voice.phase === 'starting' || voice.phase === 'recording';
-  const cancel = useCallback(() => { clearTimeout(timer.current); holdSendRef.current = false; setMode('idle'); voice.cancel(); }, [voice, holdSendRef]);
+  const cancel = useCallback(() => { clearTimeout(timer.current); releasedEarly.current = false; holdSendRef.current = false; setMode('idle'); voice.cancel(); }, [voice, holdSendRef]);
   const finish = useCallback(() => { clearTimeout(timer.current); setMode('idle'); voice.finish(); }, [voice]);
+  // A hold released while the microphone is still opening (the first open of a session takes longer than the hold: permission, device start) is not a cancel:
+  // the release is kept and the words are sent the moment the recording begins, as for any later hold (K-6).
+  useEffect(() => {
+    if (!releasedEarly.current) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the release was kept in a ref; the phase change that ends the opening is what finishes the hold (finish sets the mode back to idle)
+    if (voice.phase === 'recording') { releasedEarly.current = false; holdSendRef.current = true; finish(); }
+    else if (voice.phase === 'idle') { releasedEarly.current = false; holdSendRef.current = false; }
+  }, [voice.phase, finish, holdSendRef]);
   const hold = useHoldToRecord({
     start: () => {
       if (voice.canStart === false) return;
@@ -732,6 +773,7 @@ function useBarMic(): BarMic {
       // The attempt already ended (a refused microphone): nothing listens, nothing is sent.
       if (!capturing) { setMode('idle'); return; }
       if (Date.now() - pressedAt.current < HOLD_SEND_MS) { setMode('listening'); return; }
+      if (voice.phase === 'starting') { releasedEarly.current = true; return; }
       holdSendRef.current = true; finish();
     },
     cancel,
@@ -743,7 +785,7 @@ function useBarMic(): BarMic {
 /** The action button's place: « Dicter » at rest and during a hold (the pressed button stays mounted, or the browser never delivers its release), ■ while a tap listens. */
 function BarMicButton({ mic, label }: { readonly mic: BarMic; readonly label: string }) {
   const layer = useInternal();
-  const { labels } = chatTextFor(layer.locale ?? layer.agent?.chatProps?.locale);
+  const labels = composerLabels(layer.locale, layer.agent);
   const { ref, ...gesture } = mic.hold;
   // The kit hook guards touchstart only on the node it first saw; the microphone remounts after ■, so bind the node it has now.
   useEffect(() => {
@@ -763,7 +805,7 @@ function BarMicButton({ mic, label }: { readonly mic: BarMic; readonly label: st
 function BarMicStatus({ mic }: { readonly mic: BarMic }) {
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  const { labels } = chatTextFor(layer.locale ?? layer.agent?.chatProps?.locale);
+  const labels = composerLabels(layer.locale, layer.agent);
   const { voice } = layer;
   const holding = mic.mode === 'holding';
   return <div data-testid="agent-talk-status" data-state={holding ? 'holding' : 'listening'} className="flex w-full min-w-0 items-center gap-2">
@@ -811,7 +853,7 @@ const readable = (text: string) => text.replace(MENTION_TOKEN, (_match, before: 
 function SendProblem({ controller }: { readonly controller: NativeChatController }) {
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  const { labels } = chatTextFor(layer.locale ?? layer.agent?.chatProps?.locale);
+  const labels = composerLabels(layer.locale, layer.agent);
   const read = () => controller.getSnapshot().send;
   const send = useSyncExternalStore(controller.subscribe, read, read);
   if (send.kind !== 'blocked' && send.kind !== 'unknown') return null;
@@ -830,6 +872,7 @@ function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly 
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const { question, status, reply } = bar;
+  const action = layer.agent?.replyAction;
   if (!question && status?.state !== 'working' && !reply) return null;
   const header = question ? undefined : status?.state === 'working'
     ? <><span className="text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{status.text}</span></>
@@ -846,10 +889,12 @@ function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly 
         <div className="flex flex-wrap gap-2">{question.choices.map(choice => <Button key={choice} type="button" variant="outline" data-choice="" onClick={() => question.onAnswer({ text: choice, source: 'choice' })}>{choice}</Button>)}</div>
       </div>}
       {!question && status?.state !== 'working' && reply && <>
-        <p data-testid="agent-card-reply" className="m-0 line-clamp-3 whitespace-pre-line">{readable(reply.text)}</p>
-        {reply.files.length > 0 && <div role="list" data-testid="agent-card-files" className="flex flex-wrap gap-1.5">
+        {/* A tap on the reply opens the conversation, as the chevron does (the chevron stays the way for a keyboard). */}
+        <p data-testid="agent-card-reply" onClick={() => layer.open('agent')} className="m-0 line-clamp-3 cursor-pointer whitespace-pre-line">{readable(reply.text)}</p>
+        {(reply.files.length > 0 || action) && <div role="list" data-testid="agent-card-files" className="flex flex-wrap items-center gap-1.5">
           {reply.files.map(path => <span role="listitem" key={path}><Button type="button" variant="outline" size="sm" data-testid="agent-card-file" data-path={path} disabled={!onOpenFile} onClick={() => onOpenFile?.(path)}>
             <FileTextIcon data-icon="inline-start" aria-hidden="true" />{path.split('/').at(-1)}</Button></span>)}
+          {action && <span role="listitem" className="ml-auto"><Button type="button" variant="ghost" size="sm" data-testid="agent-card-action" onClick={action.onSelect} className="pointer-coarse:min-h-11">{action.label}</Button></span>}
         </div>}
       </>}
     </section>
@@ -863,9 +908,9 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const locale = layer.locale ?? spec.chatProps?.locale;
   const words = shellWords(locale, layer.agent);
   // `composer: 'bar'`: the folded card and the chevron's dot read the same chat as the thread, through the agent bar's own adapter.
-  const barChat = useAgentBarChat(spec.controller, { actions: spec.chatProps?.actions, toolLabels: chatTextFor(locale).labels,
+  const barChat = useAgentBarChat(spec.controller, { actions: spec.chatProps?.actions, toolLabels: chatTextFor(locale).labels, workingWords: spec.workingWords,
     labels: { working: words.working, done: words.done, unread: words.unread, step: (index, count) => `${index} ${words.of} ${count}` } });
-  const barred = role === 'agent' && layer.bar && layer.contentComposer;
+  const barred = role === 'agent' && layer.bar;
   // The one composer's row (pill, chevron, attach, Dicter, edit last) wherever the field is: under the page, docked, or in the phone's drawer (AC-20).
   const oneRow = role === 'agent' && layer.bar;
   const { markRead } = barChat;
@@ -881,10 +926,12 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
     ...(readOnly ? { renderComposer: () => <p data-testid="agent-read-only" className="m-0 flex min-h-14 items-center px-4 text-sm text-muted-foreground">{readOnly}</p> } : {}),
     composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerEditLast: true, composerStart: <ConversationChevron unread={barChat.historyBadge} />,
     // While the agent's question waits, the field says so; a typed message answers it (PiChat's own rule).
-    ...(barChat.question ? { labels: { ...spec.chatProps?.labels, placeholder: words.answerHere } } : {}),
+    ...(barChat.question ? { labels: { ...chatWordLabels(spec.words), ...spec.chatProps?.labels, placeholder: words.answerHere } } : {}),
     ...(spec.voice ? { composerWhenEmpty: <BarMicButton mic={mic} label={words.dictate} />,
       ...(capturing ? { composerRecordingSlots: { status: <BarMicStatus mic={mic} />, stop: <BarMicButton mic={mic} label={words.dictate} /> } } : {}) } : {}),
   } : {};
+  // The app's words for the chat (`agent.words`) under the labels it passes itself; the question's placeholder above keeps its own.
+  const wordLabels = role === 'agent' && !barChat.question ? chatWordLabels(spec.words) : {};
   // One annotate toggle: pins on desktop, point mode (which hides the layer while the person taps the app) on touch and compact screens.
   const feedback = useComposerFeedback(spec.feedback);
   const pointing = usePointing(spec.feedback);
@@ -892,7 +939,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
-    <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...barProps} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
+    <PiChat {...withChatPlugins(spec.chatProps ?? {})} {...barProps} {...(Object.keys(wordLabels).length > 0 ? { labels: { ...wordLabels, ...spec.chatProps?.labels } } : {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
       {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: oneRow ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: capturing && !oneRow ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
     {barred && !readOnly && layer.folded && layer.cardSlot && createPortal(<><SendProblem controller={spec.controller} /><FoldedCard bar={barChat} onOpenFile={openFile} /></>, layer.cardSlot)}
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
@@ -959,6 +1006,23 @@ function useTitle(): { text: AppShellText; title: string } {
 
 const toSnap = (point: number | string | null, peekPoint: string): Snap | null =>
   point === peekPoint ? 'peek' : point === HALF ? 'half' : point === FULL ? 'full' : null;
+
+/** `bar` on a phone, at rest: the work and the reply as a card right above the field, inside the peek (which grows by its height). The page stays visible behind it. */
+function PhoneCardSlot() {
+  const { setPhoneCard, setCardPx } = useInternal();
+  const node = useRef<HTMLDivElement | null>(null);
+  const place = useCallback((element: HTMLDivElement | null) => { node.current = element; setPhoneCard(element); }, [setPhoneCard]);
+  useLayoutEffect(() => {
+    const element = node.current;
+    if (!element) return;
+    const measure = () => setCardPx(Math.ceil(element.getBoundingClientRect().height));
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    observer?.observe(element);
+    return () => { observer?.disconnect(); setCardPx(0); };
+  }, [setCardPx]);
+  return <div ref={place} data-testid="agent-card-slot" className="shrink-0 px-2 empty:hidden" />;
+}
 
 function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const layer = useInternal();
@@ -1076,9 +1140,13 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   // The popup is portalled to the body, outside the shell root: it is given the measured tab bar height and the z-values explicitly.
   // `bar` (AC-20): Ouvert on a phone is the half, and the tabs stay in view under it (the popup's part over them is clipped, as at peek).
   const keepTabs = layer.bar && snap === 'half';
-  const style = { '--app-shell-trigger-clear': `${triggerClear}px`, '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-peek-height': `${layer.bar ? PEEK_BAR_REM : PEEK_REM}rem`, '--app-shell-z-layer': Z.layer,
+  const keyboardPeek = layer.bar && peek && !recording && liveViewport !== null && window.innerHeight - liveViewport.height - liveViewport.top > 80;
+  const style = { '--app-shell-trigger-clear': `${triggerClear}px`, '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-peek-height': layer.bar ? `calc(${PEEK_BAR_REM}rem + ${layer.cardPx}px)` : `${PEEK_REM}rem`, '--app-shell-z-layer': Z.layer,
     paddingBottom: peek || keepTabs ? 'calc(var(--drawer-snap-point-offset, 0px) + var(--app-shell-tabbar, 0px))' : 'var(--drawer-snap-point-offset, 0px)',
-    ...(pinnedBottom ? { bottom: pinnedBottom } : {}) } as CSSProperties;
+    ...(pinnedBottom ? { bottom: pinnedBottom } : {}),
+    // `bar`, folded, with the keyboard up (K-1): the field is not moved to a full screen; the folded sheet rests on the keyboard at its own height (the field and the card),
+    // the page stays visible above it. The drawer's snap arithmetic does not know a keyboard at the peek, so it is set aside while the keyboard shows.
+    ...(keyboardPeek ? { '--translate-y': '0px', height: 'auto', paddingBottom: 0, clipPath: 'none' } : {}) } as CSSProperties;
   // Entering the modal half or full from the non-modal peek does not rerun Base UI's initial focus: if focus is still on the page, take it to Close.
   const wasPeek = useRef(false);
   useEffect(() => {
@@ -1127,7 +1195,7 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
         'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_var(--app-shell-peek-height))_0)]',
         'data-keep-tabs:not-data-swiping:[clip-path:inset(0_0_calc(var(--drawer-snap-point-offset,0px)_+_var(--app-shell-tabbar,0px))_0)]')}>
       <BaseDrawerParts.Drawer.VirtualKeyboardProvider>
-        <div ref={sheet} data-testid="agent-layer-sheet" {...(layer.bar ? { 'data-one-dock': '' } : {})} onFocusCapture={event => { if (!recording && (event.target as HTMLElement).matches('[data-testid=composer-input]')) layer.setSnap('full'); }}
+        <div ref={sheet} data-testid="agent-layer-sheet" {...(layer.bar ? { 'data-one-dock': '' } : {})} onFocusCapture={event => { if (!layer.bar && !recording && (event.target as HTMLElement).matches('[data-testid=composer-input]')) layer.setSnap('full'); }}
           className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-contain',
             // The layer's own header carries the title and Close, so the chat's is hidden. At peek: one line of the last reply above the
             // composer, no empty-state overlay, room for Close.
@@ -1141,12 +1209,13 @@ function CompactSheet({ pointing }: { readonly pointing: boolean }) {
               '[&_[data-testid=composer-input]]:min-h-11 [&_[data-testid=composer-input]]:max-h-11 [&_[data-testid=composer-input]]:flex-1 [&_[data-testid=composer-input]]:px-4 [&_[data-testid=composer-input]]:py-2.5',
               voice.phase !== 'starting' && voice.phase !== 'recording' && '[&_[data-testid=composer-controls]]:w-auto [&_[data-testid=composer-controls]]:shrink-0 [&_[data-testid=composer-controls]]:py-0 [&_[data-testid=composer-controls]>span.flex-1]:hidden',
               '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-annotate]]:hidden'],
-            peek && layer.bar && '[&_[data-boring=pi-chat]>.relative]:hidden [&_[data-testid=conversation-content]]:hidden')}>
+            peek && layer.bar && ['[&_[data-boring=pi-chat]>.relative]:hidden [&_[data-testid=conversation-content]]:hidden', FOLDED_FIELD])}>
           {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} />}
           {!peek && <VoiceProblem />}
           {peek && recording && <div aria-hidden="true" data-testid="agent-listening" data-phase={voice.phase} className="sr-only">
             <MicIcon className="size-4 text-destructive" aria-hidden="true" />{voice.phase === 'transcribing' ? <><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{voiceClock(voice.seconds)}</> : `${text.listening} ${voiceClock(voice.seconds)}`}
           </div>}
+          {peek && layer.bar && <PhoneCardSlot />}
           {/* The transcript scrolls and never drags the sheet: only the handle and the title row swipe. */}
           <div data-base-ui-swipe-ignore="" className="flex min-h-0 flex-1 flex-col"><ChatSlot /></div>
         </div>

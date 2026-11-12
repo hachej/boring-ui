@@ -21,7 +21,11 @@ window.__sent = [];
 // fixture's `transcribe` answers « Texte dicté fictif ». Web Audio is removed so the kit's capture takes the MediaRecorder path.
 Object.defineProperty(window, 'AudioContext', { configurable: true, value: undefined });
 Object.defineProperty(window, 'webkitAudioContext', { configurable: true, value: undefined });
+// `?slowmic=1`: the first open of the microphone takes 700 ms, as a real phone's first open does (permission, device start); the next ones are instant.
+let micOpened = false;
 Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
+  if (params.get('slowmic') === '1' && !micOpened) await new Promise(done => setTimeout(done, 700));
+  micOpened = true;
   const track = { stop() {} };
   return { getTracks: () => [track], getAudioTracks: () => [track] };
 } } });
@@ -41,7 +45,7 @@ const assistant = (content, stopReason = content.some(part => part.type === 'too
 const entry = (id, model) => ({ id, kind: 'message', byTaskId: 7, model: [model] });
 const say = (id, text) => ({ id, kind: 'message', model: [{ role: 'user', content: text, timestamp: 1 }] });
 const reply = (id, text) => entry(id, assistant([{ type: 'text', text }]));
-const history = [say(1, T('Où en est le dossier Cèdre ?', 'Where is the Cedar file at?')), reply(2, T('Le dossier Cèdre fictif attend deux pièces.', 'The fictional Cedar file is waiting for two documents.'))];
+const history = params.get('empty') === '1' ? [] : [say(1, T('Où en est le dossier Cèdre ?', 'Where is the Cedar file at?')), reply(2, T('Le dossier Cèdre fictif attend deux pièces.', 'The fictional Cedar file is waiting for two documents.'))];
 let snapshot = { identity: { runtimeId: 'fictional', scopeId: 'one-composer', principalId: 'fictional-reader' }, conversationId: 'one-composer', connection: { kind: 'connected' },
   view: { entries: history, docs: {} }, draft: { text: '', attachments: [], version: 0 }, outbox: [], echo: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
 const listeners = new Set();
@@ -75,6 +79,8 @@ const form = entry(13, assistant([{ type: 'toolCall', id: 'q1', name: 'ask_user'
 const REPLY = EN ? 'The January statement has 40 lines, all reconciled.\nTwo gaps are noted in @uploads/ecarts-janvier.csv.\nNothing else to do for January.\nA fourth line the card cuts.'
   : 'Le relevé de janvier compte 40 lignes, toutes rapprochées.\nDeux écarts sont notés dans @uploads/ecarts-janvier.csv.\nRien d’autre à faire pour janvier.\nUne quatrième ligne que la carte coupe.';
 const runs = {
+  // `think`: the agent works with no tool running (the card has only its fallback words).
+  think: () => ({ entries: [...history, ask], docs: live() }),
   tool: () => ({ entries: [...history, ask, read], docs: live([{ callId: 'c1', taskId: 8, status: 'running', details: { progress: '12 lignes sur 40' } }]) }),
   form: () => ({ entries: [...history, ask, read, readDone, form], docs: live() }),
   reply: () => ({ entries: [...history, ask, read, readDone, entry(14, assistant([{ type: 'text', text: REPLY }]))], docs: {} }),
@@ -104,9 +110,16 @@ const FILES = ['uploads/releve-janvier.pdf', 'uploads/ecarts-janvier.csv', 'uplo
 // The app's navigator for « Bibliothèque » (an app would pass the kit's FileTreeView here); a pick opens the file in the same pane.
 const library = onPicked => <ul data-testid="fixture-library" className="m-0 flex list-none flex-col gap-1 p-2">{FILES.map(path => <li key={path}>
   <button type="button" data-testid="fixture-library-file" data-path={path} className="w-full rounded-md p-2 text-left text-sm hover:bg-accent" onClick={() => { window.__library += 1; onOpenFile(path); onPicked(); }}>{path.split('/').at(-1)}</button></li>)}</ul>;
-const agent = { controller, icon: Icon, label: 'Assistant', library, ...(params.get('words') === '1' ? { words: { dictate: 'Parler', conversation: 'Le fil' } } : {}), ...(params.get('readonly') === '1' ? { readOnly: T('Lecture seule : votre rôle permet de lire, pas d’écrire (fictif).', 'Read only: your role may read, not write (fictional).') } : {}), voice: { transcribe: async () => 'Texte dicté fictif', send: 'draft' },
+// K-3, K-4, K-5 (kit 0.4.85): the app's action on the reply card, its words while the agent works, and a whole set of words in « tu ».
+window.__undone = 0;
+const TU = { conversation: 'Ton fil', dictate: 'Dicte', listening: 'Je t’écoute…', releaseToSend: 'Relâche et j’envoie', answerHere: 'Ou réponds ici', sendFailed: 'Ton message n’est pas parti : il est revenu dans le champ.',
+  placeholder: 'Dis-moi ce que tu as mangé', send: 'Envoie', stop: 'Arrête', attachFiles: 'Joins un fichier', retry: 'Réessaie', voiceStop: 'Arrête de m’écouter', voiceCancel: 'Annule', emptyTitle: 'Parle-moi', emptyDescription: 'Dis-moi ce que tu as mangé.' };
+const agent = { controller, icon: Icon, label: 'Assistant', library,
+  ...(params.get('action') === '1' ? { replyAction: { label: 'Annuler', onSelect() { window.__undone += 1; } } } : {}),
+  ...(params.get('status') === '1' ? { workingWords: ({ tool }) => tool === 'read' ? 'Max compte…' : 'Max réfléchit…' } : {}),
+  ...(params.get('tu') === '1' ? { words: TU } : {}), ...(params.get('words') === '1' ? { words: { dictate: 'Parler', conversation: 'Le fil' } } : {}), ...(params.get('readonly') === '1' ? { readOnly: T('Lecture seule : votre rôle permet de lire, pas d’écrire (fictif).', 'Read only: your role may read, not write (fictional).') } : {}), voice: { transcribe: async () => 'Texte dicté fictif', send: 'draft' },
   // `?fork=1`: the host's conversations with fork and new (edit last, D3): `window.__forked` holds the entries forked at, `window.__new` counts new ones.
   chatProps: { ...(params.get('fork') === '1' ? { conversations: { items: [{ id: 'one-composer', title: 'Dossier Cèdre' }], activeId: 'one-composer', onSelect() {},
-    onNew() { window.__new = (window.__new ?? 0) + 1; }, fork: async at => { (window.__forked ??= []).push(String(at)); } } } : {}), title: 'Assistant', locale: LOCALE, mentions: { kinds: { task: { label: id => id, icon: <Icon className="size-4" /> } } }, labels: { placeholder: T('Demandez, ou « / » pour une action', 'Ask anything, or « / » for an action') }, actions, attachments, slash, onOpenFile } };
+    onNew() { window.__new = (window.__new ?? 0) + 1; }, fork: async at => { (window.__forked ??= []).push(String(at)); } } } : {}), title: 'Assistant', locale: LOCALE, mentions: { kinds: { task: { label: id => id, icon: <Icon className="size-4" /> } } }, labels: { ...(params.get('tu') === '1' ? {} : { placeholder: T('Demandez, ou « / » pour une action', 'Ask anything, or « / » for an action') }) }, actions, attachments, slash, onOpenFile } };
 createRoot(document.getElementById('root')).render(<AppShell layout="screen" locale={LOCALE} title={T('Compta fictive', 'Demo books')} nav={nav} route={{ id: 'dossier', onChange(id) { window.__route = id; } }} composer={params.get('composer') ?? 'bar'} rail="icon" agent={agent}
   {...(params.get('single') === '1' ? { sidebar: false, account: { name: 'Julie (fictive)', email: 'julie@example.test', signOut() {}, menu: [] } } : {})} />);

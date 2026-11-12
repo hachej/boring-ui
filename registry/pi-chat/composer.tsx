@@ -420,7 +420,9 @@ export function Composer(props: ComposerProps) {
     {pill && !props.recording && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
     {slots ? pill ? <InputGroup className="h-auto">
       <InputGroupAddon>{startAndPlus}</InputGroupAddon>
-      <div data-slot="composer-recording" data-testid="composer-recording" className="flex min-w-0 flex-1 items-center gap-2 self-stretch">{props.recordingStatus}</div>
+      <div data-slot="composer-recording" data-testid="composer-recording" className="flex min-w-0 flex-1 items-center gap-2 self-stretch">{props.recordingStatus}
+        {/* One field in every state: the message field stays in the DOM while the microphone is open (out of sight and out of reach); the status above is what shows in its place. */}
+        <div inert aria-hidden="true" className="sr-only">{input}</div></div>
       <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>
     </InputGroup> : <InputGroup>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
