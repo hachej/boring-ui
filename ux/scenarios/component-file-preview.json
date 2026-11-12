@@ -31,7 +31,7 @@
  ],
  "flows": [
   { "id": "F01", "name": "Open a note", "steps": [
-   { "do": "tap", "target": "open-file[data-name=\"closing-notes.md\"]", "say": "Tap “closing-notes.md”", "motion": true, "until": "visible:file-viewer|agent-preview & eval:[...document.querySelectorAll('[data-testid=file-viewer], [data-testid=agent-preview]')].some(e => e.textContent.includes('exercice 2025'))", "timeout": 5000, "expect": "The note opens in the viewer with its title and its text." }
+   { "do": "tap", "target": "open-file[data-name=\"closing-notes.md\"]", "say": "Tap “closing-notes.md”", "motion": true, "until": "visible:file-viewer|agent-preview & eval:[...document.querySelectorAll('[data-testid=file-viewer], [data-testid=agent-preview]')].some(e => e.textContent.includes('fiscal year 2025'))", "timeout": 5000, "expect": "The note opens in the viewer with its title and its text." }
   ] },
   { "id": "F02", "name": "Close with the button", "query": "open=csv", "steps": [
    { "do": "wait", "ms": 500, "say": "The table is open", "until": "visible:file-viewer|agent-preview" },

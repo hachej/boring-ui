@@ -77,7 +77,7 @@
     { "do": "tap", "target": "agent-preview-back", "say": "“← Library”", "until": "visible:fixture-library & text:agent-preview-title~Library", "expect": "The library as it was (the folder still open)." },
     { "do": "tap", "text": "exports", "say": "Unfold “exports”", "until": "text:fixture-library~entries-january.json" },
     { "do": "tap", "text": "entries-january.json", "say": "Open the JSON export", "until": "visible:agent-preview-text & text:agent-preview-text~Card Harbor Garage", "expect": "Code as text." },
-    { "do": "tap", "target": "file-next", "say": "Next file", "until": "text:agent-preview-text~Maison Delorme", "expect": "The plain text letter." },
+    { "do": "tap", "target": "file-next", "say": "Next file", "until": "text:agent-preview-text~Delmore House", "expect": "The plain text letter." },
     { "do": "tap", "target": "agent-preview-back", "say": "“← Library”", "until": "visible:fixture-library" },
     { "do": "tap", "text": "videos", "say": "Unfold “videos”", "until": "text:fixture-library~studio-tour.webm" },
     { "do": "tap", "text": "studio-tour.webm", "say": "Open the video", "timeout": 6000, "until": "visible:agent-preview-video", "expect": "The video plays with the native controls." },
