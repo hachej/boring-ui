@@ -34,6 +34,7 @@
     };
     const mark = () => {
       $$('[data-vp]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.vp === vp)));
+      $$('[data-try]').forEach(b => { b.hidden = !D.tries[+b.dataset.try].steps[D.views[vp].name]; });
       $$('[data-variant]').forEach(b => { const v = D.variants[+b.dataset.variant]; b.setAttribute('aria-pressed', String(v.query === extra)); b.hidden = !!v.only && v.only !== D.views[vp].name; });
     };
     const load = () => new Promise(done => {

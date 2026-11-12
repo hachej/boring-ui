@@ -74,7 +74,7 @@ function usage(fixture) {
 
 function status(scenario, result) {
   const sum = summary(scenario, result), touch = new Set((scenario?.viewports ?? []).filter(v => v.touch).map(v => v.name));
-  const where = f => (f.flow ? `${f.flow.id} · ${f.flow.name}, ${touch.has(f.flow.viewport) ? 'phone' : 'desktop'}${f.index === undefined ? '' : `, step ${f.index + 1} « ${f.flow.steps[f.index].say} »`}` : 'The component');
+  const where = f => (f.flow ? `${f.flow.id} · ${f.flow.name}, ${touch.has(f.flow.viewport) ? 'phone' : 'desktop'}${f.index === undefined ? '' : `, step ${f.index + 1} “${f.flow.steps[f.index].say}”`}` : 'The component');
   return `<div class="status"><strong>${esc(summaryLine(sum))}</strong>${sum.list.length ? `<details><summary>What does not pass yet (${sum.list.length})</summary><ul>${sum.list.map(f => `<li><span class="small muted">${esc(where(f))}</span><br>${esc(f.plain)}</li>`).join('')}</ul></details>` : ''}</div>`;
 }
 

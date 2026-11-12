@@ -48,8 +48,8 @@ function App() {
   </main>;
 }
 const names = Object.keys(FILES);
-const files = { read: async path => { const file = FILES[path]; if (!file) throw new Error('introuvable'); return new Blob([file[1]], { type: file[0] }); } };
-let snapshot = { identity: { runtimeId: 'fictional', scopeId: 'file-preview', principalId: 'julie' }, conversationId: 'file-preview', connection: { kind: 'connected' },
+const files = { read: async path => { const file = FILES[path]; if (!file) throw new Error('not found'); return new Blob([file[1]], { type: file[0] }); } };
+let snapshot = { identity: { runtimeId: 'fictional', scopeId: 'file-preview', principalId: 'maya' }, conversationId: 'file-preview', connection: { kind: 'connected' },
   view: { entries: [], docs: {} }, draft: { text: '', attachments: [], version: 0 }, outbox: [], echo: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
 const listeners = new Set();
 const controller = { getSnapshot: () => snapshot, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
@@ -64,12 +64,12 @@ function PanePage() {
   useEffect(() => { if (depth === 0 && window.__wasOpen) window.__closed += 1; window.__wasOpen = depth > 0; }, [depth]);
   window.__ux = { closed: () => window.__closed, open: name => name ? open(name) : layer.pane.close() };
   return <div data-testid="file-list" className="flex flex-col gap-2 p-6 text-sm">
-    <h1 className="m-0 text-base font-semibold">Pièces du dossier Atelier Brun</h1>
+    <h1 className="m-0 text-base font-semibold">Files of Harbor Studio (fictional)</h1>
     {names.map(name => <button key={name} type="button" data-testid="open-file" data-name={name} className="h-11 rounded-md border px-3 text-left hover:bg-muted" onClick={() => open(name)}>{name}</button>)}
   </div>;
 }
-const nav = [{ id: 'pieces', label: 'Pièces', icon: ({ className }) => <svg className={className} width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="2" fill="currentColor" /></svg>, render: () => <PanePage /> }];
-const Pane = () => <AppShell layout="screen" locale="fr" title="Pièces (fictif)" sidebar={false} nav={nav} route={{ id: 'pieces', onChange() {} }} composer="bar"
-  agent={{ controller, label: 'Assistant', files, chatProps: { title: 'Assistant', locale: 'fr' } }} />;
+const nav = [{ id: 'pieces', label: 'Files', icon: ({ className }) => <svg className={className} width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="2" fill="currentColor" /></svg>, render: () => <PanePage /> }];
+const Pane = () => <AppShell layout="screen" locale="en" title="Files (fictional)" sidebar={false} nav={nav} route={{ id: 'pieces', onChange() {} }} composer="bar"
+  agent={{ controller, label: 'Assistant', files, chatProps: { title: 'Assistant', locale: 'en' } }} />;
 createRoot(document.getElementById('root')).render(params.get('host') === 'pane' ? <Pane /> : <App />);
 
