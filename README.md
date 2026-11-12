@@ -189,6 +189,7 @@ npx skills add hachej/boring-ui
 | Agents that change their own tools | [Self-evolution](docs/architecture/SELF-EVOLUTION.md) |
 | Product scope | [Requirements](docs/architecture/PRODUCT-REQUIREMENTS.md) and [roadmap](docs/architecture/ROADMAP.md) |
 | Releasing | [npm release guide](docs/implementation/NPM-RELEASE.md) |
+| The UX showcase site (Pages, manual) | [UX showcase](docs/implementation/UX-SHOWCASE.md) |
 
 Apps built by the Boring Factory start from its app template and ship through the [Factory](https://github.com/hachej/boring-factory/blob/main/docs/PROVISIONING.md); this repository provides the packages and blocks they consume.
 

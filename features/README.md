@@ -16,6 +16,7 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Feedback | comment mode, pins, reports | [feedback.md](feedback.md) |
 | App shell | layouts, navigation, headers, list and detail, account | [app-shell.md](app-shell.md) |
 | Agent layer | the shell's agent drawer and dock, voice, launch links, context | [agent-layer.md](agent-layer.md) |
+| UX harness | scenarios, capture, check, judge, loop and showcase for layouts and components | [ux-harness.md](ux-harness.md) |
 | Chat | `pi-chat`, composer features, cards, mentions, conversations | [chat.md](chat.md) |
 | Agent workspace | `pi-app`, embedded and placed workspaces, Library, viewers | [agent-workspace.md](agent-workspace.md) |
 | Ambient agent | the floating bar over an existing site, notifications | [ambient.md](ambient.md) |

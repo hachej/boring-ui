@@ -1,0 +1,57 @@
+name: UX showcase
+# manual: docs/implementation/UX-SHOWCASE.md
+# Inert until the owner enables GitHub Pages (Settings > Pages > Source: GitHub Actions). It runs only when a release is published or someone starts it by hand,
+# never on push or pull_request (the kit's CI is already slow). A failing `ux check` fails the job and nothing is published.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+concurrency:
+  group: ux-showcase
+  cancel-in-progress: true
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  showcase:
+    name: Check, capture and publish the showcase
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      CHROMIUM: ${{ github.workspace }}/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.1
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium
+        timeout-minutes: 8
+        # Same recipe as verify.yml: Ubuntu runners already have Chrome libraries; apt is only a fallback for missing ldd dependencies.
+        run: bash scripts/install-ci-chromium.sh 1.63.0
+      - name: Allow the Chromium sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Add the browser driver the harness imports (not a dependency of the kit)
+        run: npm i --no-save playwright-core@1.63.0
+      - run: npm run build
+      - name: The regression gate (no model, no pictures; failing it publishes nothing)
+        run: node ux/runner/cli.mjs check
+      - name: Capture every target
+        run: node ux/runner/cli.mjs capture --out .cache/ux
+      - name: Build the static site
+        run: node ux/runner/cli.mjs site --from .cache/ux --out .cache/site
+      # Tags verified read-only with `gh api repos/actions/<name>/git/ref/tags/<tag>` on 2026-11-12; the SHAs are those commits.
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: .cache/site
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
