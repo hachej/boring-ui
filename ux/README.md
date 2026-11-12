@@ -35,13 +35,27 @@ Needs `CHROMIUM` (a Chromium binary) and `playwright-core` (`npm i --no-save pla
 | `check [--target t]` | no model, no pictures: fails on a step that does not complete, a console error, a failed request, or a threshold of the scenario crossed (layout shift, time to settle, touch target, focus, clipping) |
 | `judge --target t --from dir [--prev dir]` | Claude Opus, headless and read-only, grades the folder on `CRITERIA.md`, writes `verdict.json` and `verdict.md` |
 | `site --from dir --out dir` | static showcase (facts only, never a grade) |
-| `ux/runner/loop.mjs --target t` | worker model + judge in rounds; state in `$UX_LOOP_HOME/<target>/`, one commit per round |
+| `ux/runner/loop.mjs --target t` | worker model + judge in rounds; state in `$UX_LOOP_HOME/<target>/`, one commit per accepted round (see "The loop" below) |
 
 Pace: demos stream and wait at `pace=real` (people, videos); `check` runs `pace=instant`. The scripted assistant lives in `ux/scenarios/scripts/*.json`.
 
 ## What the judge grades, and 9
 
 Six criteria in `CRITERIA.md`: clarity and hierarchy, layout and spacing, states and feedback, phone ergonomics, visual polish, flows and interactions. 9 means a senior product designer would ship it as is: for flows, every step completes first time, layout shift under 0.02, focus lands in the right place, close returns to the exact prior state, first response under about 100 ms, settled under about 300 ms.
+
+## The loop (runbook)
+
+The worker (Codex, `workspace-write` sandbox) cannot write the worktree's git directory and cannot start Chromium, so it only edits files; the loop does everything else (`loop.mjs`, git and round mechanics in `loop-round.mjs`, tested by `test/ux-loop-round.test.mjs` with a fake worker).
+
+Per round:
+1. Eyes. The loop copies the last accepted capture (pictures, flow strips, `metrics.json`), the judge's remarks, `check-lines.txt` and, when the last round was discarded, `last-failure.txt` into `round-N/eyes/` and points `worker-brief.md` at it.
+2. The worker edits files. No change means the round is logged "no change" (not a failure).
+3. Refusal. A change under `ux/runner/`, `ux/scenarios/`, `test/contracts/`, the acceptance contract, `ux/CRITERIA.md`, `ux/judge-prompt.md`, `ux/worker-brief.md` or `package*.json` discards the round, with no repair.
+4. Checks, cheapest first: `npm run registry:build` (when `registry.json` or `registry/` changed, so the committed build is never stale), `npm run check`, the contract tests (`UX_TEST_CMD`), then, after waiting for the 1-minute load to fall under `UX_LOAD_MAX` (default 25, at most 15 minutes), the harness `check` and the full capture with the flow guard. A crashed capture is retried once. The harness check may not have more failing lines than the last accepted round.
+5. One repair: a failure gives the worker the full failing output (failing test, assertion, file and line; also saved as `round-N/failure-1.txt` and in the log) and a second pass in the same round. Still failing: the files are checked out back to the round's start commit and the files the round added are removed (`discard`; never `git reset --hard` or `git stash`), and the round is recorded as failed with its reason.
+6. Judge, only for a round that passed. A round whose lowest criterion is below the last accepted round's is discarded the same way and recorded. Otherwise the loop commits for the worker (author `<model> (UX loop round N)`, never empty) and the scoreboard gets the row: commit, criteria, failing check lines, result.
+
+State is in `$UX_LOOP_HOME/<target>/`: `loop.log`, `scoreboard.md`, `round-N/`, `check-lines.json`. `touch STOP` there pauses it between rounds. Limits: `UX_MAX_ROUNDS` (10), `UX_MAX_IDLE` (3 rounds in a row that improved nothing), `UX_WORKER_MODEL`.
 
 ## What it does not do
 
