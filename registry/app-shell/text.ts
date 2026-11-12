@@ -62,6 +62,8 @@ export interface AppShellText {
   readonly sendFailed: string;
   /** The preview header's way to the app's files. */
   readonly library: string;
+  /** The edge between the page and the preview column (`composer: 'bar'`): drag it, or use the arrow keys, to resize the column. */
+  readonly resizePreview: string;
 }
 
 const en: AppShellText = {
@@ -101,6 +103,7 @@ const en: AppShellText = {
   answerHere: 'Or answer here',
   sendFailed: 'The message was not sent: it is back in the field. Try again.',
   library: 'Library',
+  resizePreview: 'Resize the preview',
 };
 
 const fr: AppShellText = {
@@ -140,6 +143,7 @@ const fr: AppShellText = {
   answerHere: 'Ou répondez ici',
   sendFailed: 'Le message n’est pas parti : il est revenu dans le champ. Réessayez.',
   library: 'Bibliothèque',
+  resizePreview: 'Redimensionner l’aperçu',
 };
 
 const TEXT: Readonly<Record<AppShellLocale, AppShellText>> = { en, fr };

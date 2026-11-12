@@ -11,7 +11,7 @@
 import { createPortal } from 'react-dom';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ComponentType, CSSProperties, HTMLAttributes, PointerEvent as ReactPointerEvent, ReactElement, ReactNode, Ref, RefObject } from 'react';
-import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, LibraryIcon, Loader2Icon, MicIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, SquareIcon, XIcon } from '../_shared/icons';
+import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, HistoryIcon, LibraryIcon, Loader2Icon, MicIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, SparklesIcon, SquareIcon, XIcon } from '../_shared/icons';
 // Behaviour only: Base UI's keyboard-inset provider for the host drawer's content. It renders nothing visible.
 import * as BaseDrawerParts from '@base-ui/react/drawer';
 import { Button } from '@/components/ui/button';
@@ -36,6 +36,8 @@ import { voiceClock } from '../pi-chat/config';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { PendingVoiceBubble, VoiceMessageButton } from '../pi-chat-voice/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
+import { ConversationHistory } from '../pi-chat/history';
+import { ChatTextProvider } from '../pi-chat/labels';
 import type { ChatLabels } from '../pi-chat/labels';
 import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
 import { feedbackLabelsFr } from '../feedback/feedback-labels';
@@ -140,6 +142,24 @@ export interface AgentPreview {
 function LibraryButton({ open, text, testId = 'agent-preview-library' }: { readonly open: (() => void) | undefined; readonly text: AppShellText; readonly testId?: string }) {
   if (!open) return null;
   return <Button variant="ghost" size="icon" data-testid={testId} aria-label={text.library} title={text.library} onClick={open}><LibraryIcon data-icon="inline-start" aria-hidden="true" /></Button>;
+}
+
+/** « Historique » in the conversation's header, when the app gives `chatProps.conversations`: the same list PiChat's own header opens
+ * (`ConversationHistory`: a card under the header on a screen, a drawer with ← on a phone), with search, rename, delete and « Nouvelle ». */
+function HistoryButton() {
+  const layer = useInternal();
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const chat = layer.showing === 'improve' ? undefined : layer.agent?.chatProps;
+  const conversations = chat?.historyList === false || chat?.showHistory === false ? undefined : chat?.conversations;
+  if (!conversations) return null;
+  const text = { ...chatTextFor(layer.locale ?? chat?.locale), labels: composerLabels(layer.locale, layer.agent) };
+  const close = () => { setOpen(false); requestAnimationFrame(() => button.current?.focus({ preventScroll: true })); };
+  return <>
+    <Button ref={button} variant="ghost" size="icon" data-testid="history-open" aria-label={text.labels.history} title={text.labels.history} aria-haspopup="dialog" aria-expanded={open}
+      onClick={() => setOpen(now => !now)}><HistoryIcon data-icon="inline-start" aria-hidden="true" /></Button>
+    {open && <ChatTextProvider value={text}><ConversationHistory conversations={conversations} onClose={close} /></ChatTextProvider>}
+  </>;
 }
 
 // The three fixed snap points: a peek (the file chip, one composer row and a line of the last reply, `PEEK_REM` above the tab bar), 55% and the full height.
@@ -606,10 +626,13 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const previewStacked = bar && expanded && shownPreview !== null && dockOpen && shown === 'agent';
   // Folded: the card of the work and the reply sits on the field: above it in the column on a wide screen, in the drawer's peek on a phone.
   const folded = bar && (contentComposer ? !trayOpen && !dockOpen : snap === 'peek' && shown === 'agent');
+  const returnFocus = useRef<HTMLElement | null>(null);
   // What was last asked to show, set at once (not after the render): a pick in the library that opens a file and then calls `onPicked` sees the file.
   const shownRef = useRef<AgentPreview | null>(null);
   const preview = useCallback((next: AgentPreview | null) => {
     if (!specs.current.agent || composer !== 'bar') return false;
+    // Where focus goes back when the file closes: the control that opened it (else the field, when that control is gone).
+    if (next && !shownRef.current && document.activeElement instanceof HTMLElement && !document.activeElement.closest('[data-testid=agent-preview]')) returnFocus.current = document.activeElement;
     shownRef.current = next;
     setPreview(next);
     // The conversation stays at hand above the field, to talk about the file.
@@ -627,6 +650,36 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
       preview(view);
     };
   }, [library, composer, locale, preview]);
+  // An opened file takes focus (its close control), so Échap and the keyboard work in it at once; closed, focus goes back to where it came from.
+  useEffect(() => {
+    if (shownPreview) {
+      const active = document.activeElement;
+      if (active && active !== document.body && active.closest('[data-testid=agent-preview]')) return;
+      const frame = requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid=agent-preview] [data-testid=agent-preview-close], [data-testid=agent-preview-back]')?.focus({ preventScroll: true }));
+      return () => cancelAnimationFrame(frame);
+    }
+    const back = returnFocus.current;
+    returnFocus.current = null;
+    if (!back) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && !active.closest('[data-testid=agent-preview]')) return;
+    const target = back.isConnected && back.getClientRects().length > 0 ? back
+      : composerSlotRef.current?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? host?.querySelector<HTMLElement>('[data-spec=agent] [data-testid=composer-input]');
+    target?.focus({ preventScroll: true });
+  }, [shownPreview, host]);
+  // Échap closes the file from anywhere but the field (whose Échap stops a run or lists the messages) and an open menu, list or dialog.
+  useEffect(() => {
+    if (!shownPreview) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('[data-testid=composer-input]') || document.querySelector('[data-testid=conversations], [role=menu], [role=listbox], [role=alertdialog]')) return;
+      event.preventDefault();
+      setPreview(null); shownRef.current = null;
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [shownPreview]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- a preview goes with the agent it was opened beside
   useEffect(() => { if (!agent && shownPreview) { shownRef.current = null; setPreview(null); } }, [agent, shownPreview]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the tray is gone with the content composer (a phone width, a lost agent): the fill state goes with it
@@ -986,6 +1039,7 @@ function Header({ text, title, compactSnap, closeRef, controls, className, ...re
     {back && <Button variant="ghost" size="icon" data-testid="agent-layer-back" aria-label={text.back} title={text.back} onClick={layer.showAgent}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
     {file && <Button variant="ghost" size="icon" data-testid="agent-preview-back" aria-label={text.backToAssistant} title={text.backToAssistant} onClick={() => layer.preview(null)}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
     <h2 data-testid={file ? 'agent-preview-title' : 'agent-layer-title'} className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{file ? file.title : title}</h2>
+    {!file && <HistoryButton />}
     <LibraryButton open={library} text={text} testId="agent-layer-library" />
     {actions.length > 0 && <HeaderActions actions={actions} compact={compactSnap !== undefined} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
     {compactSnap === 'half' && <Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button>}
@@ -1242,7 +1296,12 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   useEffect(() => {
     if (!open) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented) layer.close(); };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      // A list, menu or file opened over the column takes its own Escape first.
+      if (document.querySelector('[data-testid=conversations], [data-testid=agent-preview], [role=menu], [role=listbox]')) return;
+      layer.close();
+    };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [open, layer]);
@@ -1294,8 +1353,7 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
 function PreviewStack({ preview }: { readonly preview: AgentPreview }) {
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  return <section data-testid="agent-preview" data-placement="stacked" aria-label={`${text.preview} · ${preview.title}`} className="flex min-h-0 flex-1 flex-col"
-    onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); layer.preview(null); } }}>
+  return <section data-testid="agent-preview" data-placement="stacked" aria-label={`${text.preview} · ${preview.title}`} className="flex min-h-0 flex-1 flex-col">
         <div data-testid="agent-preview-body" className="flex min-h-0 flex-1 flex-col overflow-auto">{preview.content}</div>
   </section>;
 }
@@ -1401,6 +1459,7 @@ function ContentTray() {
     <div data-testid="agent-tray-body" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
       <div data-testid="agent-tray-header" className="flex shrink-0 items-center gap-1 pt-1">
         <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{title}</h2>
+        <HistoryButton />
         {layer.bar && <LibraryButton open={layer.openLibrary} text={text} testId="agent-layer-library" />}
         <Button variant="ghost" size="icon" data-testid="agent-tray-dock" aria-label={dockLabel} title={dockLabel}
           onClick={moveToDock}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button>
@@ -1426,22 +1485,30 @@ export function AgentDockLayout({ children }: { readonly children: ReactNode }):
   return <DockLayout storageKey={DOCK_KEY} persist="local" minMain={MIN_MAIN + (layer.besidePanel ? PM_COLUMN : 0)}>
     {layer.side === 'left' && dock}
     <DockMain>{layer.contentColumn ? <ContentColumn>{children}</ContentColumn> : children}</DockMain>
-    {layer.bar && layer.expanded && layer.shownPreview && !layer.previewStacked && <PreviewPane preview={layer.shownPreview} />}
+    {layer.bar && layer.expanded && layer.shownPreview && !layer.previewStacked && <PreviewDock preview={layer.shownPreview} />}
     {layer.side === 'right' && dock}
   </DockLayout>;
 }
 
+/** The wide preview column: the kit's `Dock`, as the docked conversation, so it resizes by drag or arrow keys and keeps its width. */
+function PreviewDock({ preview }: { readonly preview: AgentPreview }) {
+  const layer = useInternal();
+  const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
+  return <Dock id="preview" side="right" defaultWidth={512} minWidth={320} open onOpenChange={next => { if (!next) layer.preview(null); }} labels={{ region: `${text.preview} · ${preview.title}`, resize: text.resizePreview }}>
+    <PreviewPane preview={preview} />
+  </Dock>;
+}
+
 /**
  * `useAgentLayer().preview`: the app's view of a file, in the right column on a wide screen (the conversation waits above the field) and over
- * the whole screen on a phone. Fermer l'aperçu (or Escape inside it) closes it; the app draws the content.
+ * the whole screen on a phone. Fermer l'aperçu or Échap (the provider's) closes it; the app draws the content.
  */
 function PreviewPane({ preview }: { readonly preview: AgentPreview }) {
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const close = () => layer.preview(null);
   return <aside data-testid="agent-preview" aria-label={`${text.preview} · ${preview.title}`}
-    onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); close(); } }}
-    className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground', layer.expanded ? 'relative w-[min(32rem,45%)] shrink-0 border-l' : 'fixed inset-0 z-(--app-shell-z-sheet)')}>
+    className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground', layer.expanded ? 'relative h-full flex-1' : 'fixed inset-0 z-(--app-shell-z-sheet)')}>
     <div className="flex shrink-0 items-center gap-1 px-2 py-2">
       <h2 data-testid="agent-preview-title" className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{preview.title}</h2>
       <LibraryButton open={preview.title === text.library ? undefined : layer.openLibrary} text={text} />
