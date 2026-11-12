@@ -939,3 +939,35 @@ test('K-6, 390 touch: the first press-and-hold on Dicter in a session sends on r
   } finally { await browser.send('Emulation.setTouchEmulationEnabled', { enabled: false }); }
 });
 
+
+test('1280, pane review: preview keeps one identity, an update of the top never moves focus, Échap acts only from the pane or with nothing focused, a stray listbox does not hold the tray open', { skip, timeout: 120000 }, async () => {
+  await open(1280);
+  await browser.evaluate(`window.__preview = window.__layer.preview`);
+  await browser.evaluate(`window.__openFile('uploads/ecarts-janvier.csv')`);
+  await browser.until('preview', `!!document.querySelector('[data-testid=agent-preview] [data-testid=fixture-preview]')`);
+  await browser.evaluate(`window.__openFile('uploads/releve-fevrier.pdf')`);
+  await browser.until('second entry', `document.querySelector('[data-testid=agent-preview]')?.dataset.depth === '2'`);
+  assert.equal(await browser.evaluate(`window.__layer.preview === window.__preview`), true, 'preview keeps its identity across pushes');
+  await wait(300);
+  await browser.evaluate(`document.querySelector('[data-testid=composer-input]').focus()`);
+  await browser.evaluate(`window.__openFile('uploads/releve-fevrier.pdf')`);
+  await wait(500);
+  assert.equal(await browser.evaluate(`document.activeElement?.dataset.testid`), 'composer-input', 'an app updating its top view leaves focus on the field');
+  assert.equal(await browser.evaluate(`window.__layer.preview === window.__preview`), true, 'and after a replace');
+  await browser.evaluate(`(() => { const input = document.createElement('input'); input.id = 'outside'; document.body.append(input); input.focus(); })()`);
+  await browser.press('Escape');
+  await wait(400);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-preview]')?.dataset.depth`), '2', 'Échap in a field outside the pane keeps the pane');
+  await browser.evaluate(`document.activeElement.blur()`);
+  await browser.press('Escape');
+  await browser.until('Échap with nothing focused steps back', `document.querySelector('[data-testid=agent-preview]')?.dataset.depth === '1'`);
+  await browser.evaluate(`window.__layer.preview(null)`);
+  await browser.until('closed', `!document.querySelector('[data-testid=agent-preview]')`);
+  await browser.evaluate(`window.__layer.open('agent')`);
+  await browser.until('Ouvert', `!!document.querySelector('[data-testid=agent-tray]')`);
+  await click('[data-testid=agent-tray-dock]');
+  await browser.until('Ancré', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  await browser.evaluate(`(() => { const list = document.createElement('div'); list.setAttribute('role', 'listbox'); document.body.append(list); document.activeElement.blur(); })()`);
+  await browser.press('Escape');
+  await browser.until('the dock closes by Escape although a listbox sits on the page', `document.querySelector('[data-testid=agent-layer]')?.dataset.state !== 'open'`);
+});

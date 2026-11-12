@@ -344,9 +344,9 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const uncover = useCallback(() => { if (specs.current.snap === 'half' || specs.current.snap === 'full') setSnapState('peek'); }, []);
   const field = useCallback(() => composerSlotRef.current?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? host?.querySelector<HTMLElement>('[data-spec=agent] [data-testid=composer-input]'), [host]);
   // The right pane and its back stack (agent-pane.tsx): `preview` is a push, `preview(null)` closes it.
-  const { stack, pane, openLibrary, openFile, step, presented } = usePane({ agent, bar, compact, locale: locale ?? agent?.chatProps?.locale, field, uncover,
+  const { stack, pane, verbs, openLibrary, openFile, step, presented } = usePane({ agent, bar, compact, locale: locale ?? agent?.chatProps?.locale, field, uncover,
     storageKey: sidebarKey('agent-pane', modeIdentity?.app, modeIdentity?.person) });
-  const preview = useCallback((next: AgentPreview | null) => { if (next) return pane.push(next); if (!bar) return false; pane.close(); return true; }, [pane, bar]);
+  const preview = useCallback((next: AgentPreview | null) => { if (next) return verbs.push(next); if (!bar) return false; verbs.close(); return true; }, [verbs, bar]);
   const paneStacked = bar && expanded && stack.length > 0 && dockOpen && shown === 'agent';
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the tray is gone with the content composer (a phone width, a lost agent): the fill state goes with it
   useEffect(() => { if (!trayOpen && grown) setGrown(false); }, [trayOpen, grown]);

@@ -59,8 +59,13 @@ export function LocalFileViewer({ name, blob, kinds, ...frame }: LocalFileViewer
 
 /** A video already in the page (a Blob): played from an object URL with the native controls. */
 function LocalVideo({ name, blob, mediaType, subtitle, testId = 'viewer', ...frame }: LocalFileViewerProps & { readonly mediaType: string }) {
-  const url = useMemo(() => URL.createObjectURL(blob), [blob]);
-  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  const [url, setUrl] = useState<string>();
+  useEffect(() => {
+    const made = URL.createObjectURL(blob);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the object URL is created and revoked in this one effect (StrictMode mounts twice)
+    setUrl(made);
+    return () => { URL.revokeObjectURL(made); setUrl(undefined); };
+  }, [blob]);
   const title = name.split('/').pop() || name;
   return <ViewerFrame title={title} testId={testId} {...frame} subtitle={<>{subtitle}{subtitle && <span aria-hidden="true">·</span>}{mediaType} · {formatBytes(blob.size)}</>}
     onDownload={() => downloadFile(title, blob, mediaType)}>

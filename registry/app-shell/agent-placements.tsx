@@ -52,7 +52,7 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
       // A list, menu or file opened over the column takes its own Escape first.
-      if (document.querySelector('[data-testid=conversations], [data-testid=agent-preview], [role=menu], [role=listbox]')) return;
+      if (document.querySelector('[data-testid=conversations], [data-testid=agent-preview]') || (event.target instanceof Element && event.target.closest('[role=menu], [role=listbox]'))) return;
       layer.close();
     };
     document.addEventListener('keydown', onKey);

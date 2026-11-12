@@ -79,23 +79,28 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
   const opener = () => document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
 
   // Opening the pane leaves the conversation as it is (folded stays folded): the page keeps its place, the one field stays where it was.
-  const pushEntry = useCallback((entry: Draft) => {
+  const pushEntry = useCallback((entry: Draft, focus = true): number => {
     const current = latest.current;
     const top = current.at(-1);
     // The same thing again replaces the top (an app updating its view, the agent presenting the file on show), so back never shows it twice.
     const same = top && top.kind === entry.kind && (entry.kind === 'file' ? top.kind === 'file' && top.path === entry.path : top.title === entry.title);
     const next = { ...entry, id: same ? top.id : ++ids.current, opener: same ? top.opener : opener() } as PaneEntry;
-    commit([...(same ? current.slice(0, -1) : current), next].slice(-MAX_DEPTH), { to: 'top' });
+    // Focus follows a person's open of something new; an update of what is on top, or the agent's auto-open, leaves it where it is.
+    commit([...(same ? current.slice(0, -1) : current), next].slice(-MAX_DEPTH), same || !focus ? null : { to: 'top' });
     if (compact) uncover();
-    return true;
+    return next.id;
   }, [commit, compact, uncover]);
-  const push = useCallback((item: PaneItem): boolean => {
+  const pushNow = useCallback((item: PaneItem): boolean => {
     if (!agent || !bar) return false;
-    if ('content' in item) return pushEntry({ kind: 'view', title: item.title, content: item.content });
+    if ('content' in item) return pushEntry({ kind: 'view', title: item.title, content: item.content }) > 0;
     if (!files) return false;
     const set = item.files?.includes(item.file) ? item.files : [item.file];
-    return pushEntry({ kind: 'file', title: item.title ?? nameOf(item.file), path: item.file, files: set });
+    return pushEntry({ kind: 'file', title: item.title ?? nameOf(item.file), path: item.file, files: set }) > 0;
   }, [agent, bar, files, pushEntry]);
+  // `push` keeps one identity for the life of the provider (an app's `useEffect(() => { preview(x); return () => preview(null) }, [preview])` must not loop): it calls the latest `pushNow`.
+  const pushRef = useRef(pushNow);
+  useLayoutEffect(() => { pushRef.current = pushNow; });
+  const push = useCallback((item: PaneItem) => pushRef.current(item), []);
   const back = useCallback((): number => {
     const current = latest.current;
     const popped = current.at(-1);
@@ -135,8 +140,7 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
     return () => {
       const made = libraryContent();
       if (!made) return;
-      pushEntry({ kind: 'library', title: libraryTitle, content: made.content });
-      made.claim(ids.current);
+      made.claim(pushEntry({ kind: 'library', title: libraryTitle, content: made.content }));
     };
   }, [library, bar, libraryContent, pushEntry, libraryTitle]);
   const chat = agent?.controller;
@@ -148,15 +152,15 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
   const conversations = agent?.chatProps?.conversations;
   const top = stack.at(-1);
   const onTop = useCallback((path: string) => { const shown = latest.current.at(-1); return shown?.kind === 'file' && shown.path === path; }, []);
-  const presentFile = useCallback((artifact: PresentedArtifact) => {
+  const presentFile = useCallback((artifact: PresentedArtifact, focus = true) => {
     if (artifact.type === 'task') return false;
     const path = artifact.target.resource.path;
-    pushEntry({ kind: 'file', title: artifact.title || nameOf(path), path, files: [path], revision: artifact.revision });
+    pushEntry({ kind: 'file', title: artifact.title || nameOf(path), path, files: [path], revision: artifact.revision }, focus);
     return true;
   }, [pushEntry]);
   const follow = useArtifactFollow({ controller, conversationId: controller ? String(conversations?.activeId ?? controller.getSnapshot().conversationId) : undefined, active: null,
-    onOpen: selection => { presentFile(selection.descriptor); }, autoOpen: true, narrow: () => compact, showing: onTop,
-    openPresent: path => files ? pushEntry({ kind: 'file', title: nameOf(path), path, files: [path] }) : false,
+    onOpen: selection => { presentFile(selection.descriptor, !selection.follow); }, autoOpen: true, narrow: () => compact, showing: onTop,
+    openPresent: path => files ? pushEntry({ kind: 'file', title: nameOf(path), path, files: [path] }) > 0 : false,
     answer: agent?.chatProps?.actions?.answer as Parameters<typeof useArtifactFollow>[0]['answer'] });
   const { onShown } = follow;
   const presented = useMemo<PanePresent | undefined>(() => controller ? {
@@ -190,12 +194,15 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
       const target = event.target instanceof Element ? event.target : null;
+      // The pane's own keys: from inside it, or with nothing focused. A field or a control elsewhere on the page keeps its keys.
+      const active = document.activeElement;
+      if (!(target?.closest('[data-testid=agent-preview]') || (!active || active === document.body))) return;
       if (event.key === 'Escape') {
-        if (target?.closest('[data-testid=composer-input]') || document.querySelector('[data-testid=conversations], [role=menu], [role=listbox], [role=alertdialog], [role=dialog]:not([data-testid=agent-layer])')) return;
+        if (target?.closest('[data-testid=composer-input]') || document.querySelector('[data-testid=conversations], [role=alertdialog], [role=dialog]:not([data-testid=agent-layer])') || target?.closest('[role=menu], [role=listbox]')) return;
         event.preventDefault(); back(); return;
       }
       const offset = stepping ? stepOffset(event.key) : undefined;
-      if (!offset || target?.closest('input, textarea, select, [contenteditable=true], [role=separator], [role=slider], [role=tree], [role=treegrid], [role=listbox], [role=menu], [role=tablist], [role=radiogroup]')) return;
+      if (!offset || target?.closest('input, textarea, select, video, audio, [contenteditable]:not([contenteditable=false]), [role=separator], [role=slider], [role=tree], [role=treegrid], [role=listbox], [role=menu], [role=tablist], [role=radiogroup]')) return;
       event.preventDefault(); step(offset);
     };
     document.addEventListener('keydown', onKey);
@@ -228,8 +235,9 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
   // The pane goes with the agent it was opened beside.
   useEffect(() => { if (!agent && latest.current.length) commit([], null); }, [agent, commit]);
 
-  const pane = useMemo<AgentPane>(() => ({ push: item => push(item), back: () => { back(); }, close, depth }), [push, back, close, depth]);
-  return { stack, pane, openLibrary, openFile, step, presented };
+  const verbs = useMemo(() => ({ push, back: () => { back(); }, close }), [push, back, close]);
+  const pane = useMemo<AgentPane>(() => ({ ...verbs, depth }), [verbs, depth]);
+  return { stack, pane, verbs, openLibrary, openFile, step, presented };
 }
 
 /** The back control: « ← <what is under> », or « ← Assistant » over the docked conversation. */
