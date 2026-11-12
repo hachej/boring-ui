@@ -85,13 +85,13 @@
       else if (s.do === 'press') { const el = doc.activeElement ?? doc.body; for (const key of s.key.split(' ')) { if (key === 'Tab') continue; for (const t of ['keydown', 'keyup']) el.dispatchEvent(new win.KeyboardEvent(t, { key, bubbles: true, cancelable: true })); await sleep(120); } }
       else {
         const el = s.sel || s.text || s.choice ? await find(s) : doc.activeElement;
-        if (!el) return false;
+        if (!el) { window.__fail = ['find', s]; return false; }
         if (s.do === 'tap' || s.do === 'click') tap(el);
         else if (s.do === 'focus') el.focus();
         else if (s.do === 'scroll') el.scrollTop = s.to ?? 0;
-        else if (s.do === 'type') { if (s.sel) el.focus(); type(el, s.text); }
+        else if (s.do === 'type') { if (s.sel) el.focus(); type(el, s.input); }
       }
-      if (s.until && !await until(s.until, s.timeout ?? 1500) && !s.soft) return false;
+      if (s.until && !await until(s.until, s.timeout ?? 1500) && !s.soft) { window.__fail = ['until', s]; return false; }
       await sleep(350);
     }
     return true;

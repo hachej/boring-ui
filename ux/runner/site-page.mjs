@@ -23,7 +23,7 @@ const PLAYABLE = new Set(['tap', 'click', 'type', 'press', 'focus', 'scroll', 'w
 function compile(scenario, steps, viewport) {
   const mine = steps.filter(st => (!st.only || String(st.only) === viewport) && !(st.skip && String(st.skip) === viewport));
   if (!mine.length || mine.some(st => st.gap || !PLAYABLE.has(st.do))) return undefined;
-  return mine.map(st => ({ do: st.do, sel: st.target ? testSelector(pick(st.target, viewport)) : undefined, text: pick(st.text, viewport), choice: pick(st.choice, viewport), key: pick(st.key, viewport),
+  return mine.map(st => ({ do: st.do, sel: st.target ? testSelector(pick(st.target, viewport)) : undefined, text: st.do === 'type' ? undefined : pick(st.text, viewport), input: st.do === 'type' ? pick(st.text, viewport) : undefined, choice: pick(st.choice, viewport), key: pick(st.key, viewport),
     ms: st.ms, to: st.to, name: st.name, arg: st.arg, until: st.until ? condition(st.until, viewport) : undefined, timeout: st.timeout, when: st.when ? condition(st.when, viewport) : undefined,
     soft: st.until === 'true' || undefined }));
 }
