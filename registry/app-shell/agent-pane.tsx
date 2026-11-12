@@ -5,7 +5,7 @@
 // and the agent's `present`. Data first: a stack of typed entries (`PaneEntry`), the top one last. The top one shows; the ones under it stay mounted,
 // hidden, so back returns to them as they were (scroll, selection). Wide: the `preview` Dock on the right, or over the docked conversation in its
 // column (« ← Assistant »). Phone: full screen, and the system Back steps back too. Every entry is drawn in the kit's `ViewerFrame`.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { ArrowLeftIcon, LibraryIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,6 @@ import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { Dock } from '../dock/dock';
 import { ViewerFrame, ViewerWindowProvider } from '../viewer-frame/viewer-frame';
 import { frenchViewerLabels } from '../viewer-frame/viewer-labels-fr';
-import { LocalFileViewer } from '../viewer-pdf/local-file-viewer';
 import type { LocalTextKind } from '../viewer-pdf/local-file-viewer';
 import { csvKind } from '../viewer-code/code-kinds';
 import { StepButtons, stepIndex, stepOffset } from '../pi-chat/image-viewer';
@@ -38,6 +37,8 @@ const markdownKind: LocalTextKind = {
   load: () => import('../pi-chat-markdown/markdown').then(module => ({ default: ({ text }: { readonly text: string }) => <div data-testid="pane-markdown" className="pi-chat text-sm"><module.Markdown text={text} /></div> })),
 };
 const TEXT_KINDS: readonly LocalTextKind[] = [csvKind, markdownKind];
+// The viewer (image, PDF and their libraries) loads the first time a file opens: a page that only uses the layer keeps none of it up front.
+const LocalFileViewer = lazy(() => import('../viewer-pdf/local-file-viewer').then(module => ({ default: module.LocalFileViewer })));
 
 /** The files cited or attached in the message that names `path` (the latest one): the set previous and next step through. */
 export function citedWith(controller: NativeChatController | undefined, path: string): readonly string[] {
@@ -276,10 +277,11 @@ function FileEntry({ entry, frame, read, onShown }: { readonly entry: Extract<Pa
     });
     return () => cancelAnimationFrame(frame);
   }, [blob, id]);
-  if (!blob) return <ViewerFrame title={entry.title} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose}>
+  const waiting = <ViewerFrame title={entry.title} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose}>
     <p role="status" data-testid={`${id}-status`} className="m-0 p-4 text-sm text-muted-foreground">{blob === null ? text.fileUnavailable : text.fileLoading}</p>
   </ViewerFrame>;
-  return <LocalFileViewer key={path} name={path} blob={blob} kinds={TEXT_KINDS} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose} />;
+  if (!blob) return waiting;
+  return <Suspense fallback={waiting}><LocalFileViewer key={path} name={path} blob={blob} kinds={TEXT_KINDS} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose} /></Suspense>;
 }
 
 /**
