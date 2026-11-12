@@ -558,7 +558,7 @@
     { "do": "tap", "target": "conversation-row[data-conversation-id=tva]", "say": "Open « TVA du trimestre »", "motion": true, "until": "gone:conversations & text:transcript~4 120,00", "expect": "The list closes and the conversation shows that earlier exchange." },
     { "do": "tap", "target": "history-open", "say": "Open the list again", "until": "visible:conversation-row[data-conversation-id=tva][data-active=true]", "expect": "« TVA du trimestre » is now the one marked." },
     { "do": "tap", "target": "conversation-new", "say": "Tap « Nouvelle »", "motion": true, "until": "gone:conversations & eval:!(document.querySelector('[data-testid=transcript]')?.textContent ?? '').includes('4 120,00')", "expect": "An empty conversation starts; the field is still the one at the bottom." },
-    { "do": "tap", "target": "history-open", "say": "Open the list once more", "until": "visible:conversation-row[data-conversation-id=tva] & count:conversation-row>=7", "expect": "The new conversation is listed and the earlier one is still there." },
+    { "do": "tap", "target": "history-open", "say": "Open the list once more", "until": "visible:conversation-row[data-conversation-id=new-1][data-active=true] & visible:conversation-row[data-conversation-id=tva] & count:conversation-row>=6", "expect": "The new conversation is listed and the earlier one is still there." },
     { "do": "press", "key": "Escape", "say": "Press Échap", "until": "gone:conversations", "focus": "history-open", "expect": "The list closes and focus is back on « Historique »." }
    ]
   },
