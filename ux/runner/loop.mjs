@@ -1,26 +1,31 @@
 #!/usr/bin/env node
 // The improvement loop for one target: a worker (Codex, Sol) edits the kit in a git worktree, the harness captures, Opus judges, repeat.
-//   UX_LOOP_HOME=/path nohup node ux/runner/loop.mjs --target layout:bar >> /path/loop.log 2>&1 &      stop: touch $UX_LOOP_HOME/STOP
-//   node ux/runner/loop.mjs --target layout:bar --baseline     capture + judge round 0 only        --dry-run   guards + one capture, no model
-// State lives OUTSIDE the repo: $UX_LOOP_HOME/<target>/{round-N/<slug>/..., scoreboard.md, STOP}. Never pushes, merges or releases; each round is one commit on the branch.
-// Stops when every graded criterion is >= 9, after 10 rounds, after two rounds in a row with no criterion improving, or on STOP.
+//   UX_LOOP_HOME=/path nohup node ux/runner/loop.mjs --target layout:bar >> /path/loop.log 2>&1 &      stop: touch $UX_LOOP_HOME/<target-slug>/STOP
+//   node ux/runner/loop.mjs --target layout:bar --baseline     capture + judge round 0 only        --dry-run   brief + one capture, no model
+// State lives OUTSIDE the repo: $UX_LOOP_HOME/<target>/{round-N/<slug>/..., scoreboard.md, STOP}. Never pushes, merges or releases.
+// The worker (sandboxed) only EDITS FILES. The loop does the rest: registry build, npm run check, the contract tests, the harness check and capture
+// (one repair pass with the full failing output), the judge; then it commits the round for the worker, or discards the edits (files checked out to the
+// round's start commit; no reset --hard, no stash) when a check, the exam guard or a regression says so. See loop-round.mjs and ux/README.md.
+// Stops when every graded criterion is >= 9, after UX_MAX_ROUNDS (10) rounds, after UX_MAX_IDLE (3) rounds in a row that improved nothing, or on STOP (read between rounds).
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { root } from './build.mjs';
 import { capture, launch } from './capture.mjs';
+import { check } from './check.mjs';
 import { recordFlow } from './video.mjs';
 import { judge, KEYS } from './judge.mjs';
+import { commitRound, discard, failingTests, forbiddenTouched, retried, runRound, saveTo, waitForLoad } from './loop-round.mjs';
 import { loadAll, slug } from './scenario.mjs';
 
 const args = process.argv.slice(2), opt = n => { const i = args.indexOf(`--${n}`); return i < 0 ? undefined : args[i + 1]; };
-const DRY = args.includes('--dry-run'), BASELINE = args.includes('--baseline'), MAX_ROUNDS = 10;
+const DRY = args.includes('--dry-run'), BASELINE = args.includes('--baseline');
+const MAX_ROUNDS = Number(process.env.UX_MAX_ROUNDS ?? 10), MAX_IDLE = Number(process.env.UX_MAX_IDLE ?? 3), LOAD_MAX = Number(process.env.UX_LOAD_MAX ?? 25);
 const scenario = loadAll().find(s => s.target === opt('target')); if (!scenario) { console.error('usage: loop.mjs --target <layout:bar|component:...> [--baseline|--dry-run]'); process.exit(2); }
 const HOME = join(process.env.UX_LOOP_HOME ?? join(homedir(), 'ux-loop'), slug(scenario.target)), S = slug(scenario.target);
 const MODEL = process.env.UX_WORKER_MODEL ?? 'gpt-6.1-sol', SKILLS = process.env.UX_SKILLS ?? join(process.env.UX_LOOP_HOME ?? homedir(), 'skills');
-const TEST_CMD = process.env.UX_TEST_CMD ?? 'CHROMIUM=$CHROMIUM node --test test/contracts/one-composer.test.mjs';
-const PROTECTED = ['docs/tasks/94cd96bf-9124-4082-bc11-7e7925cf9642/acceptance.md', 'test/contracts/one-composer.test.mjs', 'package.json', 'package-lock.json', 'ux/scenarios/', 'ux/runner/', 'ux/CRITERIA.md', 'ux/judge-prompt.md', 'ux/worker-brief.md'];
+const TEST_CMD = process.env.UX_TEST_CMD ?? 'CHROMIUM=$CHROMIUM node --test --test-reporter=tap test/contracts/one-composer.test.mjs test/contracts/agent-bar.test.mjs';
 const MAIN = process.env.UX_MAIN_CHECKOUT; // optional: another checkout the loop must leave untouched
 const ENV = { ...process.env, TMPDIR: '/var/tmp', PATH: `${homedir()}/.local/bin:${process.env.PATH}` }; delete ENV.CI;
 const log = t => console.log(`${new Date().toISOString()} ${t}`);
@@ -30,31 +35,57 @@ const tail = (t, n = 30) => String(t).split('\n').slice(-n).join('\n');
 const roundDir = n => join(HOME, `round-${n}`), folder = n => join(roundDir(n), S);
 const readJson = f => existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : null;
 const status = d => { if (!d) return ''; try { return execFileSync('git', ['-C', d, 'status', '--porcelain'], { encoding: 'utf8' }); } catch { return ''; } };
+const lowest = v => Math.min(...KEYS.map(k => v?.grades?.[k]).filter(x => typeof x === 'number'));
+const FAILING = join(HOME, 'last-failure.txt'), LINES = join(HOME, 'check-lines.json');
+// `layout:bar F01@1440 step 3 "Tap": layout shift 0.095 > 0.08` keyed with the numbers after the step name blanked: a metric moving is not a new problem.
+const lineKey = l => l.replace(/(": )(.*)$/s, (_, a, b) => a + b.replace(/[\d.]+/g, '#'));
 
-function brief(n, prev, feedback) {
+// The worker gets eyes: the last accepted capture (pictures, per-step metrics, check lines, the judge's remarks) copied next to its brief, in a folder its sandbox can read.
+function eyes(n, prev, lines) {
+  const dir = join(roundDir(n), 'eyes'); rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true });
+  if (existsSync(prev)) cpSync(prev, join(dir, 'capture', S), { recursive: true, filter: p => !/\/videos(\/|$)/.test(p) && !/\.(webm|mp4)$/.test(p) });
+  writeFileSync(join(dir, 'check-lines.txt'), lines.length ? `${lines.length} failing check lines (the loop must not make this worse):\n${lines.join('\n')}\n` : 'no failing check lines\n');
+  if (existsSync(FAILING)) cpSync(FAILING, join(dir, 'last-failure.txt'));
+  return dir;
+}
+function brief(n, prev, feedback, eyesDir) {
   const v = readJson(join(prev, 'verdict.json')), worse = v?.worse?.length ? v.worse.map(w => `${w.what} (${w.where ?? w.screenshot})`).join('; ') : 'nothing reported';
-  const map = { N: n, TARGET: scenario.target, TITLE: scenario.title, SCENARIO: scenario.file, NOTES: scenario.notes ?? '', WT: root, BRANCH: git('branch', '--show-current'), TEST_CMD, PREV_DIR: prev, WORSE: worse, HOME, ROUND_DIR: roundDir(n), CAPTURE_MIN: 4, SKILLS, GUARD_FEEDBACK: feedback ? `\n## A guard failed after your first attempt. Fix this, then finish again (amend or add a commit):\n${feedback}\n` : '' };
+  const map = { N: n, TARGET: scenario.target, TITLE: scenario.title, SCENARIO: scenario.file, NOTES: scenario.notes ?? '', WT: root, BRANCH: git('branch', '--show-current'), TEST_CMD, EYES: eyesDir, PREV_DIR: join(eyesDir, 'capture', S), WORSE: worse, HOME, ROUND_DIR: roundDir(n), SKILLS, FEEDBACK: feedback ? `\n## What the loop found after your last pass (full output in ${roundDir(n)}). Fix exactly this; edit files only:\n${feedback}\n` : '' };
   return Object.entries(map).reduce((t, [k, val]) => t.replaceAll(`{{${k}}}`, String(val)), readFileSync(join(root, 'ux/worker-brief.md'), 'utf8'));
 }
-function worker(n, prev, feedback, tag) {
+function worker(n, prev, lines, feedback, tag) {
   mkdirSync(roundDir(n), { recursive: true });
-  const file = join(roundDir(n), `worker-brief${tag}.md`); writeFileSync(file, brief(n, prev, feedback));
+  const file = join(roundDir(n), `worker-brief${tag}.md`); writeFileSync(file, brief(n, prev, feedback, eyes(n, prev, lines)));
   if (DRY) return log(`dry run: worker skipped (brief in ${file})`);
   log(`worker: codex exec ${MODEL} (round ${n}${tag})`);
   const out = sh('codex', ['exec', '-m', MODEL, '-c', 'model_reasoning_effort="high"', '-c', 'approval_policy="never"', '-s', 'workspace-write', '--add-dir', roundDir(n), '-C', root, '--ephemeral', '-o', join(roundDir(n), `worker-last${tag}.txt`), '-'], { input: readFileSync(file, 'utf8'), timeout: 90 * 60 * 1000 });
-  writeFileSync(join(roundDir(n), `worker${tag}.log`), `${out.stdout}\n${out.stderr}`); log(`worker exit ${out.status}`);
+  writeFileSync(join(roundDir(n), `worker${tag}.log`), `${out.stdout}\n${out.stderr}`); log(`worker exit ${out.status}${out.status ? `: ${tail(out.stderr, 6)}` : ''}`);
 }
 
-// Guards: a commit, a clean tree, the harness and the contract untouched, nothing changed in the main checkout, tests and checks green.
-function guards(before, mainBefore) {
-  const fails = [];
-  if (git('rev-parse', 'HEAD') === before) fails.push('no commit: the round must end with one commit on the branch.');
-  if (git('status', '--porcelain')) fails.push(`uncommitted changes remain:\n${git('status', '--porcelain')}`);
-  const touched = git('diff', '--name-only', `${before}..HEAD`).split('\n').filter(f => f && PROTECTED.some(p => f === p || (p.endsWith('/') && f.startsWith(p))));
-  if (touched.length) fails.push(`protected files changed (contract, harness, dependencies): ${touched.join(', ')}`);
-  if (status(MAIN) !== mainBefore) fails.push('the main checkout changed; it must never be touched.');
-  const test = sh('bash', ['-c', TEST_CMD], { cwd: root, timeout: 30 * 60 * 1000 }); if (test.status !== 0) fails.push(`${TEST_CMD} failed:\n${tail(test.stdout + test.stderr)}`);
-  const chk = sh('npm', ['run', 'check'], { cwd: root, timeout: 30 * 60 * 1000 }); if (chk.status !== 0) fails.push(`npm run check failed:\n${tail(chk.stdout + chk.stderr)}`);
+// The checks the sandbox cannot run, cheapest first; every failure carries its full output (test name, assertion, file and line).
+async function loopChecks(n, changed, ctx) {
+  const dir = roundDir(n), fails = [], pass = (ctx.pass = (ctx.pass ?? 0) + 1), save = saveTo(dir);
+  const run = (name, cmd, cmdArgs, tap) => {
+    const r = sh(cmd, cmdArgs, { cwd: root, timeout: 30 * 60 * 1000 }), out = `${r.stdout}\n${r.stderr}`, file = join(dir, `${name.replace(/\W+/g, '-')}-${pass}.txt`);
+    save(file.slice(dir.length + 1), out); log(`${name}: exit ${r.status}`);
+    if (r.status === 0) return;
+    const found = tap ? failingTests(out) : [];
+    fails.push({ name, output: found.length ? `${found.join('\n---\n')}\n(full output: ${file})` : `${tail(out, 120)}\n(full output: ${file})` });
+  };
+  if (changed.some(f => f === 'registry.json' || f.startsWith('registry/'))) run('npm run registry:build', 'npm', ['run', 'registry:build']);
+  run('npm run check', 'npm', ['run', 'check']);
+  run('contract tests', 'bash', ['-c', TEST_CMD], true);
+  if (fails.length) return fails;
+  await waitForLoad({ max: LOAD_MAX, log });
+  const { result: fast } = await retried(() => capture(scenario, join(dir, '_check'), { fast: true }), { log, label: 'check capture' });
+  rmSync(join(dir, '_check'), { recursive: true, force: true });
+  ctx.lines = check(scenario, fast); save(`check-lines-${pass}.txt`, ctx.lines.join('\n'));
+  const seen = new Set(ctx.prevLines.map(lineKey)), fresh = ctx.lines.filter(l => !seen.has(lineKey(l)));
+  log(`harness check: ${ctx.lines.length} failing lines (was ${ctx.prevLines.length}), ${fresh.length} not seen before`);
+  if (ctx.lines.length > ctx.prevLines.length) fails.push({ name: 'harness check got worse', output: `${ctx.lines.length} failing lines, was ${ctx.prevLines.length}. Lines not in the last accepted round:\n${fresh.join('\n')}` });
+  await waitForLoad({ max: LOAD_MAX, log });
+  ctx.shot = await retried(() => flowGuard(n, ctx.prevResult), { log, label: 'capture' });
+  if (ctx.shot.fails.length) fails.push({ name: 'flow guard', output: ctx.shot.fails.join('\n') });
   return fails;
 }
 // The flow guard: a step that completed in the last good round and no longer does fails the round; so does a new console error.
@@ -65,12 +96,13 @@ async function flowGuard(n, prevResult) {
   const before = new Set(prevResult?.errors ?? []); for (const e of result.errors) if (!before.has(e)) fails.push(`new console error: ${e}`);
   return { fails, result };
 }
-function score(n, v, p, commit, note = '') {
+// Scoreboard: per round the commit, the criteria, the failing check lines, and why a round failed, was reverted or changed nothing.
+function score(n, { v, p, commit = '-', checks = '-', note = '' }) {
   const cells = KEYS.map(k => v?.grades?.[k] ?? '-'), nums = cells.filter(x => typeof x === 'number');
   const up = v && p ? KEYS.filter(k => v.grades[k] > (p.grades[k] ?? 0)).join(', ') || 'none' : '-', down = v && p ? KEYS.filter(k => v.grades[k] < (p.grades[k] ?? 0)).join(', ') || 'none' : '-';
   const file = join(HOME, DRY ? 'scoreboard.dry.md' : 'scoreboard.md'); mkdirSync(HOME, { recursive: true });
-  if (!existsSync(file)) writeFileSync(file, `| round | ${KEYS.join(' | ')} | lowest | improved | worse | commit |\n|${'---|'.repeat(KEYS.length + 5)}\n`);
-  appendFileSync(file, `| ${n} | ${cells.join(' | ')} | ${nums.length ? Math.min(...nums) : '-'} | ${up} | ${down} | ${commit}${note ? ' ' + note : ''} |\n`);
+  if (!existsSync(file)) writeFileSync(file, `| round | ${KEYS.join(' | ')} | lowest | improved | worse | failing check lines | commit | result |\n|${'---|'.repeat(KEYS.length + 6)}\n`);
+  appendFileSync(file, `| ${n} | ${cells.join(' | ')} | ${nums.length ? Math.min(...nums) : '-'} | ${up} | ${down} | ${checks ?? '-'} | ${commit} | ${note.replace(/\s+/g, ' ').slice(0, 300)} |\n`);
 }
 const done = v => KEYS.every(k => v.grades[k] === undefined || v.grades[k] >= 9);
 
@@ -83,43 +115,50 @@ if (BASELINE) { // round 0: capture (with videos if --video) and judge; --captur
   }
   if (args.includes('--capture-only')) process.exit(0);
   const v = judge({ folder: folder(0), scenario, round: 0 }); if (!v) { log('baseline: no usable verdict'); process.exit(1); }
-  score(0, v, null, git('rev-parse', '--short', 'HEAD'), '(baseline)'); log(`baseline ${JSON.stringify(v.grades)}`); process.exit(0);
+  score(0, { v, commit: git('rev-parse', '--short', 'HEAD'), note: '(baseline)' }); log(`baseline ${JSON.stringify(v.grades)}`); process.exit(0);
 }
 let n = 1; while (existsSync(join(folder(n), 'verdict.json'))) n++;
 let prev = folder(n - 1), prevVerdict = readJson(join(prev, 'verdict.json')), prevResult = readJson(join(prev, 'result.json')), idle = 0;
+const baselineText = join(HOME, 'baseline-after-port.txt');
+let prevLines = readJson(LINES) ?? (existsSync(baselineText) ? readFileSync(baselineText, 'utf8').split('\n').filter(l => /^\s{2,}\S/.test(l)).map(l => l.trim()) : []);
 if (!prevVerdict && !DRY) { log('no round-0 verdict: run --baseline first'); process.exit(1); }
-log(`start ${scenario.target} at round ${n}${DRY ? ' (dry run)' : ''}, branch ${git('branch', '--show-current')}`);
+log(`start ${scenario.target} at round ${n}${DRY ? ' (dry run)' : ''}, branch ${git('branch', '--show-current')}, ${prevLines.length} failing check lines to start from`);
 for (; n <= MAX_ROUNDS; n++) {
   if (existsSync(join(HOME, 'STOP'))) { log('STOP file found'); break; }
   if (prevVerdict && done(prevVerdict)) { log('every criterion is at 9 or more: done'); break; }
-  const before = git('rev-parse', 'HEAD'), mainBefore = status(MAIN);
-  worker(n, prev, '', '');
-  // Chromium cannot start inside Codex's workspace-write sandbox (crashpad/sandbox-host syscalls are refused), so the worker cannot look at its own result: the loop captures it and gives it back for a second pass.
-  if (!DRY && process.env.UX_SELF_PASS !== '0' && git('rev-parse', 'HEAD') !== before) {
-    const self = join(roundDir(n), 'self'); await capture(scenario, self);
-    worker(n, prev, `SELF-CHECK. The loop captured your first pass into ${join(self, S)} (states, flow strips, metrics.json, same layout as ${prev}). Open it, compare with the judge's problems, and fix what is still visibly wrong or measurably worse than before; amend your commit (one commit per round). Your sandbox cannot start a browser, so this capture is your only look at the result.`, '-self');
-  }
-  let fails = guards(before, mainBefore), shot;
-  if (!fails.length || DRY) { shot = await flowGuard(n, prevResult); fails = fails.concat(shot.fails); }
-  if (fails.length && !DRY) {
-    log(`guard failed, one retry:\n${tail(fails.join('\n'))}`);
-    worker(n, prev, fails.join('\n\n').slice(-6000), '-retry');
-    fails = guards(before, mainBefore); if (!fails.length) { shot = await flowGuard(n, prevResult); fails = shot.fails; }
-  }
-  if (fails.length) {
-    log(`round ${n} FAILED:\n${tail(fails.join('\n'))}`);
-    if (!DRY) { git('reset', '--hard', before); log(`reverted to ${before.slice(0, 9)}`); }
-    score(n, null, null, '-', `FAILED: ${fails[0].split('\n')[0]}`); idle++;
-    if (DRY) break;
+  const mainBefore = status(MAIN), ctx = { prevLines, prevResult };
+  if (DRY) { worker(n, prev, prevLines, '', ''); await waitForLoad({ max: LOAD_MAX, log }); const s = await retried(() => capture(scenario, roundDir(n)), { log }); log(`dry run: ${check(scenario, s.result).length} check lines`); break; }
+  const rec = await runRound({
+    cwd: root, save: saveTo(roundDir(n)), log,
+    runWorker: ({ feedback, tag }) => worker(n, prev, prevLines, feedback, tag),
+    refuse: changed => [...forbiddenTouched(changed).map(f => `the worker changed ${f}: the harness, the contract and the rubric are not the worker's to edit`), ...(status(MAIN) !== mainBefore ? ['the main checkout changed; it must never be touched.'] : [])],
+    runChecks: changed => loopChecks(n, changed, ctx),
+  });
+  if (rec.status === 'no-change') { log(`round ${n}: no change (the worker edited nothing)`); score(n, { note: 'no change: the worker edited nothing' }); idle++; }
+  else if (rec.status === 'failed') {
+    log(`round ${n} FAILED, edits discarded (back at ${rec.start.slice(0, 9)}): ${rec.reason}`);
+    writeFileSync(FAILING, `Round ${n} was discarded: ${rec.reason}\n${['failure-2.txt', 'failure-1.txt', 'refused.txt'].map(f => join(roundDir(n), f)).filter(existsSync).map(f => readFileSync(f, 'utf8')).join('\n').slice(-6000)}\n`);
+    score(n, { checks: ctx.lines?.length, note: `FAILED: ${rec.reason}` }); idle++;
   } else {
-    const commit = git('rev-parse', '--short', 'HEAD');
-    const v = DRY ? null : judge({ folder: folder(n), scenario, round: n, prev });
-    if (!v) { log('judge gave no usable verdict'); score(n, null, null, commit, 'judge failed'); break; }
-    score(n, v, prevVerdict, commit);
-    idle = KEYS.some(k => v.grades[k] > (prevVerdict.grades[k] ?? 0)) ? 0 : idle + 1;
-    log(`round ${n} grades ${JSON.stringify(v.grades)}`); prev = folder(n); prevVerdict = v; prevResult = shot.result;
+    const v = judge({ folder: folder(n), scenario, round: n, prev });
+    if (!v) { log('judge gave no usable verdict'); discard(root, rec.start); score(n, { checks: ctx.lines?.length, note: 'judge failed; edits discarded' }); break; }
+    if (lowest(v) < lowest(prevVerdict)) {
+      const why = `REVERTED: lowest criterion ${lowest(v)} < ${lowest(prevVerdict)} of the last accepted round`;
+      log(`round ${n} ${why}; grades ${JSON.stringify(v.grades)}`); discard(root, rec.start);
+      writeFileSync(FAILING, `Round ${n} was discarded: ${why}\ngrades ${JSON.stringify(v.grades)}\nJudge: ${readFileSync(join(folder(n), 'verdict.md'), 'utf8').slice(0, 4000)}\n`);
+      score(n, { v, p: prevVerdict, checks: ctx.lines?.length, note: why }); idle++;
+    } else {
+      const changes = join(roundDir(n), 'changes.md'), sha = commitRound({ cwd: root, n, target: scenario.target, model: MODEL, body: existsSync(changes) ? readFileSync(changes, 'utf8') : '' });
+      if (!sha) { log('nothing to commit after the checks'); score(n, { note: 'no change' }); idle++; }
+      else {
+        score(n, { v, p: prevVerdict, commit: sha, checks: ctx.lines.length });
+        idle = KEYS.some(k => v.grades[k] > (prevVerdict.grades[k] ?? 0)) ? 0 : idle + 1;
+        log(`round ${n} committed ${sha}; grades ${JSON.stringify(v.grades)}; ${ctx.lines.length} failing check lines`);
+        prev = folder(n); prevVerdict = v; prevResult = ctx.shot.result; prevLines = ctx.lines; writeFileSync(LINES, JSON.stringify(prevLines)); rmSync(FAILING, { force: true });
+      }
+    }
   }
-  if (DRY) break;
-  if (idle >= 2) { log('two rounds in a row with no criterion improving: stopping'); break; }
+  rmSync(join(roundDir(n), 'eyes'), { recursive: true, force: true });
+  if (idle >= MAX_IDLE) { log(`${MAX_IDLE} rounds in a row that improved nothing: stopping`); break; }
 }
 log('loop ended');
