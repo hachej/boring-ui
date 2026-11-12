@@ -9,7 +9,8 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { root } from './build.mjs';
-import { capture } from './capture.mjs';
+import { capture, launch } from './capture.mjs';
+import { recordFlow } from './video.mjs';
 import { judge, KEYS } from './judge.mjs';
 import { loadAll, slug } from './scenario.mjs';
 
@@ -74,9 +75,14 @@ function score(n, v, p, commit, note = '') {
 const done = v => KEYS.every(k => v.grades[k] === undefined || v.grades[k] >= 9);
 
 mkdirSync(HOME, { recursive: true });
-if (BASELINE) {
-  const { out } = await capture(scenario, roundDir(0));
-  const v = judge({ folder: out, scenario, round: 0 }); if (!v) { log('baseline: no usable verdict'); process.exit(1); }
+if (BASELINE) { // round 0: capture (with videos if --video) and judge; --capture-only / --judge-only split the two (judges can run side by side)
+  if (!args.includes('--judge-only')) {
+    const { out } = await capture(scenario, roundDir(0));
+    if (args.includes('--video')) { const browser = await launch(); for (const f of scenario.flows) for (const vp of scenario.viewports) if (!f.only || String(f.only) === vp.name) await recordFlow({ scenario, flowId: f.id, viewport: vp.name, outDir: join(out, 'videos'), browser }); await browser.close(); }
+    writeFileSync(join(out, 'target.json'), JSON.stringify({ target: scenario.target, title: scenario.title, purpose: scenario.purpose, level: scenario.target.split(':')[0], kitVersion: JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version, commit: git('rev-parse', '--short', 'HEAD'), capturedAt: new Date().toISOString() }, null, 1));
+  }
+  if (args.includes('--capture-only')) process.exit(0);
+  const v = judge({ folder: folder(0), scenario, round: 0 }); if (!v) { log('baseline: no usable verdict'); process.exit(1); }
   score(0, v, null, git('rev-parse', '--short', 'HEAD'), '(baseline)'); log(`baseline ${JSON.stringify(v.grades)}`); process.exit(0);
 }
 let n = 1; while (existsSync(join(folder(n), 'verdict.json'))) n++;

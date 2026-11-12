@@ -754,6 +754,7 @@
      "target": "agent-talk",
      "say": "Tap the microphone",
      "motion": true,
+     "settleMax": 150,
      "until": "visible:agent-talk-stop",
      "expect": "The field shows it is listening, with a stop button and the time."
     },
@@ -776,6 +777,7 @@
      "target": "agent-talk",
      "say": "Hold the microphone",
      "motion": true,
+     "settleMax": 150,
      "until": "visible:agent-talk-release",
      "expect": "It says to release to send."
     },
@@ -889,7 +891,7 @@
      "target": "agent-bar-conversation",
      "say": "Open again if it folded",
      "until": "visible:agent-tray|agent-layer[data-state=half]",
-     "when": "gone:agent-tray"
+     "when": "gone:agent-tray & gone:agent-layer[data-state=half]"
     },
     {
      "do": "tap",
@@ -913,7 +915,7 @@
      "do": "tap",
      "target": {
       "390": "agent-bar-conversation",
-      "1440": "agent-layer-close"
+      "1440": "agent-tray-reduce"
      },
      "say": "Close",
      "motion": true,
