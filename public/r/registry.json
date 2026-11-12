@@ -2363,7 +2363,12 @@
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.85/r/utils.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.85/r/button.json",
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.85/r/_shared.json",
-        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.85/r/agent-bar.json"
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.85/r/agent-bar.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.85/r/viewer-frame.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.85/r/viewer-pdf.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.85/r/viewer-code.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.85/r/pi-chat-markdown.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.85/r/pi-artifacts.json"
       ],
       "css": {
         "@layer base": {
@@ -2435,6 +2440,41 @@
           "path": "registry/app-shell/agent-layer.tsx",
           "type": "registry:component",
           "target": "components/app-shell/agent-layer.tsx"
+        },
+        {
+          "path": "registry/app-shell/layer-context.ts",
+          "type": "registry:lib",
+          "target": "components/app-shell/layer-context.ts"
+        },
+        {
+          "path": "registry/app-shell/agent-trigger.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-trigger.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-bar-parts.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-bar-parts.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-chats.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-chats.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-compact.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-compact.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-placements.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-placements.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-pane.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-pane.tsx"
         },
         {
           "path": "registry/app-shell/agent-context.ts",

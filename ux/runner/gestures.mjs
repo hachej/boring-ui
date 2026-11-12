@@ -5,6 +5,7 @@
 //   drag {from, to}                mouse drag between two targets                  swipe {target, dir}  up | down | left | right (touch)
 //   drop {file, target}            drop a file on a target (drag-enter, then drop) attach {file}        choose a file in the picker
 //   wait {ms}                      a pause                                          fixture {name, arg}  one named helper the fixture exposes in window.__ux
+//   back                           the browser's Back (a phone's back gesture)     reload               reload the page (what the page keeps across it)
 // A target is a test id (`composer-input`) or a CSS selector; where a gesture differs by viewport, give a map: { "390": "...", "1440": "..." }.
 // `until` is a list joined with " & ": visible:<t>  gone:<t>  focus:<t>  value:<t>~text  text:<t>~text  count:<t>>=N  eval:<js>; "a|b" inside visible/gone means either.
 const css = t => /^[\w-]+$/.test(t) ? `[data-testid=${t}]` : t.replace(/^([\w-]+)(\[.*)$/, '[data-testid=$1]$2');
@@ -51,6 +52,8 @@ export async function prepare(h, step) {
       for (const kind of phase === 'enter' ? ['dragenter', 'dragover'] : ['drop']) el.dispatchEvent(new DragEvent(kind, { dataTransfer: data, bubbles: true, cancelable: true })); }, [sel, name, FILES[name] ?? 'application/octet-stream', step.phase === 'enter' ? 'enter' : 'drop']); }
     case 'attach': { const name = step.file; let l; if (t) [l] = await ready(); return async () => { if (l) await (touch ? l.tap() : l.click()); await page.locator('input[type=file]').first().setInputFiles({ name, mimeType: FILES[name] ?? 'application/octet-stream', buffer: Buffer.from('%PDF fictif') }); }; }
     case 'wait': return () => page.waitForTimeout(step.ms ?? 300);
+    case 'back': return () => page.evaluate(() => history.back());
+    case 'reload': return () => page.reload({ waitUntil: 'load' });
     case 'fixture': return () => page.evaluate(([name, arg]) => window.__ux[name](arg), [step.name, step.arg]);
     default: throw new Error(`unknown gesture: ${step.do}`);
   }

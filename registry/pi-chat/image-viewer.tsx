@@ -23,6 +23,20 @@ const FIT: View = { scale: 1, x: 0, y: 0 };
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const midpoint = (a: Point, b: Point): Point => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 
+/** The index `offset` steps away from `index` in a set of `count`, wrapping at both ends. */
+export const stepIndex = (index: number, offset: number, count: number): number => (index + offset + count) % count;
+/** The step a key asks for: ← is -1, → is 1, any other key none. */
+export const stepOffset = (key: string): -1 | 1 | undefined => key === 'ArrowLeft' ? -1 : key === 'ArrowRight' ? 1 : undefined;
+
+/** Previous and next through a set (a message's images, the files of a reply): nothing for a set of one. `testId` names them `<testId>-previous` and `-next`. */
+export function StepButtons({ count, onStep, labels, testId, className }: { readonly count: number; readonly onStep: (offset: -1 | 1) => void; readonly labels: { readonly previous: string; readonly next: string }; readonly testId?: string | undefined; readonly className?: string | undefined }) {
+  if (count < 2) return null;
+  return <>
+    <Button variant="ghost" size="icon" className={className} {...(testId ? { 'data-testid': `${testId}-previous` } : {})} aria-label={labels.previous} title={labels.previous} onClick={() => onStep(-1)}><ChevronLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>
+    <Button variant="ghost" size="icon" className={className} {...(testId ? { 'data-testid': `${testId}-next` } : {})} aria-label={labels.next} title={labels.next} onClick={() => onStep(1)}><ChevronRightIcon data-icon="inline-start" aria-hidden="true" /></Button>
+  </>;
+}
+
 /** Presentation only: local raster bytes, one message's gallery, and the host's native Dialog lifecycle. */
 export function ImageViewer({ images, index, onIndexChange, onClose, labels: supplied, testId = 'image-viewer' }: {
   readonly images: readonly ImageContent[]; readonly index: number; readonly onIndexChange: (index: number) => void; readonly onClose: () => void;
@@ -31,21 +45,19 @@ export function ImageViewer({ images, index, onIndexChange, onClose, labels: sup
   const { labels: defaults } = useChatText();
   const labels = supplied ?? defaults;
   const src = images[index] && imageSource(images[index]!);
-  const move = (offset: number) => onIndexChange((index + offset + images.length) % images.length);
+  const move = (offset: number) => onIndexChange(stepIndex(index, offset, images.length));
   if (!src) return null;
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent showCloseButton={false} aria-describedby={undefined} data-testid="image-viewer"
     className="pi-chat flex min-h-0 flex-col overflow-hidden max-md:inset-0 max-md:max-h-dvh max-md:min-h-dvh max-md:max-w-none max-md:translate-x-0 max-md:translate-y-0 md:max-h-[90dvh] md:min-h-[80dvh] md:max-w-5xl"
     onKeyDown={event => {
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); event.stopPropagation(); move(event.key === 'ArrowLeft' ? -1 : 1); }
+      const offset = stepOffset(event.key);
+      if (offset) { event.preventDefault(); event.stopPropagation(); move(offset); }
     }}>
     <DialogTitle className="sr-only">{labels.imageAttachment}</DialogTitle>
     <div className="flex shrink-0 items-center justify-between gap-2 pt-[env(safe-area-inset-top)]">
       <span aria-live="polite" data-testid="image-viewer-count">{labels.imagePosition(index + 1, images.length)}</span>
       <div className="flex items-center gap-2">
-        {images.length > 1 && <>
-          <Button variant="ghost" size="icon" className="min-h-12! min-w-12!" aria-label={labels.previousImage} onClick={() => move(-1)}><ChevronLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>
-          <Button variant="ghost" size="icon" className="min-h-12! min-w-12!" aria-label={labels.nextImage} onClick={() => move(1)}><ChevronRightIcon data-icon="inline-start" aria-hidden="true" /></Button>
-        </>}
+        <StepButtons count={images.length} onStep={move} labels={{ previous: labels.previousImage, next: labels.nextImage }} className="min-h-12! min-w-12!" />
         <Button variant="ghost" size="icon" className="min-h-12! min-w-12!" data-testid={`${testId}-close`} aria-label={labels.close} onClick={onClose}
           onTouchEnd={event => {
             // Pinch can suppress clicks; cancel the compatibility click before exposing the page beneath the close target.

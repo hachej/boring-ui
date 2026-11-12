@@ -7,6 +7,7 @@ import { createScriptedAgent } from '../../../ux/fixtures/scripted-agent.mjs';
 import script from '../../../ux/scenarios/scripts/bar.json';
 import { FileTextIcon, FolderIcon, SparklesIcon } from '../../../registry/_shared/icons';
 import { CONVERSATIONS, DEMO, demoLibrary, fileView, recordView, useDemoConversations } from './one-composer-demo.jsx';
+import { demoFiles } from './one-composer-files.js';
 
 // D-2198: the real AppShell with `composer="bar"` (the one composer) in French, over a fake controller with fictional bookkeeping text.
 // The test scripts the agent through `window.__run(kind)`: `tool` (a read with its progress), `form` (two questions), `reply` (the run ends
@@ -14,6 +15,8 @@ import { CONVERSATIONS, DEMO, demoLibrary, fileView, recordView, useDemoConversa
 // A cited file opens the fixture's own preview through `useAgentLayer().preview`. `?composer=content` is the previous mode, `?dark=1` the dark theme,
 // `?single=1` a single-screen app (`sidebar={false}`, with an account).
 const params = new URLSearchParams(location.search);
+// The demo opens files in the kit's own viewer (`agent.files`); `?viewer=app` keeps the app's previews (`chatProps.onOpenFile`).
+const KIT = DEMO && params.get('viewer') !== 'app';
 // The demo page (one-composer-demo.html) runs in English; the tests keep the French words they assert.
 const EN = typeof window !== 'undefined' && window.__DEMO_LANG === 'en';
 const T = (fr, en) => EN ? en : fr;
@@ -96,11 +99,16 @@ window.__ux = { failNext: () => { window.__failNext = true; }, setText: text => 
 window.__run = kind => change({ view: runs[kind]() });
 window.__setText = text => controller.setText(text);
 const actions = {
-  answer: async (questionId, text) => { window.__answered.push({ questionId, text }); if (DEMO) scripted.answer(text); else change({ view: runs.tool() }); return { kind: 'answered' }; },
+  answer: async (questionId, text) => {
+    // The pane's acknowledgement of a `present` (opened, or refused on a phone): the scripted agent's call ends with it, as the server's does.
+    if (DEMO && /^\{"kind":"(opened|refused)"/.test(text)) { window.__presented.push(JSON.parse(text)); scripted.presented(); return { kind: 'answered' }; }
+    window.__answered.push({ questionId, text }); if (DEMO) scripted.answer(text); else change({ view: runs.tool() }); return { kind: 'answered' };
+  },
 };
 window.__library = 0;
 const onOpenFile = path => DEMO ? window.__layer.preview(fileView(path)) : window.__layer.preview({ title: path.split('/').at(-1), content: (DEMO || params.get('page') === 'real') ? <div data-testid="fixture-preview" className="flex flex-col gap-3 p-4 text-sm"><p className="font-medium">{path.split('/').at(-1)}</p><table className="w-full border-collapse text-left"><thead><tr className="border-b text-xs text-muted-foreground"><th className="py-1">Date</th><th>Libellé</th><th className="text-right">Écart</th></tr></thead><tbody><tr className="border-b"><td className="py-2">09/01</td><td>Carte Garage du Port</td><td className="text-right tabular-nums">12,00 €</td></tr><tr><td className="py-2">15/01</td><td>Carte Restaurant Le Cèdre</td><td className="text-right tabular-nums">−12,00 €</td></tr></tbody></table><p className="text-muted-foreground">Deux écarts à justifier avant la clôture.</p></div> : <div data-testid="fixture-preview" className="p-4 text-sm">{T('Aperçu fictif de', 'Fictional preview of')} {path}{T(' : deux écarts de 12,00 €.', ': two gaps of €12.00.')}</div> });
-window.__openFile = onOpenFile;
+window.__openFile = KIT ? path => window.__layer.pane.push({ file: path }) : onOpenFile;
+window.__presented = [];
 const Icon = ({ className }) => <svg className={className} width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="currentColor" /></svg>;
 const Probe = () => { const api = useAgentLayer(); useLayoutEffect(() => { window.__layer = api; }); return null; };
 const rows = Math.max(5, Number(params.get('rows') ?? 8));
@@ -116,7 +124,7 @@ const LINES = [['02/01', 'Virement Maison Delorme', '1 240,00 €', 'ok'], ['03/
   ['23/01', 'Carte Station du Quai', '−71,30 €', 'ok'], ['26/01', 'Prélèvement Titres-repas', '−120,00 €', 'ok'], ['28/01', 'Virement client Cabinet Roux', '1 980,00 €', 'ok'], ['30/01', 'Frais de tenue de compte', '−14,50 €', 'ok']];
 const STATUS = { ok: ['Rapprochée', 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'], gap: ['Écart', 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300'], wait: ['À justifier', 'bg-muted text-muted-foreground'] };
 const quote = date => window.__layer.talkAbout('@ecriture:' + date.replace('/', '-'));
-const openRecord = line => window.__layer.preview(recordView(line, () => quote(line[0])));
+const openRecord = line => window.__layer.preview(recordView(line, () => quote(line[0]), KIT ? (file, files) => window.__layer.pane.push({ file, files }) : undefined));
 const RealPage = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6">
   <Probe />
   <div className="flex flex-wrap items-baseline justify-between gap-2"><div><h1 className="text-lg font-semibold">Rapprochement bancaire</h1><p className="text-sm text-muted-foreground">Janvier 2026 · Atelier Brun (fictif)</p></div>
@@ -142,13 +150,13 @@ const library = onPicked => <ul data-testid="fixture-library" className="m-0 fle
 window.__undone = 0;
 const TU = { conversation: 'Ton fil', dictate: 'Dicte', listening: 'Je t’écoute…', releaseToSend: 'Relâche et j’envoie', answerHere: 'Ou réponds ici', sendFailed: 'Ton message n’est pas parti : il est revenu dans le champ.',
   placeholder: 'Dis-moi ce que tu as mangé', send: 'Envoie', stop: 'Arrête', attachFiles: 'Joins un fichier', retry: 'Réessaie', voiceStop: 'Arrête de m’écouter', voiceCancel: 'Annule', emptyTitle: 'Parle-moi', emptyDescription: 'Dis-moi ce que tu as mangé.' };
-const agent = { controller, icon: DEMO ? SparklesIcon : Icon, label: 'Assistant', library: DEMO ? demoLibrary(onOpenFile) : library,
+const agent = { controller, icon: DEMO ? SparklesIcon : Icon, label: 'Assistant', library: DEMO ? demoLibrary(KIT ? undefined : onOpenFile) : library, ...(KIT ? { files: demoFiles } : {}),
   ...(params.get('action') === '1' ? { replyAction: { label: 'Annuler', onSelect() { window.__undone += 1; } } } : {}),
   ...(params.get('status') === '1' ? { workingWords: ({ tool }) => tool === 'read' ? 'Max compte…' : 'Max réfléchit…' } : {}),
   ...(params.get('tu') === '1' ? { words: TU } : {}), ...(params.get('words') === '1' ? { words: { dictate: 'Parler', conversation: 'Le fil' } } : {}), ...(params.get('readonly') === '1' ? { readOnly: T('Lecture seule : votre rôle permet de lire, pas d’écrire (fictif).', 'Read only: your role may read, not write (fictional).') } : {}), voice: { transcribe: async () => 'Texte dicté fictif', send: 'draft' },
   // `?fork=1`: the host's conversations with fork and new (edit last, D3): `window.__forked` holds the entries forked at, `window.__new` counts new ones.
   chatProps: { ...(params.get('fork') === '1' ? { conversations: { items: [{ id: 'one-composer', title: 'Dossier Cèdre' }], activeId: 'one-composer', onSelect() {},
-    onNew() { window.__new = (window.__new ?? 0) + 1; }, fork: async at => { (window.__forked ??= []).push(String(at)); } } } : {}), title: 'Assistant', locale: LOCALE, mentions: { kinds: { ecriture: { label: id => `Écriture ${id}`, icon: <Icon className="size-4" /> }, task: { label: id => id, icon: <Icon className="size-4" /> } } }, labels: { ...(params.get('tu') === '1' ? {} : { placeholder: T('Demandez, ou « / » pour une action', 'Ask anything, or « / » for an action') }) }, actions, attachments, slash, onOpenFile } };
+    onNew() { window.__new = (window.__new ?? 0) + 1; }, fork: async at => { (window.__forked ??= []).push(String(at)); } } } : {}), title: 'Assistant', locale: LOCALE, mentions: { kinds: { ecriture: { label: id => `Écriture ${id}`, icon: <Icon className="size-4" /> }, task: { label: id => id, icon: <Icon className="size-4" /> } } }, labels: { ...(params.get('tu') === '1' ? {} : { placeholder: T('Demandez, ou « / » pour une action', 'Ask anything, or « / » for an action') }) }, actions, attachments, slash, ...(KIT ? {} : { onOpenFile }) } };
 const showEntries = entries => change({ view: { entries, docs: {} }, draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } });
 const App = () => { const conv = useDemoConversations(showEntries, history); const shellAgent = { ...agent, chatProps: { ...agent.chatProps, ...conv } };
   return <AppShell layout="screen" locale={LOCALE} title={DEMO ? 'Compta · Atelier Brun' : T('Compta fictive', 'Demo books')} nav={nav} route={{ id: 'dossier', onChange(id) { window.__route = id; } }} composer={params.get('composer') ?? 'bar'} rail="icon" agent={shellAgent}

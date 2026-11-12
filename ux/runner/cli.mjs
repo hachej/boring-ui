@@ -2,7 +2,7 @@
 // The UX harness runner. See ux/README.md.
 //   node ux/runner/cli.mjs list
 //   node ux/runner/cli.mjs capture [--target layout:bar | --level component] [--out <folder>] [--flow F01,F02] [--video]
-//   node ux/runner/cli.mjs check   [--target ...] [--level ...]           no model, no pictures: the regression gate
+//   node ux/runner/cli.mjs check   [--target ...] [--level ...] [--flow F01]         no model, no pictures: the regression gate
 //   node ux/runner/cli.mjs judge   --target <t> --from <captured folder> [--prev <folder>] [--round N]
 //   node ux/runner/cli.mjs site    --from <captured folder> --out <site folder>
 // Needs CHROMIUM (a Chromium binary) and playwright-core (see README).
@@ -52,7 +52,7 @@ if (cmd === 'list') {
   let failed = 0;
   for (const s of scenarios) {
     const t = Date.now();
-    const { result } = await capture(s, join(outRoot, '_check'), { fast: true, browser });
+    const { result } = await capture(s, join(outRoot, '_check'), { fast: true, browser, onlyFlows: opt('flow')?.split(',') });
     const problems = check(s, result);
     failed += problems.length;
     console.log(`${problems.length ? 'FAIL' : 'ok  '} ${s.target} (${Math.round((Date.now() - t) / 1000)} s)${problems.map(p => `\n   ${p}`).join('')}`);

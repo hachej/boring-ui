@@ -22,9 +22,10 @@ export async function open(browser, s, vp, extra, { fast, video }) {
   const page = await ctx.newPage(); page.setDefaultTimeout(5000);
   const h = { ctx, page, viewport: vp.name, touch: !!vp.touch, errors: new Set(), failed: new Set(), target: null };
   page.on('console', m => { if (m.type() === 'error') h.errors.add(m.text().slice(0, 160)); }); page.on('pageerror', e => h.errors.add(String(e).slice(0, 160)));
-  page.on('requestfailed', r => h.failed.add(r.url().slice(0, 120))); page.on('response', r => { if (r.status() >= 400) h.failed.add(`${r.status()} ${r.url().slice(0, 100)}`); });
+  page.on('requestfailed', r => { if (r.failure()?.errorText !== 'net::ERR_ABORTED') h.failed.add(r.url().slice(0, 120)); }); // a load the page cancelled (a viewer closed mid-load) is not a failure page.on('response', r => { if (r.status() >= 400) h.failed.add(`${r.status()} ${r.url().slice(0, 100)}`); });
   await page.addInitScript(INIT);
-  await page.goto(`file://${s.page}?${queryFor(s, vp, extra, fast)}`);
+  // A page with a viewer bundled inline is several MB: on a busy machine its parse takes longer than the 5 s default.
+  await page.goto(`file://${s.page}?${queryFor(s, vp, extra, fast)}`, { timeout: 30000 });
   await page.locator(s.fixture.ready ?? '[data-testid]').first().waitFor({ timeout: 15000 });
   await sleep(500);
   return h;
@@ -58,7 +59,7 @@ export async function step(h, s, def, ctx) {
   while (Date.now() - from < settleMax) { if (await page.evaluate(QUIET)) break; await sleep(50); }
   const timing = await page.evaluate(TIMING), after = await page.evaluate(snap(watch));
   const moved = (a, b) => a && b ? { dx: Math.abs(a.x - b.x), dy: Math.abs(a.y - b.y), dh: Math.abs(a.h - b.h) } : null;
-  Object.assign(rec, { firstChangeMs: timing.first, settledMs: timing.settled, cls: timing.cls, repeats: h.repeats, target: h.target, focusAfter: after.focus, expectFocus: def.focus ?? null,
+  Object.assign(rec, { firstChangeMs: timing.first, settledMs: timing.settled, cls: timing.cls, repeats: h.repeats, target: h.target, focusAfter: after.focus, expectFocus: pick(def.focus, h.viewport) ?? null,
     moved: Object.fromEntries(watch.map(([name]) => [name, moved(before.watched[name], after.watched[name])])), scrollBefore: before.scroll, scrollAfter: after.scroll,
     offscreen: after.offscreen, overlaps: after.overlaps, truncated: after.truncated, horizontalScroll: after.horizontalScroll, keepScroll: def.keepScroll ?? null });
   if (ctx.shot) rec.frame = await ctx.shot(`${rec.say}${rec.ok ? '' : def.gap ? ' (NOT IN THE KIT)' : ' (FAILED)'}`, timing.settled, `first change ${timing.first ?? '-'} ms · settled ${timing.settled ?? '-'} ms · layout shift ${timing.cls}`);

@@ -317,20 +317,29 @@ test('1280: a file opened while docked stacks on the conversation in the same co
   assert.equal(await inside(FIELD, '[data-testid=agent-layer]'), true, 'the field stays in the column');
   const preview = await rect('[data-testid=agent-preview]'), input = await rect(FIELD);
   assert.ok(preview.bottom <= input.y + 1, 'the field is under the preview');
-  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer] [data-testid=conversation-content]')].every(e => e.getClientRects().length === 0)`), true, 'the thread waits under the preview');
+  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer] [data-testid=conversation-content]')].every(e => !e.checkVisibility({ visibilityProperty: true }))`), true, 'the thread waits under the preview');
   assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer] [data-testid=conversation-files], [data-testid=agent-layer] [data-testid=preparing]')].filter(e => e.getClientRects().length > 0).length`), 0, 'under the file only the field: no files button, no status line (Julien, demo review)');
   assert.ok((await text('[data-testid=agent-preview-title]')).includes('ecarts-janvier.csv'));
-  assert.equal(await count('[data-testid=agent-layer-header] [data-testid=agent-preview-back]'), 1, 'one header: « ← <file> » is the dock\'s own title row');
-  assert.equal(await count('[data-testid=agent-layer-header] [data-testid=agent-layer-title]'), 0, 'no second title row above the file');
-  await click('[data-testid=agent-layer-header] [data-testid=agent-layer-library]');
-  await browser.until('library over the docked chat', `!!document.querySelector('[data-testid=agent-layer] [data-testid=fixture-library]')`);
-  assert.equal(await text('[data-testid=agent-layer-header] [data-testid=agent-preview-title]'), 'Bibliothèque', 'the library takes the dock\'s header, « ← Bibliothèque »');
+  // The pane's back stack (bar-parity): the file's own bar is the column's one title row, « ← Assistant »; each entry's back returns to the one under it.
+  const shownCount = selector => browser.evaluate(`[...document.querySelectorAll(${JSON.stringify(selector)})].filter(e => e.checkVisibility({ visibilityProperty: true })).length`);
+  assert.equal(await shownCount('[data-testid=agent-layer] [data-testid=agent-preview-back]'), 1, 'one header: « ← Assistant » is in the file\'s bar');
+  assert.equal(await text('[data-testid=agent-preview-back]'), 'Assistant');
+  assert.equal(await shownCount('[data-testid=agent-layer-title]'), 0, 'no second title row above the file');
+  await click('[data-testid=agent-layer] [data-testid=agent-preview-library]');
+  await browser.until('library over the docked chat', `!!document.querySelector('[data-testid=agent-layer] [data-pane-top] [data-testid=fixture-library]')`);
+  assert.equal(await text('[data-testid=agent-layer] [data-testid=agent-preview-title]'), 'Bibliothèque', 'the library takes the column');
+  assert.equal(await text('[data-testid=agent-preview-back]'), 'ecarts-janvier.csv', '« ← ecarts-janvier.csv »: the file waits under the library');
   await browser.evaluate(`document.querySelector('[data-testid=agent-layer] [data-testid=fixture-library-file][data-path="uploads/releve-janvier.pdf"]').click()`);
-  await browser.until('picked file over the docked chat', `(document.querySelector('[data-testid=agent-layer-header] [data-testid=agent-preview-title]')?.textContent ?? '').includes('releve-janvier.pdf')`);
+  await browser.until('picked file over the docked chat', `(document.querySelector('[data-testid=agent-layer] [data-testid=agent-preview-title]')?.textContent ?? '').includes('releve-janvier.pdf')`);
+  assert.equal(await text('[data-testid=agent-preview-back]'), 'Bibliothèque', '« ← Bibliothèque »');
   await browser.screenshot('one-composer-1280-light-preview-docked.png');
+  for (const under of ['Bibliothèque', 'ecarts-janvier.csv']) {
+    await click('[data-testid=agent-preview-back]');
+    await browser.until(`back to ${under}`, `document.querySelector('[data-testid=agent-preview-title]')?.textContent === ${JSON.stringify(under)}`);
+  }
   await click('[data-testid=agent-preview-back]');
   await browser.until('back to the thread', `!document.querySelector('[data-testid=agent-preview]')`);
-  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer] [data-testid=conversation-content]')].some(e => e.getClientRects().length > 0)`), true, 'the thread is back');
+  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer] [data-testid=conversation-content]')].some(e => e.checkVisibility({ visibilityProperty: true }))`), true, 'the thread is back');
   await oneField('back');
 });
 
@@ -930,3 +939,35 @@ test('K-6, 390 touch: the first press-and-hold on Dicter in a session sends on r
   } finally { await browser.send('Emulation.setTouchEmulationEnabled', { enabled: false }); }
 });
 
+
+test('1280, pane review: preview keeps one identity, an update of the top never moves focus, Échap acts only from the pane or with nothing focused, a stray listbox does not hold the tray open', { skip, timeout: 120000 }, async () => {
+  await open(1280);
+  await browser.evaluate(`window.__preview = window.__layer.preview`);
+  await browser.evaluate(`window.__openFile('uploads/ecarts-janvier.csv')`);
+  await browser.until('preview', `!!document.querySelector('[data-testid=agent-preview] [data-testid=fixture-preview]')`);
+  await browser.evaluate(`window.__openFile('uploads/releve-fevrier.pdf')`);
+  await browser.until('second entry', `document.querySelector('[data-testid=agent-preview]')?.dataset.depth === '2'`);
+  assert.equal(await browser.evaluate(`window.__layer.preview === window.__preview`), true, 'preview keeps its identity across pushes');
+  await wait(300);
+  await browser.evaluate(`document.querySelector('[data-testid=composer-input]').focus()`);
+  await browser.evaluate(`window.__openFile('uploads/releve-fevrier.pdf')`);
+  await wait(500);
+  assert.equal(await browser.evaluate(`document.activeElement?.dataset.testid`), 'composer-input', 'an app updating its top view leaves focus on the field');
+  assert.equal(await browser.evaluate(`window.__layer.preview === window.__preview`), true, 'and after a replace');
+  await browser.evaluate(`(() => { const input = document.createElement('input'); input.id = 'outside'; document.body.append(input); input.focus(); })()`);
+  await browser.press('Escape');
+  await wait(400);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-preview]')?.dataset.depth`), '2', 'Échap in a field outside the pane keeps the pane');
+  await browser.evaluate(`document.activeElement.blur()`);
+  await browser.press('Escape');
+  await browser.until('Échap with nothing focused steps back', `document.querySelector('[data-testid=agent-preview]')?.dataset.depth === '1'`);
+  await browser.evaluate(`window.__layer.preview(null)`);
+  await browser.until('closed', `!document.querySelector('[data-testid=agent-preview]')`);
+  await browser.evaluate(`window.__layer.open('agent')`);
+  await browser.until('Ouvert', `!!document.querySelector('[data-testid=agent-tray]')`);
+  await click('[data-testid=agent-tray-dock]');
+  await browser.until('Ancré', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  await browser.evaluate(`(() => { const list = document.createElement('div'); list.setAttribute('role', 'listbox'); document.body.append(list); document.activeElement.blur(); })()`);
+  await browser.press('Escape');
+  await browser.until('the dock closes by Escape although a listbox sits on the page', `document.querySelector('[data-testid=agent-layer]')?.dataset.state !== 'open'`);
+});

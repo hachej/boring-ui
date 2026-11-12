@@ -2363,7 +2363,12 @@
         "@boring-ui/utils",
         "@boring-ui/button",
         "@boring-ui/_shared",
-        "@boring-ui/agent-bar"
+        "@boring-ui/agent-bar",
+        "@boring-ui/viewer-frame",
+        "@boring-ui/viewer-pdf",
+        "@boring-ui/viewer-code",
+        "@boring-ui/pi-chat-markdown",
+        "@boring-ui/pi-artifacts"
       ],
       "css": {
         "@layer base": {
@@ -2435,6 +2440,41 @@
           "path": "registry/app-shell/agent-layer.tsx",
           "type": "registry:component",
           "target": "components/app-shell/agent-layer.tsx"
+        },
+        {
+          "path": "registry/app-shell/layer-context.ts",
+          "type": "registry:lib",
+          "target": "components/app-shell/layer-context.ts"
+        },
+        {
+          "path": "registry/app-shell/agent-trigger.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-trigger.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-bar-parts.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-bar-parts.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-chats.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-chats.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-compact.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-compact.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-placements.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-placements.tsx"
+        },
+        {
+          "path": "registry/app-shell/agent-pane.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/agent-pane.tsx"
         },
         {
           "path": "registry/app-shell/agent-context.ts",
