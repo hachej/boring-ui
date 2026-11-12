@@ -1,0 +1,23 @@
+{
+  "fallback": "C’est une démonstration : l’assistant est scripté et ne comprend que quelques demandes. Essayez « Rapproche le relevé de janvier » ou « Prépare la clôture ».",
+  "turns": [
+    { "match": "relev|rapproch|janvier", "steps": [
+      { "tool": "read", "path": "uploads/releve-janvier.pdf", "progress": "12 lignes sur 40", "ms": 900 },
+      { "tool": "read", "path": "uploads/ecarts-janvier.csv", "progress": "40 lignes sur 40", "ms": 700 },
+      { "text": "Le relevé de janvier compte 40 lignes, toutes rapprochées.\nDeux écarts sont notés dans @uploads/ecarts-janvier.csv.\nRien d’autre à faire pour janvier.\nUne quatrième ligne que la carte replie.", "stream": true } ] },
+    { "match": "cl[oô]ture|pr[ée]pare", "steps": [
+      { "tool": "read", "path": "notes-cloture.md", "progress": "lecture des notes", "ms": 700 },
+      { "ask": { "question": "Deux précisions", "questions": [
+          { "question": "Quel exercice ?", "options": ["2025", "2026"] },
+          { "question": "Quel journal ?", "options": ["Achats", "Ventes"] } ] },
+        "then": [ { "tool": "read", "path": "factures/facture-axiom-0108.pdf", "progress": "3 factures sur 12", "ms": 900 },
+          { "text": "Merci. Je prépare la clôture avec ces précisions.\nTrois écritures restent à justifier, la liste est dans @notes-cloture.md.", "stream": true } ] } ] },
+    { "match": "long|d[ée]taille|explique|r[ée]sume", "steps": [
+      { "think": true, "ms": 700 },
+      { "text": "Voici le détail de janvier.\n\n1. Virements clients : quatre virements pour 6 650,00 €, tous rapprochés.\n2. Prélèvements : EDF, Axiom, Orange et Swile, soit 583,39 €, rapprochés.\n3. Cartes : Papeterie Lemaire, Station Total et deux notes de frais. Deux écarts de 12,00 € : Garage du Port le 09/01 et Restaurant Le Cèdre le 15/01.\n4. Loyer : 950,00 € le 14/01, rapproché.\n5. Remboursement URSSAF : 312,00 € attendus, pas encore reçus.\n6. Facture Brun & Fils du 21/01 : 1 150,00 € en attente depuis 19 jours.\n\nPour clore janvier il reste donc deux justificatifs à retrouver et une relance à envoyer. Je peux préparer la relance si vous voulez.", "stream": true } ] },
+    { "match": "relance|brun|delorme|facture", "steps": [
+      { "tool": "read", "path": "factures/facture-brun-0121.pdf", "progress": "facture du 21/01", "ms": 800 },
+      { "text": "Brouillon de relance pour Brun & Fils :\n« Bonjour, la facture du 21 janvier (1 150,00 €) reste ouverte. Pouvez-vous nous confirmer la date de règlement ? »\nLa facture est dans @factures/facture-brun-0121.pdf.", "stream": true } ] },
+    { "match": "bonjour|salut", "steps": [ { "text": "Bonjour ! Je peux rapprocher un relevé, préparer la clôture ou rédiger une relance.", "stream": true } ] }
+  ]
+}

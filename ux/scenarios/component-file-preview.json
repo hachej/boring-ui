@@ -1,0 +1,45 @@
+{
+ "target": "component:file-preview",
+ "title": "The file preview",
+ "purpose": "The kit's file viewer (FileViewer of pi-app, with the default kinds of pi-app-kinds) alone on a neutral page over a fake in-memory resource client with invented French files: a Markdown note, a CSV of gaps and a text file. The two buttons that open a file and the surface are the consumer's own.",
+ "fixture": {
+  "entry": "ux/fixtures/component-file-preview.jsx",
+  "query": "",
+  "ready": "[data-testid=file-viewer], [data-testid=file-list], [data-testid=artifact-panel]",
+  "install": "npx shadcn@4.23.0 add pi-app-kinds",
+  "usage": "<FileViewer key={path} path={path} locator={locate(path)} options={{ client, identity, kinds: defaultKinds({ locale: 'fr' }) }} onClose={() => setPath(null)} />",
+  "css": ["viewer-frame", "markdown-editor", "touch-floor"]
+ },
+ "viewports": [
+  { "name": "390", "width": 390, "height": 844, "touch": true },
+  { "name": "1440", "width": 1440, "height": 900 }
+ ],
+ "watch": [["viewer", "[data-testid=file-viewer]"], ["bar", "[data-testid=artifact-panel]"]],
+ "thresholds": { "cls": 0.1, "settledMs": 1500, "touchTarget": 44, "truncated": 0 },
+ "notes": "The viewer's bar keeps the file's name and a close button in reach (44 px on a phone); the content is the file as the person wrote it (a note reads as a note, a table as a table (FileViewer shows a CSV as plain text; the table is the ArtifactPanel kind, state 03b)); closing returns to the page the person came from; French words stay as they are.",
+ "states": [
+  { "id": "01", "name": "list-closed", "steps": [] },
+  { "id": "02", "name": "markdown-note", "query": "open=note", "steps": [{ "do": "wait", "ms": 600 }] },
+  { "id": "03", "name": "csv-as-text", "query": "open=csv", "steps": [{ "do": "wait", "ms": 600 }] },
+  { "id": "04", "name": "csv-table", "query": "open=table", "steps": [{ "do": "wait", "ms": 600 }] },
+  { "id": "05", "name": "text-file", "query": "open=text", "steps": [{ "do": "wait", "ms": 400 }] },
+  { "id": "06", "name": "closed-again", "query": "open=note", "steps": [{ "do": "wait", "ms": 600 }, { "do": "fixture", "name": "open", "arg": "" }, { "do": "wait", "ms": 200 }] }
+ ],
+ "flows": [
+  { "id": "F01", "name": "Open a note", "steps": [
+   { "do": "tap", "target": "open-file[data-name=\"notes-cloture.md\"]", "say": "Tap « notes-cloture.md »", "motion": true, "until": "visible:file-viewer & text:file-viewer~Atelier Brun", "timeout": 5000, "expect": "The note opens in the viewer with its title and its text." }
+  ] },
+  { "id": "F02", "name": "Close with the button", "query": "open=csv", "steps": [
+   { "do": "wait", "ms": 500, "say": "The table is open", "until": "visible:file-viewer" },
+   { "do": "tap", "target": "viewer-close", "say": "Tap the close button", "until": "visible:file-list", "motion": true, "expect": "The viewer closes and the list of files is back." }
+  ] },
+  { "id": "F03", "name": "Close with Escape", "query": "open=note", "steps": [
+   { "do": "wait", "ms": 500, "say": "The note is open", "until": "visible:file-viewer" },
+   { "do": "press", "key": "Escape", "say": "Press Escape", "gap": "FileViewer takes no keyboard shortcut: Escape does nothing in the kit (a host must listen for it and call its own onClose).", "until": "visible:file-list", "expect": "The viewer closes." }
+  ] },
+  { "id": "F04", "name": "Next and previous file", "query": "open=note", "steps": [
+   { "do": "wait", "ms": 500, "say": "The note is open", "until": "visible:file-viewer" },
+   { "do": "tap", "target": "file-next", "say": "Tap « next file »", "gap": "The kit has no next / previous in FileViewer: only onBack (a back button to the host's list) and onClose. The host would draw its own arrows and remount with a new path.", "until": "visible:file-next", "expect": "The next file of the folder is shown." }
+  ] }
+ ]
+}

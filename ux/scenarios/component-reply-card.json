@@ -1,0 +1,46 @@
+{
+ "target": "component:reply-card",
+ "title": "The reply and question card",
+ "purpose": "What shows a reply or a question, alone on a neutral page. The folded reply card of the bar layout (FoldedCard in registry/app-shell/agent-layer.tsx) is INTERNAL and not exported, so it is not rendered here: this mounts the closest exported things, PiChat's message list (a reply with its file chip) with the question card (pi-chat-question QuestionCard, one question and a form) and the stand-alone InlineQuestion. The composer is hidden (renderComposer) so the card is alone.",
+ "fixture": {
+  "entry": "ux/fixtures/component-reply-card.jsx",
+  "query": "",
+  "ready": "[data-testid=question-card], [data-testid=inline-surface], [data-role=assistant]",
+  "install": "npx shadcn@4.23.0 add pi-chat pi-chat-markdown pi-chat-question inline-question",
+  "usage": "<PiChat controller={controller} locale=\"fr\" header={false} renderText={markdownText} cards={{ question: QuestionCard }} actions={{ answer }} fileChanges onOpenFile={open} renderComposer={() => null} />"
+ },
+ "viewports": [
+  { "name": "390", "width": 390, "height": 844, "touch": true },
+  { "name": "1440", "width": 1440, "height": 900 }
+ ],
+ "watch": [["card", "[data-testid=question-card], [data-testid=inline-surface], [data-role=assistant]"], ["surface", "[data-testid=surface]"]],
+ "thresholds": { "cls": 0.08, "settledMs": 1200, "touchTarget": 44, "truncated": 0 },
+ "notes": "A question must show its choices as one-tap buttons of at least 44 px on a phone; once answered the choices give way to the answer and the card keeps its place; a reply's file chip is a real button that opens the file; French words stay as they are.",
+ "states": [
+  { "id": "01", "name": "question-choices", "query": "q=ask", "steps": [] },
+  { "id": "02", "name": "question-answered", "query": "q=answered", "steps": [] },
+  { "id": "03", "name": "reply-file-chip", "query": "q=reply", "steps": [] },
+  { "id": "04", "name": "question-form", "query": "q=form", "steps": [] },
+  { "id": "05", "name": "inline-question", "query": "q=inline", "steps": [] },
+  { "id": "06", "name": "inline-answered", "query": "q=inline", "steps": [{ "do": "tap", "target": "question-option", "until": "gone:question-option" }] }
+ ],
+ "flows": [
+  { "id": "F01", "name": "Answer with a choice", "query": "q=ask", "steps": [
+   { "do": "tap", "target": "question-option", "say": "Tap « Janvier »", "motion": true, "until": "text:[data-testid=question-card]~Janvier", "expect": "The choices give way to my answer, in the same place." },
+   { "do": "wait", "ms": 600, "say": "Wait for the reply", "until": "text:[data-role=assistant]~je commence", "timeout": 5000, "expect": "The agent's reply follows under my answer." }
+  ] },
+  { "id": "F02", "name": "Answer in my own words", "query": "q=ask", "steps": [
+   { "do": "tap", "target": "question-input", "say": "Tap the free-text field", "focus": "question-input", "until": "focus:question-input" },
+   { "do": "type", "text": "Février, puis janvier", "say": "Type « Février, puis janvier »", "until": "value:question-input~Février" },
+   { "do": "tap", "target": "question-submit", "say": "Send the answer", "until": "text:[data-testid=question-card]~Février", "expect": "My words replace the question's controls." }
+  ] },
+  { "id": "F03", "name": "Open the file of a reply", "query": "q=reply", "steps": [
+   { "do": "tap", "target": "message-mention", "say": "Tap the file chip « ecarts-janvier.csv »", "until": "eval:window.__ux.opened() >= 1", "expect": "The host is told to open the file." },
+   { "do": "tap", "target": "reply-next", "say": "Go to the next reply or file of the conversation", "gap": "A reply offers its file chip and nothing to move to the next or previous reply: no such control exists in the kit.", "until": "visible:reply-next", "expect": "The next reply is shown." }
+  ] },
+  { "id": "F04", "name": "Answer a form", "query": "q=form", "steps": [
+   { "do": "tap", "target": "question-option[data-option=\"2025\"]", "say": "Pick « 2025 » for the first question", "until": "visible:question-submit" },
+   { "do": "tap", "target": "question-submit", "say": "Send the form", "until": "text:[data-testid=question-card]~2025", "expect": "The form gives way to the answers, question by question." }
+  ] }
+ ]
+}

@@ -1,0 +1,1034 @@
+{
+ "target": "layout:bar",
+ "title": "App shell with the one composer",
+ "purpose": "AppShell composer=\"bar\": one message field at the bottom of a page, a folded reply card, the opened conversation, a docked column, file preview, library, dictation and the phone layout.",
+ "fixture": {
+  "entry": "test/fixtures/themes/one-composer.jsx",
+  "query": "tabs=1",
+  "queryBy": {
+   "1440": "single=1"
+  },
+  "ready": "[data-testid=composer-input], [data-testid=agent-read-only]",
+  "install": "npx shadcn@4.23.0 add app-shell pi-chat agent-bar",
+  "usage": "<AppShell layout=\"screen\" composer=\"bar\" sidebar={false} nav={nav} agent={{ controller, library, chatProps: { onOpenFile } }} />"
+ },
+ "viewports": [
+  {
+   "name": "390",
+   "width": 390,
+   "height": 844,
+   "touch": true
+  },
+  {
+   "name": "1440",
+   "width": 1440,
+   "height": 900
+  }
+ ],
+ "watch": [
+  [
+   "field",
+   "[data-testid=composer]"
+  ],
+  [
+   "page",
+   "[data-testid=page-row]"
+  ],
+  [
+   "card",
+   "[data-testid=agent-card]"
+  ]
+ ],
+ "thresholds": {
+  "cls": 0.08,
+  "settledMs": 1200,
+  "touchTarget": 44
+ },
+ "notes": "On this layout the field must never cover the page rows the person needs (the table keeps its last row above the field), the field keeps its place across states, and French words stay as they are.",
+ "states": [
+  {
+   "id": "01",
+   "name": "rest",
+   "steps": []
+  },
+  {
+   "id": "02",
+   "name": "focused-text",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Peux-tu relancer le client Maison Delorme pour la facture de janvier ?"
+    }
+   ]
+  },
+  {
+   "id": "03",
+   "name": "working",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Rapproche le relevé de janvier",
+     "say": "Type « Rapproche le relevé de janvier »"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Send",
+     "until": "visible:agent-card-status",
+     "timeout": 6000
+    },
+    {
+     "do": "wait",
+     "ms": 300
+    }
+   ]
+  },
+  {
+   "id": "04",
+   "name": "reply-action",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Rapproche le relevé de janvier"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "until": "text:agent-card-reply~Rien d’autre",
+     "timeout": 14000
+    },
+    {
+     "do": "wait",
+     "ms": 400
+    }
+   ],
+   "query": "action=1"
+  },
+  {
+   "id": "05",
+   "name": "open-30",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Rapproche le relevé de janvier"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "until": "text:agent-card-reply~Rien d’autre",
+     "timeout": 14000
+    },
+    {
+     "do": "wait",
+     "ms": 400
+    },
+    {
+     "do": "tap",
+     "target": "agent-bar-conversation",
+     "until": "visible:agent-tray|agent-layer[data-state=half]"
+    }
+   ]
+  },
+  {
+   "id": "06",
+   "name": "open-expanded",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Rapproche le relevé de janvier"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "until": "text:agent-card-reply~Rien d’autre",
+     "timeout": 14000
+    },
+    {
+     "do": "wait",
+     "ms": 400
+    },
+    {
+     "do": "tap",
+     "target": "agent-bar-conversation",
+     "until": "visible:agent-tray|agent-layer[data-state=half]"
+    },
+    {
+     "do": "tap",
+     "target": {
+      "390": "agent-layer-expand",
+      "1440": "agent-tray-grow"
+     }
+    }
+   ]
+  },
+  {
+   "id": "07",
+   "name": "docked",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Rapproche le relevé de janvier"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "until": "text:agent-card-reply~Rien d’autre",
+     "timeout": 14000
+    },
+    {
+     "do": "wait",
+     "ms": 400
+    },
+    {
+     "do": "tap",
+     "target": "agent-bar-conversation",
+     "until": "visible:agent-tray|agent-layer[data-state=half]"
+    },
+    {
+     "do": "tap",
+     "target": "agent-tray-dock",
+     "until": "visible:agent-layer[data-state=open]"
+    }
+   ],
+   "only": "1440"
+  },
+  {
+   "id": "08",
+   "name": "file-chip",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Rapproche le relevé de janvier"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "until": "text:agent-card-reply~Rien d’autre",
+     "timeout": 14000
+    },
+    {
+     "do": "wait",
+     "ms": 400
+    }
+   ]
+  },
+  {
+   "id": "09",
+   "name": "file-preview",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Rapproche le relevé de janvier"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "until": "text:agent-card-reply~Rien d’autre",
+     "timeout": 14000
+    },
+    {
+     "do": "wait",
+     "ms": 400
+    },
+    {
+     "do": "tap",
+     "target": "agent-card-file",
+     "until": "visible:fixture-preview"
+    }
+   ]
+  },
+  {
+   "id": "10",
+   "name": "question",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Prépare la clôture"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "until": "visible:agent-question",
+     "timeout": 14000
+    },
+    {
+     "do": "wait",
+     "ms": 400
+    }
+   ]
+  },
+  {
+   "id": "11",
+   "name": "dictating-tap",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "agent-talk",
+     "until": "visible:agent-talk-stop"
+    }
+   ]
+  },
+  {
+   "id": "12",
+   "name": "dictating-hold",
+   "steps": [
+    {
+     "do": "hold",
+     "target": "agent-talk",
+     "until": "visible:agent-talk-release"
+    }
+   ]
+  },
+  {
+   "id": "13",
+   "name": "send-failed",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Peux-tu relancer le client Maison Delorme pour la facture de janvier ?"
+    },
+    {
+     "do": "fixture",
+     "name": "failNext"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "until": "visible:agent-send-problem"
+    }
+   ]
+  },
+  {
+   "id": "14",
+   "name": "read-only",
+   "steps": [],
+   "query": "readonly=1"
+  },
+  {
+   "id": "15",
+   "name": "empty-conversation",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "agent-bar-conversation",
+     "until": "visible:agent-tray|agent-layer[data-state=half]"
+    }
+   ],
+   "query": "empty=1"
+  },
+  {
+   "id": "16",
+   "name": "keyboard-open",
+   "steps": [
+    {
+     "do": "focus",
+     "target": "composer-input"
+    },
+    {
+     "do": "wait",
+     "ms": 200
+    }
+   ],
+   "only": "390",
+   "query": "kb=1"
+  },
+  {
+   "id": "20",
+   "name": "rest-dark",
+   "steps": [],
+   "query": "dark=1"
+  },
+  {
+   "id": "21",
+   "name": "reply-dark",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Rapproche le relevé de janvier"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "until": "text:agent-card-reply~Rien d’autre",
+     "timeout": 14000
+    },
+    {
+     "do": "wait",
+     "ms": 400
+    }
+   ],
+   "query": "dark=1&action=1"
+  },
+  {
+   "id": "22",
+   "name": "open-30-dark",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Rapproche le relevé de janvier"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "until": "text:agent-card-reply~Rien d’autre",
+     "timeout": 14000
+    },
+    {
+     "do": "wait",
+     "ms": 400
+    },
+    {
+     "do": "tap",
+     "target": "agent-bar-conversation",
+     "until": "visible:agent-tray|agent-layer[data-state=half]"
+    }
+   ],
+   "query": "dark=1"
+  }
+ ],
+ "flows": [
+  {
+   "id": "F01",
+   "name": "Open a file from the chip in a reply",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Rapproche le relevé de janvier",
+     "say": "Ask the assistant to reconcile January"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Send",
+     "until": "visible:agent-card-file",
+     "timeout": 14000,
+     "expect": "The reply appears on the card with the file it cites as a chip."
+    },
+    {
+     "do": "tap",
+     "target": "agent-card-file",
+     "say": "Tap the file chip",
+     "motion": true,
+     "until": "visible:fixture-preview",
+     "expect": "The file opens beside (desktop) or over (phone) the conversation, which stays readable."
+    },
+    {
+     "do": "tap",
+     "target": {
+      "390": "agent-preview-close",
+      "1440": "agent-preview-close"
+     },
+     "say": "Close the preview",
+     "motion": true,
+     "until": "gone:fixture-preview",
+     "focus": "composer-input",
+     "expect": "Back exactly where the person was; focus returns to the field."
+    }
+   ]
+  },
+  {
+   "id": "F02",
+   "name": "Open a file from the library",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "agent-bar-conversation",
+     "say": "Open the conversation",
+     "motion": true,
+     "until": "visible:agent-tray|agent-layer[data-state=half]",
+     "expect": "The conversation opens above the field; the field does not move."
+    },
+    {
+     "do": "tap",
+     "target": "agent-layer-library",
+     "say": "Open the library",
+     "motion": true,
+     "until": "visible:fixture-library",
+     "expect": "The library lists the folders and files in the right column (over the screen on a phone)."
+    },
+    {
+     "do": "tap",
+     "text": "uploads",
+     "say": "Unfold the folder « uploads »",
+     "until": "text:fixture-library~ecarts-janvier.csv",
+     "expect": "The folder opens in place."
+    },
+    {
+     "do": "tap",
+     "text": "ecarts-janvier.csv",
+     "say": "Pick « ecarts-janvier.csv »",
+     "motion": true,
+     "until": "visible:fixture-preview",
+     "expect": "The file replaces the library in the same pane."
+    },
+    {
+     "do": "tap",
+     "target": "agent-preview-close",
+     "say": "Close the preview",
+     "motion": true,
+     "until": "gone:fixture-preview",
+     "expect": "The pane closes and the person is back on the page."
+    }
+   ]
+  },
+  {
+   "id": "F03",
+   "name": "Open an entry from a row of the page",
+   "steps": [
+    {
+     "do": "tap",
+     "text": "Carte Garage du Port",
+     "say": "Tap the row of 09/01",
+     "motion": true,
+     "until": "visible:fixture-record",
+     "expect": "The entry opens in the side pane; the table stays in place."
+    },
+    {
+     "do": "tap",
+     "target": "agent-preview-close",
+     "say": "Close the entry",
+     "motion": true,
+     "until": "gone:fixture-record",
+     "expect": "The pane closes; the row is where it was."
+    }
+   ]
+  },
+  {
+   "id": "F04",
+   "name": "Quote an entry of the page in the field",
+   "steps": [
+    {
+     "do": "tap",
+     "text": "Carte Restaurant Le Cèdre",
+     "say": "Open the entry of 15/01",
+     "motion": true,
+     "until": "visible:fixture-record",
+     "expect": "The entry opens."
+    },
+    {
+     "do": "tap",
+     "target": "record-quote",
+     "say": "Tap « Citer dans l’assistant »",
+     "motion": true,
+     "until": "visible:mention-chip",
+     "expect": "A removable chip for the entry appears in the field; the cursor is in the field."
+    },
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Pourquoi cet écart ?",
+     "say": "Type the question"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Send",
+     "motion": true,
+     "until": "eval:window.__sent.length >= 1",
+     "timeout": 8000,
+     "expect": "The message goes with its quote; the assistant starts to answer."
+    }
+   ]
+  },
+  {
+   "id": "F05",
+   "name": "Session history and a new conversation",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "agent-bar-conversation",
+     "say": "Open the conversation",
+     "motion": true,
+     "until": "visible:agent-tray|agent-layer[data-state=half]"
+    },
+    {
+     "do": "tap",
+     "target": "history-open",
+     "say": "Look for « Historique » in the header",
+     "gap": "PiChat's History button (history-open) is not in the bar layout: no list of earlier conversations, no « New conversation », no way back to an earlier one.",
+     "until": "visible:history-open",
+     "expect": "A list of earlier conversations opens, the current one marked, with New."
+    },
+    {
+     "do": "focus",
+     "target": "composer-input",
+     "say": "Closest thing: click in the field",
+     "only": "1440"
+    },
+    {
+     "do": "press",
+     "key": "Escape Escape",
+     "say": "Closest thing: Escape twice lists my own messages",
+     "only": "1440",
+     "motion": true,
+     "until": "visible:rewind-list",
+     "expect": "The person's earlier messages are listed above the field."
+    }
+   ]
+  },
+  {
+   "id": "F06",
+   "name": "Attach a file with the picker",
+   "steps": [
+    {
+     "do": "attach",
+     "target": "composer-bar-attach",
+     "file": "facture-delorme-0112.pdf",
+     "say": "Tap the paperclip and pick a file",
+     "motion": true,
+     "until": "visible:mention-chip",
+     "expect": "The file appears as a chip in the field."
+    },
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Peux-tu la rapprocher ?",
+     "say": "Type the request"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Send",
+     "motion": true,
+     "until": "visible:agent-card",
+     "timeout": 8000,
+     "expect": "The message leaves with its file; the field is empty again."
+    }
+   ]
+  },
+  {
+   "id": "F07",
+   "name": "Attach a file by drag and drop",
+   "steps": [
+    {
+     "do": "drop",
+     "target": "composer",
+     "file": "releve-fevrier.pdf",
+     "phase": "enter",
+     "say": "Drag a file over the field",
+     "only": "1440",
+     "motion": true,
+     "expect": "The field shows it will take the file."
+    },
+    {
+     "do": "drop",
+     "target": "composer",
+     "file": "releve-fevrier.pdf",
+     "say": "Drop it",
+     "only": "1440",
+     "motion": true,
+     "until": "visible:mention-chip",
+     "expect": "The file appears as a chip in the field."
+    }
+   ],
+   "only": "1440"
+  },
+  {
+   "id": "F08",
+   "name": "Actions with « / »: filter, choose, cancel",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "/",
+     "say": "Type « / »",
+     "motion": true,
+     "until": "visible:slash-item",
+     "expect": "The list of actions opens above the field."
+    },
+    {
+     "do": "type",
+     "text": "rel",
+     "say": "Type « rel »",
+     "until": "visible:slash-item",
+     "expect": "The list narrows to what matches."
+    },
+    {
+     "do": "tap",
+     "target": "slash-item",
+     "say": "Choose « relance »",
+     "motion": true,
+     "until": "value:composer-input~Relance & gone:slash-item",
+     "expect": "The text of the action is in the field, the list closes, focus stays in the field."
+    },
+    {
+     "do": "fixture",
+     "name": "setText",
+     "arg": "",
+     "say": "Clear the field"
+    },
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "/",
+     "say": "Type « / » again"
+    },
+    {
+     "do": "press",
+     "key": "Escape",
+     "say": "Press Escape",
+     "motion": true,
+     "until": "gone:slash-item",
+     "focus": "composer-input",
+     "expect": "The list closes; the field keeps focus."
+    }
+   ]
+  },
+  {
+   "id": "F09",
+   "name": "Answer a question from the assistant",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Prépare la clôture",
+     "say": "Ask to prepare the closing"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Send",
+     "until": "visible:agent-question",
+     "timeout": 8000,
+     "expect": "The question appears on the card with its choices."
+    },
+    {
+     "do": "tap",
+     "choice": "2026",
+     "say": "Choose « 2026 »",
+     "motion": true,
+     "until": "text:agent-question-step~2 sur 2",
+     "expect": "The second question replaces the first, « 2 sur 2 »."
+    },
+    {
+     "do": "tap",
+     "choice": "Achats",
+     "say": "Choose « Achats »",
+     "motion": true,
+     "until": "gone:agent-question",
+     "timeout": 4000,
+     "expect": "The answers go together and the agent continues."
+    },
+    {
+     "do": "wait",
+     "ms": 200,
+     "say": "Wait for the follow-up",
+     "until": "gone:composer-submit[data-state=stop]",
+     "timeout": 20000
+    },
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Rappelle-moi la liste des écritures à justifier",
+     "say": "Type a free question"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Send",
+     "until": "eval:window.__sent.length >= 1",
+     "timeout": 6000,
+     "expect": "The message goes, the agent works."
+    }
+   ]
+  },
+  {
+   "id": "F10",
+   "name": "Dictate: tap, then hold",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "agent-talk",
+     "say": "Tap the microphone",
+     "motion": true,
+     "until": "visible:agent-talk-stop",
+     "expect": "The field shows it is listening, with a stop button and the time."
+    },
+    {
+     "do": "tap",
+     "target": "agent-talk-stop",
+     "say": "Tap stop",
+     "motion": true,
+     "until": "value:composer-input~Texte dicté fictif",
+     "expect": "The words are in the field for review; nothing is sent."
+    },
+    {
+     "do": "fixture",
+     "name": "setText",
+     "arg": "",
+     "say": "Clear the field"
+    },
+    {
+     "do": "hold",
+     "target": "agent-talk",
+     "say": "Hold the microphone",
+     "motion": true,
+     "until": "visible:agent-talk-release",
+     "expect": "It says to release to send."
+    },
+    {
+     "do": "release",
+     "say": "Release",
+     "motion": true,
+     "until": "visible:agent-card",
+     "timeout": 6000,
+     "expect": "The message is sent at once and the card shows the work."
+    }
+   ]
+  },
+  {
+   "id": "F11",
+   "name": "Stop an answer in progress",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Rapproche le relevé de janvier",
+     "say": "Ask the assistant to reconcile January"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Send",
+     "until": "visible:composer-submit[data-state=stop]",
+     "timeout": 6000,
+     "expect": "The send button becomes a stop button while the agent works."
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Tap stop",
+     "motion": true,
+     "until": "gone:composer-submit[data-state=stop]",
+     "timeout": 4000,
+     "expect": "The work stops at once; the card says nothing is running; the field is free."
+    }
+   ]
+  },
+  {
+   "id": "F12",
+   "name": "A refused send and « Réessayer »",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Peux-tu relancer le client Maison Delorme pour la facture de janvier ?",
+     "say": "Type a message"
+    },
+    {
+     "do": "fixture",
+     "name": "failNext",
+     "say": "The network refuses the next send"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Send",
+     "motion": true,
+     "until": "visible:agent-send-problem",
+     "expect": "One line says the message did not leave; the text is back in the field."
+    },
+    {
+     "do": "tap",
+     "target": "agent-send-retry",
+     "say": "Tap Réessayer",
+     "motion": true,
+     "until": "gone:agent-send-problem",
+     "timeout": 6000,
+     "expect": "The same message is sent; the line goes."
+    }
+   ]
+  },
+  {
+   "id": "F13",
+   "name": "Fold, open, expand, dock, undock",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "agent-bar-conversation",
+     "say": "Open (chevron)",
+     "motion": true,
+     "until": "visible:agent-tray|agent-layer[data-state=half]",
+     "expect": "About a third of the height; the field does not move."
+    },
+    {
+     "do": "tap",
+     "target": {
+      "390": "agent-layer-expand",
+      "1440": "agent-tray-grow"
+     },
+     "say": "Expand",
+     "motion": true,
+     "expect": "The conversation grows to about 70 %."
+    },
+    {
+     "do": "tap",
+     "target": {
+      "390": "agent-layer-collapse",
+      "1440": "agent-tray-reduce"
+     },
+     "say": "Reduce",
+     "motion": true,
+     "expect": "Back to the opened size (about 30 %), the conversation still open."
+    },
+    {
+     "do": "tap",
+     "target": "agent-bar-conversation",
+     "say": "Open again if it folded",
+     "until": "visible:agent-tray|agent-layer[data-state=half]",
+     "when": "gone:agent-tray"
+    },
+    {
+     "do": "tap",
+     "target": "agent-tray-dock",
+     "say": "Dock to the right",
+     "only": "1440",
+     "motion": true,
+     "until": "visible:agent-layer[data-state=open]",
+     "expect": "The conversation and the field move together to the right column."
+    },
+    {
+     "do": "tap",
+     "target": "agent-layer-undock",
+     "say": "Undock to the bottom",
+     "only": "1440",
+     "motion": true,
+     "until": "visible:agent-tray",
+     "expect": "Back under the page."
+    },
+    {
+     "do": "tap",
+     "target": {
+      "390": "agent-bar-conversation",
+      "1440": "agent-layer-close"
+     },
+     "say": "Close",
+     "motion": true,
+     "until": "gone:agent-tray",
+     "expect": "Only the field remains, where it always was."
+    }
+   ]
+  },
+  {
+   "id": "F14",
+   "name": "A long conversation: scrolled, folded, reopened",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "agent-bar-conversation",
+     "say": "Open the conversation (22 exchanges)",
+     "motion": true,
+     "until": "visible:agent-tray|agent-layer[data-state=half]",
+     "expect": "It opens on the latest message."
+    },
+    {
+     "do": "scroll",
+     "target": "transcript-scroll",
+     "to": 0,
+     "say": "Scroll to the beginning",
+     "until": "true",
+     "expect": "The beginning of the conversation."
+    },
+    {
+     "do": "tap",
+     "target": "agent-bar-conversation",
+     "say": "Fold it (chevron)",
+     "motion": true,
+     "until": "gone:agent-tray",
+     "expect": "Only the field remains."
+    },
+    {
+     "do": "tap",
+     "target": "agent-bar-conversation",
+     "say": "Reopen it",
+     "motion": true,
+     "until": "visible:agent-tray|agent-layer[data-state=half]",
+     "expect": "It reopens where the person left it (the beginning), not at the end."
+    }
+   ],
+   "query": "conv=long"
+  },
+  {
+   "id": "F15",
+   "name": "Keyboard only: Tab, Enter, ↑, Escape",
+   "steps": [
+    {
+     "do": "focus",
+     "target": "composer-input",
+     "say": "Put the cursor in the field",
+     "until": "focus:composer-input"
+    },
+    {
+     "do": "press",
+     "key": "Tab Tab Tab Tab",
+     "say": "Press Tab four times",
+     "expect": "Focus visits the controls in reading order and always shows where it is."
+    },
+    {
+     "do": "focus",
+     "target": "composer-input",
+     "say": "Back to the field"
+    },
+    {
+     "do": "type",
+     "text": "Bonjour",
+     "say": "Type « Bonjour »"
+    },
+    {
+     "do": "press",
+     "key": "Enter",
+     "say": "Press Enter",
+     "motion": true,
+     "until": "eval:window.__sent.includes(\"Bonjour\")",
+     "timeout": 6000,
+     "focus": "composer-input",
+     "expect": "The message goes; focus stays in the field."
+    },
+    {
+     "do": "press",
+     "key": "ArrowUp",
+     "say": "Press ↑ in the empty field",
+     "motion": true,
+     "until": "true",
+     "expect": "The previous message is recalled into the field."
+    },
+    {
+     "do": "focus",
+     "target": "agent-bar-conversation",
+     "say": "Focus the chevron"
+    },
+    {
+     "do": "press",
+     "key": "Enter",
+     "say": "Press Enter",
+     "motion": true,
+     "until": "visible:agent-tray|agent-layer[data-state=half]",
+     "expect": "The conversation opens."
+    },
+    {
+     "do": "press",
+     "key": "Escape",
+     "say": "Press Escape",
+     "motion": true,
+     "until": "gone:agent-tray",
+     "focus": "composer-input",
+     "expect": "It closes and focus is back in the field."
+    }
+   ],
+   "only": "1440"
+  }
+ ]
+}
