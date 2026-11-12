@@ -1,6 +1,10 @@
 {
   "fallback": "C’est une démonstration : l’assistant est scripté et ne comprend que quelques demandes. Essayez « Rapproche le relevé de janvier » ou « Prépare la clôture ».",
   "turns": [
+    { "match": "montre|affiche|pr[ée]sente", "steps": [
+      { "think": true, "ms": 500 },
+      { "present": "uploads/ecarts-janvier.csv", "ms": 1500 },
+      { "text": "Voici les écarts de janvier, ouverts à droite.\nDeux lignes restent à justifier dans @uploads/ecarts-janvier.csv, avec le reçu @justificatifs/recu-garage-0901.pdf et la note @justificatifs/note-ecart-0901.md.", "stream": true } ] },
     { "match": "relev|rapproch|janvier", "steps": [
       { "tool": "read", "path": "uploads/releve-janvier.pdf", "progress": "12 lignes sur 40", "ms": 900 },
       { "tool": "read", "path": "uploads/ecarts-janvier.csv", "progress": "40 lignes sur 40", "ms": 700 },

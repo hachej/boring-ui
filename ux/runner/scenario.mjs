@@ -5,7 +5,7 @@ import { root } from './build.mjs';
 
 export const dir = join(root, 'ux/scenarios');
 export const slug = target => target.replace(':', '-');
-const VERBS = ['tap', 'click', 'type', 'focus', 'press', 'hold', 'release', 'scroll', 'drag', 'swipe', 'drop', 'attach', 'wait', 'fixture'];
+const VERBS = ['tap', 'click', 'type', 'focus', 'press', 'hold', 'release', 'scroll', 'drag', 'swipe', 'drop', 'attach', 'wait', 'back', 'reload', 'fixture'];
 
 export function loadAll() {
   return readdirSync(dir).filter(f => f.endsWith('.json')).sort().map(f => validate(JSON.parse(readFileSync(join(dir, f), 'utf8')), f));

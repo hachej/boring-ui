@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { FileTreeView } from '../../../registry/file-tree/file-tree.tsx';
+import { ATTACHMENTS } from './one-composer-files.js';
 
 // The UX demo layer (`?demo=1`, UX loop): what a person does with the one composer, over invented French bookkeeping content:
 // a library (the kit's FileTreeView over an in-memory provider), earlier conversations (the chat's History list), a long conversation,
@@ -8,7 +9,10 @@ import { FileTreeView } from '../../../registry/file-tree/file-tree.tsx';
 export const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 
 const TREE = {
-  '': [['uploads', 'directory'], ['factures', 'directory'], ['notes-cloture.md', 'file', 2400]],
+  '': [['uploads', 'directory'], ['factures', 'directory'], ['justificatifs', 'directory'], ['exports', 'directory'], ['videos', 'directory'], ['notes-cloture.md', 'file', 2400]],
+  justificatifs: [['recu-garage-0901.pdf', 'file', 2100], ['note-ecart-0901.md', 'file', 300], ['ticket-garage-0901.png', 'file', 18000]],
+  exports: [['ecritures-janvier.json', 'file', 400], ['rappel-delorme.txt', 'file', 200]],
+  videos: [['visite-atelier.webm', 'file', 30000]],
   uploads: [['releve-janvier.pdf', 'file', 84000], ['releve-fevrier.pdf', 'file', 79000], ['ecarts-janvier.csv', 'file', 900]],
   factures: [['facture-delorme-0112.pdf', 'file', 41000], ['facture-axiom-0108.pdf', 'file', 38000], ['facture-brun-0121.pdf', 'file', 40500]],
 };
@@ -21,10 +25,13 @@ const provider = {
   history: async () => [], read: async () => { throw new Error('indisponible'); }, publish: async () => { throw new Error('indisponible'); }, lookup: async () => undefined,
 };
 let tree;
+/** The files of `path`'s folder, in the tree's order: the set previous and next step through. */
+const siblings = path => { const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''; return (TREE[dir] ?? []).filter(row => row[1] === 'file').map(([name]) => dir ? `${dir}/${name}` : name); };
+// `open` is the app's own preview (`?viewer=app`); without it the pick goes to the kit's viewer with its folder (`onPicked({ path, files })`).
 export const demoLibrary = open => onPicked => {
   tree ??= createFileTreeController({ revisionProvider: provider });
   void tree.refresh();
-  return <div data-testid="fixture-library"><FileTreeView controller={tree} locale="fr" upload={false} history={false} onOpen={path => { open(path); onPicked(); }} /></div>;
+  return <div data-testid="fixture-library"><FileTreeView controller={tree} locale="fr" upload={false} history={false} onOpen={path => { if (open) { open(path); onPicked(); } else onPicked({ path, files: siblings(path) }); }} /></div>;
 };
 
 const Table = ({ head, rows }) => <table className="w-full border-collapse text-left text-sm"><thead><tr className="border-b text-xs text-muted-foreground">{head.map((cell, i) => <th key={cell} className={`py-1 ${i === head.length - 1 ? 'text-right' : ''}`}>{cell}</th>)}</tr></thead>
@@ -37,9 +44,17 @@ export const fileView = path => {
     : <><p className="font-medium">Notes de clôture</p><ul className="list-disc pl-5"><li>Justifier les deux écarts de janvier.</li><li>Relancer Brun &amp; Fils pour la facture du 21/01.</li><li>Vérifier le remboursement URSSAF.</li></ul></>;
   return { title: name, content: <div data-testid="fixture-preview" className="flex flex-col gap-3 p-4 text-sm"><p className="font-medium">{name}</p>{body}</div> };
 };
-export const recordView = ([date, label, amount, status], quote) => ({ title: `Écriture du ${date}`, content: <div data-testid="fixture-record" className="flex flex-col gap-3 p-4 text-sm">
+// The line detail an app pushes on the pane (S-1): the line, its gap checkbox (state that back must keep), its attachments (each opens in the kit's
+// viewer on top, « ← Écriture du 09/01 », stepping through the three) and the line's history, long enough to scroll.
+const HISTORY = ['Import du relevé', 'Rapprochement automatique', 'Écart détecté : 12,00 €', 'Ticket ajouté par Julie', 'Note ajoutée', 'Relance du garage', 'Réponse du garage', 'Écart expliqué', 'Contrôle du cabinet', 'Écriture corrigée', 'Validation', 'Clôture du mois'];
+export const recordView = ([date, label, amount, status], quote, open) => ({ title: `Écriture du ${date}`, content: <div data-testid="fixture-record" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 text-sm">
   <p className="text-base font-medium">{label}</p><p className="text-2xl font-semibold tabular-nums">{amount}</p><p className="text-muted-foreground">Statut : {{ ok: 'rapprochée', gap: 'écart à justifier', wait: 'à justifier' }[status]}</p>
-  <button type="button" data-testid="record-quote" className="h-10 self-start rounded-md border px-3" onClick={quote}>Citer dans l’assistant</button></div> });
+  <label className="flex min-h-11 items-center gap-2"><input type="checkbox" data-testid="record-justified" className="size-4" />Écart justifié</label>
+  <button type="button" data-testid="record-quote" className="h-10 self-start rounded-md border px-3" onClick={quote}>Citer dans l’assistant</button>
+  {open && <><p className="mt-2 font-medium">Pièces jointes</p><ul className="m-0 flex list-none flex-col gap-1 p-0">{ATTACHMENTS.map(path => <li key={path}>
+    <button type="button" data-testid="record-attachment" data-path={path} className="min-h-11 w-full rounded-md border px-3 text-left hover:bg-muted" onClick={() => open(path, ATTACHMENTS)}>{path.split('/').at(-1)}</button></li>)}</ul></>}
+  <p className="mt-2 font-medium">Historique de l’écriture</p>
+  <ol data-testid="record-history" className="m-0 flex flex-col gap-2 pl-5">{HISTORY.map((step, i) => <li key={step} className="py-2">{`${String(i + 2).padStart(2, '0')}/01 · ${step}`}</li>)}</ol></div> });
 
 const say = (id, text) => ({ id, kind: 'message', model: [{ role: 'user', content: text, timestamp: 1 }] });
 const answer = (id, text) => ({ id, kind: 'message', byTaskId: 7, model: [{ role: 'assistant', content: [{ type: 'text', text }], api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: 2 }] });

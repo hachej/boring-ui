@@ -241,7 +241,7 @@
     {
      "do": "tap",
      "target": "agent-card-file",
-     "until": "visible:fixture-preview"
+     "until": "visible:artifact-csv"
     }
    ]
   },
@@ -422,7 +422,7 @@
      "target": "agent-card-file",
      "say": "Tap the file chip",
      "motion": true,
-     "until": "visible:fixture-preview",
+     "until": "visible:artifact-csv",
      "expect": "The file opens beside (desktop) or over (phone) the conversation, which stays readable."
     },
     {
@@ -433,9 +433,9 @@
      },
      "say": "Close the preview",
      "motion": true,
-     "until": "gone:fixture-preview",
-     "focus": "composer-input",
-     "expect": "Back exactly where the person was; focus returns to the field."
+     "until": "gone:agent-preview",
+     "focus": "agent-card-file",
+     "expect": "Back exactly where the person was; focus returns to the chip that opened the file."
     }
    ]
   },
@@ -471,17 +471,18 @@
      "text": "ecarts-janvier.csv",
      "say": "Pick « ecarts-janvier.csv »",
      "motion": true,
-     "until": "visible:fixture-preview",
-     "expect": "The file replaces the library in the same pane."
+     "until": "visible:artifact-csv & text:agent-preview-back~Bibliothèque",
+     "expect": "The file opens in the kit's viewer on top of the library, « ← Bibliothèque »."
     },
     {
      "do": "tap",
-     "target": "agent-preview-close",
+     "target": { "390": "agent-preview-back", "1440": "agent-preview-close" },
      "say": "Close the preview",
      "motion": true,
-     "until": "gone:fixture-preview",
-     "expect": "The pane closes and the person is back on the page."
-    }
+     "until": { "390": "text:agent-preview-title~Bibliothèque", "1440": "gone:agent-preview" },
+     "expect": "The pane closes (a phone steps back to the library first)."
+    },
+    { "do": "tap", "target": "agent-preview-close", "only": "390", "say": "Close the library", "until": "gone:agent-preview", "expect": "The person is back on the page." }
    ]
   },
   {
@@ -568,8 +569,8 @@
    "steps": [
     { "do": "type", "target": "composer-input", "text": "Rapproche le relevé de janvier", "say": "Ask the assistant to reconcile January" },
     { "do": "tap", "target": "composer-submit", "say": "Send", "until": "visible:agent-card-file", "timeout": 14000, "expect": "The reply cites a file." },
-    { "do": "tap", "target": "agent-card-file", "say": "Open the cited file", "motion": true, "until": "visible:fixture-preview", "focus": "agent-preview-close", "expect": "The file opens and focus moves into it." },
-    { "do": "press", "key": "Escape", "say": "Press Échap", "motion": true, "until": "gone:fixture-preview", "focus": { "390": "agent-card-file", "1440": "composer-input" }, "expect": "The file closes and focus is back on the chip that opened it, or in the field when the chip has gone (the conversation opened)." }
+    { "do": "tap", "target": "agent-card-file", "say": "Open the cited file", "motion": true, "until": "visible:artifact-csv", "focus": "agent-preview-title", "expect": "The file opens in the kit's viewer and focus moves to its heading." },
+    { "do": "press", "key": "Escape", "say": "Press Échap", "motion": true, "until": "gone:agent-preview", "focus": "agent-card-file", "expect": "The file closes and focus is back on the chip that opened it (the conversation stayed folded)." }
    ]
   },
   {
@@ -582,7 +583,7 @@
     { "do": "focus", "target": "[role=separator]:has(+ [data-dock=preview])", "say": "Focus the column's edge" },
     { "do": "press", "key": "ArrowLeft ArrowLeft ArrowLeft ArrowLeft", "say": "Widen it with the arrow keys", "until": "eval:(window.__pw2 = document.querySelector('[data-dock=preview]').getBoundingClientRect().width) > window.__pw + 40", "expect": "The column grows; the page beside it narrows." },
     { "do": "tap", "text": "uploads", "say": "Unfold « uploads »", "until": "text:fixture-library~ecarts-janvier.csv" },
-    { "do": "tap", "text": "ecarts-janvier.csv", "say": "Open « ecarts-janvier.csv »", "motion": true, "until": "visible:fixture-preview & text:agent-preview-title~ecarts-janvier.csv", "expect": "The file takes the library's place, at the same width." },
+    { "do": "tap", "text": "ecarts-janvier.csv", "say": "Open « ecarts-janvier.csv »", "motion": true, "until": "visible:artifact-csv & text:agent-preview-title~ecarts-janvier.csv & text:agent-preview-back~Bibliothèque", "expect": "The file opens on top of the library, at the same width." },
     { "do": "tap", "target": "agent-preview-close", "say": "Close it", "until": "gone:agent-preview" },
     { "do": "tap", "target": "agent-layer-library", "say": "Open the library again", "until": "visible:fixture-library & eval:Math.abs(document.querySelector('[data-dock=preview]').getBoundingClientRect().width - window.__pw2) < 2", "expect": "The column comes back at the width I chose." }
    ]
