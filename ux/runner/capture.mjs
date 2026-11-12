@@ -24,7 +24,8 @@ export async function open(browser, s, vp, extra, { fast, video }) {
   page.on('console', m => { if (m.type() === 'error') h.errors.add(m.text().slice(0, 160)); }); page.on('pageerror', e => h.errors.add(String(e).slice(0, 160)));
   page.on('requestfailed', r => { if (r.failure()?.errorText !== 'net::ERR_ABORTED') h.failed.add(r.url().slice(0, 120)); }); // a load the page cancelled (a viewer closed mid-load) is not a failure page.on('response', r => { if (r.status() >= 400) h.failed.add(`${r.status()} ${r.url().slice(0, 100)}`); });
   await page.addInitScript(INIT);
-  await page.goto(`file://${s.page}?${queryFor(s, vp, extra, fast)}`);
+  // A page with a viewer bundled inline is several MB: on a busy machine its parse takes longer than the 5 s default.
+  await page.goto(`file://${s.page}?${queryFor(s, vp, extra, fast)}`, { timeout: 30000 });
   await page.locator(s.fixture.ready ?? '[data-testid]').first().waitFor({ timeout: 15000 });
   await sleep(500);
   return h;
