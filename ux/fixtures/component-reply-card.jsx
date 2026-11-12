@@ -18,12 +18,12 @@ const asst = (content, stopReason = 'stop') => ({ role: 'assistant', content, ap
 const entry = (id, model, byTaskId = 7) => ({ id, kind: 'message', byTaskId, model: [model] });
 const say = (id, text) => ({ id, kind: 'message', model: [{ role: 'user', content: text, timestamp: 1 }] });
 const result = (id, call, name, text) => entry(id, { role: 'toolResult', toolCallId: call, toolName: name, content: [{ type: 'text', text }], isError: false, timestamp: 3 }, 8);
-const ASK = { question: 'Quel mois dois-je rapprocher en premier ?', options: ['Janvier', 'Février', 'Les deux'] };
-const FORM = { question: 'Deux précisions pour Atelier Brun', questions: [{ question: 'Quel exercice ?', options: ['2025', '2026'] }, { question: 'Quel journal ?', options: ['Achats', 'Ventes'] }] };
-const asked = (args) => [say(1, 'Rapproche le relevé de la banque.'), entry(2, asst([{ type: 'toolCall', id: 'q1', name: 'ask_user', arguments: args }], 'toolUse'))];
+const ASK = { question: 'Which month should I reconcile first?', options: ['January', 'February', 'Both'] };
+const FORM = { question: 'Two details for Harbor Studio', questions: [{ question: 'Which year?', options: ['2025', '2026'] }, { question: 'Which journal?', options: ['Purchases', 'Sales'] }] };
+const asked = (args) => [say(1, 'Reconcile the bank statement.'), entry(2, asst([{ type: 'toolCall', id: 'q1', name: 'ask_user', arguments: args }], 'toolUse'))];
 const answered = (args, answer) => [...asked(args), result(3, 'q1', 'ask_user', JSON.stringify({ kind: 'answered', answer }))];
-const TEXT = 'Le relevé de janvier compte 40 lignes, toutes rapprochées.\n\nDeux écarts de 12,00 € sont notés dans le fichier ci-dessous : **Garage du Port** (09/01) et **Restaurant Le Cèdre** (15/01).';
-const replied = [say(1, 'Rapproche le relevé de janvier.'), entry(2, asst([{ type: 'toolCall', id: 'w1', name: 'write', arguments: { path: 'uploads/ecarts-janvier.csv', content: 'date;libellé;écart' } }], 'toolUse')),
+const TEXT = 'The January statement has 40 lines, all reconciled.\n\nTwo discrepancies of $12.00 are noted in the file below: **Harbor Garage** (Jan 9) and **The Cedar Diner** (Jan 15).';
+const replied = [say(1, 'Reconcile the January statement.'), entry(2, asst([{ type: 'toolCall', id: 'w1', name: 'write', arguments: { path: 'uploads/discrepancies-january.csv', content: 'date;label;gap' } }], 'toolUse')),
   result(3, 'w1', 'write', 'ok'), entry(4, asst([{ type: 'text', text: TEXT }]))];
 const START = { ask: asked(ASK), answered: answered(ASK, 'Janvier'), form: asked(FORM), reply: replied }[Q] ?? asked(ASK);
 
@@ -40,7 +40,7 @@ const actions = { answer: async (_id, text) => {
   window.__answers.push(text);
   const base = snapshot.view.entries;
   change({ view: { entries: [...base, result(30, 'q1', 'ask_user', JSON.stringify({ kind: 'answered', answer: text }))], docs: {} } });
-  setTimeout(() => change({ view: { entries: [...snapshot.view.entries, entry(31, asst([{ type: 'text', text: 'Merci, je commence par là et je vous préviens quand c’est fini.' }]))], docs: {} } }), 500);
+  setTimeout(() => change({ view: { entries: [...snapshot.view.entries, entry(31, asst([{ type: 'text', text: 'Thanks, I will start there and tell you when it is done.' }]))], docs: {} } }), 500);
   return { kind: 'answered' };
 } };
 const cards = { question: QuestionCard };
@@ -48,16 +48,16 @@ const cards = { question: QuestionCard };
 function Inline() {
   const [done, setDone] = useState();
   return <div data-testid="inline-surface" className="w-full max-w-md rounded-xl border bg-background p-4 shadow-sm">
-    <InlineQuestion id="q-delorme" kind="question" tone="attention" source="Assistant · Atelier Brun" text="La facture Maison Delorme du 12/01 est en retard de 19 jours. Que fait-on ?"
-      options={[{ label: 'Relancer par e-mail', recommended: true }, 'Appeler le client', 'Attendre']} {...(done ? { answered: done } : {})}
+    <InlineQuestion id="q-delmore" kind="question" tone="attention" source="Assistant · Harbor Studio" text="The Delmore House invoice of Jan 12 is 19 days late. What should we do?"
+      options={[{ label: 'Send a reminder by e-mail', recommended: true }, 'Call the customer', 'Wait']} {...(done ? { answered: done } : {})}
       onAnswer={(_id, value) => { window.__answers.push(value); setDone(value); }} onReplyInChat={() => { window.__answers.push('chat'); }}
-      labels={{ question: 'Question', send: 'Répondre', placeholder: 'Votre réponse', placeholderMore: 'Ou écrivez une réponse', replyInChat: 'Répondre dans le chat', answered: 'Répondu' }} />
+      labels={{ question: 'Question', send: 'Reply', placeholder: 'Your answer', placeholderMore: 'Or write your own answer', replyInChat: 'Reply in chat', answered: 'Answered' }} />
   </div>;
 }
 
 const App = () => <main className="flex min-h-dvh items-center justify-center bg-muted/30 p-4 sm:p-8">
   {Q === 'inline' ? <Inline /> : <div data-testid="surface" className="flex h-[30rem] w-full max-w-xl flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
-    <PiChat controller={controller} locale="fr" header={false} showHistory={false} renderText={markdownText} cards={cards} actions={actions} fileChanges onOpenFile={path => { window.__opened.push(path); }}
+    <PiChat controller={controller} locale="en" header={false} showHistory={false} renderText={markdownText} cards={cards} actions={actions} fileChanges onOpenFile={path => { window.__opened.push(path); }}
       renderComposer={() => null} />
   </div>}
 </main>;

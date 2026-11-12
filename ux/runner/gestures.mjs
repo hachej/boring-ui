@@ -10,7 +10,7 @@
 // `until` is a list joined with " & ": visible:<t>  gone:<t>  focus:<t>  value:<t>~text  text:<t>~text  count:<t>>=N  eval:<js>; "a|b" inside visible/gone means either.
 const css = t => /^[\w-]+$/.test(t) ? `[data-testid=${t}]` : t.replace(/^([\w-]+)(\[.*)$/, '[data-testid=$1]$2');
 export const pick = (value, viewport) => value && typeof value === 'object' && !Array.isArray(value) ? value[viewport] ?? value.default : value;
-export const FILES = { 'facture-delorme-0112.pdf': 'application/pdf', 'releve-fevrier.pdf': 'application/pdf', 'ecarts-janvier.csv': 'text/csv' };
+export const FILES = { 'invoice-delmore-0112.pdf': 'application/pdf', 'statement-february.pdf': 'application/pdf', 'discrepancies-january.csv': 'text/csv' };
 
 export function condition(text, viewport) {
   const parts = String(pick(text, viewport) ?? 'true').split(' & ').map(part => {
@@ -50,7 +50,7 @@ export async function prepare(h, step) {
       return () => page.evaluate(([x, y, dx, dy]) => { const f = (type, X, Y) => (document.elementFromPoint(x, y) ?? document.body).dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType: 'touch', isPrimary: true, clientX: X, clientY: Y })); f('pointerdown', x, y); for (let i = 1; i <= 8; i++) f('pointermove', x + dx * i / 8, y + dy * i / 8); f('pointerup', x + dx, y + dy); }, [cx, cy, ...d]); }
     case 'drop': { const name = step.file, sel = css(t); return () => page.evaluate(([sel, name, type, phase]) => { const el = document.querySelector(sel); const data = window.__dt ??= (() => { const d = new DataTransfer(); d.items.add(new File(['x'], name, { type })); return d; })();
       for (const kind of phase === 'enter' ? ['dragenter', 'dragover'] : ['drop']) el.dispatchEvent(new DragEvent(kind, { dataTransfer: data, bubbles: true, cancelable: true })); }, [sel, name, FILES[name] ?? 'application/octet-stream', step.phase === 'enter' ? 'enter' : 'drop']); }
-    case 'attach': { const name = step.file; let l; if (t) [l] = await ready(); return async () => { if (l) await (touch ? l.tap() : l.click()); await page.locator('input[type=file]').first().setInputFiles({ name, mimeType: FILES[name] ?? 'application/octet-stream', buffer: Buffer.from('%PDF fictif') }); }; }
+    case 'attach': { const name = step.file; let l; if (t) [l] = await ready(); return async () => { if (l) await (touch ? l.tap() : l.click()); await page.locator('input[type=file]').first().setInputFiles({ name, mimeType: FILES[name] ?? 'application/octet-stream', buffer: Buffer.from('%PDF fictional') }); }; }
     case 'wait': return () => page.waitForTimeout(step.ms ?? 300);
     case 'back': return () => page.evaluate(() => history.back());
     case 'reload': return () => page.reload({ waitUntil: 'load' });

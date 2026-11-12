@@ -1,7 +1,7 @@
 {
  "target": "component:conversation-list",
  "title": "The conversation list",
- "purpose": "The kit's list of past conversations (ConversationHistory of pi-chat, which wraps ConversationList): a card on a wide screen, a bottom drawer on a phone, with New, search, the Archived filter and row actions (rename, archive, delete), fed by the `conversations` config of invented items on a neutral page. The Historique button around it is the consumer's own.",
+ "purpose": "The kit's list of past conversations (ConversationHistory of pi-chat, which wraps ConversationList): a card on a wide screen, a bottom drawer on a phone, with New, search, the Archived filter and row actions (rename, archive, delete), fed by the `conversations` config of invented items on a neutral page. The History button around it is the consumer's own.",
  "fixture": {
   "entry": "ux/fixtures/component-conversation-list.jsx",
   "query": "",
@@ -19,25 +19,25 @@
  "states": [
   { "id": "01", "name": "closed", "steps": [] },
   { "id": "02", "name": "list", "query": "open=1", "steps": [{ "do": "wait", "ms": 500 }] },
-  { "id": "03", "name": "search", "query": "open=1", "steps": [{ "do": "type", "target": "conversation-search", "text": "relance" }, { "do": "wait", "ms": 500 }] },
-  { "id": "04", "name": "search-nothing", "query": "open=1", "steps": [{ "do": "type", "target": "conversation-search", "text": "bilan zzz" }, { "do": "wait", "ms": 500 }] },
+  { "id": "03", "name": "search", "query": "open=1", "steps": [{ "do": "type", "target": "conversation-search", "text": "reminder" }, { "do": "wait", "ms": 500 }] },
+  { "id": "04", "name": "search-nothing", "query": "open=1", "steps": [{ "do": "type", "target": "conversation-search", "text": "balance zzz" }, { "do": "wait", "ms": 500 }] },
   { "id": "05", "name": "empty", "query": "open=1&items=none", "steps": [{ "do": "wait", "ms": 500 }] },
   { "id": "06", "name": "many", "query": "open=1&items=many", "steps": [{ "do": "wait", "ms": 500 }] }
  ],
  "flows": [
   { "id": "F01", "name": "Search and filter", "query": "open=1&items=many", "steps": [
-   { "do": "type", "target": "conversation-search", "text": "facture", "say": "Type « facture » in the search", "until": "value:conversation-search~facture", "expect": "The search field has my word." },
-   { "do": "wait", "ms": 400, "say": "Wait for the results", "until": "count:conversation-row>=1", "expect": "Only the conversations about a facture are listed." },
+   { "do": "type", "target": "conversation-search", "text": "invoice", "say": "Type “invoice” in the search", "until": "value:conversation-search~invoice", "expect": "The search field has my word." },
+   { "do": "wait", "ms": 400, "say": "Wait for the results", "until": "count:conversation-row>=1", "expect": "Only the conversations about an invoice are listed." },
    { "do": "tap", "target": "conversations-archived", "say": "Turn on the Archived filter", "until": "visible:conversations-empty|conversation-row", "expect": "The list shows the archived conversations, or says there is none." }
   ] },
   { "id": "F02", "name": "Open a conversation", "query": "open=1", "steps": [
-   { "do": "tap", "target": "conversation-row[data-conversation-id=c2]", "say": "Tap « TVA du trimestre »", "motion": true, "until": "gone:conversations & text:active-title~TVA", "expect": "The list closes and the page shows that conversation." }
+   { "do": "tap", "target": "conversation-row[data-conversation-id=c2]", "say": "Tap “Quarterly sales tax”", "motion": true, "until": "gone:conversations & text:active-title~Quarterly", "expect": "The list closes and the page shows that conversation." }
   ] },
   { "id": "F03", "name": "New conversation", "query": "open=1", "steps": [
-   { "do": "tap", "target": "conversation-new", "say": "Tap « Nouvelle conversation »", "motion": true, "until": "gone:conversations & text:active-title~Nouvelle conversation", "expect": "The list closes and an empty conversation is open." }
+   { "do": "tap", "target": "conversation-new", "say": "Tap “New conversation”", "motion": true, "until": "gone:conversations & text:active-title~New conversation", "expect": "The list closes and an empty conversation is open." }
   ] },
   { "id": "F04", "name": "Open the list and close it with Escape", "steps": [
-   { "do": "tap", "target": "history-open", "say": "Tap « Historique »", "motion": true, "until": "visible:conversations", "expect": "The list opens over the page with the open conversation marked." },
+   { "do": "tap", "target": "history-open", "say": "Tap “History”", "motion": true, "until": "visible:conversations", "expect": "The list opens over the page with the open conversation marked." },
    { "do": "press", "key": "Escape", "say": "Press Escape", "until": "gone:conversations & focus:history-open", "focus": "history-open", "expect": "The list closes and focus is back on the button that opened it." }
   ] }
  ]
