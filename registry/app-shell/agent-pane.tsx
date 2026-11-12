@@ -247,6 +247,23 @@ function FileSteps({ entry, text, onStep }: { readonly entry: Extract<PaneEntry,
   </div>;
 }
 
+/**
+ * The viewer replaces the « Ouverture… » frame once it has loaded: focus that sat on that frame's heading (and fell to the body with it) moves to
+ * the viewer's. Inside the viewer's Suspense, so it runs only once the viewer is committed.
+ */
+function RefocusTitle() {
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      if (document.activeElement && document.activeElement !== document.body) return;
+      const title = document.querySelector<HTMLElement>('[data-testid=agent-preview] [data-pane-top] [data-testid=agent-preview-title]');
+      if (title && !title.hasAttribute('tabindex')) title.tabIndex = -1;
+      title?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  return null;
+}
+
 /** A file entry: its bytes read through `agent.files`, shown by `LocalFileViewer`; once shown, a presented revision is acknowledged. */
 function FileEntry({ entry, frame, read, onShown }: { readonly entry: Extract<PaneEntry, { kind: 'file' }>; readonly frame: { readonly id: string; readonly headerStart: ReactNode; readonly controls: ReactNode; readonly onClose: () => void; readonly text: AppShellText };
   readonly read: FileReader; readonly onShown: PanePresent['shown'] | undefined }) {
@@ -266,22 +283,11 @@ function FileEntry({ entry, frame, read, onShown }: { readonly entry: Extract<Pa
     return () => onShown({ path, revision, hidden: true });
   }, [blob, path, revision, onShown]);
   const { id, headerStart, controls, onClose, text } = frame;
-  // The viewer replaces the « Ouverture… » frame once the bytes are read: focus that sat on its heading moves to the viewer's.
-  useEffect(() => {
-    if (!blob || id !== 'agent-preview') return;
-    const frame = requestAnimationFrame(() => {
-      if (document.activeElement && document.activeElement !== document.body) return;
-      const title = document.querySelector<HTMLElement>('[data-testid=agent-preview] [data-pane-top] [data-testid=agent-preview-title]');
-      if (title && !title.hasAttribute('tabindex')) title.tabIndex = -1;
-      title?.focus({ preventScroll: true });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [blob, id]);
   const waiting = <ViewerFrame title={entry.title} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose}>
     <p role="status" data-testid={`${id}-status`} className="m-0 p-4 text-sm text-muted-foreground">{blob === null ? text.fileUnavailable : text.fileLoading}</p>
   </ViewerFrame>;
   if (!blob) return waiting;
-  return <Suspense fallback={waiting}><LocalFileViewer key={path} name={path} blob={blob} kinds={TEXT_KINDS} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose} /></Suspense>;
+  return <Suspense fallback={waiting}><LocalFileViewer key={path} name={path} blob={blob} kinds={TEXT_KINDS} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose} />{id === 'agent-preview' && <RefocusTitle key={path} />}</Suspense>;
 }
 
 /**
