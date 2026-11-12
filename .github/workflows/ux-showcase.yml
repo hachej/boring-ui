@@ -1,0 +1,79 @@
+name: UX showcase
+# manual: docs/implementation/UX-SHOWCASE.md
+# Runs when a release is published or someone starts it by hand, never on push or pull_request (the kit's CI is already slow).
+# The site is published whenever capture succeeds. `ux check` runs first and its result is written to the run summary; it blocks publishing only when
+# enforcement is on (repository variable UX_ENFORCE=true, or the `enforce` input of a manual run). See the runbook.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      enforce:
+        description: Fail the run, and publish nothing, when a check does not pass
+        type: boolean
+        default: false
+concurrency:
+  group: ux-showcase
+  cancel-in-progress: true
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  showcase:
+    name: Check, capture and publish the showcase
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      UX_ENFORCE: ${{ inputs.enforce == true || vars.UX_ENFORCE == 'true' }}
+      CHROMIUM: ${{ github.workspace }}/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.1
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium
+        timeout-minutes: 8
+        # Same recipe as verify.yml: Ubuntu runners already have Chrome libraries; apt is only a fallback for missing ldd dependencies.
+        run: bash scripts/install-ci-chromium.sh 1.63.0
+      - name: Allow the Chromium sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Add the browser driver the harness imports (not a dependency of the kit)
+        run: npm i --no-save playwright-core@1.63.0
+      - run: npm run build
+      - name: Check every flow (no model, no pictures)
+        id: gate
+        continue-on-error: ${{ env.UX_ENFORCE != 'true' }}
+        run: |
+          set +e
+          node ux/runner/cli.mjs check | tee .cache/ux-check.txt
+          code=${PIPESTATUS[0]}
+          {
+            echo '### UX check (no model)'
+            echo
+            if [ "$code" = 0 ]; then echo 'Every flow step completes and every threshold is met.'; elif [ "$UX_ENFORCE" = true ]; then echo 'Some checks do not pass. Enforcement is on: nothing is published.'; else echo 'Some checks do not pass yet. Enforcement is off: the site is still published and shows what does not pass.'; fi
+            echo
+            echo '```'
+            cat .cache/ux-check.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
+      - name: Capture every target
+        run: node ux/runner/cli.mjs capture --video --out .cache/ux
+      - name: Build the static site
+        run: node ux/runner/cli.mjs site --from .cache/ux --out .cache/site
+      # Tags verified read-only with `gh api repos/actions/<name>/git/ref/tags/<tag>` on 2026-11-12; the SHAs are those commits.
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: .cache/site
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
