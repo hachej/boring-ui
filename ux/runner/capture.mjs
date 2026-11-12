@@ -61,7 +61,7 @@ export async function step(h, s, def, ctx) {
   Object.assign(rec, { firstChangeMs: timing.first, settledMs: timing.settled, cls: timing.cls, repeats: h.repeats, target: h.target, focusAfter: after.focus, expectFocus: def.focus ?? null,
     moved: Object.fromEntries(watch.map(([name]) => [name, moved(before.watched[name], after.watched[name])])), scrollBefore: before.scroll, scrollAfter: after.scroll,
     offscreen: after.offscreen, overlaps: after.overlaps, truncated: after.truncated, horizontalScroll: after.horizontalScroll, keepScroll: def.keepScroll ?? null });
-  if (ctx.shot) await ctx.shot(`${rec.say}${rec.ok ? '' : def.gap ? ' (NOT IN THE KIT)' : ' (FAILED)'}`, timing.settled, `first change ${timing.first ?? '-'} ms · settled ${timing.settled ?? '-'} ms · layout shift ${timing.cls}`);
+  if (ctx.shot) rec.frame = await ctx.shot(`${rec.say}${rec.ok ? '' : def.gap ? ' (NOT IN THE KIT)' : ' (FAILED)'}`, timing.settled, `first change ${timing.first ?? '-'} ms · settled ${timing.settled ?? '-'} ms · layout shift ${timing.cls}`);
   ctx.before = after;
   return rec;
 }
@@ -83,7 +83,7 @@ async function runFlow(browser, s, f, vp, out, opts, result) {
   const h = await open(browser, s, vp, f.query, opts);
   const frames = [], steps = [];
   const ctx = { before: await h.page.evaluate(snap(s.watch)) };
-  if (!opts.fast) ctx.shot = async (label, ms, metric) => { const file = `frame-${String(frames.length).padStart(2, '0')}.png`; await h.page.screenshot({ path: join(dir, file) }); frames.push({ file, label, ms, metric }); };
+  if (!opts.fast) ctx.shot = async (label, ms, metric) => { const file = `frame-${String(frames.length).padStart(2, '0')}.png`; await h.page.screenshot({ path: join(dir, file) }); frames.push({ file, label, ms, metric }); return file; };
   await ctx.shot?.('Before', null);
   for (const def of f.steps) { if (def.only && String(def.only) !== vp.name) continue; if (def.skip && String(def.skip) === vp.name) continue; steps.push(await step(h, s, def, ctx)); }
   await h.ctx.close();

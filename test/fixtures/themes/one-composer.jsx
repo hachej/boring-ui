@@ -110,16 +110,16 @@ const Page = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-c
   {Array.from({ length: rows }, (_, index) => <p key={index} role="row" data-testid="page-row" className="flex items-center justify-between rounded-md border p-3">{T('Écriture', 'Entry')} {index + 1}<span>{T(`${(index + 1) * 12},00 €`, `€${(index + 1) * 12}.00`)}</span></p>)}
 </div>;
 // `?page=real`: a realistic page behind the composer (a bank reconciliation: figures, tabs, a table), for judging the layout on real content.
-const LINES = [['02/01', 'Virement Maison Delorme', '1 240,00 €', 'ok'], ['03/01', 'Prélèvement EDF Pro', '−186,40 €', 'ok'], ['05/01', 'Carte Papeterie Lemaire', '−42,90 €', 'ok'], ['06/01', 'Virement client Atelier Brun', '2 880,00 €', 'ok'],
+const LINES = [['02/01', 'Virement Maison Delorme', '1 240,00 €', 'ok'], ['03/01', 'Prélèvement Énergie Pro', '−186,40 €', 'ok'], ['05/01', 'Carte Papeterie Lemaire', '−42,90 €', 'ok'], ['06/01', 'Virement client Atelier Brun', '2 880,00 €', 'ok'],
   ['08/01', 'Prélèvement Assurance Axiom', '−212,00 €', 'ok'], ['09/01', 'Carte Garage du Port', '−96,50 €', 'gap'], ['12/01', 'Virement client Maison Delorme', '640,00 €', 'ok'], ['14/01', 'Loyer local Rue des Halles', '−950,00 €', 'ok'],
-  ['15/01', 'Carte Restaurant Le Cèdre', '−58,20 €', 'gap'], ['17/01', 'Remboursement URSSAF', '312,00 €', 'wait'], ['19/01', 'Prélèvement Orange Business', '−64,99 €', 'ok'], ['21/01', 'Virement client Brun & Fils', '1 150,00 €', 'wait'],
-  ['23/01', 'Carte Station Total', '−71,30 €', 'ok'], ['26/01', 'Prélèvement Swile', '−120,00 €', 'ok'], ['28/01', 'Virement client Cabinet Roux', '1 980,00 €', 'ok'], ['30/01', 'Frais de tenue de compte', '−14,50 €', 'ok']];
+  ['15/01', 'Carte Restaurant Le Cèdre', '−58,20 €', 'gap'], ['17/01', 'Remboursement URSSAF', '312,00 €', 'wait'], ['19/01', 'Prélèvement Télécom Pro', '−64,99 €', 'ok'], ['21/01', 'Virement client Brun & Fils', '1 150,00 €', 'wait'],
+  ['23/01', 'Carte Station du Quai', '−71,30 €', 'ok'], ['26/01', 'Prélèvement Titres-repas', '−120,00 €', 'ok'], ['28/01', 'Virement client Cabinet Roux', '1 980,00 €', 'ok'], ['30/01', 'Frais de tenue de compte', '−14,50 €', 'ok']];
 const STATUS = { ok: ['Rapprochée', 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'], gap: ['Écart', 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300'], wait: ['À justifier', 'bg-muted text-muted-foreground'] };
 const quote = date => window.__layer.talkAbout('@ecriture:' + date.replace('/', '-'));
 const openRecord = line => window.__layer.preview(recordView(line, () => quote(line[0])));
 const RealPage = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6">
   <Probe />
-  <div className="flex flex-wrap items-baseline justify-between gap-2"><div><h1 className="text-lg font-semibold">Rapprochement bancaire</h1><p className="text-sm text-muted-foreground">Janvier 2026 · Atelier Brun SARL (fictif)</p></div>
+  <div className="flex flex-wrap items-baseline justify-between gap-2"><div><h1 className="text-lg font-semibold">Rapprochement bancaire</h1><p className="text-sm text-muted-foreground">Janvier 2026 · Atelier Brun (fictif)</p></div>
     <button type="button" className="h-9 rounded-md border px-3 text-sm">Exporter</button></div>
   <div className="grid grid-cols-3 gap-3">{[['Rapprochées', '13 / 16'], ['Écarts', '2'], ['Solde banque', '8 412,10 €']].map(([label, value]) => <div key={label} className="rounded-lg border bg-card p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-base font-semibold md:text-xl">{value}</p></div>)}</div>
   <div className="flex gap-2 text-sm">{['Toutes', 'Écarts', 'À justifier'].map((tab, i) => <span key={tab} className={`rounded-full border px-3 py-1 ${i === 0 ? 'bg-foreground text-background' : ''}`}>{tab}</span>)}</div>

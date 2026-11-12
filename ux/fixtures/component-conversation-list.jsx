@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 const params = new URLSearchParams(location.search);
 if (params.get('dark') === '1') document.documentElement.classList.add('dark');
 const HOUR = 3600e3, NOW = Date.now();
-const TITLES = ['Rapprochement de janvier', 'Relance Maison Delorme', 'TVA du trimestre', 'Clôture annuelle 2025', 'Écarts de novembre', 'Facture Brun & Fils', 'Note de frais de Julie', 'Remboursement URSSAF', 'Bilan Atelier Brun', 'Devis Garage du Port', 'Acompte Restaurant Le Cèdre', 'Relevé de décembre', 'Immobilisations 2025', 'Congés payés', 'Assurance Axiom', 'Loyer Rue des Halles', 'Paie de janvier', 'Contrat Papeterie Lemaire', 'Taxe d’apprentissage', 'Frais de tenue de compte', 'Orange Business', 'Swile et titres-restaurant', 'Cabinet Roux', 'Subvention régionale', 'Liasse fiscale', 'Dossier Cèdre', 'Stock de fin d’année', 'Capital social'];
+const TITLES = ['Rapprochement de janvier', 'Relance Maison Delorme', 'TVA du trimestre', 'Clôture annuelle 2025', 'Écarts de novembre', 'Facture Brun & Fils', 'Note de frais de Julie', 'Remboursement URSSAF', 'Bilan Atelier Brun', 'Devis Garage du Port', 'Acompte Restaurant Le Cèdre', 'Relevé de décembre', 'Immobilisations 2025', 'Congés payés', 'Assurance Axiom', 'Loyer Rue des Halles', 'Paie de janvier', 'Contrat Papeterie Lemaire', 'Taxe d’apprentissage', 'Frais de tenue de compte', 'Télécom Pro', 'Titres-repas et titres-restaurant', 'Cabinet Roux', 'Subvention régionale', 'Liasse fiscale', 'Dossier Cèdre', 'Stock de fin d’année', 'Capital social'];
 const COUNT = { none: 0, few: 5, many: TITLES.length }[params.get('items') ?? 'few'] ?? 5;
 const make = i => ({ id: `c${i}`, title: TITLES[i], lastMessage: `Dernier échange sur « ${TITLES[i]} ».`, updatedAt: NOW - (i === 0 ? 0.2 : 3 + i * 9) * HOUR, ...(i % 9 === 8 ? { archived: true } : {}) });
 const START = Array.from({ length: COUNT }, (_, i) => make(i));
@@ -37,7 +37,7 @@ function App() {
   return <ChatTextProvider value={chatTextFor('fr')}>
     <main className="flex min-h-dvh items-center justify-center bg-muted/30 p-4 sm:p-8">
       <div data-testid="surface" className="relative flex h-[34rem] w-full max-w-xl flex-col rounded-xl border bg-background p-4 shadow-sm">
-        <div className="flex items-center justify-between gap-2"><h1 className="m-0 text-base font-semibold">Assistant · Atelier Brun</h1>
+        <div className="flex items-center justify-between gap-2"><h1 className="m-0 text-base font-semibold">Assistant · Atelier Brun (fictif)</h1>
           <Button variant="outline" data-testid="history-open" className="min-h-11" onClick={() => setOpen(true)}>Historique</Button></div>
         <p className="mt-4 text-sm text-muted-foreground">Conversation ouverte : <span data-testid="active-title">{items.find(item => item.id === active)?.title ?? 'aucune'}</span></p>
         {open && <ConversationHistory conversations={conversations} onClose={() => setOpen(false)} />}

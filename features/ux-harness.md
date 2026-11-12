@@ -9,12 +9,12 @@ Scenarios as data (`ux/scenarios/*.json`), one per layout or component, that a r
 - `ux-check` `node ux/runner/cli.mjs check` replays every flow without pictures or a model and fails when a step does not complete, a console error appears or a threshold the scenario declares is crossed. The regression gate. `ux/runner/check.mjs`.
 - `ux-judge` `node ux/runner/cli.mjs judge --target <t> --from <folder>` has Claude Opus (headless, read-only) grade a captured folder on six criteria (`ux/CRITERIA.md`) and write `verdict.json` and `verdict.md`. `ux/runner/judge.mjs`.
 - `ux-loop` `node ux/runner/loop.mjs --target <t>` runs a worker model and the judge in rounds, one commit per round, state outside the repo. `ux/runner/loop.mjs`.
-- `ux-showcase` `node ux/runner/cli.mjs site` builds a static showcase from a capture: demos, states, flows with their measured behaviour in plain words, install lines. `ux/runner/site.mjs`, run by `.github/workflows/ux-showcase.yml` (inert until enabled; see the runbook).
+- `ux-showcase` `node ux/runner/cli.mjs site` builds a static showcase from a capture: demos, states, flows with their measured behaviour in plain words, install lines. `ux/runner/site.mjs`, run by `.github/workflows/ux-showcase.yml` (on a release or by hand; publishes whenever capture succeeds, shows the check status in neutral words, and blocks only when `UX_ENFORCE` is on; see the runbook).
 - `ux-scripted-agent` the demos' assistant is data (`ux/scenarios/scripts/*.json`): turns with tool steps, streamed text, questions; `pace=real` for people and videos, `pace=instant` for `check`. `ux/fixtures/scripted-agent.mjs`.
 
 ## How to get to it (user POV)
 
-- A designer reads the strips and the site. An agent adds a scenario for a new component and runs `check`. The owner starts the loop on a target and reads `scoreboard.md`.
+- A visitor opens the showcase site (GitHub Pages) and tries each layout or component live; a designer reads the strips and the site. An agent adds a scenario for a new component and runs `check`. The owner starts the loop on a target and reads `scoreboard.md`.
 
 ## Driving it with the UX runner
 

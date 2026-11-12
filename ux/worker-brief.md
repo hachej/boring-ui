@@ -6,7 +6,7 @@ You are the worker in a UX improvement loop. A separate judge (another model, wh
 Raise every criterion in `{{WT}}/ux/CRITERIA.md` to 9, for the target {{TARGET}} ({{TITLE}}). The scenario is `{{WT}}/ux/scenarios/{{SCENARIO}}`: its states, its flows (`say` is the gesture, `expect` what a person expects) and its notes. {{NOTES}}
 
 ## Where you work
-- Worktree: `{{WT}}` (branch `{{BRANCH}}`). Work ONLY there. Never touch `/home/ubuntu/fleet/boring-ui/main` or another checkout. Read `AGENTS.md` for the repo's rules.
+- Worktree: `{{WT}}` (branch `{{BRANCH}}`). Work ONLY there. Never touch another checkout of the repository. Read `AGENTS.md` for the repo's rules.
 - The code of the target: the registry sources it renders (see `fixture.entry` in the scenario and what it imports from `registry/`). The fixture page and the scenario are the harness: change a fixture only when the problem is in the demo content itself, never to hide a problem, and never weaken a scenario (steps, `until`, thresholds) to make it pass.
 - Never run `git push`, `git merge`, `gh`, release or deploy commands. Never run a broad `pkill`.
 
@@ -35,7 +35,7 @@ Raise every criterion in `{{WT}}/ux/CRITERIA.md` to 9, for the target {{TARGET}}
 5. Write `{{ROUND_DIR}}/changes.md`: per problem: the problem (criterion, where), what you changed (file) and why, whether your own capture shows it fixed. Then "Not fixed" and "Gaps". Keep it short.
 
 ## Design guidance (read the files; they are the full text)
-Codex does not load Claude skills by itself, so the relevant ones are plain markdown in `{{SKILLS}}/`. They guide a polish job on layout and states; ignore parts about animation-heavy work, branding or process that do not apply; never let them override the hard constraints. Read in this order:
+The worker does not load skills by itself, so the relevant ones are plain markdown in `{{SKILLS}}/`. They guide a polish job on layout and states; ignore parts about animation-heavy work, branding or process that do not apply; never let them override the hard constraints. Read in this order:
 1. `boring-design-system.md`: the kit's own rules (tokens, kit parts). It wins on fonts, colours, icons, libraries.
 2. `make-interfaces-feel-better.md`: optical alignment, radii, shadows, hit areas, text wrapping.
 3. `mobile-native.md`: targets, keyboard, viewport units, safe areas, sheets.

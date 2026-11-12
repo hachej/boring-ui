@@ -14,7 +14,7 @@ if (params.get('dark') === '1') document.documentElement.classList.add('dark');
 window.__closed = 0;
 
 const FILES = {
-  'notes-cloture.md': ['text/markdown', '# Notes de clôture\n\nDossier **Atelier Brun SARL**, exercice 2025.\n\n- Justifier les deux écarts de janvier (Garage du Port, Restaurant Le Cèdre).\n- Relancer Brun & Fils pour la facture du 21/01 : 1 150,00 €.\n- Vérifier le remboursement URSSAF de 312,00 €.\n\n## Prochaine étape\n\nEnvoyer le dossier à julie.marchand@example.test avant le 15 février.\n'],
+  'notes-cloture.md': ['text/markdown', '# Notes de clôture\n\nDossier **Atelier Brun (fictif)**, exercice 2025.\n\n- Justifier les deux écarts de janvier (Garage du Port, Restaurant Le Cèdre).\n- Relancer Brun & Fils pour la facture du 21/01 : 1 150,00 €.\n- Vérifier le remboursement URSSAF de 312,00 €.\n\n## Prochaine étape\n\nEnvoyer le dossier à julie.marchand@example.test avant le 15 février.\n'],
   'ecarts-janvier.csv': ['text/csv', 'Date,Libellé,Montant,Statut\n09/01,Carte Garage du Port,"12,00 €",À justifier\n15/01,Carte Restaurant Le Cèdre,"-12,00 €",À justifier\n17/01,Remboursement URSSAF,"312,00 €",En attente\n21/01,Virement Brun & Fils,"1 150,00 €",En attente\n'],
   'rappel-delorme.txt': ['text/plain', 'Bonjour,\n\nLa facture 0112 de Maison Delorme (1 368,00 € TTC) reste ouverte.\nPouvez-vous nous confirmer la date de règlement ?\n\nCordialement,\nAtelier Brun\n'],
 };
@@ -37,7 +37,7 @@ function App() {
       {path?.startsWith('table:') ? <ArtifactPanel key={path} active={{ descriptor: csvArtifact(path.slice(6)), follow: false }} versions={[]} options={{ client, identity, kinds }} onSelect={() => {}} onClose={() => { window.__closed += 1; setPath(null); }} />
         : path ? <FileViewer key={path} path={path} locator={locate(path)} options={{ client, identity, kinds }} onClose={() => { window.__closed += 1; setPath(null); }} />
         : <div data-testid="file-list" className="flex flex-col gap-2 p-6 text-sm">
-          <h1 className="m-0 text-base font-semibold">Pièces du dossier Atelier Brun</h1>
+          <h1 className="m-0 text-base font-semibold">Pièces du dossier Atelier Brun (fictif)</h1>
           {Object.keys(FILES).map(name => <button key={name} type="button" data-testid="open-file" data-name={name} className="h-11 rounded-md border px-3 text-left hover:bg-muted" onClick={() => setPath(name)}>{name}</button>)}
         </div>}
     </div>

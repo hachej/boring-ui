@@ -21,7 +21,7 @@ const HOME = join(process.env.UX_LOOP_HOME ?? join(homedir(), 'ux-loop'), slug(s
 const MODEL = process.env.UX_WORKER_MODEL ?? 'gpt-6.1-sol', SKILLS = process.env.UX_SKILLS ?? join(process.env.UX_LOOP_HOME ?? homedir(), 'skills');
 const TEST_CMD = process.env.UX_TEST_CMD ?? 'CHROMIUM=$CHROMIUM node --test test/contracts/one-composer.test.mjs';
 const PROTECTED = ['docs/tasks/94cd96bf-9124-4082-bc11-7e7925cf9642/acceptance.md', 'test/contracts/one-composer.test.mjs', 'package.json', 'package-lock.json', 'ux/scenarios/', 'ux/runner/', 'ux/CRITERIA.md', 'ux/judge-prompt.md', 'ux/worker-brief.md'];
-const MAIN = process.env.UX_MAIN_CHECKOUT ?? '/home/ubuntu/fleet/boring-ui/main';
+const MAIN = process.env.UX_MAIN_CHECKOUT; // optional: another checkout the loop must leave untouched
 const ENV = { ...process.env, TMPDIR: '/var/tmp', PATH: `${homedir()}/.local/bin:${process.env.PATH}` }; delete ENV.CI;
 const log = t => console.log(`${new Date().toISOString()} ${t}`);
 const sh = (cmd, a, o = {}) => spawnSync(cmd, a, { encoding: 'utf8', env: ENV, maxBuffer: 1 << 28, ...o });
@@ -29,7 +29,7 @@ const git = (...a) => execFileSync('git', ['-C', root, ...a], { encoding: 'utf8'
 const tail = (t, n = 30) => String(t).split('\n').slice(-n).join('\n');
 const roundDir = n => join(HOME, `round-${n}`), folder = n => join(roundDir(n), S);
 const readJson = f => existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : null;
-const status = d => { try { return execFileSync('git', ['-C', d, 'status', '--porcelain'], { encoding: 'utf8' }); } catch { return ''; } };
+const status = d => { if (!d) return ''; try { return execFileSync('git', ['-C', d, 'status', '--porcelain'], { encoding: 'utf8' }); } catch { return ''; } };
 
 function brief(n, prev, feedback) {
   const v = readJson(join(prev, 'verdict.json')), worse = v?.worse?.length ? v.worse.map(w => `${w.what} (${w.where ?? w.screenshot})`).join('; ') : 'nothing reported';
