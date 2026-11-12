@@ -158,7 +158,7 @@ export interface PiChatProps extends ChatFeatureProps {
   /** Off by default. On, the field edits the person's last messages the Claude Code way (`useEditLast`: ↑ recalls, ↑ or Échap takes a queued
    * message back, Échap stops a run, Échap twice lists the messages and a pick forks before it with `conversations.fork`). The shell's one composer turns it on. */
   readonly composerEditLast?: boolean;
-  readonly composerRecordingSlots?: { readonly status: ReactNode; readonly stop: ReactNode } | undefined;
+  readonly composerRecordingSlots?: { readonly status: ReactNode; readonly stop: ReactNode; /** Keep the message field mounted (inert, out of sight) while the capture shows, so there is one field in every state. Off by default: the textarea gives way. */ readonly keepField?: boolean } | undefined;
   /** Shared host composer presentation over the normal kit session props. */
   readonly renderComposer?: (props: ComposerProps) => ReactNode;
   /** A conversation title, separate from the agent name, with optional click-to-rename. */
@@ -330,7 +330,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
         {voice.problem && <p role="alert" data-testid="voice-message-problem">{voice.problem}</p>}
         {(renderComposer ?? (value => <Composer {...value} />))({ ...composer, disabled: composer.disabled || leaving, stopOpen: leaving && !composer.disabled,
           ...(composerEditLast ? { onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => { editLast.onKeyDown(event); if (!event.defaultPrevented) composer.onKeyDown?.(event); } } : {}),
-          ...(composerRecordingSlots ? { recordingStatus: composerRecordingSlots.status, recordingStop: composerRecordingSlots.stop }
+          ...(composerRecordingSlots ? { recordingStatus: composerRecordingSlots.status, recordingStop: composerRecordingSlots.stop, ...(composerRecordingSlots.keepField ? { keepFieldWhileRecording: true } : {}) }
             : composerRecording === undefined && VoiceStatus && VoiceStop && capturing ? { recordingStatus: <VoiceStatus voice={voice} />, recordingStop: <VoiceStop voice={voice} /> }
             : { recording: composerRecording ?? (VoiceButton && capturing ? <VoiceButton voice={voice} /> : undefined) }), layout: composerLayout, ...(composerBarActions ? { barActions: composerBarActions } : {}), ...(composerFileChips ? { fileChips: true } : {}), ...(composerBarActions === 'attach' ? { files: [...conversationFiles.values()] } : {}),
           placeholder: labels.placeholder === 'Message the agent…' ? `Message ${title}…` : labels.placeholder, barStart, barNote, start: composerStart,

@@ -787,3 +787,146 @@ test('1440: the geometry: the field at most 720 px at the bottom centre, the pag
   await browser.screenshot('one-composer-1440-light-ancre.png');
 });
 
+// Kit 0.4.85 (Coach Max on a phone). K-1..K-6. The shots (`kit-*`) are the before/after pictures of the phone.
+const touch = (type, x, y) => browser.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+const pageVisible = () => browser.evaluate(`(() => { const e = document.querySelector('[data-testid=page]'); const r = e.getBoundingClientRect(); const probe = document.elementFromPoint(r.x + 24, r.y + 24); return { height: r.height, top: r.y, covered: !probe || !e.contains(probe) }; })()`);
+
+test('K-1, 390: typing in the folded field never opens the conversation: the field stays above the keyboard, the page stays visible, only the chevron opens it (AC-25)', { skip, timeout: 120000 }, async () => {
+  const { identifier } = await browser.send('Page.addScriptToEvaluateOnNewDocument', { source: KEYBOARD });
+  try {
+    await open(390, 'single=1&kb=1');
+    await browser.screenshot('kit-390-1-rest.png');
+    const [x, y] = await center('[data-testid=composer-input]');
+    await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y);
+    await browser.until('focused', `document.activeElement?.dataset.testid === 'composer-input'`);
+    await browser.evaluate('window.__keyboard(320)');
+    await wait(800);
+    await type('Deux oeufs et un café');
+    await wait(500);
+    await browser.screenshot('kit-390-2-focused-keyboard.png');
+    assert.equal(await dockState(), 'peek', 'the field is focused and the bar is still folded');
+    assert.equal(await count('[data-testid=agent-tray]'), 0);
+    const shown = await pageVisible();
+    assert.ok(shown.height >= 300 && !shown.covered, `the page stays visible behind the field (${JSON.stringify(shown)})`);
+    const field = await rect('[data-testid=composer]');
+    assert.ok(field.bottom <= 844 - 320 + 1 && 844 - 320 - field.bottom <= 24, `the field sits on the keyboard (${field.bottom})`);
+    await oneField('typing');
+    await click('[data-testid=composer-submit]');
+    await browser.until('working card', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'working'`);
+    await browser.until('reply card', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply'`);
+    assert.equal(await dockState(), 'peek', 'a send leaves it folded');
+    await click('[data-testid=agent-bar-conversation]');
+    await browser.until('chevron opens', `['half', 'full'].includes(document.querySelector('[data-testid=agent-layer]')?.dataset.state)`);
+  } finally { await browser.send('Page.removeScriptToEvaluateOnNewDocument', { identifier }); }
+});
+
+test('K-2, 390: one field in every dictation state: it stays in the DOM while listening, while held and when the words arrive (AC-1)', { skip, timeout: 120000 }, async () => {
+  await open(390, 'single=1');
+  await oneField('rest');
+  let [x, y] = await center('[data-testid=agent-talk]');
+  await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y);
+  await browser.until('listening', `!!document.querySelector('[data-testid=agent-talk-listening]')`);
+  await browser.screenshot('kit-390-3-dictating.png');
+  await oneField('listening');
+  await click('[data-testid=agent-talk-stop]');
+  await browser.until('words in the field', `document.querySelector('[data-testid=composer-input]')?.value === 'Texte dicté fictif'`);
+  await oneField('words');
+  await browser.evaluate(`window.__setText('')`);
+  [x, y] = await center('[data-testid=agent-talk]');
+  await mouse('mousePressed', x, y);
+  await browser.until('holding', `!!document.querySelector('[data-testid=agent-talk-release]')`);
+  await oneField('holding');
+  await mouse('mouseReleased', x, y);
+  await browser.until('sent', `window.__sent.length === 1`);
+  await oneField('sent');
+});
+
+test('K-3, 390: the folded reply card carries one app action (agent.replyAction) and a tap on the reply opens the conversation', { skip, timeout: 120000 }, async () => {
+  await open(390, 'single=1&action=1');
+  await browser.evaluate(`window.__run('tool')`);
+  await browser.until('working', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'working'`);
+  await browser.evaluate(`window.__run('reply')`);
+  await browser.until('reply card', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply'`);
+  await wait(700);
+  await browser.screenshot('kit-390-4-reply-action.png');
+  const onCard = await rect('[data-testid=agent-card]'), onField = await rect('[data-testid=composer]');
+  assert.ok(onField.bottom <= 844 + 1 && onCard.bottom <= onField.y + 1, `the card and the whole field are in view, the card right above the field (${onCard.bottom} → ${onField.y}..${onField.bottom})`);
+  assert.equal(await text('[data-testid=agent-card-action]'), 'Annuler', 'the app\'s action, on the card');
+  assert.equal(await inside('[data-testid=agent-card-action]', '[data-testid=agent-card]'), true);
+  const action = await rect('[data-testid=agent-card-action]');
+  assert.ok(action.h >= 44, `a 44 px target on touch (${action.h})`);
+  await click('[data-testid=agent-card-action]');
+  assert.equal(await browser.evaluate('window.__undone'), 1);
+  assert.equal(await dockState(), 'peek', 'the action does not open the conversation');
+  await click('[data-testid=agent-card-reply]');
+  await browser.until('the reply opens it', `['half', 'full'].includes(document.querySelector('[data-testid=agent-layer]')?.dataset.state)`);
+  await open(390, 'single=1');
+  await browser.evaluate(`window.__run('tool')`);
+  await browser.until('working', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'working'`);
+  await browser.evaluate(`window.__run('reply')`);
+  await browser.until('reply card', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply'`);
+  assert.equal(await count('[data-testid=agent-card-action]'), 0, 'no action unless the app gave one');
+});
+
+test('K-4, 390: the folded working card shows the app\'s words per phase (agent.workingWords); without them it says what the tool does, then « En cours »', { skip, timeout: 120000 }, async () => {
+  await open(390, 'single=1&status=1');
+  await browser.evaluate(`window.__run('tool')`);
+  await browser.until('working', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'working'`);
+  await wait(700);
+  await browser.screenshot('kit-390-5-working.png');
+  assert.ok((await rect('[data-testid=composer]')).bottom <= 844 + 1, 'the whole field stays in view under the working card');
+  assert.equal(await text('[data-testid=agent-card-status]'), 'Max compte…', 'a tool runs: the app\'s words for it');
+  await browser.evaluate(`window.__run('think')`);
+  await browser.until('thinking', `document.querySelector('[data-testid=agent-card-status]')?.textContent === 'Max réfléchit…'`);
+  await open(390, 'single=1');
+  await browser.evaluate(`window.__run('tool')`);
+  await browser.until('default', `document.querySelector('[data-testid=agent-card-status]')?.textContent.includes('releve-janvier.pdf')`);
+  await browser.evaluate(`window.__run('think')`);
+  await browser.until('default words', `document.querySelector('[data-testid=agent-card-status]')?.textContent === 'En cours'`);
+});
+
+test('K-5, 390: every default word of the composer is overridable through agent.words, the empty conversation included (« tu »)', { skip, timeout: 120000 }, async () => {
+  await open(390, 'single=1&tu=1&empty=1');
+  await oneField('empty');
+  const words = () => browser.evaluate(`(() => { const label = s => document.querySelector(s)?.getAttribute('aria-label'); return {
+    placeholder: document.querySelector('[data-testid=composer-input]').placeholder, chevron: label('[data-testid=agent-bar-conversation]'), attach: label('[data-testid=composer-bar-attach]'), dictate: label('[data-testid=agent-talk]') }; })()`);
+  assert.deepEqual(await words(), { placeholder: 'Dis-moi ce que tu as mangé', chevron: 'Ton fil', attach: 'Joins un fichier', dictate: 'Dicte' });
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('empty state', `!!document.querySelector('[data-testid=empty-state]')`);
+  await browser.screenshot('kit-390-6-empty-tu.png');
+  assert.equal(await text('[data-testid=empty-state]'), 'Parle-moi' + 'Dis-moi ce que tu as mangé.', 'the empty conversation in « tu »');
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('folded', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'peek'`);
+  await type('Un yaourt');
+  assert.equal(await actionName(), 'Envoie');
+  await browser.evaluate(`window.__failNext = true`);
+  await click('[data-testid=composer-submit]');
+  await browser.until('failed', `!!document.querySelector('[data-testid=agent-send-problem]')`);
+  assert.equal(await text('[data-testid=agent-send-problem] span'), 'Ton message n’est pas parti : il est revenu dans le champ.');
+  assert.equal(await text('[data-testid=agent-send-retry]'), 'Réessaie');
+  await browser.evaluate(`window.__setText('')`);
+  await wait(600);
+  const [x, y] = await center('[data-testid=agent-talk]');
+  await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y);
+  await browser.until('listening', `!!document.querySelector('[data-testid=agent-talk-listening]')`);
+  assert.equal(await text('[data-testid=agent-talk-listening]'), 'Je t’écoute…');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-talk-stop]').getAttribute('aria-label') + '|' + document.querySelector('[data-testid=agent-talk-cancel]').getAttribute('aria-label')`), 'Arrête de m’écouter|Annule');
+});
+
+test('K-6, 390 touch: the first press-and-hold on Dicter in a session sends on release, like the next ones, even when the first open of the microphone is slower than the hold', { skip, timeout: 120000 }, async () => {
+  await open(390, 'single=1&slowmic=1');
+  await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  try {
+    for (const round of [1, 2]) {
+      const [x, y] = await center('[data-testid=agent-talk]');
+      await touch('touchStart', x, y);
+      await browser.until(`holding ${round}`, `!!document.querySelector('[data-testid=agent-talk-release]')`);
+      if (round === 1) await browser.screenshot('kit-390-3b-hold.png');
+      await touch('touchEnd', x, y);
+      await browser.until(`hold ${round} sent`, `window.__sent.length === ${round}`);
+      await browser.until(`rest ${round}`, `document.querySelector('[data-testid=agent-talk]')?.dataset.state === 'idle'`);
+      await wait(900);
+    }
+  } finally { await browser.send('Emulation.setTouchEmulationEnabled', { enabled: false }); }
+});
+
