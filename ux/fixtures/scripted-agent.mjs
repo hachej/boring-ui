@@ -1,7 +1,7 @@
 // The demo's assistant: SCRIPTED, deterministic, no model and no network. The script is data (ux/scenarios/scripts/*.json):
 //   { "fallback": "one plain sentence", "turns": [ { "match": "regex on what the person typed", "steps": [ ... ] } ] }
 // A step is one of:
-//   { "tool": "read", "path": "uploads/x.pdf", "progress": "12 lignes sur 40", "ms": 800 }   the agent works: the tool's words show, then it finishes
+//   { "tool": "read", "path": "uploads/x.pdf", "progress": "12 of 40 lines", "ms": 800 }   the agent works: the tool's words show, then it finishes
 //   { "think": true, "ms": 600 }                                                             the agent works with no tool running
 //   { "text": "the answer, \n for lines, @path cites a file", "stream": true }               the answer; streamed word by word when `stream`
 //   { "ask": { "question": "...", "questions": [ { "question": "...", "options": ["a", "b"] } ] }, "then": [ steps ] }   a question; `then` plays after the answer
@@ -29,7 +29,7 @@ export function createScriptedAgent({ script, pace = 1, entries, show }) {
         const asked = entry(assistant([{ type: 'toolCall', id: call, name: step.tool, arguments: { path: step.path } }], 'toolUse'));
         show([...list, asked], live([{ callId: call, taskId: 8, status: 'running', details: { progress: step.progress } }]));
         await sleep(step.ms ?? 800);
-        const result = { id: ++counter, kind: 'message', byTaskId: 8, model: [{ role: 'toolResult', toolCallId: call, toolName: step.tool, content: [{ type: 'text', text: step.result ?? 'terminé' }], isError: false, timestamp: 3 }] };
+        const result = { id: ++counter, kind: 'message', byTaskId: 8, model: [{ role: 'toolResult', toolCallId: call, toolName: step.tool, content: [{ type: 'text', text: step.result ?? 'done' }], isError: false, timestamp: 3 }] };
         list = [...list, asked, result]; show(list, live());
       } else if (step.think) { show(list, live()); await sleep(step.ms ?? 600);
       } else if (step.text !== undefined) {

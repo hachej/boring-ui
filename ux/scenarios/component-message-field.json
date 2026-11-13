@@ -1,13 +1,14 @@
 {
  "target": "component:message-field",
  "title": "The message field",
+ "summary": "The message field: text, attachments, the slash list and dictation in one pill.",
  "purpose": "The kit's message field alone: the Composer inside PiChat (composerLayout 'pill', attach button, file chips, slash list, tap-to-record microphone) on a neutral page over a fake controller. The thread above it only shows what was sent. It is the field the bar layout is made of; read-only is the host's own note passed as renderComposer, as AppShell does.",
  "fixture": {
   "entry": "ux/fixtures/component-message-field.jsx",
   "query": "",
   "ready": "[data-testid=composer-input], [data-testid=agent-read-only]",
   "install": "npx shadcn@4.23.0 add pi-chat pi-chat-markdown pi-chat-slash pi-chat-voice",
-  "usage": "<PiChat controller={controller} locale=\"fr\" header={false} showHistory={false} emptyLayout=\"docked\" composerLayout=\"pill\" composerBarActions=\"attach\" composerFileChips slash={slash} attachments={attachments} voiceMessage={{ transcribe, ...voiceMessagePlugin }} voiceReplacesSend />",
+  "usage": "<PiChat controller={controller} locale=\"en\" header={false} showHistory={false} emptyLayout=\"docked\" composerLayout=\"pill\" composerBarActions=\"attach\" composerFileChips slash={slash} attachments={attachments} voiceMessage={{ transcribe, ...voiceMessagePlugin }} voiceReplacesSend />",
   "css": ["pi-chat-voice"]
  },
  "viewports": [
@@ -16,35 +17,35 @@
  ],
  "watch": [["field", "[data-testid=composer]"], ["surface", "[data-testid=surface]"]],
  "thresholds": { "cls": 0.08, "settledMs": 1200, "touchTarget": 44, "truncated": 0 },
- "notes": "While a recording runs its timer changes the page every second: the steps that happen during a recording settle for 100 ms only (settleMax). The field keeps its place and its height when the person types, attaches or dictates; every control of the field is at least 44 px on a phone; the placeholder is read in full; French words stay as they are.",
+ "notes": "While a recording runs its timer changes the page every second: the steps that happen during a recording settle for 100 ms only (settleMax). The field keeps its place and its height when the person types, attaches or dictates; every control of the field is at least 44 px on a phone; the placeholder is read in full.",
  "states": [
   { "id": "01", "name": "empty", "steps": [] },
   { "id": "02", "name": "focused", "steps": [{ "do": "focus", "target": "composer-input" }] },
-  { "id": "03", "name": "text", "steps": [{ "do": "type", "target": "composer-input", "text": "Peux-tu relancer le client Maison Delorme pour la facture de janvier ?" }] },
-  { "id": "04", "name": "attachment-chip", "steps": [{ "do": "attach", "target": "composer-bar-attach", "file": "facture-delorme-0112.pdf", "until": "visible:mention-chip" }] },
+  { "id": "03", "name": "text", "steps": [{ "do": "type", "target": "composer-input", "text": "Can you remind Delmore House about the January invoice?" }] },
+  { "id": "04", "name": "attachment-chip", "steps": [{ "do": "attach", "target": "composer-bar-attach", "file": "invoice-delmore-0112.pdf", "until": "visible:mention-chip" }] },
   { "id": "05", "name": "working", "query": "working=1", "steps": [{ "do": "wait", "ms": 300 }] },
   { "id": "06", "name": "read-only", "query": "readonly=1", "steps": [] },
   { "id": "07", "name": "send-failed", "steps": [
    { "do": "fixture", "name": "failNext" },
-   { "do": "type", "target": "composer-input", "text": "Rapproche le relevé de janvier" },
+   { "do": "type", "target": "composer-input", "text": "Reconcile the January statement" },
    { "do": "tap", "target": "composer-submit", "until": "visible:send-blocked" }] }
  ],
  "flows": [
   { "id": "F01", "name": "Type and send", "steps": [
    { "do": "tap", "target": "composer-input", "say": "Tap the field", "focus": "composer-input", "expect": "The field is focused and the keyboard can open.", "until": "focus:composer-input" },
-   { "do": "type", "text": "Rapproche le relevé de janvier", "say": "Type « Rapproche le relevé de janvier »", "expect": "The text shows in the field and Send is ready.", "until": "value:composer-input~Rapproche" },
-   { "do": "tap", "target": "composer-submit", "say": "Send", "motion": true, "expect": "The field empties at once, my message is in the thread and the stop button shows.", "until": "value:composer-input~ & text:[data-role=user]~Rapproche" },
-   { "do": "wait", "ms": 600, "say": "Wait for the reply", "until": "text:[data-role=assistant]~Maison Delorme", "timeout": 6000, "expect": "The reply arrives and the field is ready for another message." }
+   { "do": "type", "text": "Reconcile the January statement", "say": "Type “Reconcile the January statement”", "expect": "The text shows in the field and Send is ready.", "until": "value:composer-input~Reconcile" },
+   { "do": "tap", "target": "composer-submit", "say": "Send", "motion": true, "expect": "The field empties at once, my message is in the thread and the stop button shows.", "until": "value:composer-input~ & text:[data-role=user]~Reconcile" },
+   { "do": "wait", "ms": 600, "say": "Wait for the reply", "until": "text:[data-role=assistant]~Delmore House", "timeout": 6000, "expect": "The reply arrives and the field is ready for another message." }
   ] },
   { "id": "F02", "name": "Slash list", "steps": [
-   { "do": "type", "target": "composer-input", "text": "/", "say": "Type « / »", "motion": true, "until": "visible:slash-item", "expect": "A list of actions opens above the field." },
+   { "do": "type", "target": "composer-input", "text": "/", "say": "Type “/”", "motion": true, "until": "visible:slash-item", "expect": "A list of actions opens above the field." },
    { "do": "press", "key": "ArrowDown", "say": "Move down the list", "expect": "The next action is highlighted." },
    { "do": "press", "key": "Enter", "say": "Choose with Enter", "until": "gone:slash-item", "expect": "The list closes and the action's words are in the field, nothing is sent yet." }
   ] },
   { "id": "F03", "name": "Attach a file", "steps": [
-   { "do": "attach", "target": "composer-bar-attach", "file": "facture-delorme-0112.pdf", "say": "Tap the paperclip and pick a file", "motion": true, "until": "visible:mention-chip", "expect": "The file shows as a chip in the field, with its name." },
-   { "do": "type", "target": "composer-input", "text": "Voici la facture à relancer", "say": "Type a line about the file", "until": "value:composer-input~facture" },
-   { "do": "tap", "target": "composer-submit", "say": "Send", "until": "count:mention-chip>=0 & text:[data-role=user]~facture", "expect": "The message goes with the file and the chip leaves the field." }
+   { "do": "attach", "target": "composer-bar-attach", "file": "invoice-delmore-0112.pdf", "say": "Tap the paperclip and pick a file", "motion": true, "until": "visible:mention-chip", "expect": "The file shows as a chip in the field, with its name." },
+   { "do": "type", "target": "composer-input", "text": "Here is the invoice to chase", "say": "Type a line about the file", "until": "value:composer-input~invoice" },
+   { "do": "tap", "target": "composer-submit", "say": "Send", "until": "count:mention-chip>=0 & text:[data-role=user]~invoice", "expect": "The message goes with the file and the chip leaves the field." }
   ] },
   { "id": "F04", "name": "Dictation tap", "steps": [
    { "do": "tap", "target": "voice-message-record", "say": "Tap the microphone", "motion": true, "settleMax": 100, "until": "visible:voice-recording-bar", "expect": "The field turns into a recording row with a timer and a cancel button." },

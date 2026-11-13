@@ -1,27 +1,27 @@
 {
-  "fallback": "C’est une démonstration : l’assistant est scripté et ne comprend que quelques demandes. Essayez « Rapproche le relevé de janvier » ou « Prépare la clôture ».",
+  "fallback": "This is a demo: the assistant is scripted and only understands a few requests. Try “Reconcile the January statement” or “Prepare the closing”.",
   "turns": [
-    { "match": "montre|affiche|pr[ée]sente", "steps": [
+    { "match": "show|display|present", "steps": [
       { "think": true, "ms": 500 },
-      { "present": "uploads/ecarts-janvier.csv", "ms": 1500 },
-      { "text": "Voici les écarts de janvier, ouverts à droite.\nDeux lignes restent à justifier dans @uploads/ecarts-janvier.csv, avec le reçu @justificatifs/recu-garage-0901.pdf et la note @justificatifs/note-ecart-0901.md.", "stream": true } ] },
-    { "match": "relev|rapproch|janvier", "steps": [
-      { "tool": "read", "path": "uploads/releve-janvier.pdf", "progress": "12 lignes sur 40", "ms": 900 },
-      { "tool": "read", "path": "uploads/ecarts-janvier.csv", "progress": "40 lignes sur 40", "ms": 700 },
-      { "text": "Le relevé de janvier compte 40 lignes, toutes rapprochées.\nDeux écarts sont notés dans @uploads/ecarts-janvier.csv.\nRien d’autre à faire pour janvier.\nUne quatrième ligne que la carte replie.", "stream": true } ] },
-    { "match": "cl[oô]ture|pr[ée]pare", "steps": [
-      { "tool": "read", "path": "notes-cloture.md", "progress": "lecture des notes", "ms": 700 },
-      { "ask": { "question": "Deux précisions", "questions": [
-          { "question": "Quel exercice ?", "options": ["2025", "2026"] },
-          { "question": "Quel journal ?", "options": ["Achats", "Ventes"] } ] },
-        "then": [ { "tool": "read", "path": "factures/facture-axiom-0108.pdf", "progress": "3 factures sur 12", "ms": 900 },
-          { "text": "Merci. Je prépare la clôture avec ces précisions.\nTrois écritures restent à justifier, la liste est dans @notes-cloture.md.", "stream": true } ] } ] },
-    { "match": "long|d[ée]taille|explique|r[ée]sume", "steps": [
+      { "present": "uploads/discrepancies-january.csv", "ms": 1500 },
+      { "text": "Here are the January discrepancies, opened on the right.\nTwo lines still need a receipt in @uploads/discrepancies-january.csv, with the receipt @receipts/receipt-harbor-garage-0109.pdf and the note @receipts/note-gap-0109.md.", "stream": true } ] },
+    { "match": "statement|reconcil|january", "steps": [
+      { "tool": "read", "path": "uploads/statement-january.pdf", "progress": "12 of 40 lines", "ms": 900 },
+      { "tool": "read", "path": "uploads/discrepancies-january.csv", "progress": "40 of 40 lines", "ms": 700 },
+      { "text": "The January statement has 40 lines, all reconciled.\nTwo discrepancies are noted in @uploads/discrepancies-january.csv.\nNothing else to do for January.\nA fourth line that the card folds.", "stream": true } ] },
+    { "match": "clos|prepare", "steps": [
+      { "tool": "read", "path": "closing-notes.md", "progress": "reading the notes", "ms": 700 },
+      { "ask": { "question": "Two details", "questions": [
+          { "question": "Which year?", "options": ["2025", "2026"] },
+          { "question": "Which journal?", "options": ["Purchases", "Sales"] } ] },
+        "then": [ { "tool": "read", "path": "invoices/invoice-axiom-0108.pdf", "progress": "3 invoices of 12", "ms": 900 },
+          { "text": "Thanks. I am preparing the closing with these details.\nThree entries still need a receipt; the list is in @closing-notes.md.", "stream": true } ] } ] },
+    { "match": "long|detail|explain|summar", "steps": [
       { "think": true, "ms": 700 },
-      { "text": "Voici le détail de janvier.\n\n1. Virements clients : quatre virements pour 6 650,00 €, tous rapprochés.\n2. Prélèvements : Énergie Pro, Axiom, Télécom Pro et Titres-repas, soit 583,39 €, rapprochés.\n3. Cartes : Papeterie Lemaire, Station du Quai et deux notes de frais. Deux écarts de 12,00 € : Garage du Port le 09/01 et Restaurant Le Cèdre le 15/01.\n4. Loyer : 950,00 € le 14/01, rapproché.\n5. Remboursement URSSAF : 312,00 € attendus, pas encore reçus.\n6. Facture Brun & Fils du 21/01 : 1 150,00 € en attente depuis 19 jours.\n\nPour clore janvier il reste donc deux justificatifs à retrouver et une relance à envoyer. Je peux préparer la relance si vous voulez.", "stream": true } ] },
-    { "match": "relance|brun|delorme|facture", "steps": [
-      { "tool": "read", "path": "factures/facture-brun-0121.pdf", "progress": "facture du 21/01", "ms": 800 },
-      { "text": "Brouillon de relance pour Brun & Fils :\n« Bonjour, la facture du 21 janvier (1 150,00 €) reste ouverte. Pouvez-vous nous confirmer la date de règlement ? »\nLa facture est dans @factures/facture-brun-0121.pdf.", "stream": true } ] },
-    { "match": "bonjour|salut", "steps": [ { "text": "Bonjour ! Je peux rapprocher un relevé, préparer la clôture ou rédiger une relance.", "stream": true } ] }
+      { "text": "Here are the details for January.\n\n1. Client transfers: four transfers totalling $6,650.00, all reconciled.\n2. Direct debits: Northgrid Energy, Axiom, Northline Telecom and meal vouchers, $583.39 in all, reconciled.\n3. Cards: Larkin Stationery, Quay Fuel Station and two expense reports. Two gaps of $12.00: Harbor Garage on Jan 9 and The Cedar Diner on Jan 15.\n4. Rent: $950.00 on Jan 14, reconciled.\n5. Payroll tax refund: $312.00 expected, not yet received.\n6. Brown & Sons invoice of Jan 21: $1,150.00 pending for 19 days.\n\nTo close January, two receipts are still to find and one reminder is to send. I can draft the reminder if you like.", "stream": true } ] },
+    { "match": "remind|brown|delmore|invoice", "steps": [
+      { "tool": "read", "path": "invoices/invoice-brown-0121.pdf", "progress": "invoice of Jan 21", "ms": 800 },
+      { "text": "Draft reminder for Brown & Sons:\n“Hello, the invoice of January 21 ($1,150.00) is still open. Could you confirm the payment date?”\nThe invoice is in @invoices/invoice-brown-0121.pdf.", "stream": true } ] },
+    { "match": "hello|\\bhi\\b", "steps": [ { "text": "Hello! I can reconcile a statement, prepare the closing or draft a reminder.", "stream": true } ] }
   ]
 }

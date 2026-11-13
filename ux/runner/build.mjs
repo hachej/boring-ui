@@ -39,6 +39,6 @@ export async function buildPage(entry, outFile, { css: extraCss = [], title = 'b
   } });
   const css = compiler.build(sources.flatMap(s => s.split(/[\s"'`]+/)));
   mkdirSync(dirname(outFile), { recursive: true });
-  writeFileSync(outFile, `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>${title}</title><style>${css}</style></head><body><div id="root"></div><script type="module">${js.replace(/<\/script/gi, '<\\/script')}</script></body></html>`);
+  writeFileSync(outFile, `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>${title}</title><style>${css}</style></head><body><div id="root"></div><script type="module">${js.replace(/<\/script/gi, '<\\/script')}</script></body></html>`);
   return outFile;
 }

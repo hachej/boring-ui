@@ -1,6 +1,8 @@
 {
  "target": "layout:bar",
  "title": "App shell with the one composer",
+ "summary": "The app shell with one message bar at the bottom: a folded reply card, the opened conversation, a docked column, files, library and dictation.",
+ "try": [{"label": "Send a message", "steps": [{"do": "type", "target": "composer-input", "text": "Reconcile the January statement"}, {"do": "tap", "target": "composer-submit", "until": "text:agent-card-reply~Nothing else", "timeout": 14000}]}, {"label": "Open a file from the reply", "flow": "F01"}, {"label": "Open the library", "flow": "F02"}, {"label": "Open an entry of the page", "flow": "F03"}, {"label": "Answer a question", "flow": "F09"}, {"label": "Use the / actions", "flow": "F08"}],
  "purpose": "AppShell composer=\"bar\": one message field at the bottom of a page, a folded reply card, the opened conversation, a docked column, file preview, library, dictation and the phone layout.",
  "fixture": {
   "entry": "test/fixtures/themes/one-composer.jsx",
@@ -44,7 +46,7 @@
   "settledMs": 1200,
   "touchTarget": 44
  },
- "notes": "On this layout the field must never cover the page rows the person needs (the table keeps its last row above the field), the field keeps its place across states, and French words stay as they are.",
+ "notes": "On this layout the field must never cover the page rows the person needs (the table keeps its last row above the field), the field keeps its place across states.",
  "states": [
   {
    "id": "01",
@@ -58,7 +60,7 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Peux-tu relancer le client Maison Delorme pour la facture de janvier ?"
+     "text": "Can you remind Delmore House about the January invoice?"
     }
    ]
   },
@@ -69,8 +71,8 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Rapproche le relevé de janvier",
-     "say": "Type « Rapproche le relevé de janvier »"
+     "text": "Reconcile the January statement",
+     "say": "Type “Reconcile the January statement”"
     },
     {
      "do": "tap",
@@ -92,12 +94,12 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Rapproche le relevé de janvier"
+     "text": "Reconcile the January statement"
     },
     {
      "do": "tap",
      "target": "composer-submit",
-     "until": "text:agent-card-reply~Rien d’autre",
+     "until": "text:agent-card-reply~Nothing else",
      "timeout": 14000
     },
     {
@@ -114,12 +116,12 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Rapproche le relevé de janvier"
+     "text": "Reconcile the January statement"
     },
     {
      "do": "tap",
      "target": "composer-submit",
-     "until": "text:agent-card-reply~Rien d’autre",
+     "until": "text:agent-card-reply~Nothing else",
      "timeout": 14000
     },
     {
@@ -140,12 +142,12 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Rapproche le relevé de janvier"
+     "text": "Reconcile the January statement"
     },
     {
      "do": "tap",
      "target": "composer-submit",
-     "until": "text:agent-card-reply~Rien d’autre",
+     "until": "text:agent-card-reply~Nothing else",
      "timeout": 14000
     },
     {
@@ -173,12 +175,12 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Rapproche le relevé de janvier"
+     "text": "Reconcile the January statement"
     },
     {
      "do": "tap",
      "target": "composer-submit",
-     "until": "text:agent-card-reply~Rien d’autre",
+     "until": "text:agent-card-reply~Nothing else",
      "timeout": 14000
     },
     {
@@ -205,12 +207,12 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Rapproche le relevé de janvier"
+     "text": "Reconcile the January statement"
     },
     {
      "do": "tap",
      "target": "composer-submit",
-     "until": "text:agent-card-reply~Rien d’autre",
+     "until": "text:agent-card-reply~Nothing else",
      "timeout": 14000
     },
     {
@@ -226,12 +228,12 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Rapproche le relevé de janvier"
+     "text": "Reconcile the January statement"
     },
     {
      "do": "tap",
      "target": "composer-submit",
-     "until": "text:agent-card-reply~Rien d’autre",
+     "until": "text:agent-card-reply~Nothing else",
      "timeout": 14000
     },
     {
@@ -252,7 +254,7 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Prépare la clôture"
+     "text": "Prepare the closing"
     },
     {
      "do": "tap",
@@ -295,7 +297,7 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Peux-tu relancer le client Maison Delorme pour la facture de janvier ?"
+     "text": "Can you remind Delmore House about the January invoice?"
     },
     {
      "do": "fixture",
@@ -355,12 +357,12 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Rapproche le relevé de janvier"
+     "text": "Reconcile the January statement"
     },
     {
      "do": "tap",
      "target": "composer-submit",
-     "until": "text:agent-card-reply~Rien d’autre",
+     "until": "text:agent-card-reply~Nothing else",
      "timeout": 14000
     },
     {
@@ -377,12 +379,12 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Rapproche le relevé de janvier"
+     "text": "Reconcile the January statement"
     },
     {
      "do": "tap",
      "target": "composer-submit",
-     "until": "text:agent-card-reply~Rien d’autre",
+     "until": "text:agent-card-reply~Nothing else",
      "timeout": 14000
     },
     {
@@ -406,7 +408,7 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Rapproche le relevé de janvier",
+     "text": "Reconcile the January statement",
      "say": "Ask the assistant to reconcile January"
     },
     {
@@ -462,24 +464,24 @@
     {
      "do": "tap",
      "text": "uploads",
-     "say": "Unfold the folder « uploads »",
-     "until": "text:fixture-library~ecarts-janvier.csv",
+     "say": "Unfold the folder “uploads”",
+     "until": "text:fixture-library~discrepancies-january.csv",
      "expect": "The folder opens in place."
     },
     {
      "do": "tap",
-     "text": "ecarts-janvier.csv",
-     "say": "Pick « ecarts-janvier.csv »",
+     "text": "discrepancies-january.csv",
+     "say": "Pick “discrepancies-january.csv”",
      "motion": true,
-     "until": "visible:artifact-csv & text:agent-preview-back~Bibliothèque",
-     "expect": "The file opens in the kit's viewer on top of the library, « ← Bibliothèque »."
+     "until": "visible:artifact-csv & text:agent-preview-back~Library",
+     "expect": "The file opens in the kit's viewer on top of the library, “← Library”."
     },
     {
      "do": "tap",
      "target": { "390": "agent-preview-back", "1440": "agent-preview-close" },
      "say": "Close the preview",
      "motion": true,
-     "until": { "390": "text:agent-preview-title~Bibliothèque", "1440": "gone:agent-preview" },
+     "until": { "390": "text:agent-preview-title~Library", "1440": "gone:agent-preview" },
      "expect": "The pane closes (a phone steps back to the library first)."
     },
     { "do": "tap", "target": "agent-preview-close", "only": "390", "say": "Close the library", "until": "gone:agent-preview", "expect": "The person is back on the page." }
@@ -491,8 +493,8 @@
    "steps": [
     {
      "do": "tap",
-     "text": "Carte Garage du Port",
-     "say": "Tap the row of 09/01",
+     "text": "Card Harbor Garage",
+     "say": "Tap the row of Jan 09",
      "motion": true,
      "until": "visible:fixture-record",
      "expect": "The entry opens in the side pane; the table stays in place."
@@ -513,8 +515,8 @@
    "steps": [
     {
      "do": "tap",
-     "text": "Carte Restaurant Le Cèdre",
-     "say": "Open the entry of 15/01",
+     "text": "Card The Cedar Diner",
+     "say": "Open the entry of Jan 15",
      "motion": true,
      "until": "visible:fixture-record",
      "expect": "The entry opens."
@@ -522,7 +524,7 @@
     {
      "do": "tap",
      "target": "record-quote",
-     "say": "Tap « Citer dans l’assistant »",
+     "say": "Tap “Quote in the assistant”",
      "motion": true,
      "until": "visible:mention-chip",
      "expect": "A removable chip for the entry appears in the field; the cursor is in the field."
@@ -530,7 +532,7 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Pourquoi cet écart ?",
+     "text": "Why is there a discrepancy?",
      "say": "Type the question"
     },
     {
@@ -555,22 +557,22 @@
      "motion": true,
      "until": "visible:agent-tray|agent-layer[data-state=half]"
     },
-    { "do": "tap", "target": "history-open", "say": "Tap « Historique » in the conversation's header", "motion": true, "until": "visible:conversations & visible:conversation-row[data-active=true]", "expect": "The earlier conversations are listed, the open one marked, with « Nouvelle »." },
-    { "do": "tap", "target": "conversation-row[data-conversation-id=tva]", "say": "Open « TVA du trimestre »", "motion": true, "until": "gone:conversations & text:transcript~4 120,00", "expect": "The list closes and the conversation shows that earlier exchange." },
-    { "do": "tap", "target": "history-open", "say": "Open the list again", "until": "visible:conversation-row[data-conversation-id=tva][data-active=true]", "expect": "« TVA du trimestre » is now the one marked." },
-    { "do": "tap", "target": "conversation-new", "say": "Tap « Nouvelle »", "motion": true, "until": "gone:conversations & eval:!(document.querySelector('[data-testid=transcript]')?.textContent ?? '').includes('4 120,00')", "expect": "An empty conversation starts; the field is still the one at the bottom." },
+    { "do": "tap", "target": "history-open", "say": "Tap “History” in the conversation's header", "motion": true, "until": "visible:conversations & visible:conversation-row[data-active=true]", "expect": "The earlier conversations are listed, the open one marked, with “New”." },
+    { "do": "tap", "target": "conversation-row[data-conversation-id=tva]", "say": "Open “Quarterly sales tax”", "motion": true, "until": "gone:conversations & text:transcript~$4,120.00", "expect": "The list closes and the conversation shows that earlier exchange." },
+    { "do": "tap", "target": "history-open", "say": "Open the list again", "until": "visible:conversation-row[data-conversation-id=tva][data-active=true]", "expect": "“TVA du trimestre” is now the one marked." },
+    { "do": "tap", "target": "conversation-new", "say": "Tap “New”", "motion": true, "until": "gone:conversations & eval:!(document.querySelector('[data-testid=transcript]')?.textContent ?? '').includes('$4,120.00')", "expect": "An empty conversation starts; the field is still the one at the bottom." },
     { "do": "tap", "target": "history-open", "say": "Open the list once more", "until": "visible:conversation-row[data-conversation-id=new-1][data-active=true] & visible:conversation-row[data-conversation-id=tva] & count:conversation-row>=6", "expect": "The new conversation is listed and the earlier one is still there." },
-    { "do": "press", "key": "Escape", "say": "Press Échap", "until": "gone:conversations", "focus": "history-open", "expect": "The list closes and focus is back on « Historique »." }
+    { "do": "press", "key": "Escape", "say": "Press Esc", "until": "gone:conversations", "focus": "history-open", "expect": "The list closes and focus is back on “History”." }
    ]
   },
   {
    "id": "F16",
-   "name": "A file from a reply, closed with Échap",
+   "name": "A file from a reply, closed with Esc",
    "steps": [
-    { "do": "type", "target": "composer-input", "text": "Rapproche le relevé de janvier", "say": "Ask the assistant to reconcile January" },
+    { "do": "type", "target": "composer-input", "text": "Reconcile the January statement", "say": "Ask the assistant to reconcile January" },
     { "do": "tap", "target": "composer-submit", "say": "Send", "until": "visible:agent-card-file", "timeout": 14000, "expect": "The reply cites a file." },
     { "do": "tap", "target": "agent-card-file", "say": "Open the cited file", "motion": true, "until": "visible:artifact-csv", "focus": "agent-preview-title", "expect": "The file opens in the kit's viewer and focus moves to its heading." },
-    { "do": "press", "key": "Escape", "say": "Press Échap", "motion": true, "until": "gone:agent-preview", "focus": "agent-card-file", "expect": "The file closes and focus is back on the chip that opened it (the conversation stayed folded)." }
+    { "do": "press", "key": "Escape", "say": "Press Esc", "motion": true, "until": "gone:agent-preview", "focus": "agent-card-file", "expect": "The file closes and focus is back on the chip that opened it (the conversation stayed folded)." }
    ]
   },
   {
@@ -579,11 +581,11 @@
    "only": "1440",
    "steps": [
     { "do": "tap", "target": "agent-bar-conversation", "say": "Open the conversation", "until": "visible:agent-tray" },
-    { "do": "tap", "target": "agent-layer-library", "say": "Tap « Bibliothèque »", "motion": true, "until": "visible:fixture-library & eval:(window.__pw = document.querySelector('[data-dock=preview]')?.getBoundingClientRect().width ?? 0) > 0", "expect": "The library opens in the right column." },
+    { "do": "tap", "target": "agent-layer-library", "say": "Tap “Library”", "motion": true, "until": "visible:fixture-library & eval:(window.__pw = document.querySelector('[data-dock=preview]')?.getBoundingClientRect().width ?? 0) > 0", "expect": "The library opens in the right column." },
     { "do": "focus", "target": "[role=separator]:has(+ [data-dock=preview])", "say": "Focus the column's edge" },
     { "do": "press", "key": "ArrowLeft ArrowLeft ArrowLeft ArrowLeft", "say": "Widen it with the arrow keys", "until": "eval:(window.__pw2 = document.querySelector('[data-dock=preview]').getBoundingClientRect().width) > window.__pw + 40", "expect": "The column grows; the page beside it narrows." },
-    { "do": "tap", "text": "uploads", "say": "Unfold « uploads »", "until": "text:fixture-library~ecarts-janvier.csv" },
-    { "do": "tap", "text": "ecarts-janvier.csv", "say": "Open « ecarts-janvier.csv »", "motion": true, "until": "visible:artifact-csv & text:agent-preview-title~ecarts-janvier.csv & text:agent-preview-back~Bibliothèque", "expect": "The file opens on top of the library, at the same width." },
+    { "do": "tap", "text": "uploads", "say": "Unfold “uploads”", "until": "text:fixture-library~discrepancies-january.csv" },
+    { "do": "tap", "text": "discrepancies-january.csv", "say": "Open “discrepancies-january.csv”", "motion": true, "until": "visible:artifact-csv & text:agent-preview-title~discrepancies-january.csv & text:agent-preview-back~Library", "expect": "The file opens on top of the library, at the same width." },
     { "do": "tap", "target": "agent-preview-close", "say": "Close it", "until": "gone:agent-preview" },
     { "do": "tap", "target": "agent-layer-library", "say": "Open the library again", "until": "visible:fixture-library & eval:Math.abs(document.querySelector('[data-dock=preview]').getBoundingClientRect().width - window.__pw2) < 2", "expect": "The column comes back at the width I chose." }
    ]
@@ -595,8 +597,8 @@
    "steps": [
     { "do": "tap", "target": "agent-bar-conversation", "say": "Open the conversation", "until": "visible:agent-tray" },
     { "do": "tap", "target": "agent-tray-dock", "say": "Dock it to the right", "motion": true, "until": "visible:agent-layer[data-state=open]" },
-    { "do": "tap", "target": "history-open", "say": "Tap « Historique »", "motion": true, "until": "visible:conversations", "expect": "The list opens in the column, under its header." },
-    { "do": "tap", "target": "conversation-row[data-conversation-id=relance]", "say": "Open « Relances clients de décembre »", "until": "gone:conversations & text:transcript~Trois relances", "expect": "The docked column shows that conversation." }
+    { "do": "tap", "target": "history-open", "say": "Tap “History”", "motion": true, "until": "visible:conversations", "expect": "The list opens in the column, under its header." },
+    { "do": "tap", "target": "conversation-row[data-conversation-id=relance]", "say": "Open “December customer reminders”", "until": "gone:conversations & text:transcript~Three reminders", "expect": "The docked column shows that conversation." }
    ]
   },
   {
@@ -606,7 +608,7 @@
     {
      "do": "attach",
      "target": "composer-bar-attach",
-     "file": "facture-delorme-0112.pdf",
+     "file": "invoice-delmore-0112.pdf",
      "say": "Tap the paperclip and pick a file",
      "motion": true,
      "until": "visible:mention-chip",
@@ -615,7 +617,7 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Peux-tu la rapprocher ?",
+     "text": "Can you reconcile it?",
      "say": "Type the request"
     },
     {
@@ -636,7 +638,7 @@
     {
      "do": "drop",
      "target": "composer",
-     "file": "releve-fevrier.pdf",
+     "file": "statement-february.pdf",
      "phase": "enter",
      "say": "Drag a file over the field",
      "only": "1440",
@@ -646,7 +648,7 @@
     {
      "do": "drop",
      "target": "composer",
-     "file": "releve-fevrier.pdf",
+     "file": "statement-february.pdf",
      "say": "Drop it",
      "only": "1440",
      "motion": true,
@@ -658,30 +660,30 @@
   },
   {
    "id": "F08",
-   "name": "Actions with « / »: filter, choose, cancel",
+   "name": "Actions with “/”: filter, choose, cancel",
    "steps": [
     {
      "do": "type",
      "target": "composer-input",
      "text": "/",
-     "say": "Type « / »",
+     "say": "Type “/”",
      "motion": true,
      "until": "visible:slash-item",
      "expect": "The list of actions opens above the field."
     },
     {
      "do": "type",
-     "text": "rel",
-     "say": "Type « rel »",
+     "text": "rem",
+     "say": "Type “rem”",
      "until": "visible:slash-item",
      "expect": "The list narrows to what matches."
     },
     {
      "do": "tap",
      "target": "slash-item",
-     "say": "Choose « relance »",
+     "say": "Choose “reminder”",
      "motion": true,
-     "until": "value:composer-input~Relance & gone:slash-item",
+     "until": "value:composer-input~Reminder & gone:slash-item",
      "expect": "The text of the action is in the field, the list closes, focus stays in the field."
     },
     {
@@ -694,7 +696,7 @@
      "do": "type",
      "target": "composer-input",
      "text": "/",
-     "say": "Type « / » again"
+     "say": "Type “/” again"
     },
     {
      "do": "press",
@@ -714,7 +716,7 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Prépare la clôture",
+     "text": "Prepare the closing",
      "say": "Ask to prepare the closing"
     },
     {
@@ -728,15 +730,15 @@
     {
      "do": "tap",
      "choice": "2026",
-     "say": "Choose « 2026 »",
+     "say": "Choose “2026”",
      "motion": true,
-     "until": "text:agent-question-step~2 sur 2",
-     "expect": "The second question replaces the first, « 2 sur 2 »."
+     "until": "text:agent-question-step~2 of 2",
+     "expect": "The second question replaces the first, “2 of 2”."
     },
     {
      "do": "tap",
-     "choice": "Achats",
-     "say": "Choose « Achats »",
+     "choice": "Purchases",
+     "say": "Choose “Purchases”",
      "motion": true,
      "until": "gone:agent-question",
      "timeout": 4000,
@@ -752,7 +754,7 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Rappelle-moi la liste des écritures à justifier",
+     "text": "List the entries that need a receipt",
      "say": "Type a free question"
     },
     {
@@ -783,7 +785,7 @@
      "target": "agent-talk-stop",
      "say": "Tap stop",
      "motion": true,
-     "until": "value:composer-input~Texte dicté fictif",
+     "until": "value:composer-input~Dictated text",
      "expect": "The words are in the field for review; nothing is sent."
     },
     {
@@ -818,7 +820,7 @@
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Rapproche le relevé de janvier",
+     "text": "Reconcile the January statement",
      "say": "Ask the assistant to reconcile January"
     },
     {
@@ -842,12 +844,12 @@
   },
   {
    "id": "F12",
-   "name": "A refused send and « Réessayer »",
+   "name": "A refused send and “Retry”",
    "steps": [
     {
      "do": "type",
      "target": "composer-input",
-     "text": "Peux-tu relancer le client Maison Delorme pour la facture de janvier ?",
+     "text": "Can you remind Delmore House about the January invoice?",
      "say": "Type a message"
     },
     {
@@ -866,7 +868,7 @@
     {
      "do": "tap",
      "target": "agent-send-retry",
-     "say": "Tap Réessayer",
+     "say": "Tap Retry",
      "motion": true,
      "until": "gone:agent-send-problem",
      "timeout": 6000,
@@ -1006,15 +1008,15 @@
     },
     {
      "do": "type",
-     "text": "Bonjour",
-     "say": "Type « Bonjour »"
+     "text": "Hello",
+     "say": "Type “Hello”"
     },
     {
      "do": "press",
      "key": "Enter",
      "say": "Press Enter",
      "motion": true,
-     "until": "eval:window.__sent.includes(\"Bonjour\")",
+     "until": "eval:window.__sent.includes(\"Hello\")",
      "timeout": 6000,
      "focus": "composer-input",
      "expect": "The message goes; focus stays in the field."
