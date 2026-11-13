@@ -1,7 +1,7 @@
 import type { Context } from '@earendil-works/chord/context';
 import { diffRevisions } from '@earendil-works/chord/delta';
 import { RequestGuardError, hasJsonContentType, readJsonBody } from '@hachej/boring-files/request-guard';
-import type { Conversation, ConversationView, ConversationWatch, Cursor, EntryId, EntryQuery, EntryRecord, InputSubmissionDraft, SubmissionId, SubmissionRecord, WatchEnd } from '@earendil-works/pi-durable';
+import type { Conversation, ConversationView, ConversationWindow, ConversationWatch, Cursor, EntryId, EntryQuery, EntryRecord, InputSubmissionDraft, SubmissionId, SubmissionRecord, WatchEnd } from '@earendil-works/pi-durable';
 
 /** Wire protocol shared with the browser client in `@hachej/boring-ui-kit/remote-chat`. */
 export const CHAT_TRANSPORT = Object.freeze({ schema: 'boring.chat-transport', version: 1, maxRequestBytes: 8_388_608, maxContextBytes: 4096, maxHistoryPage: 200, maxPendingFrames: 100, heartbeatMs: 15_000 });
@@ -23,6 +23,8 @@ export interface ChatTransportAccess {
    * through it. History pages are projected as a view holding just the page's entries and no documents.
    */
   readonly project?: (view: ConversationView) => ConversationView;
+  /** How much of the transcript a viewer's first view holds (pi-durable's `ConversationWindow`; default the newest 50 entries). Earlier entries come with `loadEarlier`. */
+  readonly window?: ConversationWindow;
   /** Resolve a pending `ask_user` call. The host authenticates the person; without it `?op=answer` is not supported. */
   readonly answer?: (questionId: string, answer: string) => Promise<unknown>;
   /**
@@ -156,7 +158,7 @@ function frameEncoder(project: ((view: ConversationView) => ConversationView) | 
 
 /** Open the conversation watch for an authenticated access, refusing a revoked one. Shared by the HTTP watch and the socket. */
 async function openWatch(access: ChatTransportAccess, signal?: AbortSignal): Promise<ConversationWatch | null> {
-  const watch = await access.conversation.watch(access.context);
+  const watch = await access.conversation.watch(access.context, access.window);
   if (signal?.aborted || access.revoked?.aborted) { await watch.stop(); return null; }
   return watch;
 }
