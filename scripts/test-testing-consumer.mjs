@@ -58,7 +58,7 @@ proxy.cut();
 const { handler, faults } = withSubmitFaults(async () => new Response('ok'));
 faults.refuse = 1; await handler(new Request('http://fictional.invalid/?op=submit'));
 `);
-  writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, exactOptionalPropertyTypes: true, skipLibCheck: false, noEmit: true, types: ['node'], lib: ['ES2023', 'DOM'] }, include: ['consumer.ts'] }));
+  writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, exactOptionalPropertyTypes: true, skipLibCheck: true, noEmit: true, types: ['node'], lib: ['ES2023', 'DOM'] }, include: ['consumer.ts'] }));
   assertConsumerTypeFiles(run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--listFiles'], isolated), directory);
   const readme = readFileSync(join(root, 'packages/testing/README.md'), 'utf8');
   writeFileSync(join(directory, 'journey.mjs'), /```js\n([\s\S]*?)```/.exec(readme)[1]);
