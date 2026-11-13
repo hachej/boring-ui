@@ -7,7 +7,7 @@ Raise every criterion in `{{WT}}/ux/CRITERIA.md` to 9, for the target {{TARGET}}
 
 ## What you can and cannot do
 You cannot run a browser, you cannot start the contract tests (they need one), and you cannot commit. Edit files; that is all. The loop runs the checks after you, captures the result, shows it to you next round, and commits the round for you.
-- Your eyes are in `{{EYES}}`: `capture/` is the last accepted capture of the target (pictures of every state, a strip per flow at 1440 and 390 px, `metrics.json` per flow with layout-shift numbers and touch-target sizes, the judge's `verdict.md` and `verdict.json`), `check-lines.txt` is the list of failing check lines (the loop refuses a round that makes it longer), and `last-failure.txt` (when present) says why the previous round was discarded.
+- Your eyes are in `{{EYES}}`: `capture/` is the last accepted capture of the target (pictures of every state, a strip per flow at 1440 and 390 px, `metrics.json` per flow with layout-shift numbers and touch-target sizes, the judge's `verdict.md` and `verdict.json`), `check-lines.txt` is the list of failing check lines (the loop does not veto a round on these numbers; a step that completed before and no longer does is vetoed, and the judge weighs the rest), and `last-failure.txt` (when present) says why the previous round was discarded.
 - After your pass the loop runs `npm run registry:build` (when registry sources changed), `npm run check`, the contract tests, the harness check and a capture. If one fails you get its full output (test name, assertion, file and line) once, to repair, in this same round. If it still fails, your edits are discarded and the round is recorded as failed.
 - The loop refuses a round, and discards it, when you touch the exam: `ux/runner/`, `ux/scenarios/`, `test/contracts/`, the acceptance contract, `ux/CRITERIA.md`, `ux/judge-prompt.md`, this brief, `package.json`. A round that lowers the judge's lowest criterion is discarded too.
 
@@ -23,7 +23,7 @@ You cannot run a browser, you cannot start the contract tests (they need one), a
 - French UI words stay overridable (`agent.words`, labels props).
 - If a flow is impossible because the kit lacks a component (a `gap` step), do NOT invent a component: write it under "Gaps" in changes.md with the closest thing you can do with what exists, and do that.
 - You may add interaction polish with the kit's own means: focus management, scroll restoration, selected states, transitions, keyboard shortcuts that are already in the contract.
-- The loop will run `{{TEST_CMD}}`, `npm run check` and `node ux/runner/cli.mjs check --target {{TARGET}}` after you (the last must not get worse: it is the harness's no-model gate). Read the tests and the check's code to see what they assert, and keep them green by reading, not by running. Never "fix" a red test by editing the test.
+- The loop will run `{{TEST_CMD}}`, `npm run check` and `node ux/runner/cli.mjs check --target {{TARGET}}` after you (its numbers go to the judge; a step that stops completing vetoes the round). Read the tests and the check's code to see what they assert, and keep them green by reading, not by running. Never "fix" a red test by editing the test.
 - Do not commit and do not build the registry yourself: leave the files edited; the loop builds and commits.
 
 ## Inputs for this round
