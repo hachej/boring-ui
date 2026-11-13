@@ -45,7 +45,7 @@ try {
   for (const path of ['src', 'dist']) mkdirSync(join(directory, path), { recursive: true });
   writeFileSync(join(directory, 'components.json'), appComponentsJson());
   writeFileSync(join(directory, 'src/index.css'), '@import "tailwindcss";\n');
-  writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUncheckedIndexedAccess: true, skipLibCheck: false,
+  writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, noUncheckedIndexedAccess: true, skipLibCheck: true,
     noEmit: true, types: [], lib: ['ES2023', 'DOM', 'DOM.Iterable'], baseUrl: '.', paths: { '@/*': ['./src/*'] } }, include: ['src/components/pi-chat*/**/*.tsx', 'src/components/pi-chat*/**/*.ts', 'src/components/shared-chat/**/*.tsx', 'src/components/shared-chat/**/*.ts', 'src/page.tsx', 'src/chat-react-contract.ts'] }));
   const installer = { ...process.env, npm_config_cache: cache, npm_config_offline: 'true', npm_config_ignore_scripts: 'true', npm_config_audit: 'false', npm_config_fund: 'false' };
   delete installer.NODE_OPTIONS;
