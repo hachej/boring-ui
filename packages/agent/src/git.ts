@@ -1,6 +1,7 @@
 import type { GitRepository } from '@hachej/boring-files/git';
 import { defineTool } from '@earendil-works/pi-durable';
 import { workspaceFor } from './workspaces.js';
+import { lit, obj, str, union } from '@earendil-works/pi-schema';
 
 type DiffVersion = { readonly oid: string; readonly mode: number; readonly bytes: Uint8Array } | null;
 /** Model-facing form of a diff side: decoded text, or a binary marker without the bytes. */
@@ -17,12 +18,12 @@ function readable(version: DiffVersion) {
  * harness serves a repository per person. Git mutations have no replay receipts.
  */
 export function createGitTool(repository?: GitRepository) {
-  const view = { anyOf: [{ type: 'object', properties: { kind: { type: 'string', const: 'tree' }, ref: { type: 'string', minLength: 1 } }, required: ['kind', 'ref'], additionalProperties: false }, { type: 'object', properties: { kind: { anyOf: [{ type: 'string', const: 'index' }, { type: 'string', const: 'worktree' }] } }, required: ['kind'], additionalProperties: false }] };
+  const view = union([obj({ kind: lit('tree'), ref: str({ minLength: 1 }) }), obj({ kind: union([lit('index'), lit('worktree')]) })]);
   return defineTool({
     name: 'working_git',
     description: 'Operate on the bound working repository. Removal affects only the index. Mutations may leave partial effects and are not publication.',
     replay: 'unsafe',
-    parameters: { anyOf: [{ type: 'object', properties: { operation: { anyOf: [{ type: 'string', const: 'init' }, { type: 'string', const: 'status' }, { type: 'string', const: 'log' }, { type: 'string', const: 'branches' }] } }, required: ['operation'], additionalProperties: false }, { type: 'object', properties: { operation: { anyOf: [{ type: 'string', const: 'add' }, { type: 'string', const: 'remove' }] }, path: { type: 'string', minLength: 1 } }, required: ['operation', 'path'], additionalProperties: false }, { type: 'object', properties: { operation: { type: 'string', const: 'commit' }, message: { type: 'string', minLength: 1 } }, required: ['operation', 'message'], additionalProperties: false }, { type: 'object', properties: { operation: { anyOf: [{ type: 'string', const: 'branch' }, { type: 'string', const: 'checkout' }] }, ref: { type: 'string', minLength: 1 } }, required: ['operation', 'ref'], additionalProperties: false }, { type: 'object', properties: { operation: { type: 'string', const: 'diff' }, before: view, after: view }, required: ['operation', 'before', 'after'], additionalProperties: false }] } as const,
+    parameters: union([obj({ operation: union([lit('init'), lit('status'), lit('log'), lit('branches')]) }), obj({ operation: union([lit('add'), lit('remove')]), path: str({ minLength: 1 }) }), obj({ operation: lit('commit'), message: str({ minLength: 1 }) }), obj({ operation: union([lit('branch'), lit('checkout')]), ref: str({ minLength: 1 }) }), obj({ operation: lit('diff'), before: view, after: view })]),
     execute: async (args, api, context) => {
       const resolved = repository === undefined ? await workspaceFor(undefined, api, context) : undefined;
       const selected = repository ?? (resolved && 'binding' in resolved ? resolved.binding.repository : undefined);

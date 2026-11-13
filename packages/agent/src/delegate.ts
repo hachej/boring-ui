@@ -1,7 +1,8 @@
 import { AgentDoc, AssistantEntry, LiveDoc, UsageDoc, configure, defineTool } from '@earendil-works/pi-durable';
 import type { AgentChange, ConversationId, Cursor, EntryId, Extension, LiveState, TaskId, ToolExecutionApi, ToolRegistration, Tx } from '@earendil-works/pi-durable';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import type { Usage } from '@earendil-works/pi-ai';
+import { obj, str } from '@earendil-works/pi-schema';
 
 const GUARDS: WeakSet<object> = ((globalThis as Record<symbol, WeakSet<object>>)[Symbol.for('boring.agent.guards')] ??= new WeakSet()); // approval + sandbox extensions: a delegated child inherits them
 const isGuard = (extension: object): boolean => GUARDS.has(extension);
@@ -146,7 +147,7 @@ export function createDelegateTool(options: DelegateOptions): ToolRegistration {
   return defineTool({
     name,
     description: options.description ?? `Delegate a self-contained task to the ${options.agent.id} agent and get its final answer back.`,
-    parameters: { type: 'object', properties: { task: { type: 'string', minLength: 1, description: 'The complete task; the agent sees nothing else of this conversation.' } }, required: ['task'], additionalProperties: false } as const,
+    parameters: obj({ task: str({ minLength: 1, description: 'The complete task; the agent sees nothing else of this conversation.' }) }),
     replay: 'safe',
     execute: async (args, api, context) => {
       const inherited = (await api.agent(context)).extensions.filter(isGuard);
@@ -282,8 +283,9 @@ async function publishLive(api: ToolExecutionApi, childId: ConversationId, progr
       committing = publish(counts).catch(() => undefined);
     }
   };
-  watch.start(async value => {
-    const next = runShape(value);
+  watch.start(async call => {
+    if (call.kind !== 'value') return;
+    const next = runShape(call.value);
     if (stopped || next === shape) return;
     shape = next;
     dirty = true;

@@ -1,8 +1,9 @@
 import { defineDoc, defineExtension, defineTask, defineTool } from '@earendil-works/pi-durable';
 import type { ConversationId, DocumentReader, Extension, TaskId, TaskInspection, TaskRuntime, Tx } from '@earendil-works/pi-durable';
 import { withAbortSignal } from '@earendil-works/chord/context';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { waitUntil } from './wait-until.js';
+import { int, obj, opt, str } from '@earendil-works/pi-schema';
 
 export const SCHEDULE_TOOL = 'schedule';
 export const LIST_SCHEDULES_TOOL = 'list_schedules';
@@ -43,7 +44,7 @@ async function sleepUnlessCancelled(runtime: TaskRuntime<DeliveryInput, Delivery
   const cancel = new AbortController();
   try {
     if (cancelledIn(watch.value)) return true;
-    watch.start(async value => { if (cancelledIn(value)) cancel.abort(); });
+    watch.start(async call => { if (call.kind === 'value' && cancelledIn(call.retired ? null : call.value)) cancel.abort(); });
     const wait = waitUntil(runtime, input.runAt, withAbortSignal(cancel.signal, context));
     try { await wait.done; } finally { wait.disarm(); }
     return false;
@@ -160,7 +161,7 @@ export function createScheduleExtension(options: ScheduleExtensionOptions = {}):
   const schedule = defineTool({
     name: SCHEDULE_TOOL,
     description: 'Schedule an instruction for this conversation at a later time. When it is due, the conversation receives the instruction and carries it out. Give exactly one of delaySeconds or at.',
-    parameters: { type: 'object', properties: { instruction: { type: 'string', minLength: 1, maxLength: MAX_INSTRUCTION, description: 'What to do when it is due, as a self-contained request without timing words.' }, delaySeconds: { type: 'integer', minimum: 1, maximum: maxDelay }, at: { type: 'string', description: 'ISO 8601 date-time with a timezone offset, for example 2026-11-01T09:00:00+01:00.' }, operationId: { type: 'string', minLength: 1, maxLength: 200, description: 'Idempotency key: the same key returns the existing schedule.' } }, required: ['instruction'], additionalProperties: false } as const,
+    parameters: obj({ instruction: str({ minLength: 1, maxLength: MAX_INSTRUCTION, description: 'What to do when it is due, as a self-contained request without timing words.' }), delaySeconds: opt(int({ minimum: 1, maximum: maxDelay })), at: opt(str({ description: 'ISO 8601 date-time with a timezone offset, for example 2026-11-01T09:00:00+01:00.' })), operationId: opt(str({ minLength: 1, maxLength: 200, description: 'Idempotency key: the same key returns the existing schedule.' })) }),
     replay: 'safe',
     execute: async (args, api, context) => {
       const time = now();
@@ -182,7 +183,7 @@ export function createScheduleExtension(options: ScheduleExtensionOptions = {}):
   const list = defineTool({
     name: LIST_SCHEDULES_TOOL,
     description: 'List the pending schedules of this conversation.',
-    parameters: { type: 'object', properties: {  }, additionalProperties: false } as const,
+    parameters: obj({  }),
     replay: 'safe',
     execute: async (_args, api, context) => {
       const items = (await listSchedules(api, api.conversationId, context)).map(describe);
@@ -192,7 +193,7 @@ export function createScheduleExtension(options: ScheduleExtensionOptions = {}):
   const cancel = defineTool({
     name: CANCEL_SCHEDULE_TOOL,
     description: 'Cancel a pending schedule of this conversation by its id.',
-    parameters: { type: 'object', properties: { id: { type: 'string', minLength: 1 } }, required: ['id'], additionalProperties: false } as const,
+    parameters: obj({ id: str({ minLength: 1 }) }),
     replay: 'safe',
     execute: async (args, api, context) => {
       const cancelled = await api.commit(tx => cancelSchedule(tx, api.conversationId, args.id), context);

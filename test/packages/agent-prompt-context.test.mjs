@@ -44,7 +44,7 @@ const contextMessages = messages => messages.filter(message => message.role === 
 /** A harness over one model. `install` adds the extensions to its registry, as a host does before opening conversations. */
 async function open(models, { reports = [] } = {}) {
   const registry = createRegistry();
-  const harness = await Harness.open(new MemoryStorage(), { registry, models, settings: { retry: { baseDelayMs: 1, maxRetries: 2 } }, onReport: error => reports.push(error) }, context);
+  const harness = await Harness.open(new MemoryStorage(), { registry, models, settings: { retry: { baseDelayMs: 1, maxRetries: 2 } }, onReport: report => reports.push(report.error) }, context);
   harness.resume();
   return { harness, registry, reports };
 }

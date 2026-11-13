@@ -2,7 +2,7 @@
 // acted (`user`) and what may be kept (`redact`); this module only observes native tool calls through the `afterTool` hook.
 import { ToolTask, defineExtension, hook } from '@earendil-works/pi-durable';
 import type { Extension, ToolExecutionResult } from '@earendil-works/pi-durable';
-import type { JsonValue } from '@earendil-works/chord';
+import type { JsonValue } from '@earendil-works/chord/json';
 
 /** One finished tool call. `id` is stable for the call: a call replayed by recovery reports the same `id`, so the sink can drop it. */
 export interface AuditRecord {

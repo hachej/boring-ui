@@ -1,8 +1,8 @@
 // Pi's `FileSystem.watch` over the remote-files wire: one streamed request per watcher. The worker's native watcher pushes changes
 // into a bounded queue; a full queue or an oversized frame collapses into `overflow`, which Pi defines as "rescan everything watched".
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { FileError, ok } from '@earendil-works/pi-durable/env';
-import type { FileSystem, FileWatcher, Result, WatchChange, WatchTarget } from '@earendil-works/pi-durable/env';
+import type { FileChange, FileSystem, FileWatcher, Result, WatchTarget } from '@earendil-works/pi-durable/env';
 import { parseWatchChange, streamFrame, streamType, wireWatchChange } from './remote-files-protocol.js';
 
 const maxQueuedChanges = 256;
@@ -26,15 +26,15 @@ export interface ServeWatch {
 
 /** Start the native watcher. A failure to establish coverage is a normal result; otherwise a stream response that owns the watcher. */
 export async function serveWatch(o: ServeWatch): Promise<Result<Response, FileError>> {
-  const queue: WatchChange[] = [];
+  const queue: FileChange[] = [];
   let wake: (() => void) | undefined, ended = false, finished = false;
   // A native `error` ends the watcher and must reach the client whatever happened to the queued events before it.
-  let terminal: { error: FileError } | undefined;
+  let terminal: Extract<FileChange, { kind: 'failed' }> | undefined;
   const signal = o.context.abortSignal;
-  const push = (change: WatchChange): void => {
+  const push = (change: FileChange): void => {
     if (ended || terminal !== undefined) return;
-    if ('error' in change) terminal = change;
-    else if (queue.length >= maxQueuedChanges) { queue.length = 0; queue.push({ overflow: true }); }
+    if (change.kind === 'failed') terminal = change;
+    else if (queue.length >= maxQueuedChanges) { queue.length = 0; queue.push({ kind: 'overflow' }); }
     else queue.push(change);
     wake?.();
   };
@@ -44,7 +44,7 @@ export async function serveWatch(o: ServeWatch): Promise<Result<Response, FileEr
   let closing: Promise<void> | undefined;
   const close = (): Promise<void> => closing ??= (async () => {
     ended = true; wake?.();
-    try { await watcher.close(o.cleanup); } finally { await o.release(); }
+    try { await watcher.stop(o.cleanup); } finally { await o.release(); }
   })();
   let controller: ReadableStreamDefaultController<Uint8Array>;
   let sequence = 1;
@@ -54,17 +54,17 @@ export async function serveWatch(o: ServeWatch): Promise<Result<Response, FileEr
     controller.error(new Error('Remote file watch interrupted'));
     void close().catch(error => o.onCleanupError?.(error));
   };
-  const frameFor = (change: WatchChange): Uint8Array => {
-    const frame = (value: WatchChange) => encode({ requestId: o.requestId, sequence, type: 'change', change: wireWatchChange(value) });
+  const frameFor = (change: FileChange): Uint8Array => {
+    const frame = (value: FileChange) => encode({ requestId: o.requestId, sequence, type: 'change', change: wireWatchChange(value) });
     const bytes = frame(change);
     if (bytes.length <= o.maxFrameBytes) return bytes;
-    if ('error' in change) {
+    if (change.kind === 'failed') {
       // Never turn a terminal error into an event: bound its text, then fall back to a fixed message.
-      const bounded = (limit: number): WatchChange => ({ error: new FileError(change.error.code, change.error.message.slice(0, limit), change.error.path === undefined ? undefined : change.error.path.slice(0, limit)) });
+      const bounded = (limit: number): FileChange => ({ kind: 'failed', error: new FileError(change.error.code, change.error.message.slice(0, limit), change.error.path === undefined ? undefined : change.error.path.slice(0, limit)) });
       for (const limit of [512, 64]) { const shorter = frame(bounded(limit)); if (shorter.length <= o.maxFrameBytes) return shorter; }
-      return frame({ error: new FileError('unknown', 'Watcher failed') });
+      return frame({ kind: 'failed', error: new FileError('unknown', 'Watcher failed') });
     }
-    return frame({ overflow: true });
+    return frame({ kind: 'overflow' });
   };
   const body = new ReadableStream<Uint8Array>({
     start(value) {
@@ -83,7 +83,7 @@ export async function serveWatch(o: ServeWatch): Promise<Result<Response, FileEr
         if (!await o.permitted()) { interrupt(); return; }
         controller.enqueue(frameFor(change)); sequence++;
         // Pi: after an `error` change no calls follow.
-        if ('error' in change) {
+        if (change.kind === 'failed') {
           finished = true; signal?.removeEventListener('abort', interrupt);
           await close(); controller.enqueue(encode({ requestId: o.requestId, sequence: sequence++, type: 'end' })); controller.close();
         }
@@ -99,11 +99,11 @@ export function watcherFromFrames(options: {
   readonly mode: 'native' | 'polling';
   readonly next: () => Promise<unknown>;
   readonly requestId: string;
-  readonly onChange: (change: WatchChange) => void;
+  readonly onChange: (change: FileChange) => void;
   readonly dispose: () => Promise<void>;
 }): FileWatcher {
   let stopped = false;
-  const deliver = (change: WatchChange): void => { if (!stopped) { try { options.onChange(change); } catch { /* a throwing listener must not stop the watcher */ } } };
+  const deliver = (change: FileChange): void => { if (!stopped) { try { options.onChange(change); } catch { /* a throwing listener must not stop the watcher */ } } };
   void (async () => {
     let sequence = 1;
     try {
@@ -118,13 +118,13 @@ export function watcherFromFrames(options: {
         if (frame.type !== 'change') throw new TypeError('Unexpected watch frame');
         const change = parseWatchChange(frame.change);
         deliver(change);
-        if ('error' in change) { stopped = true; await options.dispose(); return; }
+        if (change.kind === 'failed') { stopped = true; await options.dispose(); return; }
       }
     } catch {
       if (stopped) return;
-      deliver({ error: new FileError('unknown', 'Remote file watch was interrupted') });
+      deliver({ kind: 'failed', error: new FileError('unknown', 'Remote file watch was interrupted') });
       stopped = true; await options.dispose();
     }
   })();
-  return { mode: options.mode, close: async () => { stopped = true; await options.dispose(); } };
+  return { mode: options.mode, stop: async () => { stopped = true; await options.dispose(); } };
 }

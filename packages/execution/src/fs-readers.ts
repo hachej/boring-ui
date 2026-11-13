@@ -4,7 +4,7 @@
 // readers, which `remote-files-positional.ts` forwards without moving the whole file.
 import { FileError, LineScanner, ok, err } from '@earendil-works/pi-durable/env';
 import type { BinaryReader, DirReader, FileInfo, FileSystem, FileWatcher, Result } from '@earendil-works/pi-durable/env';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 
 type Source = Pick<FileSystem, 'readBinaryFile' | 'fileInfo' | 'listDir' | 'canonicalPath'>;
 

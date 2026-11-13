@@ -172,11 +172,11 @@ test('OptChat memory is opt-in per conversation: the request carries the view an
   harness = await Harness.open(new MemoryStorage(), { registry, models }, context);
   t.after(async () => { await memory.dispose(); await harness.close(context); });
   // Watch Pi's task graph: summaries must show up as native, background, conversation-owned tasks.
-  const graph = await harness.taskGraph(context);
+  const graph = await harness.watchTaskGraph(context);
   const nodeTasks = new Map();
   const watchGraph = value => { for (const node of Object.values(value.tasks)) if (node.kind === 'boring.memory.optchat.node') nodeTasks.set(node.id, { background: node.background, owner: node.owner, status: node.state.status }); };
-  graph.subscribe(watchGraph); watchGraph(graph.value);
-  t.after(() => graph.dispose());
+  graph.start(async call => { if (call.kind === 'value') watchGraph(call.value); }); watchGraph(graph.value);
+  t.after(() => graph.stop());
   const conversation = await harness.root(context, { agent: { model: { provider: 'scripted', modelId: 'scripted' }, extensions: [plain], instructions: 'Be brief.' } });
   harness.resume();
   const say = async text => { await (await conversation.submit({ type: 'input', content: text }, context)).wait(context); return requests.length; };
@@ -292,7 +292,7 @@ test('OptChat summary tasks are Pi\'s: pending ones survive a reopen and are fin
 });
 
 /** A scripted provider (default `Noted.`), so a conversation can run without a real model. */
-async function answeringModels(capture = () => {}, answer = 'Noted.', usage) {
+async function answeringModels(capture = () => {}, answer = 'Noted.', usage, fail = false) {
   const { createProvider } = await import('@earendil-works/pi-ai/models');
   const { createAssistantMessageEventStream } = await import('@earendil-works/pi-ai/utils/event-stream');
   const MODEL = { id: 'scripted', name: 'Scripted', provider: 'scripted', api: 'scripted-api', baseUrl: 'https://fixture.invalid', input: ['text'], reasoning: false, contextWindow: 200000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
@@ -300,7 +300,10 @@ async function answeringModels(capture = () => {}, answer = 'Noted.', usage) {
     capture(structuredClone(request));
     const events = createAssistantMessageEventStream();
     const message = { role: 'assistant', content: [{ type: 'text', text: typeof answer === 'function' ? answer(request) : answer }], api: MODEL.api, provider: MODEL.provider, model: MODEL.id, timestamp: Date.now(), stopReason: 'stop', usage: usage?.() ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
-    setTimeout(() => { events.push({ type: 'start', partial: message }); events.push({ type: 'done', reason: 'stop', message }); events.end(message); }, 5);
+    setTimeout(() => {
+      if (fail) { const failed = { ...message, content: [], stopReason: 'error', errorMessage: 'Fictional model failure.' }; events.push({ type: 'start', partial: failed }); events.push({ type: 'error', reason: 'error', error: failed }); events.end(failed); return; }
+      events.push({ type: 'start', partial: message }); events.push({ type: 'done', reason: 'stop', message }); events.end(message);
+    }, 5);
     return events;
   };
   const models = createModels();
@@ -1210,16 +1213,17 @@ for (const phase of ['interrupt', 'settle']) test(`metering: a run killed ${phas
   assert.deepEqual(open, { userId: 'fictional-person', workspaceId: 'fictional-workspace', attributes: { plan: 'fictional-free' }, requestId: 'fictional-request', runId: open.runId, reservationId: open.runId });
   assert.equal(result.record.status, 'done');
   if (phase === 'interrupt') {
-    // The lost attempt's usage is unknown (an aborted partial): the run is charged its hold, which covers the retried answer's 2000.
-    assert.deepEqual(result.runs.map(run => [run.state, run.reason]), [['charged', 'fallback-charge']]);
-    assert.equal(result.charges.reduce((sum, charge) => sum + charge.amount, 0), 5000);
+    // pi-durable 1.5 stores a streamed partial only with the next commit, so a kill mid-generation leaves no aborted attempt behind: the retried
+    // answer is the run's only model call and its recorded usage (2000) is what is settled (on 1.4 the lost partial charged the whole hold, 5000).
+    assert.deepEqual(result.runs.map(run => [run.state, run.reason]), [['settled', 'done']]);
+    assert.equal(result.charges.reduce((sum, charge) => sum + charge.amount, 0), 2000);
     assert.equal(result.calls, 1, 'the model answered once after recovery');
   } else {
     assert.deepEqual(result.runs.map(run => [run.state, run.reason]), [['settled', 'done']]);
     assert.equal(result.charges.length, 1, 'the recorded usage was replayed under its key, not charged again');
     assert.equal(result.calls, 0, 'nothing ran again');
   }
-  const left = phase === 'interrupt' ? 95_000 : 98_000;
+  const left = 98_000;
   assert.deepEqual(result.balance, { balanceMicros: left, heldMicros: 0, availableMicros: left });
 });
 
@@ -1445,7 +1449,8 @@ test('OptChat emitted placeholders and fold survive cache eviction and SQLite re
     const memory = createOptChatMemory({ harness: () => harness, context, nodeBytes: 100, viewBytes: 800, settleTimeoutMs: 5,
       summarizer: { summarize: async () => { if (blocked) await release.promise; return '~ fictional settled summary'; } } });
     const registry = createRegistry(); registry.install(memory.extension);
-    harness = await Harness.open(await openNodeSqliteStorage(join(directory, 'session.sqlite')), { registry, models: await answeringModels(request => requests.push(request)) }, context);
+    // 1.5 sends no request for a conversation that ends in an answer, so the model here fails: the turn stays unanswered and every generation sends its view again.
+    harness = await Harness.open(await openNodeSqliteStorage(join(directory, 'session.sqlite')), { registry, models: await answeringModels(request => requests.push(request), 'Noted.', undefined, true), settings: { retry: { baseDelayMs: 1, maxRetries: 0 } } }, context);
     return { harness, memory };
   };
   let current = await open();

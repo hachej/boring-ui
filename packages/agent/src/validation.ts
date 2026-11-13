@@ -1,7 +1,8 @@
 import { defineExtension, defineTask } from '@earendil-works/pi-durable';
 import type { EntryId, Harness, TaskId } from '@earendil-works/pi-durable';
-import type { Context, JsonValue } from '@earendil-works/chord';
-import { isJsonValue } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
+import type { JsonValue } from '@earendil-works/chord/json';
+import { isJsonValue } from '@earendil-works/chord/json';
 import { readToolEvidence } from './tool-evidence.js';
 import type { NativeToolEvidence } from './tool-evidence.js';
 export type { NativeToolEvidence } from './tool-evidence.js';

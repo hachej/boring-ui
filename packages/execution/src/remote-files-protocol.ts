@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { FileError, ok, err } from '@earendil-works/pi-durable/env';
-import type { FileInfo, FileSystem, Result, WatchChange, WatchTarget } from '@earendil-works/pi-durable/env';
-import type { Context } from '@earendil-works/chord';
+import type { FileChange, FileInfo, FileSystem, Result, WatchTarget } from '@earendil-works/pi-durable/env';
+import type { Context } from '@earendil-works/chord/context';
 import { identity, nativeVersion } from './remote-shell-protocol.js';
 export { identity, sameIdentity, positiveLimit, nativeVersion } from './remote-shell-protocol.js';
 
@@ -109,10 +109,16 @@ const watchChange = z.union([
   z.strictObject({ overflow: z.literal(true) }),
   z.strictObject({ error: fileError }).transform(value => ({ error: new FileError(value.error.code, value.error.message, value.error.path) })),
 ]);
-export function parseWatchChange(value: unknown): WatchChange { return watchChange.parse(value) as WatchChange; }
-export function wireWatchChange(change: WatchChange): unknown {
-  if ('error' in change) return { error: { code: change.error.code, message: change.error.message, ...(change.error.path === undefined ? {} : { path: change.error.path }) } };
-  return change;
+/** The wire carries a change untagged (`{ paths }`, `{ overflow: true }`, `{ error }`); Pi's `FileChange` is tagged by `kind`. */
+export function parseWatchChange(value: unknown): FileChange {
+  const change = watchChange.parse(value);
+  if ('paths' in change) return { kind: 'paths', paths: change.paths };
+  if ('overflow' in change) return { kind: 'overflow' };
+  return { kind: 'failed', error: change.error };
+}
+export function wireWatchChange(change: FileChange): unknown {
+  if (change.kind === 'failed') return { error: { code: change.error.code, message: change.error.message, ...(change.error.path === undefined ? {} : { path: change.error.path }) } };
+  return change.kind === 'paths' ? { paths: change.paths } : { overflow: true };
 }
 export const streamFrame = z.discriminatedUnion('type', [
   z.strictObject({ ...binding, sequence: z.literal(0), type: z.literal('opened'), mode: z.enum(['native', 'polling']).optional() }),

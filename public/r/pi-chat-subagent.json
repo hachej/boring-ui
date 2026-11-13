@@ -5,7 +5,7 @@
   "description": "The card for a tool call that ran a sub-agent (`delegate`, and the run card of a started run). Plug it in with `cards={{ subagent: subagentCard }}`; without it the call is an ordinary tool step.",
   "dependencies": [
     "react@^19.0.0",
-    "@earendil-works/pi-ai@~1.4.0"
+    "@earendil-works/pi-ai@~1.5.2"
   ],
   "registryDependencies": [
     "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.85/r/pi-chat.json",

@@ -1,7 +1,7 @@
 import { defineDoc } from '@earendil-works/pi-durable';
 import type { CommitPublication, Conversation, ConversationId, ConversationInit, Cursor, EntryId, EntryRecord, Harness } from '@earendil-works/pi-durable';
 import type { Message } from '@earendil-works/pi-ai';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { RequestGuardError, hasJsonContentType, readJsonBody } from '@hachej/boring-files/request-guard';
 import { MENTION_FILE_PREFIX } from './mentions.js';
 import { withoutTarget } from './target-block.js';
@@ -237,7 +237,8 @@ export function createConversations(options: ConversationsOptions): Conversation
     }
     if (found && !scheduled) { scheduled = true; chain = chain.then(drain); }
   };
-  const unsubscribe = harness.subscribeCommits(observe);
+  const observation = harness.observeCommits({ advance: observe, end: () => {} });
+  const unsubscribe = () => observation.detach();
   const unsubscribeClose = harness.subscribeClose(() => { unsubscribe(); });
 
   async function derive(conversation: Conversation): Promise<{ title?: string; last?: string }> {

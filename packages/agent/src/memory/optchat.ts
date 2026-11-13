@@ -9,7 +9,8 @@
 // Idea, algorithm and prompts: Victor Taelin's OptChat, https://gist.github.com/VictorTaelin/91837951a5ce5b38f341ec1ba1df6449
 import { CompactionTask, GenerationTask, defineDoc, defineDocFamily, defineExtension, defineTask, defineTool, hook, section } from '@earendil-works/pi-durable';
 import type { Conversation, ConversationId, Extension, Harness, ModelRef, TaskId, Tx } from '@earendil-works/pi-durable';
-import type { Context, JsonRepresentation } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
+import type { JsonRepresentation } from '@earendil-works/chord/json';
 import { withAbortSignal, withCancel } from '@earendil-works/chord/context';
 import type { Message, Models, Usage, UserMessage } from '@earendil-works/pi-ai';
 import {
@@ -17,6 +18,7 @@ import {
   nodeKey, openParts, partStart, renderView, scaleLine, span, viewDoc, zoomText,
 } from './optchat-core.js';
 import type { Leaf, StoredNode, ViewFold } from './optchat-core.js';
+import { int, obj } from '@earendil-works/pi-schema';
 
 export { DEFAULTS as OPTCHAT_DEFAULTS, PLACEHOLDER as OPTCHAT_PLACEHOLDER, compactPrompt, viewDoc } from './optchat-core.js';
 export { OptChatLog, OptChatTree, advanceFold, emptyFold, leavesOf, renderView, zoomText, dateText } from './optchat-core.js';
@@ -652,14 +654,14 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
   const zoomTool = defineTool({
     name: 'zoom',
     description: 'Open the line id+n of the view into the two lines of n/2 under it; n = 1 gives the message whole.',
-    parameters: { type: 'object', properties: { id: { type: 'integer', minimum: 0 }, n: { type: 'integer', minimum: 1 } }, required: ['id', 'n'], additionalProperties: false } as const,
+    parameters: obj({ id: int({ minimum: 0 }), n: int({ minimum: 1 }) }),
     replay: 'safe',
     execute: async ({ id, n }, api) => text(zoomText((await refresh(api.conversationId)).tree, id, n)),
   });
   const dateTool = defineTool({
     name: 'date',
     description: 'The date and time of message id.',
-    parameters: { type: 'object', properties: { id: { type: 'integer', minimum: 0 } }, required: ['id'], additionalProperties: false } as const,
+    parameters: obj({ id: int({ minimum: 0 }) }),
     replay: 'safe',
     execute: async ({ id }, api) => text(dateText((await refresh(api.conversationId)).log, id)),
   });

@@ -1,6 +1,6 @@
 import { defineTool } from '@earendil-works/pi-durable';
 import type { ToolRegistration } from '@earendil-works/pi-durable';
-import type { JsonValue } from '@earendil-works/chord';
+import type { JsonValue } from '@earendil-works/chord/json';
 
 /** A JSON Schema for a tool's arguments: an object schema, as providers require. */
 export interface JsonObjectSchema {

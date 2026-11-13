@@ -137,14 +137,14 @@ test('the SQLite file system notifies its watchers of its own writes at once, an
   let wake;
   const watcher = await fs.watch([{ path: '/workspace', recursive: true }], change => { reported.push(change); wake?.(); }, BACKGROUND_CONTEXT);
   assert.equal(watcher.ok, true);
-  t.after(() => watcher.value.close(BACKGROUND_CONTEXT));
+  t.after(() => watcher.value.stop(BACKGROUND_CONTEXT));
   const started = Date.now();
   const arrived = new Promise(resolve => { wake = resolve; });
   await write('pushed.md', 'now');
   await within(arrived, 500, 'the push notification (the polling interval is one second)');
   assert.ok(Date.now() - started < 500);
   // The first write also creates the workspace directory, which is reported as changed too.
-  assert.deepEqual(reported, [{ paths: ['/workspace', '/workspace/pushed.md'] }]);
+  assert.deepEqual(reported, [{ kind: 'paths', paths: ['/workspace', '/workspace/pushed.md'] }]);
   // Through the provider: a write by the SQLite file system (bash in the virtual workspace writes this way) reaches the feed.
   const abort = new AbortController();
   const iterator = provider.changes({ signal: abort.signal }, access)[Symbol.asyncIterator]();
@@ -312,11 +312,11 @@ test('the SQLite watcher reports a rewrite with the same size in the same millis
   t.mock.method(Date, 'now', () => 1_800_000_000_000);
   await f.write('same.md', 'one');
   const seen = [];
-  const watcher = await f.fs.watch([{ path: '/workspace', recursive: true }], change => { if ('paths' in change) seen.push(...change.paths); }, BACKGROUND_CONTEXT);
+  const watcher = await f.fs.watch([{ path: '/workspace', recursive: true }], change => { if (change.kind === 'paths') seen.push(...change.paths); }, BACKGROUND_CONTEXT);
   assert.equal(watcher.ok, true);
   await f.write('same.md', 'two');
   await within((async () => { while (!seen.includes('/workspace/same.md')) await new Promise(resolve => setTimeout(resolve, 5)); })(), 500, 'the rewrite notification');
-  await watcher.value.close(BACKGROUND_CONTEXT);
+  await watcher.value.stop(BACKGROUND_CONTEXT);
 });
 
 test('an agent write seen by both the watcher and record is one change event', async t => {
@@ -357,7 +357,7 @@ test('close ends every change stream, closes the watcher and releases leases', a
   const f = fixture(t, { watchLingerMs: 60_000 });
   let closed = 0;
   const watch = f.fs.watch;
-  f.fs.watch = async (...args) => { const result = await watch(...args); if (result.ok) { const close = result.value.close; result.value.close = async (...rest) => { closed++; return close(...rest); }; } return result; };
+  f.fs.watch = async (...args) => { const result = await watch(...args); if (result.ok) { const stop = result.value.stop; result.value.stop = async (...rest) => { closed++; return stop(...rest); }; } return result; };
   const events = (async () => { for await (const event of f.provider.changes({}, access)) void event; return 'ended'; })();
   const response = await f.handler(changeRequest(await bindingOf(f.handler), ''));
   const reader = response.body.getReader();

@@ -4,7 +4,7 @@
 // transcript (the assistant entries, and tool results carrying `usage`, of the run) under stable native ids, and every run ends in
 // exactly one settle or release. The host owns the ledger (`MeteringSink`), the price and the policy; this module owns only when to call it.
 // See packages/agent/README.md ("Metering") for the rules.
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { AssistantEntry, UserEntry } from '@earendil-works/pi-durable';
 import type { Conversation, ConversationId, ConversationWatch, EntryRecord, Harness, Submission, SubmissionDraft, SubmissionRecord } from '@earendil-works/pi-durable';
 import type { Models, Usage } from '@earendil-works/pi-ai';
@@ -303,7 +303,9 @@ export function createMeter(options: MeterOptions): Meter {
     state.watch = watch;
     // A streamed partial changes only `pi.live.generation`: re-reading the runs then would only add reads to the session line.
     let last: string | undefined;
-    watch.start(async view => {
+    watch.start(async call => {
+      if (call.kind !== 'value') return;
+      const view = call.value;
       const { generation: _partial, ...live } = (view.docs['pi.live'] ?? {}) as Record<string, unknown>;
       const key = JSON.stringify([view.entries.at(-1)?.id, view.entries.length, view.docs['pi.inbox'], live]);
       if (key === last) return;

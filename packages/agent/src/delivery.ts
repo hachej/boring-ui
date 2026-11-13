@@ -1,6 +1,6 @@
 import { defineExtension, defineTask } from '@earendil-works/pi-durable';
 import type { TaskId, TaskOptions, Tx } from '@earendil-works/pi-durable';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import type { PublicationLookup, PublicationRequest, PublicationResult, ResourceAccess, ResourceExpectation, ResourcePublisher } from '@hachej/boring-files';
 import { parsePublicationResult, publicationDigest } from '@hachej/boring-files/publication';
 import { captureDeliveryTarget, identity, migrateDelivery } from './delivery-input.js';

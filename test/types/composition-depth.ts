@@ -1,7 +1,7 @@
 import type { ViewerController, ViewerDescriptor, ViewerFeature, ViewerRenderer } from '@hachej/boring-ui-kit';
 import type { EditableViewerController, SaveSelection } from '@hachej/boring-ui-kit/resources';
 import type { FileSystem, Shell, ExecutionEnv, EnvironmentFactory, WorkspaceLease, WorkspaceProvider } from '@hachej/boring-execution';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 
 interface NoteDescriptor extends ViewerDescriptor { readonly kind: 'note'; readonly version: 1; readonly noteId: string; }
 interface NoteEditor extends EditableViewerController<{ readonly text: string }, {}, {}> {

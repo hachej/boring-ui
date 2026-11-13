@@ -1,13 +1,14 @@
 import type { ToolRegistration } from '@earendil-works/pi-durable';
 import type { PresentationCommand } from '@hachej/boring-ui-kit/contracts';
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
+import { int, obj } from '@earendil-works/pi-schema';
 
 declare const command: PresentationCommand<
   { readonly index: number; readonly expiresAt: number },
   { readonly privateText: string },
   { readonly documentId: string }
 >;
-const parameters = { type: 'object', properties: { index: { type: 'integer', minimum: 0 } }, required: ['index'] } as const;
+const parameters = obj({ index: int({ minimum: 0 }) }, { open: true });
 const options = {
   name: 'navigate_notes', description: 'Navigate the explicitly bound notes', parameters, command,
   target: { instanceId: 'notes', epoch: 'page-one', subject: { documentId: 'fictional' } },
