@@ -86,7 +86,7 @@ test('SQLite watchers report created, changed and removed paths, honour excludes
   assert.ok(!paths.some(path => path.includes('.hidden') || path.includes('node_modules')), 'excluded names are not reported');
   value(await fs.remove('/workspace/docs/deep', { recursive: true }, context));
   await until(() => changes.flatMap(change => change.paths ?? []).filter(path => path.startsWith('/workspace/docs/deep')).length >= 3);
-  await watcher.close(context);
+  await watcher.stop(context);
   const count = changes.length;
   value(await fs.writeFile('/workspace/docs/after-close.md', 'x', context));
   await new Promise(resolve => setTimeout(resolve, 1300));

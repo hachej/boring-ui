@@ -254,7 +254,7 @@ test('runner: a started run completes, is delivered once under deliver:<key>, an
   const ended = await settledRun(runner, 'run-1');
   assert.deepEqual([ended.status, ended.output], ['completed', { verdict: 'yes' }]);
   assert.deepEqual(ended.usage.models, ['writer']);
-  assert.ok(ended.usage.input > 0 && ended.usage.output > 0, 'the run reports what its model answers used');
+  assert.ok(ended.usage.input + ended.usage.cacheRead + ended.usage.cacheWrite > 0 && ended.usage.output > 0, 'the run reports what its model answers used');
   const sent = deliveries(h, 'run-1');
   assert.equal(sent.length, 1);
   assert.deepEqual([sent[0].input.run, sent[0].input.status, sent[0].input.output], ['run-1', 'completed', { verdict: 'yes' }]);

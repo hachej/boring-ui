@@ -1,5 +1,5 @@
 import type { TaskRuntime } from '@earendil-works/pi-durable';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 
 /**
  * Wait inside the running phase until the Harness clock reaches `at`, on the Harness's own timer (`TaskRuntime.setTimer`, the

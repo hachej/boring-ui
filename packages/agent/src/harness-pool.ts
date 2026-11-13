@@ -1,5 +1,5 @@
 import type { Harness } from '@earendil-works/pi-durable';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 
 /*
  * One harness per owner, for hosts that prefer isolation to one shared harness with per-call workspaces

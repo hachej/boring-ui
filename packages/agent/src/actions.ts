@@ -1,7 +1,7 @@
 import { createAssistantMessageEventStream, getCurrentTools, normalizeContext } from '@earendil-works/pi-ai';
 import type { AssistantMessage, Message, Models, Tool, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { ModelRef } from '@earendil-works/pi-durable';
-import { Check } from 'typebox/schema';
+import { compile } from '@earendil-works/pi-schema';
 
 /** Virtual model identity persisted by Pi; real requests use the host's Models. */
 export const ACTION_PROVIDER = 'boring-action';
@@ -134,7 +134,7 @@ export function withActionModels<T extends Models>(models: T, options: ActionMod
           const extractedCalls = extracted.content.filter(p => p.type === 'toolCall');
           const extractedCall = extractedCalls.length === 1 ? extractedCalls[0] : undefined;
           if (extracted.stopReason !== 'toolUse' || !extractedCall || extractedCall.name !== tool.name ||
-              !Check(action.extraction.tool.parameters, extractedCall.arguments) || !Check(tool.parameters, extractedCall.arguments)) return full();
+              !compile(action.extraction.tool.parameters).check(extractedCall.arguments) || !compile(tool.parameters).check(extractedCall.arguments)) return full();
           // Native ToolTask owns the write, permission checks and host receipt; keep this ID in its transcript.
           const bytes = crypto.getRandomValues(new Uint8Array(16));
           const id = PREFIX + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');

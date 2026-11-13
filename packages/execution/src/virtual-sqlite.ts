@@ -4,7 +4,7 @@
 // `ExecutionEnv` whose bash also has the `git` command bound to the same repository. Nothing here is a second file or shell API:
 // `env` is Pi's and `repository` is `@hachej/boring-files/git`'s.
 import { posix } from 'node:path';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import type { ExecutionEnv, FileSystem } from '@earendil-works/pi-durable/env';
 import { createGitRepository } from '@hachej/boring-files/git';
 import type { GitOperation } from '@hachej/boring-files/git';

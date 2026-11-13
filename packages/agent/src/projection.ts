@@ -1,9 +1,9 @@
-import type { Context } from '@earendil-works/chord';
-import type { Conversation, ConversationWatch, EntryRecord } from '@earendil-works/pi-durable';
+import type { Context } from '@earendil-works/chord/context';
+import type { Conversation, ConversationWatch, Cursor, EntryId, EntryRecord } from '@earendil-works/pi-durable';
 
 import { CONVERSATION_PROJECTION_LIMITS as limits, projectionEncoder, projectionIdentity, projectionKey } from './projection-format.js';
 import type { ProjectionIdentity, ConversationTextProjection, ConversationTextSnapshot } from './projection-format.js';
-import { projectConversationWindow } from './projection-window.js';
+import { activeEntries, projectConversationWindow, showsRow } from './projection-window.js';
 import { NATIVE_VERSION } from './native-version.js';
 export { CONVERSATION_PROJECTION_LIMITS, createConversationTextReceiver } from './projection-format.js';
 export type { ProjectionIdentity, ConversationTextProjection, ConversationTextSnapshot, ConversationTextDelta, ConversationTextRow, ConversationTextKey, ConversationTextReceiver } from './projection-format.js';
@@ -49,7 +49,7 @@ export function createConversationProjectionHandler(options: ConversationProject
       if (signal.aborted || await authorize(identity, 'open') !== true || signal.aborted) return failure(403, 'not-authorized');
     } catch { return failure(503, 'authorization-unavailable'); }
     let watch: ConversationWatch;
-    try { watch = await conversation.watch(context); }
+    try { watch = await conversation.watch(context, { min: limits.maxMessages }); }
     catch { return failure(503, 'source-unavailable'); }
     // A watch that already ended may reject on stop; teardown must never turn a refusal into a rejection.
     const stopWatch = (): Promise<void> => Promise.resolve().then(() => watch.stop()).then(() => undefined, () => undefined);
@@ -61,6 +61,27 @@ export function createConversationProjectionHandler(options: ConversationProject
     } catch {
       await stopWatch();
       return failure(503, 'authorization-unavailable');
+    }
+
+    // The window starts after `before`: whether anything older would still show is read once per window start, stopping at the first row found.
+    const olderChecked = new Map<number, boolean>();
+    async function earlierVisible(before: EntryId): Promise<boolean> {
+      const known = olderChecked.get(before);
+      if (known !== undefined) return known;
+      let found = false, bound = 0, cursor: Cursor | undefined;
+      scan: for (let pages = 0; pages < 5; pages++) {
+        const page = await conversation.entries({ maxEntryId: before }, 100, cursor, context);
+        for (const entry of page.items) {
+          if (entry.head !== undefined && bound === 0) bound = entry.head;
+          if (entry.id < bound) break scan;
+          if (allowEntry(identity, entry) === true && showsRow(entry)) { found = true; break scan; }
+        }
+        if (!page.next) break;
+        cursor = page.next;
+        if (pages === 4) found = true;
+      }
+      olderChecked.set(before, found);
+      return found;
     }
 
     const connectionId = globalThis.crypto.randomUUID();
@@ -95,7 +116,8 @@ export function createConversationProjectionHandler(options: ConversationProject
           if (stopped) return;
           try {
             if (await authorize(identity, 'delivery') !== true || signal.aborted || stopped) { await stop(); return; }
-            const visible = projectConversationWindow(watch.value.entries, identity, allowEntry);
+            const view = watch.value, active = activeEntries(view.entries);
+            const visible = projectConversationWindow(active, identity, allowEntry, active.length === view.entries.length && view.before !== undefined && await earlierVisible(view.before));
             delivered = revision;
             if (signal.aborted || stopped) { await stop(); return; }
             if (previous && JSON.stringify(previous.messages) === JSON.stringify(visible.messages)

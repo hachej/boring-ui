@@ -5,7 +5,7 @@
  * `Content` is whatever the surface renders (React nodes in the registry); this module never reads it.
  */
 import type { ConversationView, EntryRecord, InboxItem, JsonObject } from '@earendil-works/pi-durable';
-import type { JsonValue } from '@earendil-works/chord';
+import type { JsonValue } from '@earendil-works/chord/json';
 import type { AssistantMessage, ImageContent, Message, ToolCall, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
 import type { ChatSnapshot } from './native-chat.js';
 

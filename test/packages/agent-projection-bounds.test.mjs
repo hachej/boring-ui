@@ -240,7 +240,7 @@ test('new native head text survives truncation and keeps native presentation ord
   assert.equal(view.entries[0].id, head.id);
   const initial = (await frame(await f.open())).value;
   assert.equal(initial.messages.length, 200);
-  assert.deepEqual(initial.messages.map(row => row.entryId), [head.id, ...entries.slice(-199).map(entry => entry.id)]);
+  assert.deepEqual(initial.messages.map(row => row.entryId), [...entries.slice(-199).map(entry => entry.id), head.id]);
   assert.equal(initial.window.truncated, true);
   const later = await f.conversation.commit(async tx => {
     const ids = [];

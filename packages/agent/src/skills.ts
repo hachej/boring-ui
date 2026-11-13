@@ -1,7 +1,8 @@
 import { defineExtension, defineTool } from '@earendil-works/pi-durable';
 import type { ConversationId, Extension } from '@earendil-works/pi-durable';
 import type { FileInfo, FileSystem } from '@earendil-works/pi-durable/env';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
+import { obj } from '@earendil-works/pi-schema';
 
 /** Names of skills and agents: a lowercase letter or digit, then lowercase letters, digits, `.`, `_` or `-` (at most 64). */
 export const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -536,7 +537,7 @@ function reloadTool(reload: NonNullable<Live['reload']>) {
   return defineTool({
     name: 'reload_skill',
     description: 'Move this conversation to the latest published version of the skills. Call it only when the person sends /reload-skill.',
-    parameters: { type: 'object', properties: {  }, additionalProperties: false } as const,
+    parameters: obj({  }),
     replay: 'safe',
     execute: async (_args, api, context) => ({ output: [{ type: 'text' as const, text: await reload(context, api?.conversationId) }] }),
   });

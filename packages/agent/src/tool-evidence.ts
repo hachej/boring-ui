@@ -1,7 +1,8 @@
 import { AssistantEntry, ToolResultEntry, ToolTask } from '@earendil-works/pi-durable';
 import type { ConversationId, EntryId, Harness, TaskId, ToolDiagnostic, Tx } from '@earendil-works/pi-durable';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
-import type { Context, JsonValue } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
+import type { JsonValue } from '@earendil-works/chord/json';
 
 export interface NativeToolEvidence {
   readonly entryId: EntryId;

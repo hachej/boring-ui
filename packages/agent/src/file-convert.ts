@@ -1,7 +1,7 @@
 import { defineExtension, wrapTool } from '@earendil-works/pi-durable';
 import type { ToolExecutionApi, ToolExecutionResult, ToolRegistration } from '@earendil-works/pi-durable';
 import { createReadTool } from '@earendil-works/pi-durable/tools';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import type { ResourceAccess } from '@hachej/boring-files';
 import { workspaceRelative } from './file-guard.js';
 import { SNIFF_BYTES, fileKind, mediaTypeFor } from './file-types.js';

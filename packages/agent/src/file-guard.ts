@@ -3,7 +3,7 @@ import type { ToolExecutionApi, ToolExecutionResult, ToolRegistration } from '@e
 import { FileError, err, getOrThrow, ok } from '@earendil-works/pi-durable/env';
 import type { ExecutionEnv, Result } from '@earendil-works/pi-durable/env';
 import { createEditTool, createReadTool, createWriteTool } from '@earendil-works/pi-durable/tools';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import type { ResourceAccess } from '@hachej/boring-files';
 import { asWorkspaceResolver, decorate, workspaceFor } from './workspaces.js';
 import type { WorkspaceBinding, WorkspaceResolver } from './workspaces.js';

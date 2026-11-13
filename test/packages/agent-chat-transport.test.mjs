@@ -388,7 +388,7 @@ for (const revokeDuringProjection of [false, true]) {
     const watch = {
       value: { entries: [], docs: {} }, closed: closed.promise,
       start: callback => { push = callback; },
-      stop: async () => { closed.resolve({ reason: 'stopped' }); },
+      stop: async () => { closed.resolve({ kind: 'stopped' }); },
     };
     const handler = createChatTransportHandler({ authenticate: async () => ({
       conversation: { watch: async () => watch }, context, revoked: revoked.signal,
@@ -444,4 +444,49 @@ test('an unexpected error reaches the client as a fixed reason, not its message 
   const text = await response.text();
   assert.doesNotMatch(text, /fictional-secret|db\.internal/);
   assert.equal(JSON.parse(text).reason, 'source-unavailable');
+});
+
+test('the watch wire is state: the first frame is a view and the frames after it are operation batches', async t => {
+  const { conversation, fetch } = await fixture(t);
+  const response = await fetch(new Request(`${endpoint}?op=watch`));
+  const reader = response.body.getReader(), decoder = new TextDecoder(), frames = [];
+  let rest = '';
+  const pump = (async () => {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      rest += decoder.decode(value, { stream: true });
+      const lines = rest.split('\n'); rest = lines.pop();
+      for (const line of lines) if (line) frames.push(JSON.parse(line));
+    }
+  })();
+  await until('the first view', () => frames.length > 0);
+  await conversation.submit({ type: 'write', entry: { kind: 'fictional.note', model: [{ role: 'user', content: 'A fictional note', timestamp: 0 }] } }, context);
+  await until('an update', () => frames.some(frame => frame.kind === 'ops'));
+  await reader.cancel(); await pump.catch(() => undefined);
+  const state = frames.filter(frame => frame.kind !== 'heartbeat');
+  assert.equal(state[0].kind, 'view');
+  assert.ok(state.slice(1).every(frame => frame.kind === 'ops'), 'later frames are operation batches');
+});
+
+test('a conversation of 300 entries opens on its newest messages (a window of 50) and loadEarlier reaches the first one', async t => {
+  const { conversation, fetch } = await fixture(t);
+  const write = text => conversation.submit({ type: 'write', entry: { kind: 'fictional.history', model: [{ role: 'user', content: text, timestamp: 0 }] } }, context);
+  for (let index = 1; index <= 300; index++) await write(`Fictional message ${index}`);
+  const controller = createNativeChatController({ identity, ...await createRemoteChat({ endpoint, fetch }) });
+  t.after(() => controller.dispose()); await controller.connect();
+  const label = entry => entry.model?.[0]?.content;
+  const opened = controller.getSnapshot().view.entries;
+  assert.equal(opened.length, 50, 'the view is the native window: the newest 50 entries');
+  assert.equal(label(opened.at(-1)), 'Fictional message 300', 'it ends on the newest message');
+  const seen = new Set(opened.map(label));
+  for (let pages = 0; pages < 20; pages++) {
+    await controller.loadEarlier();
+    const { history } = controller.getSnapshot();
+    for (const entry of history.entries) seen.add(label(entry));
+    if (history.kind === 'ready' && !history.hasMore) break;
+  }
+  assert.equal(controller.getSnapshot().history.hasMore, false, 'the history ran to its start');
+  assert.equal(seen.size, 300, 'nothing is silently cut');
+  assert.ok(seen.has('Fictional message 1'));
 });

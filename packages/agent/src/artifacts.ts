@@ -1,6 +1,6 @@
 import { defineTool } from '@earendil-works/pi-durable';
 import type { ToolExecutionApi } from '@earendil-works/pi-durable';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import type { ResourceAccess, ResourceLocator } from '@hachej/boring-files';
 import { workspacePath } from '@hachej/boring-files/file-types';
 import { asWorkspaceResolver, workspaceFor } from './workspaces.js';
@@ -14,6 +14,7 @@ export { ARTIFACT_TYPES, createArtifactDescriptor, parseArtifact, parsePresented
 export type { ArtifactDescriptor, ArtifactDescriptorInput, ArtifactType, PresentedArtifact } from './artifact-descriptor.js';
 import { PRESENT_TOOL, awaitTaskViewOpen, awaitViewOpen } from './view-open.js';
 import type { ViewOpenOptions, ViewOpenOutcome } from './view-open.js';
+import { lit, obj, opt, str, union } from '@earendil-works/pi-schema';
 
 export { answerViewOpen, parseViewOpenAnswer, VIEW_OPEN_TIMEOUT_MS } from './view-open.js';
 export type { ViewOpenAnswer, ViewOpenOptions, ViewOpenOutcome } from './view-open.js';
@@ -82,7 +83,7 @@ export function createPresentTool(options: PresentToolOptions = {}) {
       'Short answers stay in the chat, and so does anything the person asks to have in the chat or without tools or artifacts: then call no tool.',
       'To change, extend or fix something you presented: read the file again first (the person may have edited it; keep their changes), change it with edit (or write the whole new content) at the same path, never a second file, and call present again. If you do not remember the path, list the files.',
     ].join(' '),
-    parameters: { type: 'object', properties: { path: { type: 'string', minLength: 1, maxLength: 512, description: 'A workspace file path. Supply exactly one of path, task or tasks.' }, task: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]*$', description: 'A host task id or number, such as D-201.' }, tasks: { type: 'object', properties: { filter: { anyOf: [{ type: 'string', const: 'all' }, { type: 'string', const: 'mine' }, { type: 'string', const: 'waiting-on-me' }] } }, required: ['filter'], additionalProperties: false } }, additionalProperties: false } as const,
+    parameters: obj({ path: opt(str({ minLength: 1, maxLength: 512, description: 'A workspace file path. Supply exactly one of path, task or tasks.' })), task: opt(str({ minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]*$', description: 'A host task id or number, such as D-201.' })), tasks: opt(obj({ filter: union([lit('all'), lit('mine'), lit('waiting-on-me')]) })) }),
     replay: 'safe',
     execute: async (args, api, context) => {
       if (Object.keys(args).length !== 1) return reply({ kind: 'denied', reason: 'Supply exactly one of path, task or tasks' });

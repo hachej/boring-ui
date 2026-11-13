@@ -1,7 +1,7 @@
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { diffRevisions } from '@earendil-works/chord/delta';
 import { RequestGuardError, hasJsonContentType, readJsonBody } from '@hachej/boring-files/request-guard';
-import type { Conversation, ConversationView, ConversationWatch, Cursor, EntryId, EntryQuery, EntryRecord, InputSubmissionDraft, SubmissionId, SubmissionRecord, WatchEnd } from '@earendil-works/pi-durable';
+import type { Conversation, ConversationView, ConversationWindow, ConversationWatch, Cursor, EntryId, EntryQuery, EntryRecord, InputSubmissionDraft, SubmissionId, SubmissionRecord, WatchEnd } from '@earendil-works/pi-durable';
 
 /** Wire protocol shared with the browser client in `@hachej/boring-ui-kit/remote-chat`. */
 export const CHAT_TRANSPORT = Object.freeze({ schema: 'boring.chat-transport', version: 1, maxRequestBytes: 8_388_608, maxContextBytes: 4096, maxHistoryPage: 200, maxPendingFrames: 100, heartbeatMs: 15_000 });
@@ -23,6 +23,8 @@ export interface ChatTransportAccess {
    * through it. History pages are projected as a view holding just the page's entries and no documents.
    */
   readonly project?: (view: ConversationView) => ConversationView;
+  /** How much of the transcript a viewer's first view holds (pi-durable's `ConversationWindow`; default the newest 50 entries). Earlier entries come with `loadEarlier`. */
+  readonly window?: ConversationWindow;
   /** Resolve a pending `ask_user` call. The host authenticates the person; without it `?op=answer` is not supported. */
   readonly answer?: (questionId: string, answer: string) => Promise<unknown>;
   /**
@@ -124,6 +126,11 @@ function reads(conversation: Conversation, context: Context, project: ((view: Co
   };
 }
 
+/** The reason a watch ended, as the wire has always named it (a client reads these strings). */
+function endReason(end: WatchEnd): string {
+  return end.kind === 'ended' ? 'session_closed' : end.kind === 'aborted' ? 'cancelled' : end.kind === 'failed' ? 'session_failed' : end.kind;
+}
+
 /** A watch frame: a complete view, or one native operation batch. The NDJSON stream and the socket send the same JSON. */
 type WatchFrame = { readonly kind: 'view'; readonly view: ConversationView } | { readonly kind: 'ops'; readonly ops: readonly unknown[] };
 /**
@@ -151,7 +158,7 @@ function frameEncoder(project: ((view: ConversationView) => ConversationView) | 
 
 /** Open the conversation watch for an authenticated access, refusing a revoked one. Shared by the HTTP watch and the socket. */
 async function openWatch(access: ChatTransportAccess, signal?: AbortSignal): Promise<ConversationWatch | null> {
-  const watch = await access.conversation.watch(access.context);
+  const watch = await access.conversation.watch(access.context, access.window);
   if (signal?.aborted || access.revoked?.aborted) { await watch.stop(); return null; }
   return watch;
 }
@@ -173,10 +180,10 @@ function stream(watch: ConversationWatch, project: ((view: ConversationView) => 
   const heartbeat = () => encoder.encode(JSON.stringify({ kind: 'heartbeat', intervalMs: heartbeatMs }) + '\n');
   const stop = () => { pending = []; clearTimeout(timer); notify(); void watch.stop(); };
   signal.addEventListener('abort', stop, { once: true });
-  watch.start(async (view, ops) => {
-    if (signal.aborted) return;
-    if (project || pending.length >= CHAT_TRANSPORT.maxPendingFrames) pending = [{ kind: 'view', view }];
-    else pending.push({ kind: 'ops', ops });
+  watch.start(async call => {
+    if (signal.aborted || call.kind !== 'value') return;
+    if (project || pending.length >= CHAT_TRANSPORT.maxPendingFrames) pending = [{ kind: 'view', view: call.value }];
+    else pending.push({ kind: 'ops', ops: call.ops });
     notify();
   });
   void watch.closed.then(result => { end = result; signal.removeEventListener('abort', stop); notify(); });
@@ -205,7 +212,7 @@ function stream(watch: ConversationWatch, project: ((view: ConversationView) => 
       }
       if (beat && end === undefined) { beat = false; controller.enqueue(heartbeat()); idle(); return; }
       finished = true; clearTimeout(timer);
-      controller.enqueue(encoder.encode(JSON.stringify({ kind: 'end', reason: end!.reason }) + '\n'));
+      controller.enqueue(encoder.encode(JSON.stringify({ kind: 'end', reason: endReason(end!) }) + '\n'));
       controller.close();
     },
     cancel() { finished = true; stop(); },
@@ -481,12 +488,12 @@ export function createConversationSocketHandler(options: ConversationSocketOptio
       };
       frame({ kind: 'view', view: watch.value });
       access.revoked?.addEventListener('abort', () => { void watch.stop(); }, { once: true });
-      watch.start(async (view, ops) => frame(project ? { kind: 'view', view } : { kind: 'ops', ops }));
+      watch.start(async call => { if (call.kind === 'value') frame(project ? { kind: 'view', view: call.value } : { kind: 'ops', ops: call.ops }); });
       void watch.closed.then(result => {
         if (live.get(found.socketId) !== entry) return;
         live.delete(found.socketId);
-        // A host restart (`session_closed`) asks the client to reconnect; the other reasons are final.
-        end(socket, access!.revoked?.aborted ? 'revoked' : result.reason, result.reason === 'session_closed' ? 1012 : 1000);
+        // A host restart (`ended`, `session_closed` on the wire) asks the client to reconnect; the other reasons are final.
+        end(socket, access!.revoked?.aborted ? 'revoked' : endReason(result), result.kind === 'ended' ? 1012 : 1000);
       });
       return { access, watch };
     })();

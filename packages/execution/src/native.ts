@@ -4,7 +4,7 @@ export type {
   FileSystem, Shell, ExecutionEnv, FileInfo, FileError, ExecutionError,
   Result, TextLineReader, ShellExecOptions, ShellExecResult, ShellSpillOptions,
 } from '@earendil-works/pi-durable/env';
-export type { Context } from '@earendil-works/chord';
+export type { Context } from '@earendil-works/chord/context';
 export type { EnvTarget } from '@earendil-works/pi-durable';
 
 /** Preserve native target/committed reads/Context, async and undefined results. */

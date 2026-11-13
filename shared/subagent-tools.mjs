@@ -150,9 +150,9 @@ export function createSubagents({ harness, context, childModel, childExtensions 
     const subagents = await Promise.all(found.map(({ record, owner }) => describeChild(native, record, owner)));
     // The live task graph, cut down to this parent and its children: what is running, waiting or completing now.
     // Read once per request and released at once, so the host holds no attachment the harness has to outlive.
-    const graph = await native.taskGraph(context);
+    const graph = await native.watchTaskGraph(context);
     const tasks = graph.value.tasks;
-    graph.dispose();
+    await graph.stop();
     const scope = new Set([parent, ...subagents.map(child => child.id)]);
     const live = Object.values(tasks).filter(node => scope.has(node.conversationId))
       .map(node => ({ id: node.id, kind: node.kind, conversationId: node.conversationId, owner: node.owner ?? null, background: node.background, status: node.state.status, conversations: node.conversations }));

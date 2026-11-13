@@ -3,14 +3,15 @@
   "rootDevDependencies": {
     "@tldraw/assets": "5.6.0",
     "typescript": "5.9.3",
-    "@earendil-works/pi-durable": "1.4.0",
-    "@earendil-works/pi-ai": "1.4.0",
-    "@earendil-works/chord": "1.4.0",
-    "@earendil-works/pi-codemode": "1.4.0",
-    "@earendil-works/pi-mcp": "1.4.0",
+    "@earendil-works/pi-durable": "1.5.2",
+    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-schema": "1.5.2",
+    "@earendil-works/chord": "1.5.2",
+    "@earendil-works/pi-codemode": "1.5.2",
+    "@earendil-works/pi-mcp": "1.5.2",
     "@vercel/sandbox": "3.9.1",
     "@aws-sdk/client-bedrock-agentcore": "3.1161.0",
-    "agents": "0.32.0",
+    "agents": "0.33.0",
     "wrangler": "4.156.0",
     "@types/node": "22.20.5",
     "react": "19.3.1",
@@ -108,7 +109,8 @@
         "typebox",
         "typebox/schema",
         "unpdf",
-        "xlsx"
+        "xlsx",
+        "@earendil-works/pi-schema"
       ],
       "typeOnlyExternal": [],
       "pathRules": [
@@ -222,7 +224,8 @@
       "typeOnlyExternal": [
         "@earendil-works/pi-durable",
         "@earendil-works/pi-ai",
-        "@earendil-works/chord"
+        "@earendil-works/chord",
+        "@earendil-works/chord/json"
       ],
       "pathRules": [
         {
@@ -294,7 +297,8 @@
       "typeOnlyExternal": [
         "@earendil-works/pi-durable",
         "@earendil-works/pi-durable/*",
-        "@earendil-works/chord"
+        "@earendil-works/chord",
+        "@earendil-works/chord/context"
       ],
       "runtimePackageImports": {
         "files": [
@@ -330,13 +334,15 @@
         "react",
         "react/jsx-dev-runtime",
         "@earendil-works/pi-durable",
-        "@earendil-works/pi-ai"
+        "@earendil-works/pi-ai",
+        "@earendil-works/pi-schema"
       ],
       "typeOnlyExternal": [
         "esbuild",
         "@earendil-works/pi-durable",
         "@earendil-works/pi-ai",
-        "@earendil-works/chord"
+        "@earendil-works/chord",
+        "@earendil-works/chord/context"
       ],
       "pathRules": [
         {
@@ -547,15 +553,20 @@
       ".",
       "./context",
       "./delta",
+      "./json",
+      "./watch",
       "./node",
       "./package.json"
     ],
     "@earendil-works/pi-codemode": [
       ".",
       "./worker"
+    ],
+    "@earendil-works/pi-schema": [
+      "."
     ]
   },
-  "upstreamExportsVersion": "1.4.0",
+  "upstreamExportsVersion": "1.5.2",
   "runtimeProofs": {
     "BORING-UI-1": [
       "npm",

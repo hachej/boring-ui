@@ -95,7 +95,7 @@ const environments = [
 const watchNames = [
   "watch reports a missing file's creation, changes, replacement and removal", 'watch reports a missing target whose ancestors are created', 'watch follows directories created together with their contents',
   'watch keeps watching a path whose parent is renamed and recreated', 'watch skips excluded entries and reports a rename out of them', 'watch keeps recursive coverage where a non-recursive target overlaps',
-  'watch follows a directory replaced at the same path', 'watch stops reporting once closed', 'watch reports changes to the file a watched symbolic link points to'];
+  'watch follows a directory replaced at the same path', 'watch stops reporting once stopped', 'watch stops reporting once stopped', 'watch reports changes to the file a watched symbolic link points to'];
 const noWatch = why => Object.fromEntries(watchNames.map(name => [name, why]));
 const DIR_SNAPSHOT = { 'directory reader skips entries removed during enumeration': 'TODO(remote protocol lane): the directory reader lists a snapshot taken when it opens (fs-readers.ts snapshotReaders), so entries removed afterwards are still returned' };
 const ARGV_SPAWN = { 'argv exec reports missing programs and empty argv as spawn errors': 'TODO(remote protocol lane): a missing program exits 127 through the shell instead of spawn_error; a lookup preflight must match the shell dispatch (PATH scripts, env, cancellation) before it can report one' };

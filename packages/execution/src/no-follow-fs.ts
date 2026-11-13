@@ -11,9 +11,9 @@ import { lstat, mkdir, open, opendir, readdir, readlink, realpath, rename, rmdir
 import type { Dir, FSWatcher, Stats } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import { posix } from 'node:path';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { FileError, LineScanner, StreamDecoder, err, ok } from '@earendil-works/pi-durable/env';
-import type { BinaryReader, DirReader, FileInfo, LineScan, Result, TextLine, TextLineReader } from '@earendil-works/pi-durable/env';
+import type { BinaryReader, DirReader, FileChange, FileInfo, FileWatcher, LineScan, Result, TextLine, TextLineReader } from '@earendil-works/pi-durable/env';
 
 const { O_RDONLY, O_WRONLY, O_RDWR, O_CREAT, O_TRUNC, O_APPEND, O_DIRECTORY, O_NOFOLLOW, O_NONBLOCK } = constants;
 /** Links followed in one resolution, as Linux allows (and as the earlier realpath check did). */
@@ -86,11 +86,8 @@ export interface NoFollowWatchTarget {
   readonly hidden: boolean;
   readonly names: ReadonlySet<string>;
 }
-export type NoFollowChange = { paths: string[] } | { overflow: true } | { error: FileError };
-export interface NoFollowWatcher {
-  readonly mode: 'native' | 'polling';
-  close(): Promise<void>;
-}
+export type NoFollowChange = FileChange;
+export type NoFollowWatcher = FileWatcher;
 /** What a scan remembers of an entry; directories by identity only (their own times change with every entry). */
 interface Entry { readonly kind: string; readonly dev: number; readonly ino: number; readonly size: number; readonly mtimeMs: number; readonly ctimeMs: number }
 const entryOf = (stats: Stats): Entry | undefined => {
@@ -466,7 +463,7 @@ export function createNoFollowFileSystem(options: NoFollowOptions): NoFollowFile
       const late = aborted(context, first);
       if (late) { await watcher.close(); return late; }
       const nfs = await statfs(root).then(stats => stats.type === NFS_SUPER_MAGIC, () => false);
-      const handle: NoFollowWatcher = { mode: nfs ? 'polling' : 'native', close: () => watcher.close() };
+      const handle: NoFollowWatcher = { mode: nfs ? 'polling' : 'native', stop: () => watcher.close() };
       return ok(handle);
     },
     close: async () => {
@@ -527,7 +524,7 @@ export function createNoFollowFileSystem(options: NoFollowOptions): NoFollowFile
             for (const [path, entry] of next) { const old = this.#snapshot.get(path); if (!old || !sameEntry(old, entry)) paths.add(path); }
             for (const path of this.#snapshot.keys()) if (!next.has(path)) paths.add(path);
             this.#snapshot = next;
-            if (paths.size) this.onChange({ paths: [...paths].sort() });
+            if (paths.size) this.onChange({ kind: 'paths', paths: [...paths].sort() });
           } while (this.#dirty && !this.#closed);
         } catch (error) {
           if (this.#closed) return;
@@ -536,8 +533,8 @@ export function createNoFollowFileSystem(options: NoFollowOptions): NoFollowFile
             if (this.#timer) clearInterval(this.#timer);
             for (const watcher of this.#watchers.values()) watcher.close();
             this.#watchers.clear();
-            this.onChange({ error: new FileError('invalid', error.message, root) });
-          } else this.onChange({ overflow: true });
+            this.onChange({ kind: 'failed', error: new FileError('invalid', error.message, root) });
+          } else this.onChange({ kind: 'overflow' });
         } finally { this.#running = undefined; }
       })();
     }

@@ -15,6 +15,8 @@ function sources(directory) {
 }
 
 const removed = [
+  ['`harness.subscribeCommits` (it is `observeCommits`)', /\bsubscribeCommits\b/],
+  ['`watchEvents` (state is watched, not events)', /\bwatchEvents\b/],
   ['TypeBox `Type` from pi-ai (tool parameters are plain JSON Schema)', /import\s*\{[^}]*\bType\b[^}]*\}\s*from\s*'@earendil-works\/pi-ai'/],
 ];
 

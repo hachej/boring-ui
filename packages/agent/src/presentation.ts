@@ -1,9 +1,9 @@
 import type { PresentationCommand, PresentationResult, ViewerTarget } from '@hachej/boring-ui-kit/contracts';
-import type { Context } from '@earendil-works/chord';
-import type { Static, TSchema } from '@earendil-works/pi-ai';
+import type { Context } from '@earendil-works/chord/context';
+import type { Static } from '@earendil-works/pi-schema';
 import { defineTool, type ToolExecutionApi, type ToolExecutionResult, type ToolRegistration } from '@earendil-works/pi-durable';
 
-export interface PresentationToolOptions<P extends TSchema, Input, Output, Subject> {
+export interface PresentationToolOptions<P extends object, Input, Output, Subject> {
   readonly name: string;
   readonly description: string;
   readonly parameters: P;
@@ -15,7 +15,7 @@ export interface PresentationToolOptions<P extends TSchema, Input, Output, Subje
 }
 
 /** Bind one captured viewer target to a native, non-replayable tool. Target and parsed input must be structured-cloneable. */
-export function createPresentationTool<P extends TSchema, Input, Output, Subject>(
+export function createPresentationTool<P extends object, Input, Output, Subject>(
   options: PresentationToolOptions<P, Input, Output, Subject>,
 ): ToolRegistration<P> {
   const target = structuredClone(options.target);
