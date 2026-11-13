@@ -77,7 +77,7 @@ export async function runRound({ cwd, runWorker, refuse = () => [], runChecks, s
 }
 
 // Wait (bounded) until the 1-minute load average is under `max`; returns how long it waited.
-export async function waitForLoad({ max = 25, timeoutMs = 15 * 60 * 1000, load = () => loadavg()[1], sleep = ms => new Promise(r => setTimeout(r, ms)), step = 15000, log = () => {} } = {}) {
+export async function waitForLoad({ max = 25, timeoutMs = 5 * 60 * 1000, load = () => loadavg()[1], sleep = ms => new Promise(r => setTimeout(r, ms)), step = 15000, log = () => {} } = {}) {
   let waited = 0;
   while (load() >= max && waited < timeoutMs) { if (waited === 0) log(`load ${load().toFixed(1)} >= ${max}: waiting before the capture (up to ${timeoutMs / 60000} min)`); await sleep(step); waited += step; }
   if (waited >= timeoutMs) log(`load still ${load().toFixed(1)} after ${waited / 60000} min: capturing anyway`);
@@ -88,5 +88,13 @@ export async function waitForLoad({ max = 25, timeoutMs = 15 * 60 * 1000, load =
 export async function retried(fn, { log = () => {}, label = 'capture' } = {}) {
   try { return await fn(); } catch (e) { log(`${label} crashed (${String(e.message).split('\n')[0]}); retrying once`); return await fn(); }
 }
+
+// A noisy number is the median of 3: a layout-shift line stays only when at least 2 of 3 runs show it (the first run's text is kept).
+export const shiftKey = l => l.replace(/(": )(.*)$/s, (_, a, b) => a + b.replace(/[\d.]+/g, '#'));
+export function medianShiftLines(first, others) {
+  const sets = others.map(o => new Set(o.filter(l => / layout shift /.test(l)).map(shiftKey)));
+  return first.filter(l => !/ layout shift /.test(l) || sets.filter(s => s.has(shiftKey(l))).length >= 1);
+}
+export const incomplete = lines => lines.filter(l => /did not complete/.test(l));
 
 export function saveTo(dir) { return (name, text) => { mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, name), text); }; }
