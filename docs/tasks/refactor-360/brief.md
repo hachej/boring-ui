@@ -359,6 +359,82 @@ What this changes in the plan:
 - **The data-shape check before apply is not optional.** The same failure appeared in two separate runs: a changed shape breaks reads of old data silently.
 - Alchemy's documentation is behind its code in several places; budget for that.
 
+## 20. The whole lifecycle, walked once (13 November, local)
+
+Three spikes that put the pieces together for the first time: the app side, the agent side on top of it, and Effect Cluster. All local; nothing on real Cloudflare or AWS.
+
+### The app side, together
+
+One small app: two models in one sandboxed bundle, per-app sign-in, a screen on this kit, apply with data replay.
+
+| Piece | Result |
+|---|---|
+| Per-app sign-in owned by the supervisor | Works. Better Auth ran inside the supervisor: e-mail and password, a local database |
+| A deliberately malicious rewrite of the app tries to read another person's data | **Fails to**, once each active person has their own sandbox and their own database. With a shared sandbox it **did** read another person's note from memory |
+| A screen built with this kit on a React binding to the model | Works, live updates under a second. The binding is 59 lines. The type check caught a stale screen |
+| Apply with data replay | An additive change accepted; a shape change without a version bump **refused, naming the view and the failing record**; the same change done properly accepted |
+| The MCP door with sign-in | No sign-in: refused. A person passing someone else's id: refused |
+| Our code | Supervisor 116 lines, storage host 121, React binding 59; models 67 and 49; screen 95 |
+
+Consequences for the design:
+
+- **Separation is one sandbox and one database per active person.** Shared data (a team, a client dossier) cannot live in a person's sandbox; it needs a shared one that the supervisor feeds. This must be designed for the accounting app before Phase 1.
+- **Rolling back is "apply the previous version if it can still read the data"**, through the same replay check. A blind switch back after a data rebuild broke reads.
+- The view lag of up to 10 seconds was a bug in our own storage host, fixed in about 4 lines.
+- This kit needed a manual step to pull its components outside our usual app template. To fix in the kit.
+
+### The agent side
+
+One pi-durable agent with our product manager's rules and the judge loaded, signed in as a fictional expert, on the real model route. 14 real runs; 5 of them were lost to bugs in the test harness, not in the design.
+
+| Step | Result |
+|---|---|
+| Asks one question with options, then stops | Yes, but it **over-asks**: up to three questions before proposing |
+| The judge as a second opinion | Works: declined a request that did not serve the app, in plain words |
+| Level 1, memory ("always give me weights in pounds") | **Pass.** Remembered in a new conversation; the app unchanged |
+| Level 2, a tool of its own (a weekly summary) | **Pass on the third try.** Created after the person's yes, right numbers, still there after a restart, the app unchanged. One run read "each Monday" as a schedule and handed over instead |
+| Level 3, a change to the app with approval | **1 clean pass of 3**: proposal in plain words, yes, 11 edits, one failed check repaired by itself, apply accepted with data replayed, new tool used in the same conversation, screen correct at phone size, 171 seconds. One run lost to the harness. In the third the simulated expert asked for client accounts and the agent correctly handed over, since rights are beyond its limits |
+| A change of meaning ("a best lift needs at least 3 reps, recompute history") | **Pass, twice.** Version bumped, history recomputed, checked by hand |
+| The factory applies a change from outside during a conversation | The agent was told, and told the expert. Not carried through to using the new operation |
+| A neutral tester that never saw the change | **Caught a seeded defect** (a reversed sign) and found two real issues nobody had planted |
+| A pasted note with a hostile instruction | No edit and no apply happened. But the agent also refused the legitimate part of the request |
+
+Consequences for the design:
+
+- **The agent's judgment about its own limits was right every time.** Its weakness is pace: cap clarifying questions at two, then propose.
+- **Approval must be a button the host records**, not a "yes" the model reads. The spike already decided approval in host code; the screen must match.
+- **A change of meaning without a version bump passes the replay check silently**, because the stored values still read. Only the model's discipline stopped it. The check must require a version bump whenever a view's computing code changes.
+- **Schedules belong to level 2**: the agent's own task that wakes on Monday, with no change to the app.
+- **The app's charter must define its words** ("client" was ambiguous and caused hand-overs).
+- Our code for the agent side: about 600 lines, of which the merged card is 85.
+
+### Effect Cluster
+
+The same model, unchanged, on this machine with Postgres.
+
+| Test | Result |
+|---|---|
+| Data survives a restart | Yes |
+| Two runners, one killed under traffic | The other took over after about 30 seconds. Only calls in flight failed. Nothing lost, nothing applied twice |
+| A two-step job with an undo step, killed between steps | Resumed and finished exactly once |
+| A scheduled job, with everything down past its due time | Fired once on restart. A recurring job ran exactly once per tick across two runners |
+| "One line changes between hosts" | True for the model. Not for the process around it |
+| Backup and restore | A plain Postgres dump restored correctly |
+
+What it costs:
+
+- No packaged way to run it on one machine without Docker Swarm. It ran with a hand-written runner entry and four patches to installed packages, two of them packaging bugs upstream.
+- The AWS setup as Alchemy builds it (read, not run) exposes a load balancer on plain HTTP with a bearer token. It needs hardening before real use.
+- About 140 MB of memory per idle runner, against near zero for an idle app on Cloudflare. Cloudflare stays the default; Cluster is for the app that must be elsewhere and for long jobs and schedules.
+- A view added to a running app did not fill from history, contrary to the documentation.
+
+### What is still not spiked
+
+- Anything on real Cloudflare; a real Alchemy deploy; Effect Cluster on AWS.
+- A hard feature of a real app (a ledger with search and matching; an offline queue).
+- Shared data across people in the sandbox design.
+- A real success rate: the agent side is 14 runs on a small app.
+
 ## Sources
 
 - Alchemy at commit 33c10dd5 (13 November 2026), version 2.0.0-beta.87: the Domain package and its documentation (https://alchemy.run/domain, https://alchemy.run/domain/mcp, https://alchemy.run/domain/cloudflare, https://alchemy.run/domain/effect-cluster), the Better Auth pages (https://alchemy.run/better-auth/what-is-better-auth), the cluster tutorial (https://alchemy.run/cluster/tutorial/part-4), plan and apply from code (https://alchemy.run/cli/api), the release notes (https://alchemy.run/blog/2026-11-12-beta-87/).
