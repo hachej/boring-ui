@@ -117,9 +117,13 @@ export function createToolkit({ browser, pageUrl, step, app, restartHost, base, 
   const messages = async () => {
     const id = await history.current();
     const conversation = app().conversations.get(String(id));
-    const watch = await conversation.watch(app().host.context);
-    const view = watch.value; await watch.stop();
-    return view.entries.flatMap(entry => entry.model ?? []);
+    // A native view holds only a window of the transcript (the newest 50 entries): read every page.
+    const all = []; let cursor;
+    do {
+      const page = await conversation.entries({ order: 'ascending' }, 100, cursor, app().host.context);
+      all.push(...page.items); cursor = page.next;
+    } while (cursor);
+    return all.flatMap(entry => entry.model ?? []);
   };
 
   // Tool names in call order: from the native messages when the studio runs here (a question card has no tool row), else from the page.
