@@ -265,6 +265,13 @@ export function derive<Content = unknown>(view: ConversationView | undefined, op
     if (!natural || parts.length || images.length) rows.push({ key, type: 'assistant', parts, ...(images.length ? { images } : {}), streaming: true, text: textOf(parts) });
   }
   const merged = mergeTurns(rows).filter(row => row.type !== 'assistant' || row.parts.length || row.images?.length || row.stopReason === 'error' || row.stopReason === 'aborted' || row.streaming && !natural).map(row => row.type === 'assistant' && options.artifacts ? { ...row, parts: oneCardPerArtifact(row.parts) } : row);
+  // A run that ended without an answer is recorded in `pi.live.runFailure`; when no assistant error entry of that run shows it, the record does (the person stopping a run is not a failure).
+  const failure = object(live?.['runFailure']);
+  if (!run && failure && failure['reason'] !== 'aborted' && failure['reason'] !== 'reset') {
+    const first = typeof failure['first'] === 'number' ? failure['first'] : -1, detail = failure['detail'];
+    const shown = merged.some(row => row.type === 'assistant' && row.stopReason === 'error' && Number(row.entryId ?? -1) > first);
+    if (!shown) merged.push({ key: `failure:${String(failure['taskId'])}`, type: 'assistant', parts: [], streaming: false, stopReason: 'error', ...(typeof detail === 'string' && !natural ? { errorMessage: detail } : {}), text: '' });
+  }
   const last = merged[merged.length - 1];
   if (run && last?.type === 'assistant') merged[merged.length - 1] = { ...last, active: true };
   return { rows: merged, pinned, run, retry, ...(stageStatus !== undefined ? { stageStatus } : {}), compacting: Array.isArray(live?.['compactions']) && live['compactions'].length > 0 };
