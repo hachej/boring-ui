@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { changedFiles, commitRound, discard, failingTests, forbiddenTouched, retried, runRound, waitForLoad } from '../ux/runner/loop-round.mjs';
+import { changedFiles, commitRound, discard, failingTests, forbiddenTouched, incomplete, medianShiftLines, retried, runRound, waitForLoad } from '../ux/runner/loop-round.mjs';
 
 const git = (cwd, ...a) => execFileSync('git', ['-C', cwd, ...a], { encoding: 'utf8' }).trim();
 function repo() {
@@ -77,4 +77,14 @@ test('the capture waits for the load to fall, within a bound, and a crash is ret
   assert.equal(await waitForLoad({ max: 25, timeoutMs: 3000, load: () => 99, sleep: async () => {}, step: 1000 }), 3000);
   let tries = 0; assert.equal(await retried(async () => { if (++tries === 1) throw new Error('page crashed'); return 'ok'; }), 'ok');
   await assert.rejects(retried(async () => { throw new Error('again'); }), /again/);
+});
+
+test('layout shift is the median of 3: a shift another capture repeats stays, a one-off goes; other lines are kept', () => {
+  const l = (step, shift) => `layout:bar F01@390 step ${step} "Tap": layout shift ${shift} > 0.08`, miss = 'layout:bar F02@390 step 1 "Open": did not complete (timeout)';
+  const kept = medianShiftLines([l(1, 0.3), l(2, 0.2), miss], [[l(1, 0.1)], [l(1, 0.4), l(3, 0.5)]]);
+  assert.deepEqual(kept, [l(1, 0.3), miss]); assert.deepEqual(incomplete(kept), [miss]);
+});
+
+test('the load wait defaults to 5 minutes', async () => {
+  assert.equal(await waitForLoad({ max: 25, load: () => 99, sleep: async () => {}, step: 60000 }), 5 * 60 * 1000);
 });

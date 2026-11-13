@@ -16,12 +16,12 @@ import { capture, launch } from './capture.mjs';
 import { check } from './check.mjs';
 import { recordFlow } from './video.mjs';
 import { judge, KEYS } from './judge.mjs';
-import { commitRound, discard, failingTests, forbiddenTouched, retried, runRound, saveTo, waitForLoad } from './loop-round.mjs';
+import { commitRound, discard, failingTests, forbiddenTouched, incomplete, medianShiftLines, retried, runRound, saveTo, shiftKey, waitForLoad } from './loop-round.mjs';
 import { loadAll, slug } from './scenario.mjs';
 
 const args = process.argv.slice(2), opt = n => { const i = args.indexOf(`--${n}`); return i < 0 ? undefined : args[i + 1]; };
 const DRY = args.includes('--dry-run'), BASELINE = args.includes('--baseline');
-const MAX_ROUNDS = Number(process.env.UX_MAX_ROUNDS ?? 10), MAX_IDLE = Number(process.env.UX_MAX_IDLE ?? 3), LOAD_MAX = Number(process.env.UX_LOAD_MAX ?? 25);
+const MAX_ROUNDS = Number(process.env.UX_MAX_ROUNDS ?? 10), MAX_IDLE = Number(process.env.UX_MAX_IDLE ?? 3), LOAD_MAX = Number(process.env.UX_LOAD_MAX ?? 40);
 const scenario = loadAll().find(s => s.target === opt('target')); if (!scenario) { console.error('usage: loop.mjs --target <layout:bar|component:...> [--baseline|--dry-run]'); process.exit(2); }
 const HOME = join(process.env.UX_LOOP_HOME ?? join(homedir(), 'ux-loop'), slug(scenario.target)), S = slug(scenario.target);
 const MODEL = process.env.UX_WORKER_MODEL ?? 'gpt-6.1-sol', SKILLS = process.env.UX_SKILLS ?? join(process.env.UX_LOOP_HOME ?? homedir(), 'skills');
@@ -38,7 +38,7 @@ const status = d => { if (!d) return ''; try { return execFileSync('git', ['-C',
 const lowest = v => Math.min(...KEYS.map(k => v?.grades?.[k]).filter(x => typeof x === 'number'));
 const FAILING = join(HOME, 'last-failure.txt'), LINES = join(HOME, 'check-lines.json');
 // `layout:bar F01@1440 step 3 "Tap": layout shift 0.095 > 0.08` keyed with the numbers after the step name blanked: a metric moving is not a new problem.
-const lineKey = l => l.replace(/(": )(.*)$/s, (_, a, b) => a + b.replace(/[\d.]+/g, '#'));
+const lineKey = shiftKey;
 
 // The worker gets eyes: the last accepted capture (pictures, per-step metrics, check lines, the judge's remarks) copied next to its brief, in a folder its sandbox can read.
 function eyes(n, prev, lines) {
@@ -78,11 +78,17 @@ async function loopChecks(n, changed, ctx) {
   if (fails.length) return fails;
   await waitForLoad({ max: LOAD_MAX, log });
   const { result: fast } = await retried(() => capture(scenario, join(dir, '_check'), { fast: true }), { log, label: 'check capture' });
-  rmSync(join(dir, '_check'), { recursive: true, force: true });
-  ctx.lines = check(scenario, fast); save(`check-lines-${pass}.txt`, ctx.lines.join('\n'));
+  ctx.lines = check(scenario, fast);
+  if (ctx.lines.some(l => / layout shift /.test(l))) { // layout shift is noisy under load: a shift stays only when 2 of 3 captures show it
+    const more = [];
+    for (let i = 0; i < 2; i++) { await waitForLoad({ max: LOAD_MAX, log }); more.push(check(scenario, (await retried(() => capture(scenario, join(dir, '_check'), { fast: true }), { log, label: 'check capture' })).result)); }
+    ctx.lines = medianShiftLines(ctx.lines, more);
+  }
+  rmSync(join(dir, '_check'), { recursive: true, force: true }); save(`check-lines-${pass}.txt`, ctx.lines.join('\n'));
   const seen = new Set(ctx.prevLines.map(lineKey)), fresh = ctx.lines.filter(l => !seen.has(lineKey(l)));
-  log(`harness check: ${ctx.lines.length} failing lines (was ${ctx.prevLines.length}), ${fresh.length} not seen before`);
-  if (ctx.lines.length > ctx.prevLines.length) fails.push({ name: 'harness check got worse', output: `${ctx.lines.length} failing lines, was ${ctx.prevLines.length}. Lines not in the last accepted round:\n${fresh.join('\n')}` });
+  log(`harness check: ${ctx.lines.length} failing lines (was ${ctx.prevLines.length}), ${fresh.length} not seen before; ${incomplete(ctx.lines).length} steps did not complete (was ${incomplete(ctx.prevLines).length})`);
+  if (incomplete(ctx.lines).length > incomplete(ctx.prevLines).length) fails.push({ name: 'a step that completed before no longer completes', output: `${incomplete(ctx.lines).length} "did not complete" lines, was ${incomplete(ctx.prevLines).length}:\n${incomplete(ctx.lines).join('\n')}` });
+  if (fails.length) return fails;
   await waitForLoad({ max: LOAD_MAX, log });
   ctx.shot = await retried(() => flowGuard(n, ctx.prevResult), { log, label: 'capture' });
   if (ctx.shot.fails.length) fails.push({ name: 'flow guard', output: ctx.shot.fails.join('\n') });
@@ -104,6 +110,8 @@ function score(n, { v, p, commit = '-', checks = '-', note = '' }) {
   if (!existsSync(file)) writeFileSync(file, `| round | ${KEYS.join(' | ')} | lowest | improved | worse | failing check lines | commit | result |\n|${'---|'.repeat(KEYS.length + 6)}\n`);
   appendFileSync(file, `| ${n} | ${cells.join(' | ')} | ${nums.length ? Math.min(...nums) : '-'} | ${up} | ${down} | ${checks ?? '-'} | ${commit} | ${note.replace(/\s+/g, ' ').slice(0, 300)} |\n`);
 }
+// Handed to the judge: the loop vetoes only on the fast checks, the contract tests, a step that stopped completing and the exam; the rest is evidence.
+const evidence = (lines, before) => `Failing check lines now: ${lines.length} (accepted round before: ${before.length}). Steps that do not complete now: ${incomplete(lines).length} (before: ${incomplete(before).length}).\n${lines.length ? lines.join('\n') : 'none'}\n`;
 const done = v => KEYS.every(k => v.grades[k] === undefined || v.grades[k] >= 9);
 
 mkdirSync(HOME, { recursive: true });
@@ -118,7 +126,7 @@ if (BASELINE) { // round 0: capture (with videos if --video) and judge; --captur
   score(0, { v, commit: git('rev-parse', '--short', 'HEAD'), note: '(baseline)' }); log(`baseline ${JSON.stringify(v.grades)}`); process.exit(0);
 }
 let n = 1; while (existsSync(join(folder(n), 'verdict.json'))) n++;
-let prev = folder(n - 1), prevVerdict = readJson(join(prev, 'verdict.json')), prevResult = readJson(join(prev, 'result.json')), idle = 0;
+let lastWhy = '', sameWhy = 0, prev = folder(n - 1), prevVerdict = readJson(join(prev, 'verdict.json')), prevResult = readJson(join(prev, 'result.json')), idle = 0;
 const baselineText = join(HOME, 'baseline-after-port.txt');
 let prevLines = readJson(LINES) ?? (existsSync(baselineText) ? readFileSync(baselineText, 'utf8').split('\n').filter(l => /^\s{2,}\S/.test(l)).map(l => l.trim()) : []);
 if (!prevVerdict && !DRY) { log('no round-0 verdict: run --baseline first'); process.exit(1); }
@@ -140,7 +148,7 @@ for (; n <= MAX_ROUNDS; n++) {
     writeFileSync(FAILING, `Round ${n} was discarded: ${rec.reason}\n${['failure-2.txt', 'failure-1.txt', 'refused.txt'].map(f => join(roundDir(n), f)).filter(existsSync).map(f => readFileSync(f, 'utf8')).join('\n').slice(-6000)}\n`);
     score(n, { checks: ctx.lines?.length, note: `FAILED: ${rec.reason}` }); idle++;
   } else {
-    const v = judge({ folder: folder(n), scenario, round: n, prev });
+    const v = judge({ folder: folder(n), scenario, round: n, prev, evidence: evidence(ctx.lines, prevLines) });
     if (!v) { log('judge gave no usable verdict'); discard(root, rec.start); score(n, { checks: ctx.lines?.length, note: 'judge failed; edits discarded' }); break; }
     if (lowest(v) < lowest(prevVerdict)) {
       const why = `REVERTED: lowest criterion ${lowest(v)} < ${lowest(prevVerdict)} of the last accepted round`;
@@ -159,6 +167,8 @@ for (; n <= MAX_ROUNDS; n++) {
     }
   }
   rmSync(join(roundDir(n), 'eyes'), { recursive: true, force: true });
+  const why = rec.status === 'failed' ? String(rec.reason).replace(/[\d.]+/g, '#') : ''; sameWhy = why && why === lastWhy ? sameWhy + 1 : why ? 1 : 0; lastWhy = why;
+  if (sameWhy >= 2) { writeFileSync(join(HOME, 'STOP'), `two rounds in a row discarded for the same reason: ${rec.reason}\n`); log(`two rounds in a row discarded for the same reason (${rec.reason}): paused with STOP, the owner decides`); }
   if (idle >= MAX_IDLE) { log(`${MAX_IDLE} rounds in a row that improved nothing: stopping`); break; }
 }
 log('loop ended');
