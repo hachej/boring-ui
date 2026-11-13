@@ -29,6 +29,12 @@ export function addAppComponents(directory, names, installer, run) {
   if (names.length) run(process.execPath, ['node_modules/shadcn/dist/index.js', 'add', ...names, '--cwd', directory, '--yes'], installer);
 }
 
+/** chord 1.5.2 declares the optional peer `react@19.3.0` exactly; with this repository's react the install is refused (ERESOLVE) until chord widens it. An app sets the same override (docs/compatibility/PI-DURABLE.md). */
+export function withChordOverride(manifest) {
+  const react = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).devDependencies.react;
+  return { ...manifest, overrides: { ...manifest.overrides, '@earendil-works/chord': { react } } };
+}
+
 const split = pin => { const at = pin.lastIndexOf('@'); return [pin.slice(0, at), pin.slice(at + 1)]; };
 
 /** A registry dependency pin: an exact version, a caret or tilde range, with an optional prerelease (release-version writes 1.1.0-rc.1). */
@@ -64,7 +70,7 @@ export function consumerDependencies(root, item, tools) {
 export function writeLockedManifest(root, directory, name, dependencies) {
   const sourceLock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
   const manifest = { name, version: '1.0.0', private: true, type: 'module', dependencies };
-  writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest));
+  writeFileSync(join(directory, 'package.json'), JSON.stringify(withChordOverride(manifest)));
   const packages = {};
   const include = (dependency, parent = '') => {
     let path = `${parent}/node_modules/${dependency}`.replace(/^\//, '');
