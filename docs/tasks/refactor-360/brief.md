@@ -289,7 +289,30 @@ Where we differ on purpose: P3 has no apply gate and trusts whoever is on the se
 | The whole loop with a real model | One run: 66 s, no help (section 3) |
 | An earlier pilot on Chord | 9 self-updates of 9, median 40 s; 19 upstream bugs; 571 lines of our own for the self-update path |
 
-Not yet run: real Cloudflare for the sandbox, an Alchemy deploy, Effect Cluster, Better Auth per app, a Foldkit screen (a hands-on run of Alchemy's tutorial stack was in progress when this was written).
+Not yet run: real Cloudflare for the sandbox, an Alchemy deploy to a real account, Effect Cluster.
+
+## 19. Hands-on run of Alchemy's own stack (13 November, local, no cloud account)
+
+Starting from Alchemy's Better Auth example for Domain, on this machine, with local emulation only.
+
+| Step | Result |
+|---|---|
+| Local development with no cloud account | Works after three fixes the docs do not mention: a newer Node version, sign-in provider secrets required when the stack is planned, and the example's state store needing an account (switched to local state). Then the database, the Durable Objects and the Worker all ran locally |
+| The model over HTTP and MCP | Works. MCP is not in the tutorial; adding it took about 15 lines. The tool list came back with the model's two tools |
+| Sign-in with Better Auth | Works. Signed out: refused. A user writes and reads their own notes. A second user reading or writing the first one's notes: refused. Wiring is about 105 lines. E-mail and password took one line |
+| A sign-in screen | **None is provided.** The example has only provider buttons; an e-mail form had to be written |
+| Sign-in through an outside OIDC provider (standing in for "sign in with our account") | Works with about 15 lines of configuration; the session then wrote a note through MCP |
+| A Foldkit screen bound to the model | Works. A submitted note appeared through live push about 190 ms later; a note written from outside showed on the page. Screen 171 lines, bundle 160 KB compressed, build about 4 s. **No styling and no components**: the pages are unstyled browser defaults |
+| An agent-style edit: add a field to the model, then fix the screen | The type check flagged the screen at both places it was out of date. 6 files, +34 and −21 lines. Tests green, hot reload showed the field |
+| The data-shape gap, seen again | Notes saved before that edit **no longer loaded**, and nothing warned about it. Changing a view's shape needs a version bump that only the tutorial's last part mentions |
+| MCP with sign-in | The tool list is open to anyone; calls need the session. A bearer token works after one line. **No OAuth for MCP clients** |
+
+What this changes in the plan:
+
+- **Sign-in per app is real and small on the server side** (middleware, sessions, the cross-user refusal, an outside OIDC provider, bearer tokens: one to fifteen lines each). The sign-in screen and OAuth for MCP clients are ours to build, once, in the kernel.
+- **Foldkit is good for a screen's logic and safety, not for its look.** The type checker caught a stale screen, which is exactly what an agent needs. But it is verbose (about 170 lines for a two-field form) and brings no styling. So the proposal in section 6 stands as a trial, with our design rules supplying the look.
+- **The data-shape check before apply is not optional.** The same failure appeared in two separate runs: a changed shape breaks reads of old data silently.
+- Alchemy's documentation is behind its code in several places; budget for that.
 
 ## Sources
 
