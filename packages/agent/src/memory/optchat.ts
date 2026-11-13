@@ -11,7 +11,6 @@ import { CompactionTask, GenerationTask, defineDoc, defineDocFamily, defineExten
 import type { Conversation, ConversationId, Extension, Harness, ModelRef, TaskId, Tx } from '@earendil-works/pi-durable';
 import type { Context, JsonRepresentation } from '@earendil-works/chord';
 import { withAbortSignal, withCancel } from '@earendil-works/chord/context';
-import { Type } from '@earendil-works/pi-ai';
 import type { Message, Models, Usage, UserMessage } from '@earendil-works/pi-ai';
 import {
   COMPACTOR_REQUEST_HISTORY_LIMIT, DEFAULTS, OptChatLog, OptChatTree, advanceFold, bareLines, byteLength, compactPrompt, cutBytes, dateText, emptyFold, leavesOf,
@@ -653,14 +652,14 @@ export function createOptChatMemory(options: OptChatOptions): OptChatMemory {
   const zoomTool = defineTool({
     name: 'zoom',
     description: 'Open the line id+n of the view into the two lines of n/2 under it; n = 1 gives the message whole.',
-    parameters: Type.Object({ id: Type.Integer({ minimum: 0 }), n: Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { id: { type: 'integer', minimum: 0 }, n: { type: 'integer', minimum: 1 } }, required: ['id', 'n'], additionalProperties: false } as const,
     replay: 'safe',
     execute: async ({ id, n }, api) => text(zoomText((await refresh(api.conversationId)).tree, id, n)),
   });
   const dateTool = defineTool({
     name: 'date',
     description: 'The date and time of message id.',
-    parameters: Type.Object({ id: Type.Integer({ minimum: 0 }) }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { id: { type: 'integer', minimum: 0 } }, required: ['id'], additionalProperties: false } as const,
     replay: 'safe',
     execute: async ({ id }, api) => text(dateText((await refresh(api.conversationId)).log, id)),
   });

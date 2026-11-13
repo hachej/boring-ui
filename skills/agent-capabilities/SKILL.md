@@ -19,15 +19,14 @@ agent.install(registry);   // before Harness.open
 
 ## Custom tools
 
-Use Pi's `defineTool` and `Type`. Return text in `output`.
+Use Pi's `defineTool` with `parameters` as a plain JSON Schema object (`as const`, so `execute` gets typed arguments). Return text in `output`.
 
 ```js
 import { defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 
 const lookupOrder = defineTool({
   name: 'lookup_order', description: 'Look up a fictional order by its number.',
-  parameters: Type.Object({ number: Type.String() }, { additionalProperties: false }),
+  parameters: { type: 'object', properties: { number: { type: 'string' } }, required: ['number'], additionalProperties: false } as const,
   execute: async ({ number }) => ({ output: [{ type: 'text', text: JSON.stringify(await orders.get(number)) }] }),
 });
 ```

@@ -14,7 +14,6 @@ import { build } from 'esbuild';
 import { Harness, createRegistry, defineTool } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { createModels } from '@earendil-works/pi-ai/models';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { defineAgent } from '@hachej/boring-agent/agents';
 import { answerUserQuestion, createAskUserTool } from '@hachej/boring-agent/ask-user';
@@ -65,7 +64,7 @@ export async function startAmbient({ directory, port = 0, provider = process.env
 
   const healthCheck = defineTool({
     name: 'run_health_check', description: 'Run the console health check. It takes a while; pass how many seconds it should take (default 15, at most 60).',
-    parameters: Type.Object({ seconds: Type.Optional(Type.Number({ minimum: 1, maximum: 60 })) }, { additionalProperties: false }), replay: 'safe',
+    parameters: { type: 'object', properties: { seconds: { type: 'number', minimum: 1, maximum: 60 } }, additionalProperties: false }, replay: 'safe',
     execute: async (args, _api, ctx) => {
       const seconds = Math.min(60, Math.max(1, Math.round(args.seconds ?? 15)));
       await sleep(seconds * 1000, ctx.abortSignal);

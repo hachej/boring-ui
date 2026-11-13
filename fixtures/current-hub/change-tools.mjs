@@ -1,18 +1,14 @@
 import { defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { changeActorFields, changeIdentityFields, pickChangeReference } from './change-path.mjs';
 
-const text = Type.String({ minLength: 1, maxLength: 160 });
-const requestId = Type.String({ pattern: '^[a-z0-9-]{1,80}$' });
-const source = Type.Object({ resource: Type.Object({ providerId: text, path: text }, { additionalProperties: false }),
-  view: Type.Object({ kind: Type.Literal('published') }, { additionalProperties: false }),
-  revision: Type.String({ pattern: '^[0-9a-f]{40}$' }),
-}, { additionalProperties: false });
-const context = Type.Object({ appId: text, runtimeId: text, instanceId: text, capabilityVersion: Type.Literal('1'),
+const text = { type: 'string', minLength: 1, maxLength: 160 };
+const requestId = { type: 'string', pattern: '^[a-z0-9-]{1,80}$' };
+const source = { type: 'object', properties: { resource: { type: 'object', properties: { providerId: text, path: text }, required: ['providerId', 'path'], additionalProperties: false }, view: { type: 'object', properties: { kind: { type: 'string', const: 'published' } }, required: ['kind'], additionalProperties: false }, revision: { type: 'string', pattern: '^[0-9a-f]{40}$' } }, required: ['resource', 'view', 'revision'], additionalProperties: false };
+const context = { type: 'object', properties: { appId: text, runtimeId: text, instanceId: text, capabilityVersion: { type: 'string', const: '1' },
   ...Object.fromEntries(changeActorFields.map(field => [field, text])), requestId,
-  producer: Type.Integer({ minimum: 1 }), delivery: Type.Integer({ minimum: 1 }), operationId: Type.String({ maxLength: 512 }),
-}, { additionalProperties: false });
-const parameters = Type.Object({ requestId, source, context }, { additionalProperties: false });
+  producer: { type: 'integer', minimum: 1 }, delivery: { type: 'integer', minimum: 1 }, operationId: { type: 'string', maxLength: 512 },
+}, required: ['appId', 'runtimeId', 'instanceId', 'capabilityVersion', ...changeActorFields, 'requestId', 'producer', 'delivery', 'operationId'], additionalProperties: false };
+const parameters = { type: 'object', properties: { requestId, source, context }, required: ['requestId', 'source', 'context'], additionalProperties: false };
 const same = (a, b, fields) => fields.every(field => a?.[field] === b?.[field]);
 const actorCopy = actor => Object.fromEntries(changeActorFields.map(field => [field, actor?.[field]]));
 const validActor = actor => changeActorFields.every(field => typeof actor[field] === 'string' && actor[field].length > 0 && actor[field].length <= 160);

@@ -2,13 +2,12 @@ import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Harness, AssistantEntry, ToolTask, createRegistry, defineExtension } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
-import { Type } from '@earendil-works/pi-ai';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
 
 const [directory, phase] = process.argv.slice(2);
-const tool = createPresentationTool({ name: 'viewer_effect', description: 'Fictional mounted viewer effect', parameters: Type.Object({}),
+const tool = createPresentationTool({ name: 'viewer_effect', description: 'Fictional mounted viewer effect', parameters: { type: 'object', properties: {  } },
   target: { instanceId: 'viewer', epoch: 'mount', subject: null }, prepareInput: args => args, authorize: () => true,
   command: { name: 'effect', input: { parse: value => value }, invoke: async () => {
     appendFileSync(join(directory, 'effects'), 'effect\n');

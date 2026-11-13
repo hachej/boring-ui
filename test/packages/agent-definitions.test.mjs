@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { loadAgentDefinition } from '@hachej/boring-agent/definitions';
 
@@ -13,7 +12,7 @@ const source = (instructions = 'Fictional selected instructions', tools = ['alph
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const target = path => ({ resource: { providerId: 'definitions', path }, view: { kind: 'published' } });
 const access = () => ({ scopeId: 'fictional-team', principalId: 'fictional-member', initiatorId: 'fictional-requester' });
-const tool = name => defineTool({ name, description: `Fictional ${name}`, parameters: Type.Object({}), replay: 'unsafe',
+const tool = name => defineTool({ name, description: `Fictional ${name}`, parameters: { type: 'object', properties: {  } }, replay: 'unsafe',
   execute: async () => ({ output: [{ type: 'text', text: name }] }) });
 const alpha = tool('alpha'), beta = tool('beta');
 const available = { alpha: { tool: alpha, implementationVersion: 'alpha-v1' }, beta: { tool: beta, implementationVersion: 'beta-v1' } };

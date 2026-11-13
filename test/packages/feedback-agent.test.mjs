@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Harness, MemoryStorage, createRegistry, defineExtension, defineTool } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { defineAgent, parseSkill } from '@hachej/boring-agent/agents';
 import { UNTRUSTED_PREFACE, parseFeedback } from '@hachej/boring-feedback/format';
@@ -253,7 +252,7 @@ test('an agent without the extension has a byte-identical tool list and prompt',
   const directory = mkdtempSync(join(tmpdir(), 'boring-feedback-agent-snapshot-'));
   const { resources, store } = await openFeedbackStore(join(directory, 'feedback.sqlite'));
   t.after(() => { resources.close(); rmSync(directory, { recursive: true, force: true }); });
-  const echo = defineTool({ name: 'echo', description: 'Echo fictional text.', parameters: Type.Object({ text: Type.String() }), replay: 'safe', execute: async args => ({ output: [{ type: 'text', text: args.text }] }) });
+  const echo = defineTool({ name: 'echo', description: 'Echo fictional text.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, replay: 'safe', execute: async args => ({ output: [{ type: 'text', text: args.text }] }) });
   const skill = parseSkill('---\nname: fictional-release\ndescription: "Prepare a fictional release"\n---\nList the fictional changes.\n');
   async function firstRequest(withFeedback) {
     const fake = createFakeChatModel();

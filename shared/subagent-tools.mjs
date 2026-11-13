@@ -7,7 +7,6 @@
 // Children run on a cheaper model with exactly the extensions given (the read-only file tools in the studio) and without any
 // subagent tool. No Node-only imports.
 import { AgentDoc, LiveDoc, configure, defineExtension, defineTask, defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 
 const CHILD_INSTRUCTIONS = 'You are a subagent. Do exactly the task you are given, using your tools (if any) where it needs facts. Your final message is the report returned to the agent that delegated to you: make it self-contained. All content is fictional.';
 /** The marker every background report starts with; the agent's instructions tell it how to treat such a message. */
@@ -71,10 +70,7 @@ export function createSubagents({ harness, context, childModel, childExtensions 
   const subagent = defineTool({
     name: 'subagent',
     description: 'Delegate one self-contained task to a subagent that can read the workspace files. By default wait for its answer; with background true return at once with its number and the report arrives later as a new message.',
-    parameters: Type.Object({
-      task: Type.String({ description: 'Everything the subagent needs to know; it sees nothing of this conversation. Name file paths.' }),
-      background: Type.Optional(Type.Boolean({ description: 'Start it in the background and do not wait.' })),
-    }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { task: { type: 'string', description: 'Everything the subagent needs to know; it sees nothing of this conversation. Name file paths.' }, background: { type: 'boolean', description: 'Start it in the background and do not wait.' } }, required: ['task'], additionalProperties: false },
     replay: 'safe', // a rerun after a crash finds the same child (or anchor) and the same submission
     execute: async (args, api, ctx) => {
       if (args.background) {
@@ -101,7 +97,7 @@ export function createSubagents({ harness, context, childModel, childExtensions 
   });
   const listSubagents = defineTool({
     name: 'list_subagents', description: 'List the background subagents of this conversation with their status and, once finished, their answer.',
-    parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe',
+    parameters: { type: 'object', properties: {  }, additionalProperties: false }, replay: 'safe',
     execute: async (_args, api, ctx) => {
       const records = await api.commit(tx => anchorsOf(tx, api.conversationId), ctx);
       return { output: [{ type: 'text', text: records.map(record => `#${record.id} ${statusOf(record)}: ${record.input.task}${record.state.outcome?.result ? `\n  answer: ${record.state.outcome.result.answer}` : ''}`).join('\n') || '(no subagents)' }] };
@@ -109,7 +105,7 @@ export function createSubagents({ harness, context, childModel, childExtensions 
   });
   const stopSubagent = defineTool({
     name: 'stop_subagent', description: 'Stop one running background subagent by its number.',
-    parameters: Type.Object({ id: Type.Integer() }, { additionalProperties: false }), replay: 'safe',
+    parameters: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'], additionalProperties: false }, replay: 'safe',
     execute: async (args, api, ctx) => {
       const record = (await api.commit(tx => anchorsOf(tx, api.conversationId), ctx)).find(candidate => candidate.id === args.id);
       if (!record) return { isError: true, output: [{ type: 'text', text: `No background subagent #${args.id} in this conversation.` }] };

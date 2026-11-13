@@ -10,7 +10,6 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Harness, createRegistry, defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { createModels } from '@earendil-works/pi-ai/models';
@@ -83,7 +82,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   const answers = [], withdrawals = [];
   // `refuseTasks(true)`: the task list answers 403 until `refuseTasks(false)` (the host's list « unavailable for now »).
   let refusing = false;
-  const createTask = defineTool({ name: 'tasks_create', description: 'File a fictional request for the person.', replay: 'safe', parameters: Type.Object({ title: Type.String() }), execute: async ({ title }) => {
+  const createTask = defineTool({ name: 'tasks_create', description: 'File a fictional request for the person.', replay: 'safe', parameters: { type: 'object', properties: { title: { type: 'string' } }, required: ['title'] }, execute: async ({ title }) => {
     const task = { id: randomUUID(), ref: `D-${203 + tasks.length}`, title, state: 'waiting', created: '2026-10-29T08:00:00Z', updated: '2026-10-29T08:00:00Z', waiting_on_you: true, is_requester: true, question: 'Confirmez-vous cette demande ?' };
     tasks.push(task);
     // hachej/boring-factory#892's result: JSON `{ created, task: { id, number, title, state, status, updated_at } }` in the first text block.

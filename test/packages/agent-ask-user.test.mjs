@@ -234,7 +234,6 @@ test('answer and withdraw need authentication, the allow policy and a host answe
 // ---- requireApproval: a gated change tool waits for the person, through the same question mechanism ------------------------
 const { requireApproval, isApprovalGated, APPROVAL_DETAILS, APPROVE, DENY, DENIED_PREFIX } = await import('@hachej/boring-agent/approval');
 const { defineTool } = await import('@earendil-works/pi-durable');
-const { Type } = await import('@earendil-works/pi-ai');
 
 /** A model that reads on "read", changes on "change <note>", and echoes the tool result it receives. */
 function changingModel() {
@@ -267,8 +266,8 @@ function changingModel() {
 }
 
 function changeTools(changes) {
-  const read = defineTool({ name: 'read_note', description: 'Read the note.', parameters: Type.Object({}), execute: async () => ({ output: [{ type: 'text', text: `notes: ${changes.join(',') || 'none'}` }] }) });
-  const change = defineTool({ name: 'change_note', description: 'Change the note.', parameters: Type.Object({ note: Type.String() }), execute: async ({ note }) => { changes.push(note); return { output: [{ type: 'text', text: `changed ${note}` }] }; } });
+  const read = defineTool({ name: 'read_note', description: 'Read the note.', parameters: { type: 'object', properties: {  } }, execute: async () => ({ output: [{ type: 'text', text: `notes: ${changes.join(',') || 'none'}` }] }) });
+  const change = defineTool({ name: 'change_note', description: 'Change the note.', parameters: { type: 'object', properties: { note: { type: 'string' } }, required: ['note'] }, execute: async ({ note }) => { changes.push(note); return { output: [{ type: 'text', text: `changed ${note}` }] }; } });
   return { read, change, gated: requireApproval(change, { summarize: args => `Add "${args.note}"` }) };
 }
 

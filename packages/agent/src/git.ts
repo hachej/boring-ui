@@ -1,6 +1,5 @@
 import type { GitRepository } from '@hachej/boring-files/git';
 import { defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { workspaceFor } from './workspaces.js';
 
 type DiffVersion = { readonly oid: string; readonly mode: number; readonly bytes: Uint8Array } | null;
@@ -18,21 +17,12 @@ function readable(version: DiffVersion) {
  * harness serves a repository per person. Git mutations have no replay receipts.
  */
 export function createGitTool(repository?: GitRepository) {
-  const view = Type.Union([
-    Type.Object({ kind: Type.Literal('tree'), ref: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
-    Type.Object({ kind: Type.Union([Type.Literal('index'), Type.Literal('worktree')]) }, { additionalProperties: false }),
-  ]);
+  const view = { anyOf: [{ type: 'object', properties: { kind: { type: 'string', const: 'tree' }, ref: { type: 'string', minLength: 1 } }, required: ['kind', 'ref'], additionalProperties: false }, { type: 'object', properties: { kind: { anyOf: [{ type: 'string', const: 'index' }, { type: 'string', const: 'worktree' }] } }, required: ['kind'], additionalProperties: false }] };
   return defineTool({
     name: 'working_git',
     description: 'Operate on the bound working repository. Removal affects only the index. Mutations may leave partial effects and are not publication.',
     replay: 'unsafe',
-    parameters: Type.Union([
-      Type.Object({ operation: Type.Union([Type.Literal('init'), Type.Literal('status'), Type.Literal('log'), Type.Literal('branches')]) }, { additionalProperties: false }),
-      Type.Object({ operation: Type.Union([Type.Literal('add'), Type.Literal('remove')]), path: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
-      Type.Object({ operation: Type.Literal('commit'), message: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
-      Type.Object({ operation: Type.Union([Type.Literal('branch'), Type.Literal('checkout')]), ref: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
-      Type.Object({ operation: Type.Literal('diff'), before: view, after: view }, { additionalProperties: false }),
-    ]),
+    parameters: { anyOf: [{ type: 'object', properties: { operation: { anyOf: [{ type: 'string', const: 'init' }, { type: 'string', const: 'status' }, { type: 'string', const: 'log' }, { type: 'string', const: 'branches' }] } }, required: ['operation'], additionalProperties: false }, { type: 'object', properties: { operation: { anyOf: [{ type: 'string', const: 'add' }, { type: 'string', const: 'remove' }] }, path: { type: 'string', minLength: 1 } }, required: ['operation', 'path'], additionalProperties: false }, { type: 'object', properties: { operation: { type: 'string', const: 'commit' }, message: { type: 'string', minLength: 1 } }, required: ['operation', 'message'], additionalProperties: false }, { type: 'object', properties: { operation: { anyOf: [{ type: 'string', const: 'branch' }, { type: 'string', const: 'checkout' }] }, ref: { type: 'string', minLength: 1 } }, required: ['operation', 'ref'], additionalProperties: false }, { type: 'object', properties: { operation: { type: 'string', const: 'diff' }, before: view, after: view }, required: ['operation', 'before', 'after'], additionalProperties: false }] } as const,
     execute: async (args, api, context) => {
       const resolved = repository === undefined ? await workspaceFor(undefined, api, context) : undefined;
       const selected = repository ?? (resolved && 'binding' in resolved ? resolved.binding.repository : undefined);
