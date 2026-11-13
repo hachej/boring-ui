@@ -61,8 +61,8 @@ footer{margin-top:56px;font-size:.8rem;color:var(--muted-foreground)}
   body.nav-open .side{transform:none;box-shadow:0 0 0 100vmax rgba(0,0,0,.45)}
   .bar{padding:8px 16px;position:sticky;top:0;background:var(--background);z-index:10}.bar .brand-sm,.bar .menu{display:inline-block}
   main{padding:12px 16px 56px}h1{font-size:1.25rem}.badge{display:none}.lead{font-size:.92rem}.toolbar{margin:10px 0 8px;gap:8px}.try-label{margin:8px 0 4px}
-  .chips{flex-wrap:nowrap;overflow-x:auto;margin-inline:-16px;padding:0 16px}.chips>*{flex:none}
-  .toolbar{flex-direction:column;align-items:stretch}.seg button{flex:1}
+  .toolbar>*{min-width:0}.chips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}.chips>*{flex:none}
+  .toolbar{flex-direction:column;flex-wrap:nowrap;align-items:stretch}.seg button{flex:1}
   .try{flex-wrap:nowrap;overflow-x:auto;margin-inline:-16px;padding:0 16px 4px}.try button{white-space:nowrap;flex:none}
 }
 @media (prefers-reduced-motion:reduce){.side{transition:none}}`;
