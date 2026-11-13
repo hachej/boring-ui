@@ -25,7 +25,7 @@ const answered = (args, answer) => [...asked(args), result(3, 'q1', 'ask_user', 
 const TEXT = 'The January statement has 40 lines, all reconciled.\n\nTwo discrepancies of $12.00 are noted in the file below: **Harbor Garage** (Jan 9) and **The Cedar Diner** (Jan 15).';
 const replied = [say(1, 'Reconcile the January statement.'), entry(2, asst([{ type: 'toolCall', id: 'w1', name: 'write', arguments: { path: 'uploads/discrepancies-january.csv', content: 'date;label;gap' } }], 'toolUse')),
   result(3, 'w1', 'write', 'ok'), entry(4, asst([{ type: 'text', text: TEXT }]))];
-const START = { ask: asked(ASK), answered: answered(ASK, 'Janvier'), form: asked(FORM), reply: replied }[Q] ?? asked(ASK);
+const START = { ask: asked(ASK), answered: answered(ASK, 'January'), form: asked(FORM), reply: replied }[Q] ?? asked(ASK);
 
 let snapshot = { identity: { runtimeId: 'fictional', scopeId: 'reply-card', principalId: 'julie' }, conversationId: 'reply-card', connection: { kind: 'connected' },
   view: { entries: START, docs: Q === 'ask' || Q === 'form' ? { 'pi.live': { run: { taskId: 7 } } } : {} }, draft: { text: '', attachments: [], version: 0 }, outbox: [], echo: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };

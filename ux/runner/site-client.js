@@ -47,9 +47,12 @@
     $$('[data-variant]').forEach(b => b.addEventListener('click', () => { const q = D.variants[+b.dataset.variant].query; extra = extra === q ? '' : q; void load(); }));
     $$('[data-try]').forEach(b => b.addEventListener('click', async () => {
       const item = D.tries[+b.dataset.try];
-      await load(); const mine = run; await sleep(700);
-      const steps = item.steps[D.views[vp].name]; if (!steps) return;
       $$('[data-try]').forEach(x => { x.disabled = true; });
+      status.textContent = 'Loading the demo…';
+      extra = item.query || '';
+      await load(); const mine = run; await ready(D.ready); await sleep(400);
+      const steps = item.steps[D.views[vp].name];
+      if (!steps) { $$('[data-try]').forEach(x => { x.disabled = false; }); status.textContent = ''; return; }
       status.textContent = 'Playing: ' + item.label;
       const ok = await play(steps, () => mine === run);
       $$('[data-try]').forEach(x => { x.disabled = false; });
@@ -59,16 +62,20 @@
     void load();
   }
 
+  async function ready(selector) {
+    for (let i = 0; i < 120; i++) { try { if (frame.contentDocument.querySelector(selector || '[data-testid]')) return; } catch { /* loading */ } await sleep(100); }
+  }
+
   async function play(steps, alive) {
     const win = frame.contentWindow, doc = frame.contentDocument;
     const shown = e => e.getClientRects().length > 0;
-    const until = async (js, timeout = 1500) => { const t = Date.now(); while (Date.now() - t < timeout) { try { if (win.eval(js)) return true; } catch { /* page not ready */ } await sleep(80); } return false; };
+    const until = async (js, timeout = 3000) => { const t = Date.now(); while (Date.now() - t < timeout) { try { if (win.eval(js)) return true; } catch { /* page not ready */ } await sleep(80); } return false; };
     const find = async s => {
       for (let i = 0; i < 50; i++) {
         let el;
         if (s.sel) el = $$(s.sel, doc).find(shown);
         else if (s.choice) el = $$('[data-choice]', doc).find(e => e.textContent.includes(s.choice) && shown(e));
-        else if (s.text) el = $$('button,a,[role=row],[role=button],[tabindex],li,span,p', doc).filter(e => e.textContent.includes(s.text) && shown(e)).sort((a, b) => a.textContent.length - b.textContent.length)[0];
+        else if (s.text) el = $$('body *', doc).find(e => e.textContent.includes(s.text) && shown(e) && ![...e.children].some(c => c.textContent.includes(s.text)));
         if (el) return el;
         await sleep(80);
       }
@@ -92,7 +99,7 @@
         else if (s.do === 'scroll') el.scrollTop = s.to ?? 0;
         else if (s.do === 'type') { if (s.sel) el.focus(); type(el, s.input); }
       }
-      if (s.until && !await until(s.until, s.timeout ?? 1500) && !s.soft) { window.__fail = ['until', s]; return false; }
+      if (s.until && !await until(s.until, Math.max(s.timeout ?? 0, 3000)) && !s.soft) { window.__fail = ['until', s]; return false; }
       await sleep(350);
     }
     return true;

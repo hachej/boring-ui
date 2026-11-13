@@ -33,9 +33,9 @@ function tries(scenario) {
   const items = scenario.try ?? scenario.flows.map(f => ({ label: f.name, flow: f.id }));
   const out = [];
   for (const item of items) {
-    const steps = item.steps ?? scenario.flows.find(f => f.id === item.flow)?.steps ?? [];
+    const flow = scenario.flows.find(f => f.id === item.flow), steps = item.steps ?? flow?.steps ?? [];
     const byViewport = Object.fromEntries(scenario.viewports.map(vp => [vp.name, compile(scenario, steps, vp.name)]).filter(([, s]) => s));
-    if (Object.keys(byViewport).length) out.push({ label: item.label, steps: byViewport });
+    if (Object.keys(byViewport).length) out.push({ label: item.label, query: item.query ?? flow?.query ?? '', steps: byViewport });
     if (out.length === 6) break;
   }
   return out;
@@ -58,7 +58,7 @@ function demoBlock(scenario, base) {
   const views = scenario.viewports.map(vp => ({ phone: !!vp.touch, name: vp.name, label: vp.touch ? 'Phone' : 'Desktop', w: vp.width, h: vp.height,
     query: ['demo=1', scenario.fixture.query, pick(scenario.fixture.queryBy, vp.name), 'pace=real'].filter(Boolean).join('&') }));
   const list = tries(scenario), start = variants(scenario);
-  const data = JSON.stringify({ base, views, tries: list, variants: start }).replace(/</g, '\\u003c');
+  const data = JSON.stringify({ base, ready: scenario.fixture.ready, views, tries: list, variants: start }).replace(/</g, '\\u003c');
   return `${list.length ? `<p class="small muted try-label">Things to try <span id="try-status" role="status"></span></p><div class="try">${list.map((t, i) => `<button type="button" data-try="${i}">${esc(t.label)}</button>`).join('')}</div>` : ''}
 <div class="toolbar">${views.length > 1 ? `<div class="seg" role="group" aria-label="Screen">${views.map((v, i) => `<button type="button" data-vp="${i}" aria-pressed="false">${v.label}</button>`).join('')}</div>` : ''}
 ${start.length ? `<div class="chips" role="group" aria-label="Start state"><span class="small muted">Start state</span>${start.map((v, i) => `<button type="button" class="chip" data-variant="${i}" aria-pressed="false">${esc(v.label)}</button>`).join('')}</div>` : ''}</div>
