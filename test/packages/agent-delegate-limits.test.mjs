@@ -7,7 +7,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AssistantEntry, Harness, MemoryStorage, createRegistry, defineTool } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
-import { Type } from '@earendil-works/pi-ai';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
@@ -59,15 +58,15 @@ function scriptedModels({ fanOut = 1, task = 'What is the capital of Fictionland
 }
 
 const lookup = defineTool({
-  name: 'lookup', description: 'Look up a fictional fact.', parameters: Type.Object({ topic: Type.String() }), replay: 'safe',
+  name: 'lookup', description: 'Look up a fictional fact.', parameters: { type: 'object', properties: { topic: { type: 'string' } }, required: ['topic'] }, replay: 'safe',
   execute: async () => ({ output: [{ type: 'text', text: 'Glimmerton' }] }),
 });
 const vault = defineTool({
-  name: 'open_vault', description: 'A fictional tool the child agent has but the host does not allow it.', parameters: Type.Object({}), replay: 'safe',
+  name: 'open_vault', description: 'A fictional tool the child agent has but the host does not allow it.', parameters: { type: 'object', properties: {  } }, replay: 'safe',
   execute: async () => ({ output: [{ type: 'text', text: 'opened' }] }),
 });
 const parentOnly = defineTool({
-  name: 'parent_only', description: 'A tool only the parent has.', parameters: Type.Object({}), replay: 'safe',
+  name: 'parent_only', description: 'A tool only the parent has.', parameters: { type: 'object', properties: {  } }, replay: 'safe',
   execute: async () => ({ output: [{ type: 'text', text: 'parent' }] }),
 });
 

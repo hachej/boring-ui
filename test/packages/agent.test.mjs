@@ -1742,7 +1742,6 @@ test('conversations: a message that begins with <target> but is not a valid bloc
 
 test('addExtension adds a host extension to an existing conversation: the next turn runs with it, and it survives a reopen', { timeout: 20000 }, async t => {
   const { defineTool } = await import('@earendil-works/pi-durable');
-  const { Type } = await import('@earendil-works/pi-ai');
   const { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } = await import('@earendil-works/pi-ai/providers/faux');
   const { addExtension, defineAgent } = await import('@hachej/boring-agent/agents');
   const directory = mkdtempSync(join(tmpdir(), 'add-extension-'));
@@ -1764,13 +1763,13 @@ test('addExtension adds a host extension to an existing conversation: the next t
       : fauxAssistantMessage([fauxText('Done.')]);
   }));
   const models = createModels(); models.setProvider(faux.provider);
-  const own = defineTool({ name: 'note', description: 'The agent\'s own tool.', parameters: Type.Object({}), replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: 'noted' }] }) });
+  const own = defineTool({ name: 'note', description: 'The agent\'s own tool.', parameters: { type: 'object', properties: {  } }, replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: 'noted' }] }) });
   const stamps = [];
-  const stamp = defineTool({ name: 'stamp', description: 'Stamp the fictional ledger.', parameters: Type.Object({}), replay: 'safe', execute: async () => { stamps.push('stamp'); return { output: [{ type: 'text', text: 'stamped' }] }; } });
+  const stamp = defineTool({ name: 'stamp', description: 'Stamp the fictional ledger.', parameters: { type: 'object', properties: {  } }, replay: 'safe', execute: async () => { stamps.push('stamp'); return { output: [{ type: 'text', text: 'stamped' }] }; } });
   const added = defineExtension({ name: 'fictional.stamp', tools: [stamp] });
   const agent = defineAgent({ id: 'clerk', struggle: false, model: { provider: 'fictional-faux', modelId: 'scripted' }, instructions: 'Keep the ledger.', tools: [own] });
   // Another agent shares the registry: a conversation of `clerk` must not pick up its extension.
-  const audit = defineTool({ name: 'audit', description: 'Another agent\'s tool.', parameters: Type.Object({}), replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: 'audited' }] }) });
+  const audit = defineTool({ name: 'audit', description: 'Another agent\'s tool.', parameters: { type: 'object', properties: {  } }, replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: 'audited' }] }) });
   const auditor = defineAgent({ id: 'auditor', struggle: false, model: { provider: 'fictional-faux', modelId: 'scripted' }, tools: [audit] });
   // The host installs its extensions in the registry every time it opens the Harness: the conversation stores names only.
   const open = async () => {

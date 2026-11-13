@@ -3,15 +3,12 @@ import { join } from 'node:path';
 import { Harness, createRegistry, defineExtension, defineTool } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { createModels } from '@earendil-works/pi-ai/models';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { fixtureActor } from './app.mjs';
 import { createFixtureChangeTools } from './change-tools.mjs';
 
 const actorFields = ['principalId', 'initiatorId', 'scopeId', 'installationId'];
-const parameters = Type.Object({ requestId: Type.String({ pattern: '^[a-z0-9-]{1,80}$' }),
-  inputRef: Type.String({ maxLength: 80 }), capabilityVersion: Type.String({ maxLength: 10 }),
-}, { additionalProperties: false });
+const parameters = { type: 'object', properties: { requestId: { type: 'string', pattern: '^[a-z0-9-]{1,80}$' }, inputRef: { type: 'string', maxLength: 80 }, capabilityVersion: { type: 'string', maxLength: 10 } }, required: ['requestId', 'inputRef', 'capabilityVersion'], additionalProperties: false };
 
 export async function openFixtureCompanion({ directory, apps, changePaths, actorFor = fixtureActor, models = createModels(), model }) {
   mkdirSync(directory, { recursive: true });

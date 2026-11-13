@@ -10,7 +10,6 @@
 import { join } from 'node:path';
 import { defineExtension, defineTool, section } from '@earendil-works/pi-durable';
 import { createEditTool, createReadTool, createWriteTool } from '@earendil-works/pi-durable/tools';
-import { Type } from '@earendil-works/pi-ai';
 import { defineAgent } from '@hachej/boring-agent/agents';
 import { createOptChatMemory } from '@hachej/boring-agent/memory/optchat';
 import { LIMITS, SELF_DIR, SELF_SEED, checkAbilities, declarations, describeChange, openDeploys, parseAbility, runSandboxed } from './self.mjs';
@@ -89,7 +88,7 @@ export async function createBot(host) {
 Call host tools as \`await tools.<name>(args)\` and your own abilities as \`await abilities.<name>(args)\`. Print with text(value) or return a value.
 No timers, fetch, require or network. Limits: ${LIMITS.timeoutMs / 1000} s, ${LIMITS.nestedCalls} tool calls, ${LIMITS.outputChars} output characters.
 ${declarations(HOST_TOOLS, version.abilities)}`,
-      parameters: Type.Object({ code: Type.String({ description: 'JavaScript async function body.' }) }, { additionalProperties: false }),
+      parameters: { type: 'object', properties: { code: { type: 'string', description: 'JavaScript async function body.' } }, required: ['code'], additionalProperties: false },
       replay: 'safe',
       execute: async ({ code }, api, callContext) => {
         const result = await runSandboxed(code, version.abilities, sandboxTools(api.conversationId), callContext.abortSignal);
@@ -112,7 +111,7 @@ ${declarations(HOST_TOOLS, version.abilities)}`,
   const redeploy = defineTool({
     name: 'redeploy',
     description: `Deploy your current self from ${SELF_DIR} (persona.md and abilities/*.js) as a new version. The host checks every file first; on success the next model request of this same conversation uses the new persona and abilities. Edit the files first, then call this once.`,
-    parameters: Type.Object({ note: Type.String({ description: 'One line: what changed and why.' }) }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { note: { type: 'string', description: 'One line: what changed and why.' } }, required: ['note'], additionalProperties: false },
     execute: async ({ note }) => {
       let snapshot;
       try { snapshot = await readSelf(); } catch (error) { return { output: [{ type: 'text', text: `Not deployed: ${error.message}` }], isError: true }; }

@@ -1,4 +1,3 @@
-import { Type } from '@earendil-works/pi-ai';
 import type { ToolRegistration } from '@earendil-works/pi-durable';
 import type { PresentationCommand } from '@hachej/boring-ui-kit/contracts';
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
@@ -8,7 +7,7 @@ declare const command: PresentationCommand<
   { readonly privateText: string },
   { readonly documentId: string }
 >;
-const parameters = Type.Object({ index: Type.Integer({ minimum: 0 }) });
+const parameters = { type: 'object', properties: { index: { type: 'integer', minimum: 0 } }, required: ['index'] };
 const options = {
   name: 'navigate_notes', description: 'Navigate the explicitly bound notes', parameters, command,
   target: { instanceId: 'notes', epoch: 'page-one', subject: { documentId: 'fictional' } },

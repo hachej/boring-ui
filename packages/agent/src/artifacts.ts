@@ -1,6 +1,5 @@
 import { defineTool } from '@earendil-works/pi-durable';
 import type { ToolExecutionApi } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import type { Context } from '@earendil-works/chord';
 import type { ResourceAccess, ResourceLocator } from '@hachej/boring-files';
 import { workspacePath } from '@hachej/boring-files/file-types';
@@ -83,11 +82,7 @@ export function createPresentTool(options: PresentToolOptions = {}) {
       'Short answers stay in the chat, and so does anything the person asks to have in the chat or without tools or artifacts: then call no tool.',
       'To change, extend or fix something you presented: read the file again first (the person may have edited it; keep their changes), change it with edit (or write the whole new content) at the same path, never a second file, and call present again. If you do not remember the path, list the files.',
     ].join(' '),
-    parameters: Type.Object({
-      path: Type.Optional(Type.String({ minLength: 1, maxLength: 512, description: 'A workspace file path. Supply exactly one of path, task or tasks.' })),
-      task: Type.Optional(Type.String({ minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]*$', description: 'A host task id or number, such as D-201.' })),
-      tasks: Type.Optional(Type.Object({ filter: Type.Union([Type.Literal('all'), Type.Literal('mine'), Type.Literal('waiting-on-me')]) }, { additionalProperties: false })),
-    }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { path: { type: 'string', minLength: 1, maxLength: 512, description: 'A workspace file path. Supply exactly one of path, task or tasks.' }, task: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]*$', description: 'A host task id or number, such as D-201.' }, tasks: { type: 'object', properties: { filter: { anyOf: [{ type: 'string', const: 'all' }, { type: 'string', const: 'mine' }, { type: 'string', const: 'waiting-on-me' }] } }, required: ['filter'], additionalProperties: false } }, additionalProperties: false } as const,
     replay: 'safe',
     execute: async (args, api, context) => {
       if (Object.keys(args).length !== 1) return reply({ kind: 'denied', reason: 'Supply exactly one of path, task or tasks' });

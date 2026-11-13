@@ -8,7 +8,6 @@ import { join } from 'node:path';
 import { Harness, MemoryStorage, createRegistry, defineExtension } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
-import { Type } from '@earendil-works/pi-ai';
 import { createModels, createProvider } from '@earendil-works/pi-ai/models';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';

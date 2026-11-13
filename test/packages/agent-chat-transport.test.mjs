@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Harness, MemoryStorage, createRegistry, defineTool, UserEntry } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createChatTransportHandler } from '@hachej/boring-agent/chat-transport';
 import { defineAgent, parseSkill, staticSkills } from '@hachej/boring-agent/agents';
@@ -209,7 +208,7 @@ test('the watch heartbeats while idle and the remote chat reopens a dropped or s
 
 test('defineAgent maps data to native extensions, agent configuration and on-demand skills', async t => {
   const fake = createFakeChatModel();
-  const echo = defineTool({ name: 'echo', description: 'Echo text.', parameters: Type.Object({ text: Type.String() }), replay: 'safe',
+  const echo = defineTool({ name: 'echo', description: 'Echo text.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, replay: 'safe',
     execute: async args => ({ output: [{ type: 'text', text: args.text }] }) });
   const skill = parseSkill('---\nname: fictional-letter\ndescription: "Write a fictional letter"\n---\nAlways sign as the Fictional Clinic.\n');
   assert.deepEqual(skill, { name: 'fictional-letter', description: 'Write a fictional letter', body: 'Always sign as the Fictional Clinic.' });

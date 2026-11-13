@@ -8,7 +8,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Harness, LiveDoc, MemoryStorage, UserEntry, createRegistry, defineDoc, defineTool } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
-import { Type } from '@earendil-works/pi-ai';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
@@ -56,11 +55,11 @@ function scriptedModels({ stallChild = false, childLookups = 1, childError } = {
 
 const looked = [];
 const lookup = defineTool({
-  name: 'lookup', description: 'Look up a fictional fact.', parameters: Type.Object({ topic: Type.String() }), replay: 'safe',
+  name: 'lookup', description: 'Look up a fictional fact.', parameters: { type: 'object', properties: { topic: { type: 'string' } }, required: ['topic'] }, replay: 'safe',
   execute: async () => { looked.push('lookup'); return { output: [{ type: 'text', text: 'Glimmerton' }] }; },
 });
 const parentOnly = defineTool({
-  name: 'parent_only', description: 'A tool only the parent has.', parameters: Type.Object({}), replay: 'safe',
+  name: 'parent_only', description: 'A tool only the parent has.', parameters: { type: 'object', properties: {  } }, replay: 'safe',
   execute: async () => ({ output: [{ type: 'text', text: 'never offered to the child' }] }),
 });
 
@@ -173,7 +172,7 @@ async function setIdentity(harness, id) {
 test('onChild runs in the commit that creates the child: what it writes is there for the child\'s first turn (D-254)', async t => {
   const seen = [], hooked = [];
   const whoami = defineTool({
-    name: 'lookup', description: 'Look up a fictional fact.', parameters: Type.Object({ topic: Type.String() }), replay: 'safe',
+    name: 'lookup', description: 'Look up a fictional fact.', parameters: { type: 'object', properties: { topic: { type: 'string' } }, required: ['topic'] }, replay: 'safe',
     execute: async (_args, api, ctx) => { seen.push(await api.snapshot(Identity, api.conversationId, ctx)); return { output: [{ type: 'text', text: 'Glimmerton' }] }; },
   });
   const { models } = scriptedModels();
@@ -224,7 +223,7 @@ async function watchSlot(harness, conversationId, run) {
   try { return [await run(), seen.map(json => JSON.parse(json))]; } finally { done = true; await poll; }
 }
 const slowLookup = defineTool({
-  name: 'lookup', description: 'Look up a fictional fact.', parameters: Type.Object({ topic: Type.String() }), replay: 'safe',
+  name: 'lookup', description: 'Look up a fictional fact.', parameters: { type: 'object', properties: { topic: { type: 'string' } }, required: ['topic'] }, replay: 'safe',
   execute: async () => { await new Promise(resolve => setTimeout(resolve, 250)); return { output: [{ type: 'text', text: 'Glimmerton' }] }; },
 });
 

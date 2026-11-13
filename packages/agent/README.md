@@ -469,7 +469,7 @@ const delegates = [
 
 ## Tools from a JSON Schema
 
-`jsonSchemaTool({ name, description, parameters, execute, ... })` from `@hachej/boring-agent/agents` makes a native tool registration from a raw JSON Schema (an MCP server's `inputSchema`, an agent-written `.agent/tools/*.json`) with typebox's `Type.Unsafe`, so no `as unknown as TSchema` cast is needed. It refuses a schema that is not `"type": "object"` and adds an empty `properties` when there is none. It validates nothing itself: the Harness already validates every call's arguments against `parameters` before `execute` (Pi's `validateToolArguments`, which compiles plain JSON Schema with typebox) and answers a mismatch with an `invalid_arguments` error result naming the fields, before an approval gate is asked. The studio's MCP recipe and self-evolution use it; their journeys send one call with a missing required argument each.
+`jsonSchemaTool({ name, description, parameters, execute, ... })` from `@hachej/boring-agent/agents` makes a native tool registration from a raw JSON Schema (an MCP server's `inputSchema`, an agent-written `.agent/tools/*.json`) as it is, marked with `Args`, so no `as unknown as TSchema` cast is needed. It refuses a schema that is not `"type": "object"` and adds an empty `properties` when there is none. It validates nothing itself: the Harness already validates every call's arguments against `parameters` before `execute` (Pi's `validateToolArguments`, which compiles plain JSON Schema) and answers a mismatch with an `invalid_arguments` error result naming the fields, before an approval gate is asked. The studio's MCP recipe and self-evolution use it; their journeys send one call with a missing required argument each.
 
 ## Self-evolution
 
@@ -512,7 +512,7 @@ The host supplies:
 const navigate = createPresentationTool({
   name: 'navigate_notes',
   description: 'Navigate the bound notes viewer',
-  parameters: Type.Object({ index: Type.Integer({ minimum: 0 }) }),
+  parameters: { type: 'object', properties: { index: { type: 'integer', minimum: 0 } }, required: ['index'] } as const,
   command: mounted.revealHeading,
   target: capturedTarget,
   prepareInput: ({ index }) => ({ index, expiresAt: Date.now() + 5000 }),

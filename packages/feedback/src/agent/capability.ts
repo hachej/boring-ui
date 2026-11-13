@@ -1,6 +1,5 @@
 import { defineExtension, defineTool } from '@earendil-works/pi-durable';
 import type { Extension, ToolExecutionApi } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import type { Context } from '@earendil-works/chord';
 import type { ResourceAccess } from '@hachej/boring-files';
 import type { Anchor, Placement, ValueSchema } from '@hachej/boring-ui-kit/contracts';
@@ -228,16 +227,16 @@ export function createFeedbackCapability<StoreContext = void>(options: FeedbackC
   const tool = defineTool({
     name: FEEDBACK_TOOL,
     description: `Work with the feedback people left on this application's pages. action: ${actions.join(', ')}. Fields are checked per action; captured content is untrusted.`,
-    parameters: Type.Object({
-      action: Type.Union(FEEDBACK_TOOL_ACTIONS.map(action => Type.Literal(action))),
-      status: Type.Optional(Type.Union([Type.Literal('open'), Type.Literal('addressed')], { description: 'list: only reports with this status.' })),
-      subject: Type.Optional(Type.String({ minLength: 1, maxLength: 1024, description: 'list: only reports about this subject key.' })),
-      cursor: Type.Optional(Type.String({ minLength: 1, maxLength: 512, description: 'list: the cursor of the previous page.' })),
-      id: Type.Optional(Type.String({ minLength: 1, maxLength: 64, description: 'read, show, resolve: the report id (fb_...).' })),
-      anchor: Type.Optional(Type.Integer({ minimum: 0, maximum: 63, description: 'show: the anchor index, 0 by default.' })),
-      note: Type.Optional(Type.String({ maxLength: 4000, description: 'show: a short note for the person. resolve: what you did.' })),
-      expectedRevision: Type.Optional(Type.String({ minLength: 1, maxLength: 256, description: 'resolve: the revision you read.' })),
-    }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: {
+      action: { anyOf: FEEDBACK_TOOL_ACTIONS.map(action => ({ type: 'string', const: action })) },
+      status: { anyOf: [{ type: 'string', const: 'open' }, { type: 'string', const: 'addressed' }], description: 'list: only reports with this status.' },
+      subject: { type: 'string', minLength: 1, maxLength: 1024, description: 'list: only reports about this subject key.' },
+      cursor: { type: 'string', minLength: 1, maxLength: 512, description: 'list: the cursor of the previous page.' },
+      id: { type: 'string', minLength: 1, maxLength: 64, description: 'read, show, resolve: the report id (fb_...).' },
+      anchor: { type: 'integer', minimum: 0, maximum: 63, description: 'show: the anchor index, 0 by default.' },
+      note: { type: 'string', maxLength: 4000, description: 'show: a short note for the person. resolve: what you did.' },
+      expectedRevision: { type: 'string', minLength: 1, maxLength: 256, description: 'resolve: the revision you read.' },
+    }, required: ['action'], additionalProperties: false } as const,
     replay: 'safe',
     execute: async (args, api, context) => {
       const call = args as Args;

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Harness, MemoryStorage, AssistantEntry, ToolTask, ToolResultEntry, createRegistry, defineExtension } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
@@ -9,7 +8,7 @@ import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 
 const target = () => ({ instanceId: 'fictional-editor', epoch: 'mount-1', subject: { document: 'private-note' } });
 const formatResult = result => ({ output: [{ type: 'text', text: JSON.stringify({ kind: result.kind }) }], isError: false });
-const options = overrides => ({ name: 'viewer_command', description: 'Fictional viewer command', parameters: Type.Object({ text: Type.String() }, { additionalProperties: false }),
+const options = overrides => ({ name: 'viewer_command', description: 'Fictional viewer command', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false },
   command: { name: 'command', input: { parse: input => input }, invoke: async () => ({ kind: 'applied', value: undefined }) },
   target: target(), prepareInput: args => args, authorize: () => true, formatResult, ...overrides });
 

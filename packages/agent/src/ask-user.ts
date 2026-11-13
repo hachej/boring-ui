@@ -1,6 +1,5 @@
 import { defineDocFamily, defineTool } from '@earendil-works/pi-durable';
 import type { Conversation, ToolExecutionApi, ToolRegistration, TaskId } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { Context } from '@earendil-works/chord';
 import { AmbiguousCall, UnknownCall, callBinding, callBindingId, ownBindingKey, waitForDocument } from './durable-wait.js';
@@ -38,15 +37,7 @@ export function createAskUserTool(options: { readonly description?: string } = {
   return defineTool({
     name: ASK_USER_TOOL,
     description: options.description ?? 'Ask the person a question and wait for their answer. Give 2 to 6 short options when the answer is a choice; the person may also answer in their own words unless allowFreeText is false. To ask several related questions at once, give them as `questions` (up to 8, each with its own options): the person answers them in one form, may skip some, and the answer lists each question with its answer.',
-    parameters: Type.Object({
-      question: Type.String({ minLength: 1, maxLength: 1000 }),
-      options: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { minItems: 2, maxItems: 6 })),
-      allowFreeText: Type.Optional(Type.Boolean()),
-      questions: Type.Optional(Type.Array(Type.Object({
-        question: Type.String({ minLength: 1, maxLength: 1000 }),
-        options: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { minItems: 2, maxItems: 6 })),
-      }, { additionalProperties: false }), { minItems: 1, maxItems: 8 })),
-    }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { question: { type: 'string', minLength: 1, maxLength: 1000 }, options: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 200 }, minItems: 2, maxItems: 6 }, allowFreeText: { type: 'boolean' }, questions: { type: 'array', items: { type: 'object', properties: { question: { type: 'string', minLength: 1, maxLength: 1000 }, options: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 200 }, minItems: 2, maxItems: 6 } }, required: ['question'], additionalProperties: false }, minItems: 1, maxItems: 8 } }, required: ['question'], additionalProperties: false } as const,
     replay: 'safe',
     // The wait binds to the calling model entry and call id; a nested `api.executeTool` caller has neither (see durable-wait.ts).
     callers: ['model'],

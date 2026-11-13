@@ -6,13 +6,12 @@ import { join } from 'node:path';
 import { Harness, MemoryStorage, createRegistry, defineTool, defineExtension } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { BACKGROUND_CONTEXT as ctx } from '@earendil-works/chord/context';
-import { Type } from '@earendil-works/pi-ai';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { fauxProvider, fauxAssistantMessage as answer, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { createApprovalExtension } from '@hachej/boring-agent/approval';
 import { ACTION_PROVIDER, withActionModels, actionReply } from '@hachej/boring-agent/actions';
 
-const schema = Type.Object({ text: Type.String() }, { additionalProperties: false });
+const schema = { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false };
 const extraction = (args = { text: 'fictional picnic' }) => answer(fauxToolCall('remember', args), { stopReason: 'toolUse' });
 const ref = { provider: 'fictional', modelId: 'full' };
 const virtual = { provider: ACTION_PROVIDER, modelId: 'clerk' };
@@ -141,7 +140,7 @@ test('native tool permission gate still blocks the action', async t => {
 test('extraction must also match the currently registered tool schema', async () => {
   const fixture = setup([extraction(), answer('Please clarify.')]);
   const result = await fixture.models.completeSimple(fixture.models.getModel(ACTION_PROVIDER, 'clerk'), {
-    tools: [{ name: 'remember', description: 'Requires a number.', parameters: Type.Object({ text: Type.Number() }) }],
+    tools: [{ name: 'remember', description: 'Requires a number.', parameters: { type: 'object', properties: { text: { type: 'number' } }, required: ['text'] } }],
     messages: [{ role: 'user', content: 'Remember picnic.', timestamp: 0 }],
   });
   assert.equal(result.content[0].text, 'Please clarify.'); assert.equal(fixture.provider.state.callCount, 2);

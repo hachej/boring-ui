@@ -1,4 +1,3 @@
-import { Type } from '@earendil-works/pi-ai';
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
 import type { CanvasMountedTools as MountedCanvasTools } from '@hachej/boring-ui-kit/canvas-editor';
 import type { ToolExecutionApi } from '@earendil-works/pi-durable';
@@ -12,7 +11,7 @@ export function remoteSelectionTool(connection: {
   return createPresentationTool({
     name: `select_canvas_${connection.id.replaceAll('-', '')}`,
     description: 'Select shapes in the captured browser canvas',
-    parameters: Type.Object({ shapeIds: Type.Array(Type.String()) }),
+    parameters: { type: 'object', properties: { shapeIds: { type: 'array', items: { type: 'string' } } }, required: ['shapeIds'] },
     target: connection.target,
     command: connection.select,
     prepareInput: args => ({ shapeIds: args.shapeIds, expiresAt: Date.now() + 5000 }),

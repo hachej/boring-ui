@@ -1,7 +1,6 @@
 import { defineExtension, defineTool } from '@earendil-works/pi-durable';
 import type { Extension, PromptSection, Registry, ToolExecutionResult, ToolRegistration } from '@earendil-works/pi-durable';
 import type { ExecutionEnv } from '@earendil-works/pi-durable/env';
-import { Type } from '@earendil-works/pi-ai';
 import type { Context } from '@earendil-works/chord';
 import { directorySkillSource, skillFile, staticSkills } from './skills.js';
 import type { Skill } from './skills.js';
@@ -142,7 +141,7 @@ export function createSelfEvolution(options: SelfEvolutionOptions): SelfEvolutio
       + `${SKILLS}/<name>.md or ${SKILLS}/<name>/SKILL.md: skills (front matter with name and description between --- lines, then the instructions), loaded with load_skill; paths in a skill are relative to its folder and read with read. `
       + `${TOOLS}/<name>.json: your own tools, {"name": "snake_case", "description": "...", "parameters": {a JSON Schema with "type": "object"}, "run": "a command run in the workspace, for example sh ${TOOLS}/<name>.sh"}; `
       + 'the arguments arrive as one line of JSON on standard input and the command output is the result. Restore or delete the files and reload to undo a change.',
-    parameters: Type.Object({}, { additionalProperties: false }),
+    parameters: { type: 'object', properties: {  }, additionalProperties: false } as const,
     replay: 'safe',
     executionMode: 'sequential',
     execute: async (_args, api, context) => {

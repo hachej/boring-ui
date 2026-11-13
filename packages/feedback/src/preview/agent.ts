@@ -3,7 +3,7 @@
 // holds no key; this module never builds a provider itself. Tool calls are validated by Pi (`validateToolCall`) and executed by the
 // preview page tools (./page.ts) only: there is no other tool, so a call to anything else is an error result. The loop is in memory
 // on purpose: a preview is not saved, and a reload reverts the page anyway; the durable part is the server's `browser_preview` wait.
-import { Type, validateToolCall } from '@earendil-works/pi-ai';
+import { validateToolCall } from '@earendil-works/pi-ai';
 import type { Api, AssistantMessage, Message, Model, Models, Tool, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { PreviewOutcome, PreviewPage } from './page.js';
 import { PREVIEW_LIMITS, type PreviewAnswer } from '../format/index.js';
@@ -13,14 +13,14 @@ Use only the tools. Reference elements by the pinned ids (p1, p2...) or by ids f
 Prefer the smallest change that does what was asked, on the pinned elements. set_style takes plain CSS declarations ("background-color: #2f9e44; color: #ffffff").
 Text shown as masked is private: never guess or rewrite it. When the change is done, answer with one short sentence saying what you changed.`;
 
-const element = Type.String({ minLength: 1, maxLength: 20, description: 'A pin id (p1...) or an id from inspect (e1...).' });
+const element = { type: 'string', minLength: 1, maxLength: 20, description: 'A pin id (p1...) or an id from inspect (e1...).' } as const;
 /** The page tools, as Pi tool declarations. */
 export const PREVIEW_TOOLS: readonly Tool[] = Object.freeze([
-  { name: 'inspect', description: 'The masked outline of the application page with element ids, the pinned elements first, and a few computed styles.', parameters: Type.Object({}, { additionalProperties: false }) },
-  { name: 'set_style', description: 'Set inline CSS properties on one element (colors, borders, spacing, fonts, sizes, display). No url(), no !important.', parameters: Type.Object({ element, css: Type.String({ minLength: 1, maxLength: 600 }) }, { additionalProperties: false }) },
-  { name: 'set_text', description: 'Replace the visible text of one text-only element (a button label, a heading...).', parameters: Type.Object({ element, text: Type.String({ minLength: 1, maxLength: 200 }) }, { additionalProperties: false }) },
-  { name: 'hide', description: 'Hide one element.', parameters: Type.Object({ element }, { additionalProperties: false }) },
-  { name: 'show', description: 'Show again an element this preview hid.', parameters: Type.Object({ element }, { additionalProperties: false }) },
+  { name: 'inspect', description: 'The masked outline of the application page with element ids, the pinned elements first, and a few computed styles.', parameters: { type: 'object', properties: {}, additionalProperties: false } as const },
+  { name: 'set_style', description: 'Set inline CSS properties on one element (colors, borders, spacing, fonts, sizes, display). No url(), no !important.', parameters: { type: 'object', properties: { element, css: { type: 'string', minLength: 1, maxLength: 600 } }, required: ['element', 'css'], additionalProperties: false } as const },
+  { name: 'set_text', description: 'Replace the visible text of one text-only element (a button label, a heading...).', parameters: { type: 'object', properties: { element, text: { type: 'string', minLength: 1, maxLength: 200 } }, required: ['element', 'text'], additionalProperties: false } as const },
+  { name: 'hide', description: 'Hide one element.', parameters: { type: 'object', properties: { element }, required: ['element'], additionalProperties: false } as const },
+  { name: 'show', description: 'Show again an element this preview hid.', parameters: { type: 'object', properties: { element }, required: ['element'], additionalProperties: false } as const },
 ]);
 
 export interface PreviewAgentOptions {
