@@ -55,6 +55,25 @@ The agent does not only change the app. It can also change itself, and most requ
 
 Level 2 is what this repository's self-evolution feature already does (an `.agent/` folder of instructions, skills and tools, a `reload` tool, an approval), so it is carried over, not invented.
 
+### One lifecycle, two authors
+
+The in-app agent (product manager and assistant in one) edits the app directly: it has read, write, check and apply on the app's models and screens. This reverses our earlier rule that the product manager never builds.
+
+The same lifecycle is shared with the factory behind it. There is one source (the app's own repository), one check and one apply, and two kinds of author:
+
+| Author | Where it works | What it takes on |
+|---|---|---|
+| The app's own agent | Inside the app, in conversation with the expert | Small changes the expert asks for: a field, a command, a view, a screen, wording. Additive only |
+| The factory (a worker of ours, or Julien from his own tools) | From outside, on the same repository | What the app's agent may not or cannot do: a change in the shape of existing data, a new capability (network, a secret, payments, a role), a large feature, a change that failed twice |
+
+Rules that make it one lifecycle and not two:
+
+- **The same apply function for both.** A worker does not get a separate pipeline; it runs the same check, the same replay of data, the same trial load. This is P3's rule ("editing is done by anyone with file access; an agent gets the same as a tool") and what our pilot did: the button a person presses and the tool the agent calls were one function.
+- **Applies are serialised**, and each one is a commit, so the history shows who changed what, the agent or the factory.
+- **The app's agent hands over, it does not get stuck.** When a request is beyond its limits it writes a card for the factory with the expert's words, what it tried and why it stopped, and tells the expert so.
+- **The app's agent is told when the factory changed the app**, with a plain-words summary, so it can tell the expert and use what is new.
+- **The expert's approval and the neutral tester apply to both authors.**
+
 ### Why the app is reached through MCP, and what that rule does not say
 
 The rule is narrower than "the agent only uses MCP":
