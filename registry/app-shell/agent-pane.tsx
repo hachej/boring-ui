@@ -106,12 +106,12 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
     const popped = current.at(-1);
     if (!popped) return 0;
     const next = current.slice(0, -1);
-    commit(next, next.length ? { to: 'element', element: popped.opener, fallback: 'top' } : { to: 'element', element: popped.opener, fallback: 'field' });
+    commit(next, next.length ? { to: 'element', element: popped.opener, fallback: 'top' } : { to: 'element', element: null, fallback: 'field' });
     return next.length;
   }, [commit]);
   const close = useCallback(() => {
     const current = latest.current;
-    if (current.length) commit([], { to: 'element', element: current[0]!.opener, fallback: 'field' });
+    if (current.length) commit([], { to: 'element', element: null, fallback: 'field' });
   }, [commit]);
   const step = useCallback((offset: -1 | 1) => {
     const current = latest.current, top = current.at(-1);
@@ -354,7 +354,7 @@ export function PaneStack({ placement, assistant }: { readonly placement: 'colum
   return <ViewerWindowProvider value={viewer}>
     <aside data-testid="agent-preview" data-placement={placement} data-depth={stack.length} aria-label={`${text.preview} · ${top.title}`} {...swipe}
       {...(placement === 'screen' ? { style: { paddingBottom: layer.peekPoint } } : {})}
-      className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground', placement === 'screen' ? 'fixed inset-0 z-(--app-shell-z-peek)' : 'relative h-full flex-1')}>
+      className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground [&_.file-tree-row-button]:pointer-coarse:min-h-(--control-min,2.75rem) [&_.file-tree-row-button]:max-md:min-h-(--control-min,2.75rem)', placement === 'screen' ? 'fixed inset-0 z-(--app-shell-z-peek)' : 'relative h-full flex-1')}>
       <div data-testid="agent-preview-body" className="relative min-h-0 flex-1">
         {stack.map((entry, index) => {
           const shown = index === stack.length - 1;

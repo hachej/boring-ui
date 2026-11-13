@@ -2392,7 +2392,8 @@
             "--app-shell-safe-top": "env(safe-area-inset-top)",
             "--app-shell-safe-bottom": "env(safe-area-inset-bottom)",
             "--app-shell-tabbar-min": "calc(3.5rem + env(safe-area-inset-bottom))",
-            "--app-shell-sheet-max": "85dvh"
+            "--app-shell-sheet-max": "85dvh",
+            "--app-shell-composer-max": "45rem"
           },
           ":where(.app-shell [data-slot=\"screen-body\"][data-bleed]) :where(li, tr, [role=\"row\"]) > :first-child": {
             "padding-inline-start": "var(--screen-gutter, 1rem)"
@@ -2432,6 +2433,34 @@
           },
           ".app-shell [data-one-dock] [data-slot=\"input-group\"]:focus-within": {
             "border-color": "var(--ring)"
+          },
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"composer-input\"]": {
+            "white-space": "pre-wrap",
+            "overflow-wrap": "anywhere"
+          },
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"composer-file\"]": {
+            "display": "none"
+          },
+          ".app-shell [data-one-composer] [data-testid=\"transcript-scroll\"] > div, .app-shell [data-one-dock] [data-testid=\"transcript-scroll\"] > div": {
+            "padding-top": "calc(var(--spacing) * 3)"
+          },
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"button\"] svg": {
+            "width": "calc(var(--spacing) * 4)",
+            "height": "calc(var(--spacing) * 4)"
+          },
+          "@media (width < 768px), (pointer: coarse)": {
+            ".app-shell [data-testid=\"agent-preview\"] .file-tree-name": {
+              "display": "flex",
+              "align-items": "center",
+              "min-height": "var(--control-min, 2.75rem)",
+              "white-space": "normal"
+            },
+            ".app-shell [data-one-dock] [data-testid=\"composer-input\"]": {
+              "font-size": "var(--text-base, 1rem)"
+            },
+            ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"composer\"] [role=\"listitem\"]": {
+              "min-height": "var(--control-min, 2.75rem)"
+            }
           }
         }
       },

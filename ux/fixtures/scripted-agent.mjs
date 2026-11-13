@@ -29,6 +29,7 @@ export function createScriptedAgent({ script, pace = 1, entries, show }) {
         const asked = entry(assistant([{ type: 'toolCall', id: call, name: step.tool, arguments: { path: step.path } }], 'toolUse'));
         show([...list, asked], live([{ callId: call, taskId: 8, status: 'running', details: { progress: step.progress } }]));
         await sleep(step.ms ?? 800);
+        if (cancelled(token)) return list;
         const result = { id: ++counter, kind: 'message', byTaskId: 8, model: [{ role: 'toolResult', toolCallId: call, toolName: step.tool, content: [{ type: 'text', text: step.result ?? 'terminé' }], isError: false, timestamp: 3 }] };
         list = [...list, asked, result]; show(list, live());
       } else if (step.think) { show(list, live()); await sleep(step.ms ?? 600);

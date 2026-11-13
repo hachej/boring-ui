@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { FileTreeView } from '../../../registry/file-tree/file-tree.tsx';
 import { ATTACHMENTS } from './one-composer-files.js';
@@ -42,7 +43,7 @@ export const fileView = path => {
     : name.startsWith('releve') ? <><p className="text-muted-foreground">Relevé bancaire · Atelier Brun (fictif)</p><Table head={['Date', 'Libellé', 'Montant']} rows={[['02/01', 'Virement Maison Delorme', '1 240,00 €'], ['03/01', 'Prélèvement Énergie Pro', '−186,40 €'], ['05/01', 'Carte Papeterie Lemaire', '−42,90 €'], ['06/01', 'Virement client Atelier Brun', '2 880,00 €']]} /></>
     : name.startsWith('facture') ? <><p className="font-medium">Facture {name.replace('.pdf', '').split('-').at(-1)}</p><Table head={['Désignation', 'Qté', 'Total HT']} rows={[['Prestation de conseil', '3', '1 050,00 €'], ['Déplacement', '1', '90,00 €']]} /><p className="text-right font-medium">Total TTC : 1 368,00 €</p></>
     : <><p className="font-medium">Notes de clôture</p><ul className="list-disc pl-5"><li>Justifier les deux écarts de janvier.</li><li>Relancer Brun &amp; Fils pour la facture du 21/01.</li><li>Vérifier le remboursement URSSAF.</li></ul></>;
-  return { title: name, content: <div data-testid="fixture-preview" className="flex flex-col gap-3 p-4 text-sm"><p className="font-medium">{name}</p>{body}</div> };
+  return { title: name, content: <div data-testid="fixture-preview" className="flex flex-col gap-3 p-4 text-sm">{body}</div> };
 };
 // The line detail an app pushes on the pane (S-1): the line, its gap checkbox (state that back must keep), its attachments (each opens in the kit's
 // viewer on top, « ← Écriture du 09/01 », stepping through the three) and the line's history, long enough to scroll.
@@ -50,7 +51,7 @@ const HISTORY = ['Import du relevé', 'Rapprochement automatique', 'Écart déte
 export const recordView = ([date, label, amount, status], quote, open) => ({ title: `Écriture du ${date}`, content: <div data-testid="fixture-record" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 text-sm">
   <p className="text-base font-medium">{label}</p><p className="text-2xl font-semibold tabular-nums">{amount}</p><p className="text-muted-foreground">Statut : {{ ok: 'rapprochée', gap: 'écart à justifier', wait: 'à justifier' }[status]}</p>
   <label className="flex min-h-11 items-center gap-2"><input type="checkbox" data-testid="record-justified" className="size-4" />Écart justifié</label>
-  <button type="button" data-testid="record-quote" className="h-10 self-start rounded-md border px-3" onClick={quote}>Citer dans l’assistant</button>
+  <Button variant="outline" data-testid="record-quote" className="self-start" onClick={quote}>Citer dans l’assistant</Button>
   {open && <><p className="mt-2 font-medium">Pièces jointes</p><ul className="m-0 flex list-none flex-col gap-1 p-0">{ATTACHMENTS.map(path => <li key={path}>
     <button type="button" data-testid="record-attachment" data-path={path} className="min-h-11 w-full rounded-md border px-3 text-left hover:bg-muted" onClick={() => open(path, ATTACHMENTS)}>{path.split('/').at(-1)}</button></li>)}</ul></>}
   <p className="mt-2 font-medium">Historique de l’écriture</p>

@@ -1,5 +1,6 @@
 import { useLayoutEffect } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Button } from '@/components/ui/button';
 import { AppShell } from '../../../registry/app-shell/app-shell.tsx';
 import { useAgentLayer } from '../../../registry/app-shell/agent-layer.tsx';
 import { SlashPicker } from '../../../registry/pi-chat-slash/slash-menu.tsx';
@@ -70,14 +71,14 @@ const controller = {
     // `window.__failNext`: the next send is refused, as a real controller does it: the text stays in the field and `send` says why.
     if (window.__failNext) { window.__failNext = false; change({ send: { kind: 'blocked', reason: 'Hors ligne (fictif)' } }); return undefined; }
     window.__sent.push(text);
-    if (DEMO) { change({ send: { kind: 'idle' }, draft: { text: '', attachments: [], version: snapshot.draft.version + 1 }, view: { entries: [...snapshot.view.entries, say(++demoId, text)], docs: live() } }); void scripted.say(text); return undefined; }
+    if (DEMO) { change({ stop: 'idle', send: { kind: 'idle' }, draft: { text: '', attachments: [], version: snapshot.draft.version + 1 }, view: { entries: [...snapshot.view.entries, say(++demoId, text)], docs: live() } }); void scripted.say(text); return undefined; }
     const next = snapshot.view.entries.length + 1;
     // As a real run: the agent works a moment, then replies.
     const asked = [...snapshot.view.entries, say(next, text)];
     change({ send: { kind: 'idle' }, draft: { text: '', attachments: [], version: snapshot.draft.version + 1 }, view: { entries: asked, docs: live() } });
     setTimeout(() => change({ view: { entries: [...asked, reply(next + 1, T('Réponse fictive : noté.', 'Fictional reply: noted.'))], docs: {} } }), 800);
   },
-  connect: async () => {}, stop: async () => { window.__stops = (window.__stops ?? 0) + 1; if (DEMO) scripted.stop(); else change({ view: runs.reply() }); }, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {},
+  connect: async () => {}, stop: async () => { window.__stops = (window.__stops ?? 0) + 1; if (DEMO) { scripted.stop(); change({ stop: 'confirmed' }); } else change({ view: runs.reply() }); }, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {},
 };
 // The agent's scripted turns, after the person's question (entry 10).
 const ask = say(10, T('Rapproche le relevé de janvier.', 'Reconcile the January statement.'));
@@ -122,18 +123,18 @@ const LINES = [['02/01', 'Virement Maison Delorme', '1 240,00 €', 'ok'], ['03/
   ['08/01', 'Prélèvement Assurance Axiom', '−212,00 €', 'ok'], ['09/01', 'Carte Garage du Port', '−96,50 €', 'gap'], ['12/01', 'Virement client Maison Delorme', '640,00 €', 'ok'], ['14/01', 'Loyer local Rue des Halles', '−950,00 €', 'ok'],
   ['15/01', 'Carte Restaurant Le Cèdre', '−58,20 €', 'gap'], ['17/01', 'Remboursement URSSAF', '312,00 €', 'wait'], ['19/01', 'Prélèvement Télécom Pro', '−64,99 €', 'ok'], ['21/01', 'Virement client Brun & Fils', '1 150,00 €', 'wait'],
   ['23/01', 'Carte Station du Quai', '−71,30 €', 'ok'], ['26/01', 'Prélèvement Titres-repas', '−120,00 €', 'ok'], ['28/01', 'Virement client Cabinet Roux', '1 980,00 €', 'ok'], ['30/01', 'Frais de tenue de compte', '−14,50 €', 'ok']];
-const STATUS = { ok: ['Rapprochée', 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'], gap: ['Écart', 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300'], wait: ['À justifier', 'bg-muted text-muted-foreground'] };
+const STATUS = { ok: ['Rapprochée', 'bg-success-soft text-success-soft-foreground'], gap: ['Écart', 'bg-warning-soft text-warning-soft-foreground'], wait: ['À justifier', 'bg-muted text-muted-foreground'] };
 const quote = date => window.__layer.talkAbout('@ecriture:' + date.replace('/', '-'));
 const openRecord = line => window.__layer.preview(recordView(line, () => quote(line[0]), KIT ? (file, files) => window.__layer.pane.push({ file, files }) : undefined));
 const RealPage = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6">
   <Probe />
   <div className="flex flex-wrap items-baseline justify-between gap-2"><div><h1 className="text-lg font-semibold">Rapprochement bancaire</h1><p className="text-sm text-muted-foreground">Janvier 2026 · Atelier Brun (fictif)</p></div>
-    <button type="button" className="h-9 rounded-md border px-3 text-sm">Exporter</button></div>
-  <div className="grid grid-cols-3 gap-3">{[['Rapprochées', '13 / 16'], ['Écarts', '2'], ['Solde banque', '8 412,10 €']].map(([label, value]) => <div key={label} className="rounded-lg border bg-card p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-base font-semibold md:text-xl">{value}</p></div>)}</div>
+    <Button variant="outline">Exporter</Button></div>
+  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{[['Rapprochées', '13 / 16'], ['Écarts', '2'], ['Solde banque', '8 412,10 €']].map(([label, value]) => <div key={label} className={`rounded-lg border bg-card p-3 ${label === 'Solde banque' ? 'col-span-2 sm:col-span-1' : ''}`}><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-base font-semibold md:text-xl">{value}</p></div>)}</div>
   <div className="flex gap-2 text-sm">{['Toutes', 'Écarts', 'À justifier'].map((tab, i) => <span key={tab} className={`rounded-full border px-3 py-1 ${i === 0 ? 'bg-foreground text-background' : ''}`}>{tab}</span>)}</div>
-  <div className="overflow-hidden rounded-lg border bg-card">{LINES.map(([date, label, amount, status]) => <div key={date + label} role="row" data-testid="page-row" {...(DEMO ? { tabIndex: 0, onClick: () => openRecord([date, label, amount, status]), onKeyDown: event => { if (event.key === 'Enter') openRecord([date, label, amount, status]); } } : {})} className={`flex items-center gap-3 border-b p-3 text-sm last:border-b-0 ${DEMO ? 'cursor-pointer hover:bg-muted/50' : ''}`}>
-    <span className="w-12 shrink-0 text-muted-foreground">{date}</span><span className="min-w-0 flex-1 truncate">{label}</span>
-    <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-xs sm:inline ${STATUS[status][1]}`}>{STATUS[status][0]}</span><span aria-label={STATUS[status][0]} className={`size-2 shrink-0 rounded-full sm:hidden ${status === 'ok' ? 'bg-emerald-500' : status === 'gap' ? 'bg-amber-500' : 'bg-muted-foreground'}`} /><span className="w-24 shrink-0 text-right tabular-nums">{amount}</span></div>)}</div>
+  <div className="shrink-0 overflow-hidden rounded-lg border bg-card">{LINES.map(([date, label, amount, status]) => <div key={date + label} role="row" data-testid="page-row" {...(DEMO ? { tabIndex: 0, onClick: () => openRecord([date, label, amount, status]), onKeyDown: event => { if (event.key === 'Enter' && event.target === event.currentTarget) openRecord([date, label, amount, status]); } } : {})} className={`flex items-center gap-3 border-b p-3 text-sm last:border-b-0 ${DEMO ? 'cursor-pointer hover:bg-muted/50' : ''}`}>
+    <span className="w-12 shrink-0 text-muted-foreground">{date}</span><span className="min-w-0 flex-1 whitespace-normal text-pretty"><Button size="inline" className="w-full justify-start text-left max-md:min-h-(--control-min,2.75rem) pointer-coarse:min-h-(--control-min,2.75rem)">{label}</Button></span>
+    <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-xs sm:inline ${STATUS[status][1]}`}>{STATUS[status][0]}</span><span aria-label={STATUS[status][0]} className={`size-2 shrink-0 rounded-full sm:hidden ${status === 'ok' ? 'bg-success' : status === 'gap' ? 'bg-warning' : 'bg-muted-foreground'}`} /><span className="w-24 shrink-0 text-right tabular-nums">{amount}</span></div>)}</div>
 </div>;
 const Screen = (DEMO || params.get('page') === 'real') ? RealPage : Page;
 const nav = [{ id: 'dossier', label: T('Dossier', 'File'), icon: DEMO ? FileTextIcon : Icon, render: () => <Screen /> },
@@ -151,12 +152,12 @@ window.__undone = 0;
 const TU = { conversation: 'Ton fil', dictate: 'Dicte', listening: 'Je t’écoute…', releaseToSend: 'Relâche et j’envoie', answerHere: 'Ou réponds ici', sendFailed: 'Ton message n’est pas parti : il est revenu dans le champ.',
   placeholder: 'Dis-moi ce que tu as mangé', send: 'Envoie', stop: 'Arrête', attachFiles: 'Joins un fichier', retry: 'Réessaie', voiceStop: 'Arrête de m’écouter', voiceCancel: 'Annule', emptyTitle: 'Parle-moi', emptyDescription: 'Dis-moi ce que tu as mangé.' };
 const agent = { controller, icon: DEMO ? SparklesIcon : Icon, label: 'Assistant', library: DEMO ? demoLibrary(KIT ? undefined : onOpenFile) : library, ...(KIT ? { files: demoFiles } : {}),
-  ...(params.get('action') === '1' ? { replyAction: { label: 'Annuler', onSelect() { window.__undone += 1; } } } : {}),
+  ...(params.get('action') === '1' ? { replyAction: { label: DEMO ? 'Annuler le rapprochement' : 'Annuler', onSelect() { window.__undone += 1; } } } : {}),
   ...(params.get('status') === '1' ? { workingWords: ({ tool }) => tool === 'read' ? 'Max compte…' : 'Max réfléchit…' } : {}),
   ...(params.get('tu') === '1' ? { words: TU } : {}), ...(params.get('words') === '1' ? { words: { dictate: 'Parler', conversation: 'Le fil' } } : {}), ...(params.get('readonly') === '1' ? { readOnly: T('Lecture seule : votre rôle permet de lire, pas d’écrire (fictif).', 'Read only: your role may read, not write (fictional).') } : {}), voice: { transcribe: async () => 'Texte dicté fictif', send: 'draft' },
   // `?fork=1`: the host's conversations with fork and new (edit last, D3): `window.__forked` holds the entries forked at, `window.__new` counts new ones.
   chatProps: { ...(params.get('fork') === '1' ? { conversations: { items: [{ id: 'one-composer', title: 'Dossier Cèdre' }], activeId: 'one-composer', onSelect() {},
-    onNew() { window.__new = (window.__new ?? 0) + 1; }, fork: async at => { (window.__forked ??= []).push(String(at)); } } } : {}), title: 'Assistant', locale: LOCALE, mentions: { kinds: { ecriture: { label: id => `Écriture ${id}`, icon: <Icon className="size-4" /> }, task: { label: id => id, icon: <Icon className="size-4" /> } } }, labels: { ...(params.get('tu') === '1' ? {} : { placeholder: T('Demandez, ou « / » pour une action', 'Ask anything, or « / » for an action') }) }, actions, attachments, slash, ...(KIT ? {} : { onOpenFile }) } };
+    onNew() { window.__new = (window.__new ?? 0) + 1; }, fork: async at => { (window.__forked ??= []).push(String(at)); } } } : {}), title: 'Assistant', locale: LOCALE, mentions: { kinds: { ecriture: { label: id => `Écriture ${id}`, icon: <Icon className="size-4" /> }, task: { label: id => id, icon: <Icon className="size-4" /> } } }, labels: { ...(params.get('tu') === '1' ? {} : { placeholder: DEMO ? T('Demandez…', 'Ask…') : T('Demandez, ou « / » pour une action', 'Ask anything, or « / » for an action') }) }, actions, attachments, slash, ...(KIT ? {} : { onOpenFile }) } };
 const showEntries = entries => change({ view: { entries, docs: {} }, draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } });
 const App = () => { const conv = useDemoConversations(showEntries, history); const shellAgent = { ...agent, chatProps: { ...agent.chatProps, ...conv } };
   return <AppShell layout="screen" locale={LOCALE} title={DEMO ? 'Compta · Atelier Brun' : T('Compta fictive', 'Demo books')} nav={nav} route={{ id: 'dossier', onChange(id) { window.__route = id; } }} composer={params.get('composer') ?? 'bar'} rail="icon" agent={shellAgent}

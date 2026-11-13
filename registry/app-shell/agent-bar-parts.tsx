@@ -3,7 +3,7 @@
 // `composer: 'bar'`'s own pieces: the microphone's tap or hold, the conversation's chevron, the folded card on the field, its send problem, the box.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, Loader2Icon, MicIcon, SquareIcon, XIcon } from '../_shared/icons';
+import { ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, Loader2Icon, MicIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
@@ -88,24 +88,28 @@ export function BarMicButton({ mic, label }: { readonly mic: BarMic; readonly la
   const busy = layer.voice.phase === 'transcribing';
   return <Button key="mic" ref={ref} type="button" size="icon" data-testid="agent-talk" data-state={mic.mode === 'holding' ? 'holding' : layer.voice.phase} aria-label={label} title={label}
     disabled={busy || (layer.voice.phase === 'idle' && layer.voice.canStart === false)} className="shrink-0 touch-none select-none" {...gesture}>
-    {busy ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : mic.mode === 'holding' ? <SquareIcon data-icon="inline-start" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}</Button>;
+    {busy ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : mic.mode === 'holding' ? <ArrowUpIcon data-icon="inline-start" aria-hidden="true" /> : <MicIcon data-icon="inline-start" aria-hidden="true" />}</Button>;
 }
 
-/** In the text's place while the microphone is open: ✕ (cancel) and the level, with « J’écoute… », or « Relâche pour envoyer » during a hold. */
+/** The level and listening words in the text's place; cancellation uses the leading control's slot. */
 export function BarMicStatus({ mic }: { readonly mic: BarMic }) {
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  const labels = composerLabels(layer.locale, layer.agent);
   const { voice } = layer;
   const holding = mic.mode === 'holding';
   return <div data-testid="agent-talk-status" data-state={holding ? 'holding' : 'listening'} className="flex w-full min-w-0 items-center gap-2">
-    {!holding && <Button type="button" variant="secondary" size="icon" data-testid="agent-talk-cancel" aria-label={labels.voiceCancel} title={labels.voiceCancel} onClick={mic.cancel} className="shrink-0"><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
-    <span role="status" aria-live="polite" data-testid={holding ? 'agent-talk-release' : 'agent-talk-listening'} className="min-w-0 shrink-0 truncate text-muted-foreground">{holding ? text.releaseToSend : text.listening}</span>
+    <span role="status" aria-live="polite" data-testid={holding ? 'agent-talk-release' : 'agent-talk-listening'} className="min-w-0 flex-1 whitespace-normal text-sm text-muted-foreground">{holding ? text.releaseToSend : text.listening}</span>
     <span className="shrink-0 tabular-nums text-muted-foreground">{voiceClock(voice.seconds)}</span>
     {voice.levels.length > 0 && <div data-testid="agent-talk-wave" aria-hidden="true" className="flex h-6 min-w-0 flex-1 items-center justify-end gap-0.5 overflow-hidden">
       {voice.levels.map((level, index) => <span key={index} className="w-1 shrink-0 bg-muted-foreground" style={{ height: `${Math.max(5, Math.sqrt(Math.min(1, level)) * 100)}%` }} />)}
     </div>}
   </div>;
+}
+
+export function BarMicCancel({ mic }: { readonly mic: BarMic }) {
+  const layer = useInternal();
+  const labels = composerLabels(layer.locale, layer.agent);
+  return <Button type="button" variant="secondary" size="icon" data-testid="agent-talk-cancel" aria-label={labels.voiceCancel} title={labels.voiceCancel} onClick={mic.cancel}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>;
 }
 
 /** What went wrong with the microphone, in the flow under the title row (never over the messages). */
@@ -121,7 +125,7 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
   const open = layer.expanded ? layer.trayOpen || layer.dockOpen : layer.snap === 'half' || layer.snap === 'full';
   return <span className="relative inline-flex shrink-0">
     <Button type="button" variant="secondary" size="icon" data-testid="agent-bar-conversation" aria-label={text.conversation} title={text.conversation} aria-expanded={open}
-      onClick={() => { if (open) layer.close(); else layer.open('agent'); }}>{open ? <ChevronDownIcon data-icon="inline-start" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>
+      onClick={() => { if (open) { layer.close(); requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true })); } else layer.open('agent'); }}>{open ? <ChevronDownIcon data-icon="inline-start" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>
     {unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-(--radius-3xl) bg-primary" />}
   </span>;
 }
@@ -148,10 +152,10 @@ export function SendProblem({ controller }: { readonly controller: NativeChatCon
   const send = useSyncExternalStore(controller.subscribe, read, read);
   if (send.kind !== 'blocked' && send.kind !== 'unknown') return null;
   const retryable = send.kind === 'blocked' || (send as { readonly retryable?: boolean }).retryable !== false;
-  const retry = () => { void (send.kind === 'unknown' ? controller.retrySameRequest() : controller.send()).catch(() => {}); };
+  const retry = () => { void (send.kind === 'unknown' ? controller.retrySameRequest() : controller.send()).catch(() => {}).finally(() => document.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true })); };
   return <>
-    <p role="alert" data-testid="agent-send-problem" data-state={send.kind} className="m-0 flex min-w-0 items-center gap-2 px-3 py-2 text-xs text-destructive">
-      <span className="min-w-0 flex-1 truncate">{text.sendFailed}</span>
+    <p role="alert" data-testid="agent-send-problem" data-state={send.kind} className="m-0 flex min-w-0 flex-wrap items-center gap-2 px-3 py-2 text-sm text-destructive md:flex-nowrap md:text-xs">
+      <span className="min-w-0 flex-1 basis-full text-pretty md:basis-auto">{text.sendFailed}</span>
       {retryable && <Button type="button" size="sm" variant="outline" data-testid="agent-send-retry" onClick={retry}>{labels.retry}</Button>}
     </p>
     <Separator />
@@ -162,23 +166,30 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const { question, status, reply } = bar;
+  const controller = layer.agent!.controller;
+  const readStop = () => controller.getSnapshot().stop;
+  const stop = useSyncExternalStore(controller.subscribe, readStop, readStop);
+  const stopped = stop === 'confirmed';
+  const { markRead } = bar;
+  useEffect(() => { if (stopped) markRead(); }, [stopped, markRead]);
+  const labels = { ...composerLabels(layer.locale, layer.agent), ...layer.agent?.chatProps?.labels };
   const action = layer.agent?.replyAction;
-  if (!question && status?.state !== 'working' && !reply) return null;
-  const header = question ? undefined : status?.state === 'working'
+  if (!question && status?.state !== 'working' && !reply && !stopped) return null;
+  const header = stopped ? <><SquareIcon className="size-4 shrink-0" aria-hidden="true" /><span data-testid="agent-card-status">{labels.subagentStatus('cancelled')}</span></> : question ? undefined : status?.state === 'working'
     ? <><span className="text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{status.text}</span></>
     : reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-(--radius-3xl) bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
       <span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{[text.done, reply.used.join(', ')].filter(Boolean).join(' · ')}</span></> : undefined;
   return <>
-    <section data-testid="agent-card" data-state={question ? 'question' : status?.state === 'working' ? 'working' : 'reply'} aria-label={text.assistant}
+    <section data-testid="agent-card" data-state={stopped ? 'stopped' : question ? 'question' : status?.state === 'working' ? 'working' : 'reply'} aria-label={text.assistant}
       className="flex flex-col gap-2 px-3 pt-2.5 pb-3 text-sm text-card-foreground">
       {header && <p role="status" className="m-0 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">{header}</p>}
-      {question && <div data-testid="agent-question" aria-label={question.title} className="flex flex-col gap-2">
+      {!stopped && question && <div data-testid="agent-question" aria-label={question.title} className="flex flex-col gap-2">
         {question.step && <p data-testid="agent-question-step" className="m-0 text-xs text-muted-foreground">{question.step}</p>}
         {question.answered && <p data-testid="agent-question-answered" className="m-0 flex items-center gap-1.5 text-xs text-muted-foreground"><CheckIcon className="size-3.5 shrink-0" aria-hidden="true" />{question.answered}</p>}
         <p className="m-0 text-base font-semibold">{question.title}</p>
         <div className="flex flex-wrap gap-2">{question.choices.map(choice => <Button key={choice} type="button" variant="outline" data-choice="" onClick={() => question.onAnswer({ text: choice, source: 'choice' })}>{choice}</Button>)}</div>
       </div>}
-      {!question && status?.state !== 'working' && reply && <>
+      {!stopped && !question && status?.state !== 'working' && reply && <>
         {/* A tap on the reply opens the conversation, as the chevron does (the chevron stays the way for a keyboard). */}
         <p data-testid="agent-card-reply" onClick={() => layer.open('agent')} className="m-0 line-clamp-3 cursor-pointer whitespace-pre-line">{readable(reply.text)}</p>
         {(reply.files.length > 0 || action) && <div role="list" data-testid="agent-card-files" className="flex flex-wrap items-center gap-1.5">
@@ -194,8 +205,8 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
 /** `composer: 'bar'`: the thread (Ouvert), the folded card and the field in one frame at the field's width, never the page's (AC-16). The inner input group's own frame is cleared by the block's CSS (`.app-shell [data-one-composer]`). */
 export function OneBox({ children }: { readonly children: ReactNode }) {
   // Docked (AC-17) the field and the thread are in the right column: the box stays mounted, empty and out of sight, so nothing stays at the bottom.
-  const { dockOpen } = useInternal();
+  const { dockOpen, anchored } = useInternal();
   return <div className={cn('shrink-0 bg-card px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]', dockOpen && 'hidden')}>
-    <div data-one-composer="" data-testid="agent-composer-box" className="mx-auto flex w-full max-w-[720px] min-w-0 flex-col overflow-hidden rounded-(--radius-3xl) bg-card text-card-foreground ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring">{children}</div>
+    <div data-one-composer="" data-testid="agent-composer-box" style={anchored ? undefined : { marginInlineStart: 'clamp(0px, calc((100cqw - var(--app-shell-composer-max)) / 2 - var(--spacing) * 4), max(0px, calc(100% - var(--container-xs, 20rem))))', marginInlineEnd: 0, width: 'auto' }} className="mx-auto flex w-full max-w-[720px] min-w-0 flex-col overflow-hidden rounded-(--radius-3xl) bg-card text-card-foreground ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring">{children}</div>
   </div>;
 }

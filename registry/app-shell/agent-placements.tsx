@@ -3,7 +3,7 @@
 // The wide placements: the dock (docked or floating), the content column with its tray and anchor, the preview column, and the layer root.
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactElement, ReactNode } from 'react';
-import { ChevronDownIcon, ChevronUpIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, XIcon } from '../_shared/icons';
+import { ChevronDownIcon, ChevronUpIcon, Maximize2Icon, Minimize2Icon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -178,7 +178,8 @@ function ContentTray() {
       // Only a key pressed in the tray or in the one field is the tray's; a host dock beside the content, a menu or a dialog keep their own Esc.
       if (!(event.target instanceof Element) || !event.target.closest('[data-testid=agent-tray], [data-testid=agent-content-composer], [data-testid=agent-composer-anchor]')) return;
       if (document.querySelector('[role=menu],[role=listbox],[role=dialog],[role=alertdialog],[data-boring-overlay]')) return;
-      if (event.target instanceof Element && event.target.closest('[aria-expanded=true]')) return;
+      if (event.target instanceof Element && event.target.closest('[aria-haspopup][aria-expanded=true]')) return;
+      event.preventDefault();
       reduceRef.current();
     };
     document.addEventListener('keydown', onKey);
@@ -199,9 +200,9 @@ function ContentTray() {
         {layer.bar && <LibraryButton open={layer.openLibrary} text={text} testId="agent-layer-library" />}
         <Button variant="ghost" size="icon" data-testid="agent-tray-dock" aria-label={dockLabel} title={dockLabel}
           onClick={moveToDock}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button>
-        <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
-          onClick={() => setGrown(!grown)}>{grown ? <ChevronDownIcon data-icon="inline-start" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>
-        <Button variant="ghost" size="icon" data-testid="agent-tray-reduce" aria-label={text.collapse} title={text.collapse} onClick={reduce}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
+        {(!boxed || !grown) && <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
+          onClick={() => setGrown(!grown)}>{boxed ? <Maximize2Icon className="size-4" aria-hidden="true" /> : grown ? <ChevronDownIcon className="size-4" aria-hidden="true" /> : <ChevronUpIcon className="size-4" aria-hidden="true" />}</Button>}
+        <Button variant="ghost" size="icon" data-testid="agent-tray-reduce" aria-label={boxed && grown ? text.collapse : text.close} title={boxed && grown ? text.collapse : text.close} onClick={() => { if (boxed && grown) setGrown(false); else reduce(); }}>{boxed && grown ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <XIcon className="size-4" aria-hidden="true" />}</Button>
       </div>
       <VoiceProblem />
       <ChatSlot />
@@ -219,7 +220,7 @@ export function AgentDockLayout({ children }: { readonly children: ReactNode }):
   const { title } = useTitle();
   const dock = layer.expanded && (layer.agent || layer.improve) ? <AgentDock side={layer.side} /> : null;
   // The PM column sits inside the main content: while it is open beside the dock, the dock leaves the screen its least width beside it.
-  return <DockLayout storageKey={DOCK_KEY} persist="local" minMain={MIN_MAIN + (layer.besidePanel ? PM_COLUMN : 0)}>
+  return <DockLayout storageKey={DOCK_KEY} persist="local" minMain={MIN_MAIN + (layer.besidePanel ? PM_COLUMN : 0)} className={layer.bar ? '@container/agent-layout' : undefined}>
     {layer.side === 'left' && dock}
     <DockMain>{layer.contentColumn ? <ContentColumn>{children}</ContentColumn> : children}</DockMain>
     {layer.bar && layer.expanded && layer.stack.length > 0 && !layer.paneStacked && <PaneDock assistant={title} />}

@@ -4,7 +4,7 @@
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { HTMLAttributes, ReactNode, Ref } from 'react';
-import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, XIcon } from '../_shared/icons';
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, Maximize2Icon, Minimize2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { PiChat } from '../pi-chat/pi-chat';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
@@ -22,7 +22,7 @@ import type { AppShellLocale, AppShellText } from './text';
 import { HeaderActions } from './header-actions';
 import { chatWordLabels, composerLabels, shellWords, useInternal } from './layer-context';
 import type { AgentSpec, Snap, Which } from './layer-context';
-import { BarMicButton, BarMicStatus, ConversationChevron, FoldedCard, SendProblem, TalkButton, useBarMic } from './agent-bar-parts';
+import { BarMicButton, BarMicCancel, BarMicStatus, ConversationChevron, FoldedCard, SendProblem, TalkButton, useBarMic } from './agent-bar-parts';
 
 /** The preview header's Library button, when the app gives one. */
 export function LibraryButton({ open, text, testId = 'agent-preview-library' }: { readonly open: (() => void) | undefined; readonly text: AppShellText; readonly testId?: string }) {
@@ -75,14 +75,18 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const readOnly = oneRow ? spec.readOnly : undefined;
   const barProps = oneRow ? {
     ...(readOnly ? { renderComposer: () => <p data-testid="agent-read-only" className="m-0 flex min-h-14 items-center px-4 text-sm text-muted-foreground">{readOnly}</p> } : {}),
-    composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerEditLast: true, composerStart: <ConversationChevron unread={barChat.historyBadge} />,
+    composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerEditLast: true, composerStart: capturing ? <BarMicCancel mic={mic} /> : <ConversationChevron unread={barChat.historyBadge} />,
     // While the agent's question waits, the field says so; a typed message answers it (PiChat's own rule).
-    ...(barChat.question ? { labels: { ...chatWordLabels(spec.words), ...spec.chatProps?.labels, placeholder: words.answerHere } } : {}),
+    labels: {
+      emptyDescription: locale === 'fr' ? 'Écrivez votre demande ci-dessous, ou « / » pour choisir une action.' : 'Write your request below, or type “/” to choose an action.',
+      ...chatWordLabels(spec.words), ...spec.chatProps?.labels,
+      ...(barChat.question ? { placeholder: words.answerHere } : {}),
+    },
     ...(spec.voice ? { composerWhenEmpty: <BarMicButton mic={mic} label={words.dictate} />,
       ...(capturing ? { composerRecordingSlots: { status: <BarMicStatus mic={mic} />, stop: <BarMicButton mic={mic} label={words.dictate} />, keepField: true } } : {}) } : {}),
   } : {};
   // The app's words for the chat (`agent.words`) under the labels it passes itself; the question's placeholder above keeps its own.
-  const wordLabels = role === 'agent' && !barChat.question ? chatWordLabels(spec.words) : {};
+  const wordLabels = role === 'agent' && !oneRow ? chatWordLabels(spec.words) : {};
   // One annotate toggle: pins on desktop, point mode (which hides the layer while the person taps the app) on touch and compact screens.
   const feedback = useComposerFeedback(spec.feedback);
   const pointing = usePointing(spec.feedback);
@@ -137,8 +141,8 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
     <HistoryButton />
     <LibraryButton open={library} text={text} testId="agent-layer-library" />
     {actions.length > 0 && <HeaderActions actions={actions} compact={compactSnap !== undefined} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
-    {compactSnap === 'half' && <Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button>}
-    {compactSnap === 'full' && <Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+    {compactSnap === 'half' && <Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}>{layer.bar ? <Maximize2Icon className="size-4" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>}
+    {compactSnap === 'full' && <Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}>{layer.bar ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <ChevronDownIcon data-icon="inline-start" aria-hidden="true" />}</Button>}
     {controls}
     <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
   </div>;

@@ -49,11 +49,20 @@ function PhoneCardSlot() {
   useLayoutEffect(() => {
     const element = node.current;
     if (!element) return;
-    const measure = () => setCardPx(Math.ceil(element.getBoundingClientRect().height));
-    measure();
+    const sheet = element.closest('[data-testid=agent-layer-sheet]');
+    const measure = () => {
+      const footer = sheet?.querySelector<HTMLElement>('[data-testid=composer-dock]');
+      const handle = sheet?.closest('[data-slot=drawer-popup]')?.querySelector<HTMLElement>('[data-slot=drawer-swipe-handle]');
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      setCardPx(Math.max(0, Math.ceil(element.offsetHeight + (footer?.offsetHeight ?? 0) + (handle?.offsetHeight ?? 0) - PEEK_BAR_REM * rem)));
+      if (footer) observer?.observe(footer);
+    };
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    measure();
     observer?.observe(element);
-    return () => { observer?.disconnect(); setCardPx(0); };
+    const mutation = new MutationObserver(measure);
+    if (sheet) mutation.observe(sheet, { childList: true, subtree: true });
+    return () => { observer?.disconnect(); mutation.disconnect(); setCardPx(0); };
   }, [setCardPx]);
   return <div ref={place} data-testid="agent-card-slot" className="shrink-0 px-2 empty:hidden" />;
 }
@@ -77,6 +86,18 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   // While the person talks the sheet holds still: the viewport height and the keyboard inset are pinned at what they were when the recording
   // began, the composer takes no focus and no keyboard, so nothing moves under the finger on the microphone.
   const sheet = useRef<HTMLDivElement>(null);
+  // The page reserves the visible stack, including the drawer handle.
+  useLayoutEffect(() => {
+    const popup = sheet.current?.closest<HTMLElement>('[data-slot=drawer-popup]');
+    const body = sheet.current;
+    if (!layer.bar || !popup || !body) return;
+    const root = document.documentElement;
+    const measure = () => root.style.setProperty('--app-shell-bar-height', `${body.offsetHeight + (popup.querySelector<HTMLElement>('[data-slot=drawer-swipe-handle]')?.offsetHeight ?? 0)}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(body);
+    return () => { observer.disconnect(); root.style.removeProperty('--app-shell-bar-height'); };
+  }, [layer.bar]);
   const idleViewport = useRef(liveViewport);
   // eslint-disable-next-line react-hooks/refs -- ref cache: the last viewport seen while not recording, pinned during a recording; no setState during render
   if (!recording) idleViewport.current = liveViewport;
@@ -180,7 +201,11 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
     ...(pinnedBottom ? { bottom: pinnedBottom } : {}),
     // `bar`, folded, with the keyboard up (K-1): the field is not moved to a full screen; the folded sheet rests on the keyboard at its own height (the field and the card),
     // the page stays visible above it. The drawer's snap arithmetic does not know a keyboard at the peek, so it is set aside while the keyboard shows.
-    ...(keyboardPeek ? { '--translate-y': '0px', height: 'auto', paddingBottom: 0, clipPath: 'none' } : {}) } as CSSProperties;
+    ...(keyboardPeek ? { '--translate-y': '0px', height: 'auto', paddingBottom: 0, clipPath: 'none' } : {}),
+    ...(layer.bar ? {
+      transitionProperty: 'opacity',
+      transitionDuration: 'var(--duration-fast)',
+    } : {}) } as CSSProperties;
   // Entering the modal half or full from the non-modal peek does not rerun Base UI's initial focus: if focus is still on the page, take it to Close.
   const wasPeek = useRef(false);
   useEffect(() => {
@@ -236,13 +261,14 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
             '[&_[data-boring=pi-chat]>header]:hidden',
             // At peek: ONE compact row (a one-line input, the microphone and Send; the other composer controls wait for half), and the last
             // reply as a single truncated line above it.
-            peek && ['[&_[data-boring=pi-chat]>.relative]:overflow-hidden [&_[data-boring=pi-chat]>.relative>.pointer-events-none]:hidden',
+            peek && !layer.bar && ['[&_[data-boring=pi-chat]>.relative]:overflow-hidden [&_[data-boring=pi-chat]>.relative>.pointer-events-none]:hidden',
               '[&_[data-boring=pi-chat]>footer]:px-2 [&_[data-boring=pi-chat]>footer]:pt-1 [&_[data-boring=pi-chat]>footer]:pb-2',
               '[&_[data-testid=transcript]]:gap-0 [&_[data-testid=transcript]]:p-0 [&_[data-testid=transcript]]:px-3 [&_[data-testid=transcript]>*]:max-h-5 [&_[data-testid=transcript]>*]:truncate [&_[data-testid=transcript]_button]:hidden',
               '[&_[data-testid=composer]_[data-slot=input-group]]:flex-row! [&_[data-testid=composer]_[data-slot=input-group]]:items-center',
               '[&_[data-testid=composer-input]]:min-h-11 [&_[data-testid=composer-input]]:max-h-11 [&_[data-testid=composer-input]]:flex-1 [&_[data-testid=composer-input]]:px-4 [&_[data-testid=composer-input]]:py-2.5',
               voice.phase !== 'starting' && voice.phase !== 'recording' && '[&_[data-testid=composer-controls]]:w-auto [&_[data-testid=composer-controls]]:shrink-0 [&_[data-testid=composer-controls]]:py-0 [&_[data-testid=composer-controls]>span.flex-1]:hidden',
               '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-annotate]]:hidden'],
+            layer.bar && '[&_[data-testid=composer-dock]]:px-2 [&_[data-testid=composer-dock]]:pt-2 [&_[data-testid=composer-dock]]:pb-4',
             peek && layer.bar && ['[&_[data-boring=pi-chat]>.relative]:hidden [&_[data-testid=conversation-content]]:hidden', FOLDED_FIELD])}>
           {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} />}
           {!peek && <VoiceProblem />}
