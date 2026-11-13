@@ -167,7 +167,7 @@
     "@types/react-dom": "19.3.0",
     "@typescript-eslint/parser": "8.72.1",
     "@vercel/sandbox": "3.9.1",
-    "agents": "0.32.0",
+    "agents": "0.33.0",
     "buffer": "6.0.3",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
