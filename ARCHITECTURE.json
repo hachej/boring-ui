@@ -11,7 +11,7 @@
     "@earendil-works/pi-mcp": "1.5.2",
     "@vercel/sandbox": "3.9.1",
     "@aws-sdk/client-bedrock-agentcore": "3.1161.0",
-    "agents": "0.32.0",
+    "agents": "0.33.0",
     "wrangler": "4.156.0",
     "@types/node": "22.20.5",
     "react": "19.3.1",
