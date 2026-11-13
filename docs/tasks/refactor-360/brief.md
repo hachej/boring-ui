@@ -43,6 +43,28 @@ The agent and the app meet only at the MCP server. No agent code in the app, no 
 
 **First real run of the whole loop (ran, once):** asked "I want to set a target weight per exercise and see how far I am from it", the agent read the model, rewrote it with a new command and view, wrote five tests, passed the check first time, applied in 508 ms, saw the two new tools appear, used one, and asked the expert which targets to set. 66 seconds, 8 tool calls, no help. Our own code for it: 36 lines for the bridge from the MCP server to the agent, 70 lines for the four update tools, a 69-line skill. This is one run on a small example, and the agent judged its own tests; a real rate on hard features is what Phase 0 measures.
 
+### Three levels of change, cheapest first
+
+The agent does not only change the app. It can also change itself, and most requests should stop at the first level that satisfies them.
+
+| Level | What changes | Who is affected | Cost and control |
+|---|---|---|---|
+| 1. Memory | What the agent remembers about this person: preferences, vocabulary, standing instructions | That person only | Instant. No approval |
+| 2. The agent's own skills and tools | A skill ("when I upload a bank statement, do this"), or a tool of its own: a small script that combines several of the app's operations, calls an outside service the person connected, or computes something | That person, or everyone using the app's agent if the owner shares it | Instant, no change to the app. The tool runs in the agent's own sandbox and can do only what the agent could already do. The person approves it once |
+| 3. The app's models and screens | A new command, a new record type, a new screen | Every user of the app, and every outside agent | Check, replay of data, trial load, the expert's approval, the neutral tester |
+
+Level 2 is what this repository's self-evolution feature already does (an `.agent/` folder of instructions, skills and tools, a `reload` tool, an approval), so it is carried over, not invented.
+
+### Why the app is reached through MCP, and what that rule does not say
+
+The rule is narrower than "the agent only uses MCP":
+
+- **Anything that reads or writes the app's data goes through the app's published interface.** For an agent that interface is the MCP server the model generates. This gives one door with one set of rules: the app's own agent, a person's outside assistant and Studio all pass the same checks, and there is no second path to keep safe.
+- **The agent's own tools live with the agent**, not in the app, and run in its sandbox. When one of them needs the app's data it calls the app's operations through the same door, so the rules still hold.
+- **Agent-written code never runs in the agent's own process**, where the model credential lives. App code runs in the app's sandbox; the agent's own tools run in a script sandbox whose only power is calling tools.
+
+Open point: when the agent and the app run in the same place, the generated toolkit can be called directly without the MCP hop. That is an optimisation of the same interface, to take only if the hop is measurably slow.
+
 ## 4. Blocks we reuse instead of writing
 
 | Block | From | Replaces of ours | Checked |
@@ -63,6 +85,8 @@ The agent and the app meet only at the MCP server. No agent code in the app, no 
 | MCP client with sign-in for outside servers | pi-mcp | Part of our connections service | source |
 | Sandboxed scripts whose only power is calling tools | pi-codemode | Already used | in use |
 | Screens as pure functions, bound to the model | Foldkit, through Alchemy's binding | To be decided (section 6) | source |
+| **This repository's UI kit**: the app shell, the chat, 155 components, the design rules and their checks | Ours (boring-ui) | Nothing: it is the block we keep and reuse for how every app looks and for the agent's chat. Section 6 says how plugin screens use it | in use |
+| Self-evolution of the agent: its own instructions, skills and tools, with reload and approval | Ours (boring-ui, on pi-durable) | Nothing: it becomes level 2 of the loop (section 3) | in use in the kit, not yet in apps |
 
 Not provided by Alchemy: WhatsApp, OCR, OAuth for MCP clients, loading changed code into a running app, migration of stored data when a model's shape changes.
 
@@ -90,7 +114,9 @@ Foldkit (**source**) is an Elm-style framework on Effect: a screen is a pure fun
 - For: a screen becomes as writable and checkable by an agent as the model is, which makes the whole app self-updating and not only its logic.
 - Against: one maintainer, not yet at version 1, breaking changes in minor releases. React components cannot run inside Foldkit, so this repository's kit (about 12,000 lines in the UI package, 155 components) cannot be reused inside it. The reverse works: a Foldkit screen can be embedded inside a React page.
 
-**Proposal:** the shell and the chat stay on this kit. New plugin screens are tried in Foldkit, embedded in the React shell, on one app, and judged on whether the agent writes them reliably and whether they meet our design rules at phone size.
+A hands-on run (section 19) confirmed both sides: the type checker caught a stale Foldkit screen, and the screen itself was an unstyled page of 171 lines for a two-field form.
+
+**Proposal:** this kit is the default for everything a person sees: the shell, the chat, and plugin screens. A plugin screen is a React component built from the kit's components on the model's typed client, so it gets our look and our design checks, and the type checker still catches a screen that is out of date with its model. What is missing is a small binding from a Domain model to React (read a view, send a command, follow live updates); Alchemy ships one only for Foldkit, so that binding is ours to write, once. Foldkit stays a side trial on one screen, for the case where pure screens prove much more reliable for the agent to write.
 
 ## 7. Deploy wherever we need
 
