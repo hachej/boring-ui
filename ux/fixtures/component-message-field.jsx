@@ -21,15 +21,15 @@ window.MediaRecorder = class extends EventTarget {
   static isTypeSupported() { return true; }
   constructor() { super(); this.state = 'inactive'; this.mimeType = 'audio/webm'; }
   start() { this.state = 'recording'; }
-  stop() { this.state = 'inactive'; const chunk = new Event('dataavailable'); chunk.data = new Blob(['audio fictif'], { type: 'audio/webm' }); this.dispatchEvent(chunk); this.dispatchEvent(new Event('stop')); }
+  stop() { this.state = 'inactive'; const chunk = new Event('dataavailable'); chunk.data = new Blob(['fictional audio'], { type: 'audio/webm' }); this.dispatchEvent(chunk); this.dispatchEvent(new Event('stop')); }
 };
 
 const model = (role, content, extra = {}) => ({ role, content, timestamp: 1, ...extra });
 const say = (id, text) => ({ id, kind: 'message', model: [model('user', text)] });
-const reply = id => ({ id, kind: 'message', byTaskId: 7, model: [model('assistant', [{ type: 'text', text: 'Bien reçu : je relance Maison Delorme et je vous préviens dès sa réponse.' }], { api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop' })] });
+const reply = id => ({ id, kind: 'message', byTaskId: 7, model: [model('assistant', [{ type: 'text', text: 'Got it: I am sending Delmore House a reminder and will tell you as soon as they answer.' }], { api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop' })] });
 const live = { 'pi.live': { run: { taskId: 7 } } };
 let snapshot = { identity: { runtimeId: 'fictional', scopeId: 'message-field', principalId: 'julie' }, conversationId: 'message-field', connection: { kind: 'connected' },
-  view: { entries: params.get('working') === '1' ? [say(1, 'Rapproche le relevé de janvier')] : [], docs: params.get('working') === '1' ? live : {} },
+  view: { entries: params.get('working') === '1' ? [say(1, 'Reconcile the January statement')] : [], docs: params.get('working') === '1' ? live : {} },
   draft: { text: params.get('text') ?? '', attachments: [], version: 0 }, outbox: [], echo: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
 const listeners = new Set();
 const change = patch => { snapshot = { ...snapshot, ...patch }; for (const listener of listeners) listener(); };
@@ -41,7 +41,7 @@ const controller = {
   send: async (_kind, content) => {
     const text = content?.text ?? snapshot.draft.text;
     // A refused send, as a real controller: the text stays in the field and `send` says why.
-    if (window.__failNext) { window.__failNext = false; change({ send: { kind: 'blocked', reason: 'Hors ligne : le message n’est pas parti.' } }); return undefined; }
+    if (window.__failNext) { window.__failNext = false; change({ send: { kind: 'blocked', reason: 'Offline: the message did not go out.' } }); return undefined; }
     window.__sent.push(text);
     const asked = [...snapshot.view.entries, say(++next, text)];
     change({ send: { kind: 'idle' }, draft: { text: '', attachments: [], version: snapshot.draft.version + 1 }, view: { entries: asked, docs: live } });
@@ -53,16 +53,16 @@ const controller = {
 window.__ux = { failNext: () => { window.__failNext = true; }, setText: text => controller.setText(text), sent: () => window.__sent.length };
 
 const slash = { Picker: SlashPicker, commands: [
-  { name: 'relance', description: 'Rédiger une relance client.', run: api => api.setText('Relance pour la facture de janvier de Maison Delorme') },
-  { name: 'rapprocher', description: 'Rapprocher le relevé du mois.', run: api => api.setText('Rapproche le relevé de janvier') },
-  { name: 'resume', description: 'Résumer les écarts.', run: api => api.setText('Résume les écarts de janvier') }], skills: [] };
+  { name: 'reminder', description: 'Draft a customer reminder.', run: api => api.setText('Reminder for the January invoice of Delmore House') },
+  { name: 'reconcile', description: 'Reconcile the month’s statement.', run: api => api.setText('Reconcile the January statement') },
+  { name: 'summarize', description: 'Summarize the discrepancies.', run: api => api.setText('Summarize the January discrepancies') }], skills: [] };
 const attachments = { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })) };
-const readOnly = <p data-testid="agent-read-only" className="m-0 flex min-h-14 items-center rounded-xl border bg-muted/40 px-4 text-sm text-muted-foreground">Lecture seule : votre rôle permet de lire le dossier Atelier Brun, pas d’écrire.</p>;
+const readOnly = <p data-testid="agent-read-only" className="m-0 flex min-h-14 items-center rounded-xl border bg-muted/40 px-4 text-sm text-muted-foreground">Read only: your role may read the Harbor Studio file, not write to it.</p>;
 
 const App = () => <main className="flex min-h-dvh items-center justify-center bg-muted/30 p-4 sm:p-8">
   <div data-testid="surface" className="flex h-[26rem] w-full max-w-xl flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
-    <PiChat controller={controller} locale="fr" header={false} showHistory={false} emptyState={<div />} emptyLayout="docked" composerLayout="pill" composerBarActions="attach" composerFileChips renderText={markdownText}
-      labels={{ placeholder: 'Écrivez ici ou « / »' }} slash={slash} attachments={attachments} voiceMessage={{ transcribe: async () => 'Relance Maison Delorme pour la facture de janvier.', ...voiceMessagePlugin }} voiceReplacesSend
+    <PiChat controller={controller} locale="en" header={false} showHistory={false} emptyState={<div />} emptyLayout="docked" composerLayout="pill" composerBarActions="attach" composerFileChips renderText={markdownText}
+      labels={{ placeholder: 'Write, or type /' }} slash={slash} attachments={attachments} voiceMessage={{ transcribe: async () => 'Reminder to Delmore House for the January invoice.', ...voiceMessagePlugin }} voiceReplacesSend
       {...(params.get('readonly') === '1' ? { renderComposer: () => readOnly } : {})} />
   </div>
 </main>;

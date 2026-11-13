@@ -20,7 +20,7 @@ You cannot run a browser, you cannot start the contract tests (they need one), a
 - Kit tokens and the kit's own components only; no raw colours or pixel values that bypass the theme tokens when a token exists. No new dependencies. Transitions use the kit's motion tokens.
 - Do not change the public API or the acceptance contract (`docs/tasks/94cd96bf-9124-4082-bc11-7e7925cf9642/acceptance.md`) or `test/contracts/one-composer.test.mjs`. Same components, same behaviour, better execution. Do not redesign the product.
 - Other consumers (`composer="content"`, `composer="dock"`, other registry items) stay unchanged in behaviour.
-- French UI words stay overridable (`agent.words`, labels props).
+- UI words stay overridable (`agent.words`, labels props).
 - If a flow is impossible because the kit lacks a component (a `gap` step), do NOT invent a component: write it under "Gaps" in changes.md with the closest thing you can do with what exists, and do that.
 - You may add interaction polish with the kit's own means: focus management, scroll restoration, selected states, transitions, keyboard shortcuts that are already in the contract.
 - The loop will run `{{TEST_CMD}}`, `npm run check` and `node ux/runner/cli.mjs check --target {{TARGET}}` after you (its numbers go to the judge; a step that stops completing vetoes the round). Read the tests and the check's code to see what they assert, and keep them green by reading, not by running. Never "fix" a red test by editing the test.
@@ -47,4 +47,4 @@ The worker does not load skills by itself, so the relevant ones are plain markdo
 3. `mobile-native.md`: targets, keyboard, viewport units, safe areas, sheets.
 4. `design-impeccable.md` with `impeccable-spatial-design.md`, `impeccable-typography.md`, `impeccable-responsive-design.md`, `impeccable-ux-writing.md`, `impeccable-interaction-design.md` and the commands `impeccable-cmd-layout.md`, `impeccable-cmd-polish.md`, `impeccable-cmd-clarify.md`, `impeccable-cmd-adapt.md` (skip its context-gathering and setup steps).
 
-Essentials: one spacing scale; align to a shared grid; targets at least 44 px on touch; the primary action is the loudest thing; plain French state wording; tokens only; consistent radius; nothing jumps between states; focus goes somewhere sensible after every action; close returns to where the person was; no new decoration.
+Essentials: one spacing scale; align to a shared grid; targets at least 44 px on touch; the primary action is the loudest thing; plain English state wording; tokens only; consistent radius; nothing jumps between states; focus goes somewhere sensible after every action; close returns to where the person was; no new decoration.

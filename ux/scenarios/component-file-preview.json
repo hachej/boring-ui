@@ -1,6 +1,7 @@
 {
  "target": "component:file-preview",
  "title": "The file preview",
+ "summary": "The file viewer: a note, a CSV as text or a table, and a text file, with a close button.",
  "purpose": "The kit's file viewer, two hosts, one scenario. `bare` (390, 1440): FileViewer of pi-app with the default kinds, alone on a neutral page over a fake in-memory resource client. `pane` (390-pane, 1440-pane): the same files opened in the right pane of AppShell composer=\"bar\" (`agent.files`, LocalFileViewer, the pane's back stack and its previous and next). Invented French files: a Markdown note, a CSV of gaps and a text file.",
  "fixture": {
   "entry": "ux/fixtures/component-file-preview.jsx",
@@ -8,7 +9,7 @@
   "ready": "[data-testid=file-viewer], [data-testid=file-list], [data-testid=artifact-panel]",
   "queryBy": { "390-pane": "host=pane", "1440-pane": "host=pane" },
   "install": "npx shadcn@4.23.0 add pi-app-kinds",
-  "usage": "<FileViewer key={path} path={path} locator={locate(path)} options={{ client, identity, kinds: defaultKinds({ locale: 'fr' }) }} onClose={() => setPath(null)} />",
+  "usage": "<FileViewer key={path} path={path} locator={locate(path)} options={{ client, identity, kinds: defaultKinds({ locale: 'en' }) }} onClose={() => setPath(null)} />",
   "css": ["viewer-frame", "markdown-editor", "touch-floor"]
  },
  "viewports": [
@@ -19,7 +20,7 @@
  ],
  "watch": [["viewer", "[data-testid=file-viewer], [data-testid=agent-preview]"], ["bar", "[data-testid=artifact-panel]"]],
  "thresholds": { "cls": 0.1, "settledMs": 1500, "touchTarget": 44, "truncated": 0 },
- "notes": "Two hosts of the same viewer: `bare` (FileViewer alone) and `pane` (the shell's right pane, the bar layout). The viewer's bar keeps the file's name and a close button in reach (44 px on a phone); the content is the file as the person wrote it (a note reads as a note, a table as a table (FileViewer shows a CSV as plain text; the table is the ArtifactPanel kind, state 03b)); closing returns to the page the person came from; French words stay as they are.",
+ "notes": "Two hosts of the same viewer: `bare` (FileViewer alone) and `pane` (the shell's right pane, the bar layout). The viewer's bar keeps the file's name and a close button in reach (44 px on a phone); the content is the file as the person wrote it (a note reads as a note, a table as a table (FileViewer shows a CSV as plain text; the table is the ArtifactPanel kind, state 03b)); closing returns to the page the person came from.",
  "states": [
   { "id": "01", "name": "list-closed", "steps": [] },
   { "id": "02", "name": "markdown-note", "query": "open=note", "steps": [{ "do": "wait", "ms": 600 }] },
@@ -30,7 +31,7 @@
  ],
  "flows": [
   { "id": "F01", "name": "Open a note", "steps": [
-   { "do": "tap", "target": "open-file[data-name=\"notes-cloture.md\"]", "say": "Tap « notes-cloture.md »", "motion": true, "until": "visible:file-viewer|agent-preview & eval:[...document.querySelectorAll('[data-testid=file-viewer], [data-testid=agent-preview]')].some(e => e.textContent.includes('exercice 2025'))", "timeout": 5000, "expect": "The note opens in the viewer with its title and its text." }
+   { "do": "tap", "target": "open-file[data-name=\"closing-notes.md\"]", "say": "Tap “closing-notes.md”", "motion": true, "until": "visible:file-viewer|agent-preview & eval:[...document.querySelectorAll('[data-testid=file-viewer], [data-testid=agent-preview]')].some(e => e.textContent.includes('fiscal year 2025'))", "timeout": 5000, "expect": "The note opens in the viewer with its title and its text." }
   ] },
   { "id": "F02", "name": "Close with the button", "query": "open=csv", "steps": [
    { "do": "wait", "ms": 500, "say": "The table is open", "until": "visible:file-viewer|agent-preview" },
@@ -43,10 +44,10 @@
   ] },
   { "id": "F04", "name": "Next and previous file", "query": "open=note", "steps": [
    { "do": "wait", "ms": 500, "say": "The note is open", "until": "visible:file-viewer|agent-preview" },
-   { "do": "tap", "target": "file-next", "say": "Tap « next file »", "when": "eval:new URLSearchParams(location.search).get('host') !== 'pane'", "gap": "FileViewer alone has no next / previous: only onBack and onClose. The pane (host=pane) steps through the set the file was opened from.", "until": "visible:file-next", "expect": "The next file of the folder is shown." },
-   { "do": "tap", "target": "file-next", "say": "Tap « next file »", "when": "eval:new URLSearchParams(location.search).get('host') === 'pane'", "until": "text:file-position~2 / 3 & text:agent-preview-title~ecarts-janvier.csv & visible:artifact-csv", "focus": "file-next", "expect": "The next file of the folder (a table) is shown, « 2 / 3 »." },
-   { "do": "press", "key": "ArrowRight", "say": "→", "when": "eval:new URLSearchParams(location.search).get('host') === 'pane'", "until": "text:file-position~3 / 3 & text:agent-preview-title~rappel-delorme.txt", "expect": "The text file, « 3 / 3 »." },
-   { "do": "press", "key": "ArrowRight", "say": "→ at the end", "when": "eval:new URLSearchParams(location.search).get('host') === 'pane'", "until": "text:file-position~1 / 3 & text:agent-preview-title~notes-cloture.md", "expect": "Back to the first file." }
+   { "do": "tap", "target": "file-next", "say": "Tap “next file”", "when": "eval:new URLSearchParams(location.search).get('host') !== 'pane'", "gap": "FileViewer alone has no next / previous: only onBack and onClose. The pane (host=pane) steps through the set the file was opened from.", "until": "visible:file-next", "expect": "The next file of the folder is shown." },
+   { "do": "tap", "target": "file-next", "say": "Tap “next file”", "when": "eval:new URLSearchParams(location.search).get('host') === 'pane'", "until": "text:file-position~2 / 3 & text:agent-preview-title~discrepancies-january.csv & visible:artifact-csv", "focus": "file-next", "expect": "The next file of the folder (a table) is shown, “2 / 3”." },
+   { "do": "press", "key": "ArrowRight", "say": "→", "when": "eval:new URLSearchParams(location.search).get('host') === 'pane'", "until": "text:file-position~3 / 3 & text:agent-preview-title~reminder-delmore.txt", "expect": "The text file, “3 / 3”." },
+   { "do": "press", "key": "ArrowRight", "say": "→ at the end", "when": "eval:new URLSearchParams(location.search).get('host') === 'pane'", "until": "text:file-position~1 / 3 & text:agent-preview-title~closing-notes.md", "expect": "Back to the first file." }
   ] }
  ]
 }

@@ -1,6 +1,8 @@
 # UX showcase
 
-A static site of the kit: one page per layout or component with a live demo (an invented, scripted assistant), still pictures of its states, each flow with its sentences, pictures and video, and the numbers a real browser measured, in plain words. Built by `ux/runner/site.mjs` from a captured run. No model is called anywhere; the site shows facts only.
+A static documentation site of the kit, in English: a left navigation (a menu on a phone), a theme switch, and one page per layout or component. The home page and every page open on the live, playable demo (an invented, scripted assistant), then "Things to try" (buttons that reload the demo and play a flow in it), a width toggle and start states, the install and usage lines (copyable), and last the collapsed status line, each flow's steps ("All steps") and its recording ("Show recording", loaded on request, never autoplayed). Built by `ux/runner/site.mjs` from a captured run. No model is called anywhere; the site shows facts only.
+
+The pages are written for a visitor: no harness explanation on them, one footer link to `ux/README.md`. What a page lists under "Things to try" is `try` in the scenario (`[{ "label": "...", "flow": "F01" }]`, or `"steps"` for an ad hoc list); without it the first playable flows are used. A flow is playable when it uses only tap, type, press, focus, scroll, wait and fixture steps. `summary` is the one line under the page title.
 
 The workflow is `.github/workflows/ux-showcase.yml`.
 
@@ -44,11 +46,11 @@ npm run ux:capture -- --out .cache/ux
 npm run ux:site -- --from .cache/ux --out .cache/site
 ```
 
-Open `.cache/site/index.html` in a browser (the demos are self-contained files; no server).
+Serve `.cache/site` (for example `python3 -m http.server -d .cache/site`) and open it: a page drives its demo through the frame, which a `file://` page cannot do.
 
 ## What it publishes
 
-The kit version, commit and capture date; the scenario's title, purpose, install line and usage snippet (only when the scenario has them); the demo page of each target; state pictures; flow strips, sentences, videos and measurements; for each target one neutral status line from `check` (« N of M flow steps complete without a hitch », then the list of what does not pass yet, in plain words). On a phone each flow is a vertical list of steps, each with its own full-width picture.
+The kit version, commit and capture date; the scenario's title, purpose, install line and usage snippet (only when the scenario has them); the demo page of each target; flow sentences, videos and measurements, with no still pictures in the page by default; for each target one neutral status line from `check` (« N of M flow steps complete without a hitch », then the list of what does not pass yet, in plain words). The recordings and the step lists are collapsed; nothing is loaded for them until a visitor opens them.
 
 ## What it never publishes
 

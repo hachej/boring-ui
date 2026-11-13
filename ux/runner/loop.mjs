@@ -8,7 +8,7 @@
 // round's start commit; no reset --hard, no stash) when a check, the exam guard or a regression says so. See loop-round.mjs and ux/README.md.
 // Stops when every graded criterion is >= 9, after UX_MAX_ROUNDS (10) rounds, after UX_MAX_IDLE (3) rounds in a row that improved nothing, or on STOP (read between rounds).
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { root } from './build.mjs';
@@ -125,7 +125,9 @@ if (BASELINE) { // round 0: capture (with videos if --video) and judge; --captur
   const v = judge({ folder: folder(0), scenario, round: 0 }); if (!v) { log('baseline: no usable verdict'); process.exit(1); }
   score(0, { v, commit: git('rev-parse', '--short', 'HEAD'), note: '(baseline)' }); log(`baseline ${JSON.stringify(v.grades)}`); process.exit(0);
 }
-let n = 1; while (existsSync(join(folder(n), 'verdict.json'))) n++;
+// Resume after the last ACCEPTED round (rounds that failed or were reverted keep their folder but are not the state of the branch).
+const graded = readdirSync(HOME).map(d => /^round-(\d+)$/.exec(d)?.[1]).filter(Boolean).map(Number).filter(k => existsSync(join(folder(k), 'verdict.json')));
+let n = (graded.length ? Math.max(...graded) : 0) + 1;
 let lastWhy = '', sameWhy = 0, prev = folder(n - 1), prevVerdict = readJson(join(prev, 'verdict.json')), prevResult = readJson(join(prev, 'result.json')), idle = 0;
 const baselineText = join(HOME, 'baseline-after-port.txt');
 let prevLines = readJson(LINES) ?? (existsSync(baselineText) ? readFileSync(baselineText, 'utf8').split('\n').filter(l => /^\s{2,}\S/.test(l)).map(l => l.trim()) : []);
@@ -152,7 +154,7 @@ for (; n <= MAX_ROUNDS; n++) {
     if (!v) { log('judge gave no usable verdict'); discard(root, rec.start); score(n, { checks: ctx.lines?.length, note: 'judge failed; edits discarded' }); break; }
     if (lowest(v) < lowest(prevVerdict)) {
       const why = `REVERTED: lowest criterion ${lowest(v)} < ${lowest(prevVerdict)} of the last accepted round`;
-      log(`round ${n} ${why}; grades ${JSON.stringify(v.grades)}`); discard(root, rec.start);
+      log(`round ${n} ${why}; grades ${JSON.stringify(v.grades)}`); discard(root, rec.start); renameSync(join(folder(n), 'verdict.json'), join(folder(n), 'verdict.reverted.json'));
       writeFileSync(FAILING, `Round ${n} was discarded: ${why}\ngrades ${JSON.stringify(v.grades)}\nJudge: ${readFileSync(join(folder(n), 'verdict.md'), 'utf8').slice(0, 4000)}\n`);
       score(n, { v, p: prevVerdict, checks: ctx.lines?.length, note: why }); idle++;
     } else {

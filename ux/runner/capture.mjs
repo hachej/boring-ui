@@ -18,7 +18,7 @@ const queryFor = (s, vp, extra, fast) => ['demo=1', s.fixture.query, pick(s.fixt
 
 // A page, with the probes, errors collected, and the helpers a gesture needs.
 export async function open(browser, s, vp, extra, { fast, video }) {
-  const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: vp.touch ? 2 : 1, isMobile: !!vp.touch, hasTouch: !!vp.touch, locale: 'fr-FR', ...(video ? { recordVideo: { dir: video, size: { width: vp.width, height: vp.height } } } : {}) });
+  const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: vp.touch ? 2 : 1, isMobile: !!vp.touch, hasTouch: !!vp.touch, locale: 'en-US', ...(video ? { recordVideo: { dir: video, size: { width: vp.width, height: vp.height } } } : {}) });
   const page = await ctx.newPage(); page.setDefaultTimeout(5000);
   const h = { ctx, page, viewport: vp.name, touch: !!vp.touch, errors: new Set(), failed: new Set(), target: null };
   page.on('console', m => { if (m.type() === 'error') h.errors.add(m.text().slice(0, 160)); }); page.on('pageerror', e => h.errors.add(String(e).slice(0, 160)));

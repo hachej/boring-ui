@@ -1,36 +1,27 @@
-// `node ux/runner/cli.mjs site --from <captured folder> --out <site folder>`: a static site (plain HTML, CSS and a little JS; no server, no model).
-// Shows facts only: live demo, pictures, sentences, measurements in plain words, the check status. Never judge grades or scoreboards.
+// `node ux/runner/cli.mjs site --from <captured folder> --out <site folder>`: a static documentation site (plain HTML, CSS and one small script; no server, no model).
+// The home page and every target page open on the playable demo. Facts only, never a judge's grade. Pictures stay out of the way: the recordings load on request.
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { root } from './build.mjs';
 import { slug } from './scenario.mjs';
-import { esc, head, nav, summary, summaryLine, targetPage } from './site-page.mjs';
+import { page } from './site-chrome.mjs';
+import { summary, targetBody } from './site-page.mjs';
 import { siteCss } from './site-theme.mjs';
 
 const json = file => JSON.parse(readFileSync(file, 'utf8'));
 const plain = text => text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`]/g, '').trim();
 
-// Two sentences from README.md: the bold line and the first sentence of the paragraph under it.
+// The kit's one line: the bold line of README.md.
 function about() {
-  const lines = readFileSync(join(root, 'README.md'), 'utf8').split('\n');
-  const i = lines.findIndex(l => /^\*\*.+\*\*$/.test(l.trim()));
-  if (i < 0) return '';
-  const next = lines.slice(i + 1).find(l => l.trim() && !l.startsWith('['));
-  return `${plain(lines[i])} ${plain(next ?? '').split(/(?<=\.)\s/)[0]}`.trim();
+  const line = readFileSync(join(root, 'README.md'), 'utf8').split('\n').find(l => /^\*\*.+\*\*$/.test(l.trim()));
+  return line ? plain(line) : 'Boring UI';
 }
 
-function copyTarget(from, out, name, hasDemo, result) {
+function copyTarget(from, out, name, hasDemo) {
   const src = join(from, name), dst = join(out, name);
   mkdirSync(dst, { recursive: true });
-  for (const sub of ['states', 'videos']) if (existsSync(join(src, sub))) cpSync(join(src, sub), join(dst, sub), { recursive: true });
-  for (const id of existsSync(join(src, 'flows')) ? readdirSync(join(src, 'flows')) : []) {
-    mkdirSync(join(dst, 'flows', id), { recursive: true });
-    for (const file of readdirSync(join(src, 'flows', id)).filter(f => /^strip-.*\.png$/.test(f))) cpSync(join(src, 'flows', id, file), join(dst, 'flows', id, file));
-  }
-  for (const run of result.flows) for (const st of run.steps) if (st.frame) {
-    mkdirSync(join(dst, 'flows', run.id, run.viewport), { recursive: true });
-    cpSync(join(src, 'flows', run.id, run.viewport, st.frame), join(dst, 'flows', run.id, run.viewport, st.frame));
-  }
+  if (existsSync(join(src, 'videos'))) cpSync(join(src, 'videos'), join(dst, 'videos'), { recursive: true });
   if (hasDemo) cpSync(join(from, '_pages', `${name}.html`), join(dst, 'demo.html'));
 }
 
@@ -40,23 +31,20 @@ export async function site({ from, out, scenarios = [] }) {
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'site.css'), siteCss());
+  cpSync(join(dirname(fileURLToPath(import.meta.url)), 'site-client.js'), join(out, 'site.js'));
   const cards = [];
   for (const name of targets) {
     const meta = json(join(from, name, 'target.json')), result = json(join(from, name, 'result.json'));
     const scenario = scenarios.find(s => slug(s.target) === name);
     const hasDemo = !!scenario && existsSync(join(from, '_pages', `${name}.html`));
-    copyTarget(from, out, name, hasDemo, result);
-    writeFileSync(join(out, name, 'index.html'), targetPage({ meta, scenario: hasDemo ? scenario : undefined, result, folder: join(from, name) }));
-    cards.push({ name, meta, sum: summary(scenario, result), flows: new Set(result.flows.map(f => f.id)).size });
+    copyTarget(from, out, name, hasDemo);
+    cards.push({ name, meta, result, scenario: hasDemo ? scenario : undefined, kitVersion: meta.kitVersion, sum: summary(scenario, result) });
   }
-  const group = (level, title) => {
-    const list = cards.filter(c => c.meta.level === level);
-    return list.length ? `<h2>${title}</h2><div class="grid">${list.map(c => `<a class="card" href="${esc(c.name)}/index.html"><h3>${esc(c.meta.title)}</h3><p>${esc(c.meta.purpose.split(/(?<=\.)\s/)[0])}</p><p class="small">${c.flows} flow${c.flows === 1 ? '' : 's'} measured · ${esc(summaryLine(c.sum))}</p></a>`).join('')}</div>` : '';
-  };
-  const first = cards[0].meta;
-  writeFileSync(join(out, 'index.html'), `${head('Boring UI showcase', 0, about())}${nav(0)}<main><h1>Boring UI showcase</h1><p class="lead">${esc(about())}</p>
-<p class="muted">Every page below is a live demo of one part of the kit with an invented assistant, plus what a real browser measured while a person-like script used it. The demo company, « Atelier Brun (fictif) », its clients and every amount are invented. Pick a layout or a component.</p>
-${group('layout', 'Layouts')}${group('component', 'Components')}
-<footer>Kit ${esc(first.kitVersion)} · commit ${esc(first.commit)} · captured ${esc(String(first.capturedAt).slice(0, 10))}. Demo content is invented.</footer></main></body></html>`);
+  const nav = cards.map(c => ({ name: c.name, meta: { ...c.meta, kitVersion: c.kitVersion } }));
+  for (const c of cards) {
+    writeFileSync(join(out, c.name, 'index.html'), page({ title: `${c.meta.title} · Boring UI`, description: c.meta.purpose, depth: 1, cards: nav, current: c.name, body: targetBody(c) }));
+  }
+  const main = cards.find(c => c.scenario && c.name === 'layout-bar') ?? cards.find(c => c.scenario && c.meta.level === 'layout') ?? cards.find(c => c.scenario) ?? cards[0];
+  writeFileSync(join(out, 'index.html'), page({ title: 'Boring UI', description: about(), depth: 0, cards: nav, current: '', body: targetBody({ ...main, home: 'Boring UI', lead: about(), demoBase: `${main.name}/` }) }));
   console.log(`site: ${cards.length} target${cards.length === 1 ? '' : 's'} -> ${out}`);
 }
