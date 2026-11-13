@@ -20,3 +20,7 @@ Expected: the versions (the kit's packages `^0.5.0`; pi-durable, pi-ai and chord
 ## Known break outside the kit
 
 chord 1.5.2 declares the optional peer `react@19.3.0` exactly. With react 19.3.1 npm refuses the install (ERESOLVE) until chord widens it (its changelog has the range fix unreleased). Until then the app adds `"overrides": { "@earendil-works/chord": { "react": "$react" } }` to its `package.json`; the kit's own root does.
+
+## Isolated consumers do not lib-check
+
+chord 1.5.2's own declarations (`dist/contracts/evolve.d.ts`, reached through pi-durable's types) do not compile under `exactOptionalPropertyTypes` with `skipLibCheck: false`. The isolated consumer scripts (`scripts/test-*-consumer.mjs`) therefore set `skipLibCheck: true` from 0.5.0, so they still check the consumer's own code, the kit's exports and which declaration files load, but no longer type-check every `.d.ts`. Restore `skipLibCheck: false` once chord fixes its declarations. An app with `skipLibCheck: false` and `exactOptionalPropertyTypes` hits the same errors with pi-durable 1.5.2 alone.
