@@ -11,7 +11,7 @@ export function remoteSelectionTool(connection: {
   return createPresentationTool({
     name: `select_canvas_${connection.id.replaceAll('-', '')}`,
     description: 'Select shapes in the captured browser canvas',
-    parameters: { type: 'object', properties: { shapeIds: { type: 'array', items: { type: 'string' } } }, required: ['shapeIds'] },
+    parameters: { type: 'object', properties: { shapeIds: { type: 'array', items: { type: 'string' } } }, required: ['shapeIds'] } as const,
     target: connection.target,
     command: connection.select,
     prepareInput: args => ({ shapeIds: args.shapeIds, expiresAt: Date.now() + 5000 }),

@@ -7,7 +7,7 @@ declare const command: PresentationCommand<
   { readonly privateText: string },
   { readonly documentId: string }
 >;
-const parameters = { type: 'object', properties: { index: { type: 'integer', minimum: 0 } }, required: ['index'] };
+const parameters = { type: 'object', properties: { index: { type: 'integer', minimum: 0 } }, required: ['index'] } as const;
 const options = {
   name: 'navigate_notes', description: 'Navigate the explicitly bound notes', parameters, command,
   target: { instanceId: 'notes', epoch: 'page-one', subject: { documentId: 'fictional' } },
