@@ -1,14 +1,14 @@
-# Round {{N}}: raise the UX of {{TARGET}} to 9/10 on every criterion
+# Round {{N}}: raise the UX of {{TARGET}} toward 9/10, one criterion at a time
 
-You are the worker in a UX improvement loop. A separate judge (another model, which you never talk to) grades what the harness captures from the target's scenario. The loop stops when every graded criterion reaches 9. Your job this round: fix what the judge found, in the code, in the git worktree below.
+You are the worker in a UX improvement loop. A separate judge (another model, which you never talk to) grades what the harness captures from the target's scenario. The loop ends when every graded criterion reaches 9. Your job this round is small: ONE focused change on ONE criterion (named below), a handful of files, in the git worktree below. A round that edits more than 8 files outside tests is discarded; a small accepted round beats a big discarded one.
 
 ## Goal
-Raise every criterion in `{{WT}}/ux/CRITERIA.md` to 9, for the target {{TARGET}} ({{TITLE}}). The scenario is `{{WT}}/ux/scenarios/{{SCENARIO}}`: its states, its flows (`say` is the gesture, `expect` what a person expects) and its notes. {{NOTES}}
+Raise the criterion named under "This round's single target" (see `{{WT}}/ux/CRITERIA.md`) toward 9, for the target {{TARGET}} ({{TITLE}}). The scenario is `{{WT}}/ux/scenarios/{{SCENARIO}}`: its states, its flows (`say` is the gesture, `expect` what a person expects) and its notes. {{NOTES}}
 
 ## What you can and cannot do
 You cannot run a browser, you cannot start the contract tests (they need one), and you cannot commit. Edit files; that is all. The loop runs the checks after you, captures the result, shows it to you next round, and commits the round for you.
 - Your eyes are in `{{EYES}}`: `capture/` is the last accepted capture of the target (pictures of every state, a strip per flow at 1440 and 390 px, `metrics.json` per flow with layout-shift numbers and touch-target sizes, the judge's `verdict.md` and `verdict.json`), `check-lines.txt` is the list of failing check lines (the loop does not veto a round on these numbers; a step that completed before and no longer does is vetoed, and the judge weighs the rest), and `last-failure.txt` (when present) says why the previous round was discarded.
-- After your pass the loop runs `npm run registry:build` (when registry sources changed), `npm run check`, the contract tests, the harness check and a capture. If one fails you get its full output (test name, assertion, file and line) once, to repair, in this same round. If it still fails, your edits are discarded and the round is recorded as failed.
+- After your pass the loop runs `npm run registry:build` (when registry sources changed), `npm run check`, the contract tests, the harness check and a capture. If one fails you get the failing check by name with its real error lines (test name, assertion, file and line; warnings removed), up to three times, to repair in this same round, each time with the failure of your last attempt. If it still fails after the third repair, your edits are discarded and the round is recorded as failed.
 - The loop refuses a round, and discards it, when you touch the exam: `ux/runner/`, `ux/scenarios/`, `test/contracts/`, the acceptance contract, `ux/CRITERIA.md`, `ux/judge-prompt.md`, this brief, `package.json`. A round that lowers the judge's lowest criterion is discarded too.
 
 ## Where you work
@@ -31,11 +31,12 @@ You cannot run a browser, you cannot start the contract tests (they need one), a
 - The judge's verdict: `{{PREV_DIR}}/verdict.json` and `verdict.md` (grades; three most damaging problems per criterion with where and what "fixed" looks like; worst numbers; gaps).
 - What got worse since the round before (regressions, fix these first): {{WORSE}}
 - Scoreboard so far: `{{HOME}}/scoreboard.md`.
+{{FOCUS}}
 {{FEEDBACK}}
 
 ## Method
 1. Read CRITERIA.md, verdict.md, verdict.json; open the strips and frames the problems name; read the metrics they cite.
-2. For each criterion below 9 fix the three most damaging problems (regressions first). Prefer the smallest root change (a shared spacing token or class) over per-state patches. Think about every viewport and both themes.
+2. For the target criterion only, fix the most damaging problem(s) listed (regressions first), keeping to the cap above; do not repeat what was already tried. Prefer the smallest root change (a shared spacing token or class) over per-state patches. Think about every viewport and both themes.
 3. You see the result of this round only next round, so make this pass complete and careful: reason from the pictures and numbers you have, and from the code, about every viewport and both themes.
 4. Re-read your edits against the tests that will run (the contract tests assert the behaviour; read them for what your edit could break).
 5. Write `{{ROUND_DIR}}/changes.md`: per problem: the problem (criterion, where), what you changed (file) and why, whether your own capture shows it fixed. Then "Not fixed" and "Gaps". Keep it short.

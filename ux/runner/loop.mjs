@@ -4,9 +4,10 @@
 //   node ux/runner/loop.mjs --target layout:bar --baseline     capture + judge round 0 only        --dry-run   brief + one capture, no model
 // State lives OUTSIDE the repo: $UX_LOOP_HOME/<target>/{round-N/<slug>/..., scoreboard.md, STOP}. Never pushes, merges or releases.
 // The worker (sandboxed) only EDITS FILES. The loop does the rest: registry build, npm run check, the contract tests, the harness check and capture
-// (one repair pass with the full failing output), the judge; then it commits the round for the worker, or discards the edits (files checked out to the
+// (up to three repair passes, each with the failing check by name and its real error lines), the judge; then it commits the round for the worker, or discards the edits (files checked out to the
 // round's start commit; no reset --hard, no stash) when a check, the exam guard or a regression says so. See loop-round.mjs and ux/README.md.
-// Stops when every graded criterion is >= 9, after UX_MAX_ROUNDS (10) rounds, after UX_MAX_IDLE (3) rounds in a row that improved nothing, or on STOP (read between rounds).
+// Ends when every graded criterion is >= 9 (status.json says done) or on STOP. A stall is not the end: each round targets one criterion (the lowest that has not stalled) and is told what was
+// already tried; 3 rounds in a row with nothing accepted make the next a rethink round; 8 pause the loop (PAUSED, 6 h doubling to 24 h) and it resumes by itself. One loop per state folder (pid file).
 import { execFileSync, spawnSync } from 'node:child_process';
 import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -16,12 +17,13 @@ import { capture, launch } from './capture.mjs';
 import { check } from './check.mjs';
 import { recordFlow } from './video.mjs';
 import { judge, KEYS } from './judge.mjs';
-import { commitRound, discard, failingTests, forbiddenTouched, incomplete, medianShiftLines, retried, runRound, saveTo, shiftKey, waitForLoad } from './loop-round.mjs';
+import { checkSteps, commitRound, detailed, discard, errorText, failingTests, forbiddenTouched, incomplete, medianShiftLines, retried, runRound, saveTo, shiftKey, waitForLoad } from './loop-round.mjs';
 import { loadAll, slug } from './scenario.mjs';
+import { allNine, addTried, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from './loop-state.mjs';
 
 const args = process.argv.slice(2), opt = n => { const i = args.indexOf(`--${n}`); return i < 0 ? undefined : args[i + 1]; };
 const DRY = args.includes('--dry-run'), BASELINE = args.includes('--baseline');
-const MAX_ROUNDS = Number(process.env.UX_MAX_ROUNDS ?? 10), MAX_IDLE = Number(process.env.UX_MAX_IDLE ?? 3), LOAD_MAX = Number(process.env.UX_LOAD_MAX ?? 40);
+const MAX_ROUNDS = Number(process.env.UX_MAX_ROUNDS ?? Infinity), REPAIRS = Number(process.env.UX_REPAIRS ?? 3), MAX_FILES = Number(process.env.UX_MAX_FILES ?? 8), LOAD_MAX = Number(process.env.UX_LOAD_MAX ?? 40);
 const scenario = loadAll().find(s => s.target === opt('target')); if (!scenario) { console.error('usage: loop.mjs --target <layout:bar|component:...> [--baseline|--dry-run]'); process.exit(2); }
 const HOME = join(process.env.UX_LOOP_HOME ?? join(homedir(), 'ux-loop'), slug(scenario.target)), S = slug(scenario.target);
 const MODEL = process.env.UX_WORKER_MODEL ?? 'gpt-6.1-sol', SKILLS = process.env.UX_SKILLS ?? join(process.env.UX_LOOP_HOME ?? homedir(), 'skills');
@@ -36,7 +38,8 @@ const roundDir = n => join(HOME, `round-${n}`), folder = n => join(roundDir(n), 
 const readJson = f => existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : null;
 const status = d => { if (!d) return ''; try { return execFileSync('git', ['-C', d, 'status', '--porcelain'], { encoding: 'utf8' }); } catch { return ''; } };
 const lowest = v => Math.min(...KEYS.map(k => v?.grades?.[k]).filter(x => typeof x === 'number'));
-const FAILING = join(HOME, 'last-failure.txt'), LINES = join(HOME, 'check-lines.json');
+const FAILING = join(HOME, 'last-failure.txt'), LINES = join(HOME, 'check-lines.json'), TRIED = join(HOME, 'tried.json'), PID = join(HOME, 'loop.pid'), STATUS = join(HOME, 'status.json');
+const plan = { focus: null, rethink: false, failures: '' }; // what the round in hand targets (set by the main loop before the worker runs)
 // `layout:bar F01@1440 step 3 "Tap": layout shift 0.095 > 0.08` keyed with the numbers after the step name blanked: a metric moving is not a new problem.
 const lineKey = shiftKey;
 
@@ -50,7 +53,7 @@ function eyes(n, prev, lines) {
 }
 function brief(n, prev, feedback, eyesDir) {
   const v = readJson(join(prev, 'verdict.json')), worse = v?.worse?.length ? v.worse.map(w => `${w.what} (${w.where ?? w.screenshot})`).join('; ') : 'nothing reported';
-  const map = { N: n, TARGET: scenario.target, TITLE: scenario.title, SCENARIO: scenario.file, NOTES: scenario.notes ?? '', WT: root, BRANCH: git('branch', '--show-current'), TEST_CMD, EYES: eyesDir, PREV_DIR: join(eyesDir, 'capture', S), WORSE: worse, HOME, ROUND_DIR: roundDir(n), SKILLS, FEEDBACK: feedback ? `\n## What the loop found after your last pass (full output in ${roundDir(n)}). Fix exactly this; edit files only:\n${feedback}\n` : '' };
+  const map = { N: n, TARGET: scenario.target, TITLE: scenario.title, SCENARIO: scenario.file, NOTES: scenario.notes ?? '', WT: root, BRANCH: git('branch', '--show-current'), TEST_CMD, EYES: eyesDir, PREV_DIR: join(eyesDir, 'capture', S), WORSE: worse, HOME, ROUND_DIR: roundDir(n), SKILLS, FOCUS: focusBrief({ focus: plan.focus, problems: v?.problems?.[plan.focus] ?? [], tried: triedText(readTried(TRIED), plan.focus), rethink: plan.rethink, failures: plan.failures, max: MAX_FILES }), FEEDBACK: feedback ? `\n## What the loop found after your last pass (full output in ${roundDir(n)}). Fix exactly this; edit files only:\n${feedback}\n` : '' };
   return Object.entries(map).reduce((t, [k, val]) => t.replaceAll(`{{${k}}}`, String(val)), readFileSync(join(root, 'ux/worker-brief.md'), 'utf8'));
 }
 function worker(n, prev, lines, feedback, tag) {
@@ -73,7 +76,13 @@ async function loopChecks(n, changed, ctx) {
     fails.push({ name, output: found.length ? `${found.join('\n---\n')}\n(full output: ${file})` : `${tail(out, 120)}\n(full output: ${file})` });
   };
   if (changed.some(f => f === 'registry.json' || f.startsWith('registry/'))) run('npm run registry:build', 'npm', ['run', 'registry:build']);
-  run('npm run check', 'npm', ['run', 'check']);
+  const steps = checkSteps(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts?.check);
+  if (!steps) run('npm run check', 'npm', ['run', 'check']);
+  else for (const step of steps) { // each step alone: the failure names the step and carries its real error lines, not the head of a long output
+    const r = sh('bash', ['-c', detailed(step)], { cwd: root, timeout: 30 * 60 * 1000 }), out = `${r.stdout}\n${r.stderr}`, name = `npm run check: ${step.replace('node scripts/', '')}`, file = join(dir, `${name.replace(/\W+/g, '-')}-${pass}.txt`);
+    if (r.status === 0) continue;
+    save(file.slice(dir.length + 1), out); log(`${name}: exit ${r.status}`); fails.push({ name, output: `${errorText(out)}\n(full output: ${file})` });
+  }
   run('contract tests', 'bash', ['-c', TEST_CMD], true);
   if (fails.length) return fails;
   await waitForLoad({ max: LOAD_MAX, log });
@@ -112,7 +121,6 @@ function score(n, { v, p, commit = '-', checks = '-', note = '' }) {
 }
 // Handed to the judge: the loop vetoes only on the fast checks, the contract tests, a step that stopped completing and the exam; the rest is evidence.
 const evidence = (lines, before) => `Failing check lines now: ${lines.length} (accepted round before: ${before.length}). Steps that do not complete now: ${incomplete(lines).length} (before: ${incomplete(before).length}).\n${lines.length ? lines.join('\n') : 'none'}\n`;
-const done = v => KEYS.every(k => v.grades[k] === undefined || v.grades[k] >= 9);
 
 mkdirSync(HOME, { recursive: true });
 if (BASELINE) { // round 0: capture (with videos if --video) and judge; --capture-only / --judge-only split the two (judges can run side by side)
@@ -128,49 +136,71 @@ if (BASELINE) { // round 0: capture (with videos if --video) and judge; --captur
 // Resume after the last ACCEPTED round (rounds that failed or were reverted keep their folder but are not the state of the branch).
 const graded = readdirSync(HOME).map(d => /^round-(\d+)$/.exec(d)?.[1]).filter(Boolean).map(Number).filter(k => existsSync(join(folder(k), 'verdict.json')));
 let n = (graded.length ? Math.max(...graded) : 0) + 1;
-let lastWhy = '', sameWhy = 0, prev = folder(n - 1), prevVerdict = readJson(join(prev, 'verdict.json')), prevResult = readJson(join(prev, 'result.json')), idle = 0;
+let prev = folder(n - 1), prevVerdict = readJson(join(prev, 'verdict.json')), prevResult = readJson(join(prev, 'result.json'));
 const baselineText = join(HOME, 'baseline-after-port.txt');
 let prevLines = readJson(LINES) ?? (existsSync(baselineText) ? readFileSync(baselineText, 'utf8').split('\n').filter(l => /^\s{2,}\S/.test(l)).map(l => l.trim()) : []);
 if (!prevVerdict && !DRY) { log('no round-0 verdict: run --baseline first'); process.exit(1); }
+if (!DRY) { // one loop per state folder, checked by pid
+  const claim = claimPid(PID); if (!claim.ok) { log(`another loop is running (pid ${claim.pid}, ${PID}): not starting a second one`); process.exit(3); }
+  process.on('exit', () => releasePid(PID));
+}
+let failedInRow = 0, pauses = 0, misses = {}, lastAccepted = prevVerdict ? { round: n - 1, grades: prevVerdict.grades } : null, recent = [], lastResult = '';
+const stopped = () => existsSync(join(HOME, 'STOP')), say = s => { if (!DRY) writeStatus(STATUS, { target: scenario.target, pid: process.pid, lastAccepted, failedInRow, misses, ...s }); };
 log(`start ${scenario.target} at round ${n}${DRY ? ' (dry run)' : ''}, branch ${git('branch', '--show-current')}, ${prevLines.length} failing check lines to start from`);
 for (; n <= MAX_ROUNDS; n++) {
-  if (existsSync(join(HOME, 'STOP'))) { log('STOP file found'); break; }
-  if (prevVerdict && done(prevVerdict)) { log('every criterion is at 9 or more: done'); break; }
-  const mainBefore = status(MAIN), ctx = { prevLines, prevResult };
+  if (stopped()) { log('STOP file found'); say({ state: 'stopped', round: n, nextWake: null }); break; }
+  if (prevVerdict && allNine(prevVerdict.grades, KEYS)) { log(`done: every criterion is at 9 or more after round ${lastAccepted?.round} (${JSON.stringify(prevVerdict.grades)})`); say({ state: 'done', round: n - 1, focus: null, nextWake: null }); break; }
+  if (pauseDue(failedInRow)) { // a pause, not an end: PAUSED says why, the loop sleeps (6 h, doubling to 24 h), then rethinks and resumes
+    const hours = pauseHours(pauses++), wake = new Date(Date.now() + hours * 3600e3).toISOString(), why = `${failedInRow} rounds in a row with nothing accepted: paused ${hours} h until ${wake}, then a rethink round`;
+    writeFileSync(join(HOME, 'PAUSED'), `${why}\n`); score(n, { note: `PAUSED: ${why}` }); log(why); say({ state: 'paused', round: n, nextWake: wake, reason: why });
+    const woke = await pauseFor(hours * 3600e3, { stopped }); rmSync(join(HOME, 'PAUSED'), { force: true });
+    if (woke === 'stop') { log('STOP file found during the pause'); say({ state: 'stopped', round: n, nextWake: null }); break; }
+    failedInRow = 3; log('pause over: resuming with a rethink round');
+  }
+  plan.focus = pickFocus(prevVerdict?.grades, KEYS, misses); plan.rethink = rethinkDue(failedInRow);
+  plan.failures = plan.rethink ? (recent.length ? recent.join('\n\n---\n\n') : existsSync(FAILING) ? readFileSync(FAILING, 'utf8') : '(no failure text kept)') : '';
+  say({ state: 'running', round: n, focus: plan.focus, rethink: plan.rethink, nextWake: null });
+  log(`round ${n}: target ${plan.focus}${plan.rethink ? ' (rethink round)' : ''}, ${failedInRow} failed in a row`);
+  const mainBefore = status(MAIN), ctx = { prevLines, prevResult }, before = prevVerdict?.grades;
   if (DRY) { worker(n, prev, prevLines, '', ''); await waitForLoad({ max: LOAD_MAX, log }); const s = await retried(() => capture(scenario, roundDir(n)), { log }); log(`dry run: ${check(scenario, s.result).length} check lines`); break; }
   const rec = await runRound({
-    cwd: root, save: saveTo(roundDir(n)), log,
+    cwd: root, save: saveTo(roundDir(n)), log, repairs: REPAIRS,
     runWorker: ({ feedback, tag }) => worker(n, prev, prevLines, feedback, tag),
-    refuse: changed => [...forbiddenTouched(changed).map(f => `the worker changed ${f}: the harness, the contract and the rubric are not the worker's to edit`), ...(status(MAIN) !== mainBefore ? ['the main checkout changed; it must never be touched.'] : [])],
+    refuse: changed => [...forbiddenTouched(changed).map(f => `the worker changed ${f}: the harness, the contract and the rubric are not the worker's to edit`), ...overCap(changed.filter(f => !f.startsWith('public/r/')), MAX_FILES), ...(status(MAIN) !== mainBefore ? ['the main checkout changed; it must never be touched.'] : [])],
     runChecks: changed => loopChecks(n, changed, ctx),
   });
-  if (rec.status === 'no-change') { log(`round ${n}: no change (the worker edited nothing)`); score(n, { note: 'no change: the worker edited nothing' }); idle++; }
+  const changesText = () => { const f = join(roundDir(n), 'changes.md'); return existsSync(f) ? readFileSync(f, 'utf8') : ''; };
+  const lost = (result, note) => { // nothing accepted this round: remember what was tried, count the miss, keep the failure text for a rethink
+    lastResult = `round ${n} discarded: ${note}`.slice(0, 300); failedInRow++; misses = updateMisses(misses, plan.focus, before, before); addTried(TRIED, { round: n, criterion: plan.focus, result, note: `${note}${changesText() ? `; tried: ${firstChange(changesText())}` : ''}` });
+    recent = [...recent, String(existsSync(FAILING) ? readFileSync(FAILING, 'utf8') : note).slice(0, 3000)].slice(-3);
+  };
+  if (rec.status === 'no-change') { log(`round ${n}: no change (the worker edited nothing)`); score(n, { note: 'no change: the worker edited nothing' }); lost('no change', 'the worker edited nothing'); }
   else if (rec.status === 'failed') {
     log(`round ${n} FAILED, edits discarded (back at ${rec.start.slice(0, 9)}): ${rec.reason}`);
-    writeFileSync(FAILING, `Round ${n} was discarded: ${rec.reason}\n${['failure-2.txt', 'failure-1.txt', 'refused.txt'].map(f => join(roundDir(n), f)).filter(existsSync).map(f => readFileSync(f, 'utf8')).join('\n').slice(-6000)}\n`);
-    score(n, { checks: ctx.lines?.length, note: `FAILED: ${rec.reason}` }); idle++;
+    writeFileSync(FAILING, `Round ${n} was discarded: ${rec.reason}\n${[...Array(REPAIRS + 1)].map((_, i) => `failure-${i + 1}.txt`).concat('refused.txt').map(f => join(roundDir(n), f)).filter(existsSync).slice(-2).map(f => readFileSync(f, 'utf8')).join('\n').slice(-6000)}\n`);
+    score(n, { checks: ctx.lines?.length, note: `FAILED: ${rec.reason}` }); lost('failed', rec.reason);
   } else {
     const v = judge({ folder: folder(n), scenario, round: n, prev, evidence: evidence(ctx.lines, prevLines) });
-    if (!v) { log('judge gave no usable verdict'); discard(root, rec.start); score(n, { checks: ctx.lines?.length, note: 'judge failed; edits discarded' }); break; }
-    if (lowest(v) < lowest(prevVerdict)) {
+    if (!v) { log('judge gave no usable verdict'); discard(root, rec.start); score(n, { checks: ctx.lines?.length, note: 'judge failed; edits discarded' }); lost('judge failed', 'the judge gave no usable verdict'); }
+    else if (lowest(v) < lowest(prevVerdict)) {
       const why = `REVERTED: lowest criterion ${lowest(v)} < ${lowest(prevVerdict)} of the last accepted round`;
       log(`round ${n} ${why}; grades ${JSON.stringify(v.grades)}`); discard(root, rec.start); renameSync(join(folder(n), 'verdict.json'), join(folder(n), 'verdict.reverted.json'));
       writeFileSync(FAILING, `Round ${n} was discarded: ${why}\ngrades ${JSON.stringify(v.grades)}\nJudge: ${readFileSync(join(folder(n), 'verdict.md'), 'utf8').slice(0, 4000)}\n`);
-      score(n, { v, p: prevVerdict, checks: ctx.lines?.length, note: why }); idle++;
+      score(n, { v, p: prevVerdict, checks: ctx.lines?.length, note: why }); lost('reverted', why);
     } else {
-      const changes = join(roundDir(n), 'changes.md'), sha = commitRound({ cwd: root, n, target: scenario.target, model: MODEL, body: existsSync(changes) ? readFileSync(changes, 'utf8') : '' });
-      if (!sha) { log('nothing to commit after the checks'); score(n, { note: 'no change' }); idle++; }
+      const sha = commitRound({ cwd: root, n, target: scenario.target, model: MODEL, body: changesText() });
+      if (!sha) { log('nothing to commit after the checks'); score(n, { note: 'no change' }); lost('no change', 'nothing to commit after the checks'); }
       else {
         score(n, { v, p: prevVerdict, commit: sha, checks: ctx.lines.length });
-        idle = KEYS.some(k => v.grades[k] > (prevVerdict.grades[k] ?? 0)) ? 0 : idle + 1;
+        const gain = plan.focus && v.grades[plan.focus] > (before[plan.focus] ?? 0);
+        addTried(TRIED, { round: n, criterion: plan.focus, result: gain ? 'accepted' : 'accepted, no gain on it', note: firstChange(changesText()) });
+        misses = updateMisses(misses, plan.focus, before, v.grades); failedInRow = 0; pauses = 0; lastResult = `round ${n} accepted (${sha})`; recent = []; lastAccepted = { round: n, grades: v.grades };
         log(`round ${n} committed ${sha}; grades ${JSON.stringify(v.grades)}; ${ctx.lines.length} failing check lines`);
         prev = folder(n); prevVerdict = v; prevResult = ctx.shot.result; prevLines = ctx.lines; writeFileSync(LINES, JSON.stringify(prevLines)); rmSync(FAILING, { force: true });
       }
     }
   }
   rmSync(join(roundDir(n), 'eyes'), { recursive: true, force: true });
-  const why = rec.status === 'failed' ? String(rec.reason).replace(/[\d.]+/g, '#') : ''; sameWhy = why && why === lastWhy ? sameWhy + 1 : why ? 1 : 0; lastWhy = why;
-  if (sameWhy >= 2) { writeFileSync(join(HOME, 'STOP'), `two rounds in a row discarded for the same reason: ${rec.reason}\n`); log(`two rounds in a row discarded for the same reason (${rec.reason}): paused with STOP, the owner decides`); }
-  if (idle >= MAX_IDLE) { log(`${MAX_IDLE} rounds in a row that improved nothing: stopping`); break; }
+  say({ state: 'running', round: n, focus: plan.focus, lastVerdict: lastResult });
 }
 log('loop ended');
