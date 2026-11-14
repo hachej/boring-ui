@@ -2400,6 +2400,20 @@
           }
         },
         "@layer utilities": {
+          ".app-shell [data-bar-page]::after": {
+            "content": "\"\"",
+            "position": "absolute",
+            "pointer-events": "none",
+            "inset-inline": "0",
+            "bottom": "0",
+            "height": "calc(var(--spacing) * 8)",
+            "background": "linear-gradient(to bottom, transparent, var(--card) 75%)"
+          },
+          "@media (width < 768px)": {
+            ".app-shell [data-bar-page]::after": {
+              "bottom": "var(--app-shell-bar-height, 0px)"
+            }
+          },
           ".app-shell [data-one-composer] [data-testid=\"composer-dock\"]": {
             "padding": "0"
           },
