@@ -11,6 +11,7 @@ Scenarios as data (`ux/scenarios/*.json`), one per layout or component, that a r
 - `ux-loop` `node ux/runner/loop.mjs --target <t>` runs a worker model and the judge in rounds, one commit per round, state outside the repo. `ux/runner/loop.mjs`.
 - `ux-showcase` `node ux/runner/cli.mjs site` builds a static, English documentation site from a capture: left navigation, the playable demo first on every page (and on the home page) with "things to try" that play a flow in it, usage, then the collapsed status, steps and recordings. `ux/runner/site.mjs`, run by `.github/workflows/ux-showcase.yml` (on a release or by hand; publishes whenever capture succeeds, shows the check status in neutral words, and blocks only when `UX_ENFORCE` is on; see the runbook).
 - `ux-scripted-agent` the demos' assistant is data (`ux/scenarios/scripts/*.json`): turns with tool steps, streamed text, questions; `pace=real` for people and videos, `pace=instant` for `check`. `ux/fixtures/scripted-agent.mjs`.
+- `ux-demo-entry-controls` the bookkeeping demo uses kit Buttons for entry labels and quoting, so the kit owns their touch sizing. `test/fixtures/themes/one-composer.jsx`, `test/fixtures/themes/one-composer-demo.jsx`.
 
 ## How to get to it (user POV)
 
@@ -27,6 +28,7 @@ Preconditions: `npm ci && npm run build`, `CHROMIUM` set to a Chromium binary, `
 - `ux-loop`: `node ux/runner/loop.mjs --target layout:bar --dry-run` runs the guards and one capture with no model call.
 - `ux-showcase`: `node ux/runner/cli.mjs site --from .cache/ux --out .cache/site`, then open `.cache/site/index.html`.
 - `ux-scripted-agent`: open a fixture page with `?demo=1` and type “Reconcile the January statement”; any other text gets the script's plain fallback sentence.
+- `ux-demo-entry-controls`: at 390 px in `layout:bar`, tap the Jan 09 or Jan 15 entry label, then “Quote in the assistant”. Both controls use the kit's 44 px touch floor. Entry labels also open with Enter or Space. F03 and F04 drive these controls.
 
 ## Gotchas
 
