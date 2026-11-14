@@ -197,15 +197,11 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const keepTabs = layer.bar && snap === 'half';
   const keyboardPeek = layer.bar && peek && !recording && liveViewport !== null && window.innerHeight - liveViewport.height - liveViewport.top > 80;
   const style = { '--app-shell-trigger-clear': `${triggerClear}px`, '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-peek-height': layer.bar ? `calc(${PEEK_BAR_REM}rem + ${layer.cardPx}px)` : `${PEEK_REM}rem`, '--app-shell-z-layer': Z.layer,
-    paddingBottom: peek || keepTabs ? 'calc(var(--drawer-snap-point-offset, 0px) + var(--app-shell-tabbar, 0px))' : 'var(--drawer-snap-point-offset, 0px)',
+    paddingBottom: peek || layer.bar ? 'calc(var(--drawer-snap-point-offset, 0px) + var(--app-shell-tabbar, 0px))' : 'var(--drawer-snap-point-offset, 0px)',
     ...(pinnedBottom ? { bottom: pinnedBottom } : {}),
     // `bar`, folded, with the keyboard up (K-1): the field is not moved to a full screen; the folded sheet rests on the keyboard at its own height (the field and the card),
     // the page stays visible above it. The drawer's snap arithmetic does not know a keyboard at the peek, so it is set aside while the keyboard shows.
-    ...(keyboardPeek ? { '--translate-y': '0px', height: 'auto', paddingBottom: 0, clipPath: 'none' } : {}),
-    ...(layer.bar ? {
-      transitionProperty: 'opacity',
-      transitionDuration: 'var(--duration-fast)',
-    } : {}) } as CSSProperties;
+    ...(keyboardPeek ? { '--translate-y': '0px', height: 'auto', paddingBottom: 0, clipPath: 'none' } : {}) } as CSSProperties;
   // Entering the modal half or full from the non-modal peek does not rerun Base UI's initial focus: if focus is still on the page, take it to Close.
   const wasPeek = useRef(false);
   useEffect(() => {
@@ -250,6 +246,8 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
     }}>
     <DrawerContent data-testid="agent-layer" aria-label={title} data-state={snap} data-peek={peek} data-keep-tabs={keepTabs || undefined} initialFocus={() => closeRef.current ?? false} style={style}
       className={cn('app-shell box-border z-(--app-shell-z-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)_-_max(1.5rem,var(--app-shell-trigger-clear,0px)))]',
+        // Base UI clears inline transitions after a swipe. Keep the bar's rule in CSS so the transform and its padding change together.
+        layer.bar && 'transition-opacity duration-(--duration-fast) motion-reduce:transition-none',
         // The peek is the top PEEK_REM of the popup; the part that overlaps the tab bar is clipped away, so the tabs stay visible and tappable.
         'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_var(--app-shell-peek-height))_0)]',
         'data-keep-tabs:not-data-swiping:[clip-path:inset(0_0_calc(var(--drawer-snap-point-offset,0px)_+_var(--app-shell-tabbar,0px))_0)]')}>
