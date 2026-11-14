@@ -194,13 +194,13 @@ test('watch forwards native events, error-free close and abort', async t => {
   const watcher = getOrThrow(await fs.watch([{ path: 'w', recursive: true }], change => changes.push(change), context));
   assert.ok(watcher.mode === 'native' || watcher.mode === 'polling');
   await writeFile(join(f.directory, 'w', 'created.txt'), 'x');
-  await until(() => changes.some(change => 'paths' in change && change.paths.some(p => p.includes('created.txt') || p.endsWith('/w'))), 'no change arrived');
-  await watcher.close(context);
+  await until(() => changes.some(change => change.kind === 'paths' && change.paths.some(p => p.includes('created.txt') || p.endsWith('/w'))), 'no change arrived');
+  await watcher.stop(context);
   const count = changes.length;
   await writeFile(join(f.directory, 'w', 'after-close.txt'), 'x');
   await new Promise(resolve => setTimeout(resolve, 2500));
   assert.equal(changes.length, count);
-  await watcher.close(context);
+  await watcher.stop(context);
 });
 
 test('watch sets up with Pi errors, ends with an error change on revocation and cleans up on lease release', async t => {
@@ -209,15 +209,15 @@ test('watch sets up with Pi errors, ends with an error change on revocation and 
   const changes = [];
   const watcher = getOrThrow(await fs.watch([{ path: '.', recursive: true }], change => changes.push(change), context));
   f.revoked.abort();
-  await until(() => changes.some(change => 'error' in change), 'revocation did not surface as an error change');
-  const error = changes.find(change => 'error' in change).error;
+  await until(() => changes.some(change => change.kind === 'failed'), 'revocation did not surface as an error change');
+  const error = changes.find(change => change.kind === 'failed').error;
   assert.ok(error instanceof FileError); assert.equal(error.code, 'unknown');
-  await watcher.close(context);
+  await watcher.stop(context);
   const g = await fixture(t);
   const second = g.lease(), seen = [];
   getOrThrow(await second.environment.watch([{ path: '.' }], change => seen.push(change), context));
   await second.release(context);
-  await until(() => seen.some(change => 'error' in change), 'lease release did not stop the watcher');
+  await until(() => seen.some(change => change.kind === 'failed'), 'lease release did not stop the watcher');
   failure(await g.lease().environment.watch([{ path: '.' }], () => {}, withCancelled()), 'aborted');
 });
 function withCancelled() { const cancelled = withCancel(context); cancelled.cancel(); return cancelled.context; }
@@ -279,25 +279,25 @@ async function patched(t, patch, { handlerOptions = {} } = {}) {
 
 test('a terminal watcher error survives a full event queue', async t => {
   let emit;
-  const f = await patched(t, native => { native.watch = async (_targets, onChange) => { emit = onChange; return { ok: true, value: { mode: 'native', close: async () => {} } }; }; });
+  const f = await patched(t, native => { native.watch = async (_targets, onChange) => { emit = onChange; return { ok: true, value: { mode: 'native', stop: async () => {} } }; }; });
   const changes = [];
   getOrThrow(await f.lease().environment.watch([{ path: '.' }], change => changes.push(change), context));
   // Exactly fill the 256-event queue with distinct changes, synchronously, so the error arrives at a full queue.
-  for (let i = 0; i < 256; i++) emit({ paths: [`p${i}`] });
-  emit({ error: new FileError('unknown', 'native watcher stopped') });
-  await until(() => changes.some(change => 'error' in change), 'terminal error was discarded');
-  assert.equal(changes.find(change => 'error' in change).error.message, 'native watcher stopped');
-  assert.equal(changes.filter(change => 'error' in change).length, 1);
+  for (let i = 0; i < 256; i++) emit({ kind: 'paths', paths: [`p${i}`] });
+  emit({ kind: 'failed', error: new FileError('unknown', 'native watcher stopped') });
+  await until(() => changes.some(change => change.kind === 'failed'), 'terminal error was discarded');
+  assert.equal(changes.find(change => change.kind === 'failed').error.message, 'native watcher stopped');
+  assert.equal(changes.filter(change => change.kind === 'failed').length, 1);
 });
 
 test('an oversized terminal watcher error is bounded, not turned into overflow', async t => {
   let emit;
-  const f = await patched(t, native => { native.watch = async (_targets, onChange) => { emit = onChange; return { ok: true, value: { mode: 'native', close: async () => {} } }; }; }, { handlerOptions: { maxFrameBytes: 4096 } });
+  const f = await patched(t, native => { native.watch = async (_targets, onChange) => { emit = onChange; return { ok: true, value: { mode: 'native', stop: async () => {} } }; }; }, { handlerOptions: { maxFrameBytes: 4096 } });
   const changes = [];
   getOrThrow(await f.lease({ maxFrameBytes: 4096 }).environment.watch([{ path: '.' }], change => changes.push(change), context));
-  emit({ error: new FileError('invalid', 'x'.repeat(100_000), '/p'.repeat(5000)) });
+  emit({ kind: 'failed', error: new FileError('invalid', 'x'.repeat(100_000), '/p'.repeat(5000)) });
   await until(() => changes.length > 0, 'nothing delivered');
-  assert.ok('error' in changes[0], JSON.stringify(changes[0]).slice(0, 80));
+  assert.ok(changes[0].kind === 'failed', JSON.stringify(changes[0]).slice(0, 80));
   assert.equal(changes[0].error.code, 'invalid');
 });
 
@@ -313,7 +313,7 @@ test('a watch stream that ends without an error change reports an error', async 
   const changes = [];
   getOrThrow(await lease.environment.watch([{ path: '.' }], change => changes.push(change), context));
   await until(() => changes.length > 0, 'bare end was a silent stop');
-  assert.ok('error' in changes[0]);
+  assert.ok(changes[0].kind === 'failed');
 });
 
 test('readers keep the path they opened after the lease cwd changes', async t => {

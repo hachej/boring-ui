@@ -6,9 +6,8 @@
 // Nothing runs in the page because of this tool alone; the host decides which page code picks the task up.
 import { defineDocFamily, defineTool } from '@earendil-works/pi-durable';
 import type { Conversation, JsonObject, TaskId, ToolRegistration } from '@earendil-works/pi-durable';
-import type { TSchema } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { AmbiguousCall, UnknownCall, callBinding, callBindingId, ownBindingKey, waitForDocument } from './durable-wait.js';
 import type { AskUserAnswer } from './ask-user.js';
 
@@ -27,7 +26,7 @@ const documents = defineDocFamily<TaskDocument, null>({
 /** The answer ID of a browser task call: the same `[assistantEntryId, callId]` binding as `askUserQuestionId`. */
 export const browserTaskId = callBindingId;
 
-export interface BrowserTaskOptions<P extends TSchema> {
+export interface BrowserTaskOptions<P extends object> {
   readonly name: string;
   readonly description: string;
   /** The task the page receives, as the tool's parameters (the page reads them from the call). */
@@ -46,7 +45,7 @@ const isObject = (value: unknown): value is JsonObject => value !== null && type
  * (the replay-safe call re-attaches to its record) and are cancelled with the call when the conversation is stopped. The result
  * text is the page's answer, as JSON. Answer it with `answerBrowserTask`.
  */
-export function createBrowserTaskTool<P extends TSchema>(options: BrowserTaskOptions<P>): ToolRegistration {
+export function createBrowserTaskTool<P extends object>(options: BrowserTaskOptions<P>): ToolRegistration {
   if (!/^[a-z][a-z0-9_]{0,63}$/.test(options.name)) throw new TypeError('A browser task needs a snake_case tool name');
   return defineTool({
     name: options.name,
@@ -80,7 +79,7 @@ export function createBrowserTaskTool<P extends TSchema>(options: BrowserTaskOpt
  * the tool's own `checkAnswer` (pass the same options as the tool). Exactly one answer is accepted; repeating it is idempotent.
  * Returns the `ask_user` outcome kinds, so one chat transport `answer` serves both.
  */
-export async function answerBrowserTask(conversation: Conversation, tool: Pick<BrowserTaskOptions<TSchema>, 'name' | 'checkAnswer' | 'maxAnswerBytes'>,
+export async function answerBrowserTask(conversation: Conversation, tool: Pick<BrowserTaskOptions<object>, 'name' | 'checkAnswer' | 'maxAnswerBytes'>,
   id: string, answer: string, context: Context = BACKGROUND_CONTEXT): Promise<AskUserAnswer> {
   if (typeof id !== 'string' || !id || id.length > 1024) return { kind: 'unknown-question' };
   if (typeof answer !== 'string') return { kind: 'denied', reason: 'The answer must be JSON text' };

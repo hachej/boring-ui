@@ -27,7 +27,6 @@
 // Fictional content only.
 import { readFileSync } from 'node:fs';
 import { defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { createModels, createProvider } from '@earendil-works/pi-ai/models';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream';
 import { defineAgent, parseSkill } from '@hachej/boring-agent/agents';
@@ -356,7 +355,7 @@ export async function builderAgent({ store, accessOf, page, tickets, project = {
   });
   const editPage = defineTool({
     name: 'edit_page', description: 'Change the fictional Fernhill page. target "save-profile": the Save button of the profile form, with its new label.',
-    parameters: Type.Object({ target: Type.Literal('save-profile'), label: Type.String({ minLength: 1, maxLength: 60 }) }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { target: { type: 'string', const: 'save-profile' }, label: { type: 'string', minLength: 1, maxLength: 60 } }, required: ['target', 'label'], additionalProperties: false },
     replay: 'safe',
     execute: async args => ({ output: [{ type: 'text', text: JSON.stringify({ kind: 'applied', page: page.edit(args) }) }] }),
   });

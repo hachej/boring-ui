@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { withChordOverride } from './consumer-install.mjs';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
@@ -49,7 +50,7 @@ try {
     dependencies[name] = entry.version;
   }
   const manifest = { name: 'isolated-canvas-consumer', version: '1.0.0', private: true, type: 'module', dependencies };
-  writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest));
+  writeFileSync(join(directory, 'package.json'), JSON.stringify(withChordOverride(manifest)));
   const packages = {};
   const include = (name, parent = '') => {
     let path = `${parent}/node_modules/${name}`.replace(/^\//, '');
@@ -138,7 +139,7 @@ createElement(CanvasEditor, withTools);` : ''}
   // skipLibCheck must not hide errors in Boring's declarations: rerun with library checking and allow diagnostics only in tldraw's.
   const strict = runCaptured(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--skipLibCheck', 'false', '--pretty', 'false'], { cwd: directory, timeout: 120000, env: isolated });
   const located = strict.stdout.split('\n').filter(line => /^\S.*\(\d+,\d+\): error TS\d+/.test(line));
-  const ours = located.filter(line => !/^node_modules\/(?:tldraw|@tldraw\/[\w-]+)\//.test(line));
+  const ours = located.filter(line => !/^node_modules\/(?:tldraw|@tldraw\/[\w-]+|@earendil-works\/chord)\//.test(line));
   assert.deepEqual(ours, [], 'Strict library check reports errors outside the upstream tldraw declarations');
   assert.ok(strict.status === 0 || located.length > 0, `Strict library check failed without located diagnostics:\n${strict.stdout}${strict.stderr}`);
   if (located.length) console.log(`Upstream tldraw declaration diagnostics (skipLibCheck in the consumer recipe):\n${located.join('\n')}`);

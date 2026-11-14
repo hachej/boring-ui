@@ -1,19 +1,13 @@
 import { defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { accessSnapshot, locator, parsePublicationResult, publicationDigest } from '@hachej/boring-files/publication';
 import { applyTaskListOperations, emptyTaskList, readTaskList, serializeTaskList, taskListMediaType } from '../registry/task-list-viewer/task-list-document.ts';
 
 const intentKey = 'fictional.task-list.intent.v1', attemptedKey = 'fictional.task-list.attempted.v1';
 const reply = value => ({ output: [{ type: 'text', text: JSON.stringify(value) }] });
 const unknown = (intent, reason) => ({ kind: 'unknown', operationId: intent.operationId, reason });
-const id = Type.String({ minLength: 1, maxLength: 128 });
-const title = Type.String({ minLength: 1, maxLength: 2048 });
-const operation = Type.Union([
-  Type.Object({ kind: Type.Literal('add'), id, title }, { additionalProperties: false }),
-  Type.Object({ kind: Type.Literal('rename'), id, title }, { additionalProperties: false }),
-  Type.Object({ kind: Type.Literal('set-completed'), id, completed: Type.Boolean() }, { additionalProperties: false }),
-  Type.Object({ kind: Type.Literal('remove'), id }, { additionalProperties: false }),
-]);
+const id = { type: 'string', minLength: 1, maxLength: 128 };
+const title = { type: 'string', minLength: 1, maxLength: 2048 };
+const operation = { anyOf: [{ type: 'object', properties: { kind: { type: 'string', const: 'add' }, id, title }, required: ['kind', 'id', 'title'], additionalProperties: false }, { type: 'object', properties: { kind: { type: 'string', const: 'rename' }, id, title }, required: ['kind', 'id', 'title'], additionalProperties: false }, { type: 'object', properties: { kind: { type: 'string', const: 'set-completed' }, id, completed: { type: 'boolean' } }, required: ['kind', 'id', 'completed'], additionalProperties: false }, { type: 'object', properties: { kind: { type: 'string', const: 'remove' }, id }, required: ['kind', 'id'], additionalProperties: false }] };
 
 export function createTaskListTools({ namespace, resolve }) {
   if (typeof namespace !== 'string' || !namespace || typeof resolve !== 'function') throw new TypeError('Task-list tools need a namespace and host resolver');
@@ -69,15 +63,14 @@ export function createTaskListTools({ namespace, resolve }) {
     return result.kind === 'committed' ? { kind: 'saved', revision: result.receipt.changes[0].after.revision, document: readTaskList(intent.text), receipt: result.receipt } : result;
   }
   return [
-    defineTool({ name: 'read_task_list', description: 'Read the saved task list and its exact revision. A missing list can be created with an absent expectation.', parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe',
+    defineTool({ name: 'read_task_list', description: 'Read the saved task list and its exact revision. A missing list can be created with an absent expectation.', parameters: { type: 'object', properties: {  }, additionalProperties: false }, replay: 'safe',
       execute: async (_args, api, context) => {
         try { return reply(await read(await bind(api, context))); }
         catch { return reply({ kind: 'denied', reason: 'Task-list access could not be resolved' }); }
       },
     }),
     defineTool({ name: 'edit_task_list', description: 'Apply task operations to the exact saved revision you read, or create an absent task list. Does not edit an open browser draft.',
-      parameters: Type.Object({ expected: Type.Union([Type.Object({ kind: Type.Literal('absent') }, { additionalProperties: false }),
-        Type.Object({ kind: Type.Literal('revision'), revision: Type.String({ minLength: 1 }) }, { additionalProperties: false })]), operations: Type.Array(operation, { minItems: 1, maxItems: 100 }) }, { additionalProperties: false }), replay: 'safe',
+      parameters: { type: 'object', properties: { expected: { anyOf: [{ type: 'object', properties: { kind: { type: 'string', const: 'absent' } }, required: ['kind'], additionalProperties: false }, { type: 'object', properties: { kind: { type: 'string', const: 'revision' }, revision: { type: 'string', minLength: 1 } }, required: ['kind', 'revision'], additionalProperties: false }] }, operations: { type: 'array', items: operation, minItems: 1, maxItems: 100 } }, required: ['expected', 'operations'], additionalProperties: false }, replay: 'safe',
       execute: async (args, api, context) => {
         const retained = await api.memo(intentKey, context);
         let bound;

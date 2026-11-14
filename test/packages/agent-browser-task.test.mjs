@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Harness, MemoryStorage, createRegistry } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
-import { Type } from '@earendil-works/pi-ai';
 import { createModels, createProvider } from '@earendil-works/pi-ai/models';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
@@ -24,7 +23,7 @@ const parts = (message, type) => (message.content ?? []).filter(part => part.typ
 const MEASURE = {
   name: 'measure_page',
   description: 'Fictional: ask the page for a width.',
-  parameters: Type.Object({ instructions: Type.String() }, { additionalProperties: false }),
+  parameters: { type: 'object', properties: { instructions: { type: 'string' } }, required: ['instructions'], additionalProperties: false },
   checkAnswer: answer => answer.kind === 'measured' && typeof answer.width === 'number' ? undefined : 'expected { kind: "measured", width }',
 };
 

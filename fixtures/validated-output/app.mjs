@@ -3,7 +3,6 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Harness, AssistantEntry, GenerationTask, configure, createRegistry, defineDocFamily, defineExtension, defineTask, defineTool, hook } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createOutputValidation } from '@hachej/boring-agent/validation';
 import { createDocumentDelivery } from '@hachej/boring-agent/delivery';
@@ -31,12 +30,12 @@ export async function openValidatedOutputFixture({ directory, scenario = 'repair
   const registry = createRegistry();
   let harness, closing;
   const source = defineTool({ name: 'read_fictional_source', description: 'Read the fictional authorized source.', replay: 'safe',
-    parameters: Type.Object({ resource: Type.Literal('fictional-source') }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { resource: { type: 'string', const: 'fictional-source' } }, required: ['resource'], additionalProperties: false },
     execute: async () => await authorizeTool('read_fictional_source') === true
       ? { output: [{ type: 'text', text: 'Fictional source: two plus two.' }] }
       : { isError: true, output: [{ type: 'text', text: 'Fictional source access denied' }] } });
   const calculator = defineTool({ name: 'calculate_fictional', description: 'Calculate the fictional sum.', replay: 'safe',
-    parameters: Type.Object({ left: Type.Integer(), right: Type.Integer() }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { left: { type: 'integer' }, right: { type: 'integer' } }, required: ['left', 'right'], additionalProperties: false },
     execute: async args => await authorizeTool('calculate_fictional') === true
       ? { output: [{ type: 'text', text: String(args.left + args.right) }] }
       : { isError: true, output: [{ type: 'text', text: 'Fictional calculation denied' }] } });

@@ -4,7 +4,7 @@
 // the stateless counterpart of Pi's "all calls see the same file".
 import { FileError, err, ok } from '@earendil-works/pi-durable/env';
 import type { BinaryReader, DirReader, FileInfo, FileSystem, LineScan, Result } from '@earendil-works/pi-durable/env';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { z } from 'zod';
 import { bytes, dirPage, fileInfo, lineScan, maxDirPageEntries, maxRangeBytes } from './remote-files-protocol.js';
 import type { DirPage, ExpectedFile, PositionalCall, ReaderOptions, RemoteFileSystemCall } from './remote-files-protocol.js';

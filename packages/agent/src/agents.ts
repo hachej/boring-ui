@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { AgentDoc, defineExtension } from '@earendil-works/pi-durable';
 import type { AgentChange, Conversation, ConversationCreateOptions, Extension, Harness, Registry, ToolRegistration } from '@earendil-works/pi-durable';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import type { ExecutionEnv } from '@earendil-works/pi-durable/env';
 import { createSelfEvolution } from './self-evolving.js';
 import type { SelfEvolution, SelfEvolutionReport } from './self-evolving.js';

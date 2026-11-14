@@ -5,11 +5,10 @@
 import { defineExtension, defineTool } from '@earendil-works/pi-durable';
 import { createBashTool, createEditTool, createReadTool, createWriteTool } from '@earendil-works/pi-durable/tools';
 import { getOrThrow } from '@earendil-works/pi-durable/env';
-import { Type } from '@earendil-works/pi-ai';
 
 const listFiles = defineTool({
   name: 'list_files', description: 'List one workspace directory (default: the workspace root).',
-  parameters: Type.Object({ path: Type.Optional(Type.String()) }, { additionalProperties: false }), replay: 'safe',
+  parameters: { type: 'object', properties: { path: { type: 'string' } }, additionalProperties: false }, replay: 'safe',
   execute: async (args, api, context) => {
     const entries = getOrThrow(await api.env.listDir(args.path ?? '.', context));
     return { output: [{ type: 'text', text: entries.map(entry => `${entry.kind === 'directory' ? 'dir ' : 'file'} ${entry.name}`).join('\n') || '(empty)' }] };

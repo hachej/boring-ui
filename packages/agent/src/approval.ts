@@ -1,7 +1,7 @@
 import { ToolTask, defineExtension, hook } from '@earendil-works/pi-durable';
 import type { ConversationId, Extension, ToolExecutionResult, ToolRegistration, Wrap } from '@earendil-works/pi-durable';
-import type { JsonValue } from '@earendil-works/chord';
-import type { Static, TSchema } from '@earendil-works/pi-ai';
+import type { JsonValue } from '@earendil-works/chord/json';
+import type { Static } from '@earendil-works/pi-schema';
 import { askPerson } from './ask-user.js';
 
 /** The two answers an approval question accepts. A chat answers with exactly these strings through `answerUserQuestion`. */
@@ -27,7 +27,7 @@ const GATED = new WeakSet<object>();
 /** The call a rule is asked about: which conversation it runs in (a host can name the site or project it maps to) and its ID. */
 export interface ApprovalCall { readonly conversationId: ConversationId; readonly callId: string; readonly toolName: string }
 
-export interface RequireApprovalOptions<TParameters extends TSchema = TSchema> {
+export interface RequireApprovalOptions<TParameters extends object = object> {
   /** One line about what the call would change, from its arguments. It is stored with the question; the model never writes it. */
   readonly summarize: (args: Static<TParameters>, call: ApprovalCall) => string;
   /** Ask only when this returns true (for example any HTTP method but GET); other calls run at once. Default: always ask. */
@@ -53,7 +53,7 @@ const text = (value: string, isError: boolean) => ({ isError, output: [{ type: '
  * Code mode: gated tools are native tools. Do not expose them to a code-mode sandbox (its nested calls cannot reach a
  * person), and filter with `isApprovalGated`. Give `run_code` the read tools only; changes go through the gated native tool.
  */
-export function requireApproval<TParameters extends TSchema, TDetails extends JsonValue>(
+export function requireApproval<TParameters extends object, TDetails extends JsonValue>(
   tool: ToolRegistration<TParameters, TDetails>, options: RequireApprovalOptions<TParameters>): ToolRegistration<TParameters, JsonValue> {
   if (GATED.has(tool)) return tool as ToolRegistration<TParameters, JsonValue>; // already gated: never ask twice
   // The gated tool's details are the inner tool's, with the approval record merged in under APPROVAL_DETAILS, so a view keeps the

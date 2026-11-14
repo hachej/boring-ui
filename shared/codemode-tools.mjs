@@ -3,7 +3,6 @@
 // and aggregation happen in code and only the script's final output enters the transcript.
 // The data tools are deliberately NOT registered as native tools: the model can reach them only through code.
 import { defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { CodemodeSandbox, renderDeclarations } from '@earendil-works/pi-codemode';
 
 // Fictional ledger: 120 invented records from a fixed seed, so every run and the journey see the same numbers.
@@ -86,7 +85,7 @@ Call the ledger tools as \`await tools.<name>(args)\`; they return parsed object
 There are no timers, fetch, require, files or network. Limits: ${LIMITS.timeoutMs / 1000} s, ${LIMITS.nestedCalls} tool calls, ${LIMITS.outputChars} output characters.
 
 ${DECLARATIONS}`,
-  parameters: Type.Object({ code: Type.String({ description: 'JavaScript async function body.' }) }, { additionalProperties: false }),
+  parameters: { type: 'object', properties: { code: { type: 'string', description: 'JavaScript async function body.' } }, required: ['code'], additionalProperties: false },
   replay: 'safe',
   execute: async ({ code }, _api, context) => {
     const result = await runCode(code, context.abortSignal);

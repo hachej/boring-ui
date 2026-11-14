@@ -131,7 +131,7 @@ export default {
     // SELF-4: write, reload, next turn uses it.
     { toolResult: /Tools added: word_count\. Changed: none\. Removed: none\. Now: word_count\./ },
     { reply: /word_count counted 9 words\./ },
-    { reply: /word_count refused: error: [^]*Validation failed for tool "word_count"[^]*text: must have required properties text/ },
+    { reply: /word_count refused: error: [^]*Validation failed for tool "word_count"[^]*text: missing/ },
     // A broken description is reported; the other tool keeps working.
     { toolResult: /Errors \(1\):\n- \.agent\/tools\/broken\.json: invalid JSON/ },
     { reply: /word_count counted 3 words after the broken reload\./ },

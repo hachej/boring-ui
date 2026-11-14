@@ -250,7 +250,7 @@ test('the message, its requestId record and its wake land in one commit or not a
   let fail = false;
   const wrap = storage => {
     const commit = storage.commit.bind(storage);
-    storage.commit = async (writes, ctx) => { batches.push(writes.map(write => write.type)); if (fail) throw new Error('fictional disk failure'); return commit(writes, ctx); };
+    storage.commit = async (groups, receive, ctx) => { for (const writes of groups) batches.push(writes.map(write => write.type)); if (fail) throw new Error('fictional disk failure'); return commit(groups, receive, ctx); };
     return storage;
   };
   const { harness, room } = await openRoom(path, undefined, wrap);

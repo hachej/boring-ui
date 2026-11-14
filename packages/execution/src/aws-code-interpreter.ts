@@ -1,7 +1,7 @@
 import { posix } from 'node:path';
 import { InvokeCodeInterpreterCommand, StartCodeInterpreterSessionCommand, StopCodeInterpreterSessionCommand } from '@aws-sdk/client-bedrock-agentcore';
 import type { BedrockAgentCoreClient, CodeInterpreterResult, ToolArguments, ToolName, ToolsFileSystemConfiguration } from '@aws-sdk/client-bedrock-agentcore';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { ExecutionError, FileError, err, ok } from '@earendil-works/pi-durable/env';
 import type { ExecutionEnv, FileInfo, Result, ShellExecOptions, ShellExecResult } from '@earendil-works/pi-durable/env';
 import { boundedMessage } from './bounded-error.js';
@@ -366,8 +366,8 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
         if (local === undefined) return err(outside(target.path));
         mapped.push({ local, recursive: target.recursive === true, hidden: target.exclude?.hidden === true, names: new Set(target.exclude?.names ?? []) });
       }
-      const watcher = await files.watch(mapped, change => onChange('paths' in change ? { paths: change.paths.map(path => fromLocal(path)) } : 'error' in change ? { error: mapError(change.error) } : change), context);
-      return watcher.ok ? ok({ mode: watcher.value.mode, close: () => watcher.value.close() }) : err(mapError(watcher.error));
+      const watcher = await files.watch(mapped, change => onChange(change.kind === 'paths' ? { kind: 'paths', paths: change.paths.map(path => fromLocal(path)) } : change.kind === 'failed' ? { kind: 'failed', error: mapError(change.error) } : change), context);
+      return watcher.ok ? ok({ mode: watcher.value.mode, stop: stopContext => watcher.value.stop(stopContext) }) : err(mapError(watcher.error));
     },
     writeFile: (path, content, context) => guarded([path], file => files.writeFile(file, content, context)),
     appendFile: (path, content, context) => guarded([path], file => files.appendFile(file, content, context)),

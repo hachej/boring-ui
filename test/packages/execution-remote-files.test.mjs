@@ -9,7 +9,6 @@ import { FileError, getOrThrow } from '@earendil-works/pi-durable/env';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { Harness, MemoryStorage, createRegistry, defineExtension, defineTool, ToolResultEntry } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
-import { Type } from 'typebox';
 import { admitDocumentTool } from '../fixtures/native-document.mjs';
 
 const identity = { providerId: 'fictional-files', instanceId: 'machine-1', incarnation: 'generation-1', viewId: 'working-1' };
@@ -118,7 +117,7 @@ test('native ToolTask uses the remote FileSystem directly without a Shell or env
   const f = await fixture(t), lease = f.lease();
   const registry = createRegistry();
   registry.install(defineExtension({ name: 'fictional.remote-files', tools: [defineTool({
-    name: 'remote_file_write', description: 'Write a fictional workspace file', parameters: Type.Object({ text: Type.String() }), replay: 'unsafe',
+    name: 'remote_file_write', description: 'Write a fictional workspace file', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, replay: 'unsafe',
     execute: async (args, api, ctx) => {
       assert.equal(api.env, undefined);
       getOrThrow(await lease.environment.writeFile('tool.txt', args.text, ctx));

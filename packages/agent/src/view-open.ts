@@ -6,7 +6,7 @@
 import { defineDocFamily } from '@earendil-works/pi-durable';
 import type { Conversation, TaskId, ToolExecutionApi, Tx } from '@earendil-works/pi-durable';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { AmbiguousCall, UnknownCall, callBinding, ownBindingKey, waitForDocument } from './durable-wait.js';
 import type { AskUserAnswer } from './ask-user.js';
 import { parseTaskSubject, taskSubjectKey } from './task-artifacts.js';

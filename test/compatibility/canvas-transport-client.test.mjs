@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Harness, MemoryStorage, createRegistry, defineExtension } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
 import { connectCanvasPresentation } from '../../shared/canvas-transport-client.mjs';
@@ -32,7 +31,7 @@ for (const lost of [false, true]) test(`native Harness and transport with simula
   const connection = bridge.getConnection(client.id);
   const registry = createRegistry();
   const tool = createPresentationTool({ name: 'remote_select', description: 'Simulated browser select through actual transport',
-    parameters: Type.Object({ shapeIds: Type.Array(Type.String()) }), command: connection.select, target,
+    parameters: { type: 'object', properties: { shapeIds: { type: 'array', items: { type: 'string' } } }, required: ['shapeIds'] }, command: connection.select, target,
     prepareInput: args => ({ ...args, expiresAt: Date.now() + 1000 }), authorize: () => true,
     formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] }),
   });

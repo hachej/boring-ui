@@ -148,7 +148,7 @@ test('idle revocation closes immediately and cancellation leaves independent nat
   const independent = await f.conversation.watch(context);
   t.after(() => independent.stop());
   const observed = Promise.withResolvers();
-  independent.start(async value => { if (value.entries.some(entry => entry.model?.some(message => message.content === 'Native remains usable'))) observed.resolve(); });
+  independent.start(async call => { if (call.kind === 'value' && call.value.entries.some(entry => entry.model?.some(message => message.content === 'Native remains usable'))) observed.resolve(); });
   const reader = (await f.open()).body.getReader();
   await readFrame(reader);
   const next = reader.read();

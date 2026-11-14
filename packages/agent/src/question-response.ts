@@ -1,5 +1,5 @@
 import { RequestGuardError, hasJsonContentType, readJsonBody } from '@hachej/boring-files/request-guard';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import type { Conversation } from '@earendil-works/pi-durable';
 import type { RuntimeQuestionRef } from './contracts.js';
 import type { createQuestions, QuestionDecision } from './questions.js';

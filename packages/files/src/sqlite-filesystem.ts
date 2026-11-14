@@ -2,9 +2,9 @@
 // worker) and the one backend whose multi-file conditional batches commit in one transaction (see `createWorkspaceProvider`).
 // It runs on any `SqliteConnection` (`openNodeConnection`, a Durable Object's storage, a browser's SQLite Wasm), synchronously, so a
 // write is one SQLite transaction and a rename is atomic. Regular files and directories only: no symbolic or hard links, no modes.
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { FileError, LineScanner, err, ok } from '@earendil-works/pi-durable/env';
-import type { BinaryReader, DirReader, FileInfo, FileSystem, FileWatcher, Result, TextLineReader, WatchChange, WatchTarget } from '@earendil-works/pi-durable/env';
+import type { BinaryReader, DirReader, FileChange, FileInfo, FileSystem, FileWatcher, Result, TextLineReader, WatchTarget } from '@earendil-works/pi-durable/env';
 import { SQLITE_MAX_FILE_BYTES, assertLimit, fileTooLarge } from './file-limits.js';
 import { randomUUID } from './platform.js';
 import { registerSqliteBatch } from './sqlite-batch.js';
@@ -337,7 +337,7 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
       let previous: Map<string, string>;
       try { previous = db.transaction('read', () => snapshot(targets)); } catch (error) { return err(isFileError(error) ? error : fileError('unknown', String(error))); }
       let stopped = false;
-      const report = (change: WatchChange) => { if (!stopped) try { onChange(change); } catch { /* the host's callback cannot stop the watcher */ } };
+      const report = (change: FileChange) => { if (!stopped) try { onChange(change); } catch { /* the host's callback cannot stop the watcher */ } };
       const hidden = (name: string, target: WatchTarget) => (target.exclude?.hidden && name.startsWith('.')) || target.exclude?.names?.includes(name);
       /** Whether a path this file system just wrote lies under a watched target, as the snapshot would have listed it. */
       const covered = (path: string) => targets.some(target => {
@@ -351,16 +351,16 @@ export function openSqliteFileSystem(options: SqliteFileSystemOptions): SqliteFi
         if (stopped) return;
         let next: Map<string, string>;
         try { next = db.transaction('read', () => snapshot(targets)); }
-        catch (error) { report({ error: isFileError(error) ? error : fileError('unknown', String(error)) }); stop(); return; }
+        catch (error) { report({ kind: 'failed', error: isFileError(error) ? error : fileError('unknown', String(error)) }); stop(); return; }
         const written = new Set(direct.filter(covered));
         const changed = [...new Set([...previous.keys(), ...next.keys(), ...written])].filter(path => written.has(path) || previous.get(path) !== next.get(path));
         previous = next;
-        if (changed.length) report({ paths: changed });
+        if (changed.length) report({ kind: 'paths', paths: changed });
       };
       const timer = setInterval(() => check(), WATCH_INTERVAL_MS);
       const stop = () => { stopped = true; clearInterval(timer); watchers.delete(check); };
       watchers.add(check);
-      const watcher: FileWatcher = { mode: 'polling', close: async () => { stop(); } };
+      const watcher: FileWatcher = { mode: 'polling', stop: async () => { stop(); } };
       return ok(watcher);
     },
     canonicalPath: (path, context) => run(path, context, 'read', absolute => { existing(absolute); return absolute; }),

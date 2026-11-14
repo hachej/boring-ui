@@ -1,4 +1,4 @@
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { awaitWithContext, withCancel } from '@earendil-works/chord/context';
 import type { Conversation, ConversationView, ConversationWatch, Cursor, EntryId, EntryRecord, Page, InputSubmissionDraft, Submission, SubmissionRecord, Tx, WatchEnd } from '@earendil-works/pi-durable';
 import type { ImageContent } from '@earendil-works/pi-ai';
@@ -76,6 +76,18 @@ export interface NativeChatHistorySource {
 export function viewHasEarlier(view: ConversationView | undefined): boolean | undefined {
   const said = (view as { readonly hasEarlier?: unknown } | undefined)?.hasEarlier;
   return typeof said === 'boolean' ? said : undefined;
+}
+/**
+ * A native view's entries are a window over the whole history (the newest 50 by default), and a reset or compaction marker sits where it
+ * was written. The chat shows the active conversation: from the newest marker's `head` on. What lies below it is archived history, read
+ * with `loadEarlier`, like the entries below the window.
+ */
+function activeView(view: ConversationView): ConversationView {
+  let head: EntryId | undefined;
+  for (const entry of view.entries) if (entry.head !== undefined) head = entry.head;
+  if (head === undefined) return view;
+  const entries = view.entries.filter(entry => entry.id >= head!);
+  return entries.length === view.entries.length ? view : { ...view, entries };
 }
 export type ChatHistoryState = { readonly kind: 'disabled' | 'idle' }
   | { readonly kind: 'loading' | 'ready'; readonly entries: readonly EntryRecord[]; readonly hasMore: boolean }
@@ -288,7 +300,8 @@ export function createNativeChatController(options: NativeChatOptions) {
     echoes.splice(0, echoes.length, ...remaining);
     return true;
   };
-  const acceptView = (view: ConversationView): void => {
+  const acceptView = (received: ConversationView): void => {
+    const view = activeView(received);
     observeText(view);
     const previous = snapshot.view?.entries;
     const appendOnly = !previous || previous.every((entry, index) => view.entries[index]?.id === entry.id);
@@ -499,15 +512,17 @@ export function createNativeChatController(options: NativeChatOptions) {
           if (snapshot.disposed) { await acquired.stop(); return; }
           if (acquired.value.conversation.id !== conversation.id) { await acquired.stop(); throw new Error('Chat source returned another conversation'); }
           watch = acquired;
+          const first = activeView(acquired.value);
           const ready = snapshot.timing.inputReady === undefined;
           // Messages sent before any view were counted against none; they are held until now (see `send`), so the first view is their baseline.
           for (const [index, item] of echoes.entries()) if (item.blind) {
-            item.blind = false; firstEntries.set(item.key, acquired.value.entries.length);
-            item.base = countOf(acquired.value, item.match) + echoes.slice(0, index).filter(other => other.match === item.match).length;
+            item.blind = false; firstEntries.set(item.key, first.entries.length);
+            item.base = countOf(first, item.match) + echoes.slice(0, index).filter(other => other.match === item.match).length;
           }
-          publish({ connection: live(), view: acquired.value, ...(snapshot.conversationId !== conversation.id ? { conversationId: conversation.id } : {}), ...(ready ? { timing: Object.freeze({ inputReady: mark('input-ready'), sends: Object.freeze([...timings]) }) } : {}) });
-          acquired.start(async view => {
-            if (snapshot.disposed || watch !== acquired) return;
+          publish({ connection: live(), view: first, ...(snapshot.conversationId !== conversation.id ? { conversationId: conversation.id } : {}), ...(ready ? { timing: Object.freeze({ inputReady: mark('input-ready'), sends: Object.freeze([...timings]) }) } : {}) });
+          acquired.start(async call => {
+            if (call.kind !== 'value' || snapshot.disposed || watch !== acquired) return;
+            const view = call.value;
             if (view.conversation.id !== conversation.id) throw new Error('Chat source changed conversation identity');
             acceptView(view);
           });

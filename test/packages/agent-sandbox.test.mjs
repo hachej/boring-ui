@@ -13,7 +13,6 @@ import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
 import { createConvertingRead } from '@hachej/boring-agent/file-convert';
 import { admitDocumentTool } from '../fixtures/native-document.mjs';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { defineAgent } from '@hachej/boring-agent/agents';
 import { createApprovalExtension } from '@hachej/boring-agent/approval';
@@ -22,17 +21,17 @@ import { createScriptedModel } from '@hachej/boring-testing/model';
 
 // Fictional tools that record what really ran. A sandboxed call must leave `ran` untouched.
 function tools(ran) {
-  const note = name => defineTool({ name, description: `Fictional ${name}.`, parameters: Type.Object({ note: Type.String() }),
+  const note = name => defineTool({ name, description: `Fictional ${name}.`, parameters: { type: 'object', properties: { note: { type: 'string' } }, required: ['note'] },
     execute: async args => { ran.push(`${name}:${args.note}`); return { output: [{ type: 'text', text: `${name} ran` }] }; } });
   return {
     write: note('write_note'),
-    read: defineTool({ name: 'read_note', description: 'Fictional read.', parameters: Type.Object({}),
+    read: defineTool({ name: 'read_note', description: 'Fictional read.', parameters: { type: 'object', properties: {  } },
       execute: async () => { ran.push('read_note'); return { output: [{ type: 'text', text: 'read ran' }] }; } }),
-    safe: defineTool({ name: 'safe_note', description: 'Fictional safe.', parameters: Type.Object({}),
+    safe: defineTool({ name: 'safe_note', description: 'Fictional safe.', parameters: { type: 'object', properties: {  } },
       execute: async () => { ran.push('safe_note'); return { output: [{ type: 'text', text: 'safe ran' }] }; } }),
-    undeclared: defineTool({ name: 'undeclared_note', description: 'Fictional undeclared.', parameters: Type.Object({}),
+    undeclared: defineTool({ name: 'undeclared_note', description: 'Fictional undeclared.', parameters: { type: 'object', properties: {  } },
       execute: async () => { ran.push('undeclared_note'); return { output: [{ type: 'text', text: 'undeclared ran' }] }; } }),
-    throws: defineTool({ name: 'throws_note', description: 'Fictional failure.', parameters: Type.Object({}),
+    throws: defineTool({ name: 'throws_note', description: 'Fictional failure.', parameters: { type: 'object', properties: {  } },
       execute: async () => { throw new Error('fictional failure'); } }),
   };
 }
@@ -52,7 +51,7 @@ async function open(t, { extensions = [], scriptTools }) {
     'run the fictional tools': [{ tools: scriptTools.map(name => ({ name, args: { note: 'fictional' } })) }, 'Done.'],
     'run the unnamed tool': [{ tools: [{ name: 'late_write', args: { note: 'late' } }] }, 'Done.'],
   } });
-  const late = defineTool({ name: 'late_write', description: 'Fictional late write.', parameters: Type.Object({ note: Type.String() }),
+  const late = defineTool({ name: 'late_write', description: 'Fictional late write.', parameters: { type: 'object', properties: { note: { type: 'string' } }, required: ['note'] },
     execute: async args => { ran.push(`late_write:${args.note}`); return { output: [{ type: 'text', text: 'late ran' }] }; } });
   const agent = defineAgent({ id: 'sandboxed', model: scripted.model, tools: [fictional.write, fictional.read, fictional.safe, fictional.undeclared, fictional.throws, late], extensions, instructions: 'Fictional agent.' });
   const registry = createRegistry();
@@ -165,9 +164,9 @@ test('a sandbox selected last records a PDF read through a converting read and n
 
 test('a tool added mid-run by addTools is offered to the next round and refused by the sandbox, never executed', async t => {
   const ran = [];
-  const discover = defineTool({ name: 'discover_note', description: 'Fictional discovery.', parameters: Type.Object({}),
+  const discover = defineTool({ name: 'discover_note', description: 'Fictional discovery.', parameters: { type: 'object', properties: {  } },
     execute: async () => ({ output: [{ type: 'text', text: 'discovered' }], control: { addTools: ['late_write'] } }) });
-  const late = defineTool({ name: 'late_write', description: 'Fictional late write.', parameters: Type.Object({ note: Type.String() }),
+  const late = defineTool({ name: 'late_write', description: 'Fictional late write.', parameters: { type: 'object', properties: { note: { type: 'string' } }, required: ['note'] },
     execute: async args => { ran.push(`late_write:${args.note}`); return { output: [{ type: 'text', text: 'late ran' }] }; } });
   const offered = [];
   const scripted = createScriptedModel({ script: { 'discover, then write late': [

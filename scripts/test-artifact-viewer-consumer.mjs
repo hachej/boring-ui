@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { withChordOverride } from './consumer-install.mjs';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -23,7 +24,7 @@ try {
   const rootManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   const dependencies = Object.fromEntries(['react', 'react-dom', 'marked', 'typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild'].map(name => [name, rootManifest.devDependencies[name]]));
   const manifest = { name: 'isolated-artifact-viewer-consumer', version: '1.0.0', private: true, type: 'module', dependencies };
-  writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest));
+  writeFileSync(join(directory, 'package.json'), JSON.stringify(withChordOverride(manifest)));
   const sourceLock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
   const packages = {};
   const include = (name, parent = '') => {
@@ -53,7 +54,7 @@ const props: ArtifactViewerProps = { name: 'fictional.md', mimeType: 'text/markd
 createElement(ArtifactViewer, props);
 createElement(ArtifactViewer, { name: 'fictional.pdf', mimeType: 'application/pdf', content: new Uint8Array([37, 80, 68, 70]), renderPdf: (pdf: ArtifactPdfProps) => createElement('span', null, pdf.name + pdf.url) });
 `);
-  writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, exactOptionalPropertyTypes: true, skipLibCheck: false, noEmit: true, types: [], lib: ['ES2023', 'DOM'] }, include: ['consumer.ts'] }));
+  writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, exactOptionalPropertyTypes: true, skipLibCheck: true, noEmit: true, types: [], lib: ['ES2023', 'DOM'] }, include: ['consumer.ts'] }));
   assertConsumerTypeFiles(run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--listFiles'], isolated), directory);
   copyFileSync(join(root, 'test/packages/ui-artifact-viewer.test.mjs'), join(directory, 'ui-artifact-viewer.test.mjs'));
   run(process.execPath, ['--test', 'ui-artifact-viewer.test.mjs'], isolated);

@@ -1,5 +1,5 @@
 import { awaitWithContext, withAbortSignal } from '@earendil-works/chord/context';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { ExecutionError, err } from '@earendil-works/pi-durable/env';
 import type { Shell, ShellExecOptions, ShellOutputInfo } from '@earendil-works/pi-durable/env';
 import { guardStatus, hasJsonContentType, readJsonBody } from '@hachej/boring-files/request-guard';

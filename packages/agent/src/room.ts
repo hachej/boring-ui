@@ -1,6 +1,7 @@
 import { defineDoc } from '@earendil-works/pi-durable';
 import type { Conversation, ConversationId, ConversationView, Cursor, EntryId, EntryRecord, Harness, SettledSubmissionRecord, SubmissionId, Tx } from '@earendil-works/pi-durable';
-import type { Context, JsonValue } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
+import type { JsonValue } from '@earendil-works/chord/json';
 import { withAbortSignal } from '@earendil-works/chord/context';
 import { ASK_USER_TOOL, answerUserQuestion, askUserQuestionId } from './ask-user.js';
 import type { AskUserAnswer } from './ask-user.js';
@@ -222,7 +223,7 @@ export function createRoom(options: { readonly harness: Harness; readonly contex
   /** One commit: table reads first, then the entry and its native write record, then the documents. */
   const commitEntry = (conversationId: ConversationId, draft: RoomDraft, decide: Decide, admit?: (open: readonly RoomWake[]) => boolean): Promise<RoomWrite | RoomRefusal> => harness.commit(async tx => {
     const known = await tx.submissionByRequest(conversationId, draft.requestId);
-    if (known?.status === 'done') return { entry: roomEntries([(await tx.entry(known.entry))!])[0]!, duplicate: true, decisions: [], wakes: [] };
+    if (known?.status === 'done' && known.entry !== undefined) return { entry: roomEntries([(await tx.entry(known.entry))!])[0]!, duplicate: true, decisions: [], wakes: [] };
     const targetId = draft.kind === 'room.message' ? draft.data.replyTo : draft.kind === 'room.action' ? (await tx.doc(RoomIndex)).cards[draft.data.requestId] : undefined;
     const targetRecord = targetId === undefined ? undefined : await tx.entry(targetId as EntryId);
     const target = targetRecord?.conversationId === conversationId ? roomEntries([targetRecord])[0] : undefined;
@@ -476,7 +477,7 @@ export function createRoomTurn(options: { readonly conversation: Conversation; r
       }).catch(report);
     };
     await relay(watch.value);
-    watch.start(relay);
+    watch.start(async call => { if (call.kind === 'value') await relay(call.value); });
     return async () => { await watch.stop(); await queue; };
   }
 

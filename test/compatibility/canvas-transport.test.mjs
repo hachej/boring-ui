@@ -3,7 +3,6 @@ import test from 'node:test';
 import { setImmediate as turn } from 'node:timers/promises';
 import { Harness, MemoryStorage, AssistantEntry, ToolTask, createRegistry, defineExtension } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
 import { toolResultText } from '../fixtures/native-document.mjs';
@@ -131,7 +130,7 @@ test('poll cancellation releases its connection and capacity; idle poll expires 
 
 test('real native unsafe ToolTask receives the authenticated browser acknowledgement', async t => {
   const f = await fixture(t);
-  const tool = createPresentationTool({ name: 'fixture_select', description: 'Fictional mounted selection', parameters: Type.Object({}), target,
+  const tool = createPresentationTool({ name: 'fixture_select', description: 'Fictional mounted selection', parameters: { type: 'object', properties: {  } }, target,
     command: f.connection.select, prepareInput: input, authorize: () => true, formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] }) });
   assert.equal(tool.replay, 'unsafe');
   const registry = createRegistry(); registry.install(defineExtension({ name: 'fixture.canvas-transport', tools: [tool] }));

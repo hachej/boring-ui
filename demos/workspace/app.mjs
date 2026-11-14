@@ -8,7 +8,6 @@
 //     and Pi's native read, write and edit over the Library's own provider (the file guard records agent writes: history entry 'agent' and a change event, no receipt).
 // Fictional content only.
 import { defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { defineAgent } from '@hachej/boring-agent/agents';
 import { answerUserQuestion } from '@hachej/boring-agent/ask-user';
 import { requireApproval } from '@hachej/boring-agent/approval';
@@ -59,9 +58,9 @@ export function createWorkspaceDemo({ files, root, ap }) {
   const navigate = command => { navigation.push({ seq: navigation.length + 1, at: Date.now(), ...command }); };
   const lines = invoice => `${invoice.id} ${SUPPLIERS[invoice.supplier].name} ${invoice.amount.toFixed(2)} ${invoice.currency} due ${invoice.due}, ${invoice.status}`;
   const tools = [
-    defineTool({ name: 'pending_approvals', description: 'List the invoices waiting for a decision this week.', parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe',
+    defineTool({ name: 'pending_approvals', description: 'List the invoices waiting for a decision this week.', parameters: { type: 'object', properties: {  }, additionalProperties: false }, replay: 'safe',
       execute: async () => text((await ap.list()).filter(invoice => invoice.status === 'pending' && invoice.week).map(lines).join('\n') || 'None.') }),
-    defineTool({ name: 'get_invoice', description: 'Read one invoice with its supplier and any look-alike invoices.', parameters: Type.Object({ id: Type.String() }, { additionalProperties: false }), replay: 'safe',
+    defineTool({ name: 'get_invoice', description: 'Read one invoice with its supplier and any look-alike invoices.', parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'], additionalProperties: false }, replay: 'safe',
       execute: async ({ id }) => {
         const invoice = await ap.read(id);
         if (!invoice) return { ...text(`No invoice ${id}.`), isError: true };
@@ -69,7 +68,7 @@ export function createWorkspaceDemo({ files, root, ap }) {
         return text({ ...invoice, supplier: SUPPLIERS[invoice.supplier].name, terms: SUPPLIERS[invoice.supplier].terms, lookAlikes: matches });
       } }),
     defineTool({ name: 'show', description: 'Open something in the viewer beside the chat: the approvals queue, an invoice (with id), a supplier (with id) or any workspace file (screen file, with its path). Use it when the chat is docked.',
-      parameters: Type.Object({ screen: Type.Union([...['dashboard', 'approvals', 'invoices', 'invoice', 'suppliers', 'supplier', 'spend', 'payments', 'file'].map(screen => Type.Literal(screen))]), id: Type.Optional(Type.String()), path: Type.Optional(Type.String()) }, { additionalProperties: false }), replay: 'unsafe',
+      parameters: { type: 'object', properties: { screen: { anyOf: [...['dashboard', 'approvals', 'invoices', 'invoice', 'suppliers', 'supplier', 'spend', 'payments', 'file'].map(screen => ({ type: 'string', const: screen }))] }, id: { type: 'string' }, path: { type: 'string' } }, required: ['screen'], additionalProperties: false }, replay: 'unsafe',
       execute: async (args, api) => {
         // The command belongs to the conversation that made it and to the tab that was talking to it; the page drops it otherwise.
         // A file path is checked here, before anything is queued: it must be a plain workspace-relative path of a file that exists.
@@ -87,7 +86,7 @@ export function createWorkspaceDemo({ files, root, ap }) {
       } }),
     // The one way the agent changes an invoice: the app's own `decide`, after the person approves the card. Same receipt as the page's buttons.
     requireApproval(defineTool({ name: 'decide_invoice', description: `Approve an invoice, approve it coded to another account (action recode, account one of: ${ACCOUNTS.join(', ')}), or put it on hold. Pass the revision from get_invoice as expected: a changed invoice is refused.`,
-      parameters: Type.Object({ invoice: Type.String(), action: Type.Union([Type.Literal('approve'), Type.Literal('recode'), Type.Literal('hold')]), account: Type.Optional(Type.String()), note: Type.Optional(Type.String()), expected: Type.String({ description: 'The invoice revision you read with get_invoice' }) }, { additionalProperties: false }), replay: 'unsafe',
+      parameters: { type: 'object', properties: { invoice: { type: 'string' }, action: { anyOf: [{ type: 'string', const: 'approve' }, { type: 'string', const: 'recode' }, { type: 'string', const: 'hold' }] }, account: { type: 'string' }, note: { type: 'string' }, expected: { type: 'string', description: 'The invoice revision you read with get_invoice' } }, required: ['invoice', 'action', 'expected'], additionalProperties: false }, replay: 'unsafe',
       execute: async args => { const result = await ap.decide(args); return { ...text(result), isError: result.kind !== 'committed' }; } }),
     { summarize: ({ invoice, action, account }) => action === 'recode' ? `Approve ${invoice} coded to ${account}` : `${action === 'hold' ? 'Hold' : 'Approve'} ${invoice}` }),
   ];

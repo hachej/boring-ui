@@ -24,7 +24,7 @@ export async function startLongChat({ port = 0, messages = 500 } = {}) {
       await tx.appendEntry(AssistantEntry, conversation.id, { model: [{ role: 'assistant', content: [{ type: 'text', text: reply(index + 1) }], api: 'fictional', provider: 'fictional', model: 'fictional', stopReason: 'stop', timestamp: index, durationMs: 0, usage }] });
     }
   }, context);
-  const chat = createChatTransportHandler({ authenticate: async () => ({ conversation, context }) });
+  const chat = createChatTransportHandler({ authenticate: async () => ({ conversation, context, window: { min: messages } }) });
   const bundle = await build({ entryPoints: [here('./page.jsx')], bundle: true, write: false, outdir: here('./out'), format: 'esm', platform: 'browser', jsx: 'automatic', alias: { '@': here('../app-shell') }, define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
   const css = [await buildTailwind({ extraDirectories: ['examples/long-chat'], extraFiles: ['examples/long-chat/page.jsx'] }), stockShadowTokens, 'html,body,#root{height:100%;margin:0}body{background:var(--background);color:var(--foreground);font-family:var(--font-sans,ui-sans-serif,system-ui,sans-serif)}'].join('\n');
   const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fictional long chat</title><link rel="stylesheet" href="/app.css">${themePreviewHead}</head><body><div id="root"></div><script type="module" src="/app.js"></script></body></html>`;

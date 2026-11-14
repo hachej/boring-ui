@@ -1,4 +1,4 @@
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import type { SyncSql } from './run-outbox.js';
 import { settleResult, validateResult, validationError } from './run-result.js';
 import type { ResultCard, ResultConversation, ResultInvoke, ResultSubmission, ResultValidationRecord, RunAnswer } from './run-result.js';

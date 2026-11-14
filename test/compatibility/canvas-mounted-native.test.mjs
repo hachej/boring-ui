@@ -3,7 +3,6 @@ import test from 'node:test';
 import { Window } from 'happy-dom';
 import { Harness, MemoryStorage, createRegistry, defineExtension } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
@@ -94,7 +93,7 @@ test('native ToolTasks select a captured mounted canvas and refuse stale or clos
   let permit = true;
   let gate;
   const definition = createPresentationTool({ name: 'select_canvas', description: 'Select a fictional canvas shape',
-    parameters: Type.Object({ shapeIds: Type.Array(Type.String()) }), command: tools.select, target: captured,
+    parameters: { type: 'object', properties: { shapeIds: { type: 'array', items: { type: 'string' } } }, required: ['shapeIds'] }, command: tools.select, target: captured,
     prepareInput: args => ({ shapeIds: args.shapeIds, expiresAt: Date.now() + 10000 }),
     authorize: async (_input, _target, _api, ctx) => {
       if (gate) { gate.signal = ctx.abortSignal; gate.entered.resolve(); await gate.release.promise; }
@@ -103,7 +102,7 @@ test('native ToolTasks select a captured mounted canvas and refuse stale or clos
     formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] }),
   });
   const proposalDefinition = createPresentationTool({ name: 'propose_canvas', description: 'Propose a reviewed fictional move',
-    parameters: Type.Object({ x: Type.Number() }), command: tools.propose, target: captured,
+    parameters: { type: 'object', properties: { x: { type: 'number' } }, required: ['x'] }, command: tools.propose, target: captured,
     prepareInput: args => ({ edits: [{ kind: 'update', record: { ...editor.getShape(shapeId), x: args.x } }], summary: 'Native proposed move', expiresAt: Date.now() + 10000 }),
     authorize: async () => permit,
     formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] }),

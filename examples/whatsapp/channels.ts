@@ -1,6 +1,6 @@
 import { defineDoc } from '@earendil-works/pi-durable';
 import type { Conversation, ConversationId, ConversationView, EntryRecord, Harness, SettledSubmissionRecord } from '@earendil-works/pi-durable';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { withAbortSignal } from '@earendil-works/chord/context';
 import { answerUserQuestion } from '@hachej/boring-agent/ask-user';
 import { pendingQuestions } from '@hachej/boring-agent/room';
@@ -210,7 +210,7 @@ export function createChannelGateway(options: ChannelGatewayOptions): ChannelGat
       };
       // The acquisition snapshot is separate from subsequent native watch updates.
       await enqueue(watch.value);
-      watch.start(enqueue);
+      watch.start(async call => { if (call.kind === 'value') await enqueue(call.value); });
       await watch.closed;
     })().catch(() => undefined).finally(() => { if (watchers.get(key)?.run === run) watchers.delete(key); });
     // Stopping forgets the entry at once, so the next channel message starts a fresh watch.

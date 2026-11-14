@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Harness, MemoryStorage, createRegistry, defineExtension, defineTool, UserEntry, AssistantEntry } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { createResourceHandler } from '@hachej/boring-files/remote';
@@ -39,7 +38,7 @@ export async function startLiveSlice({ port = 0, provider = process.env.SLICE_PR
 
   const readTool = defineTool({
     name: 'read_note', description: 'Read the current saved document text and its exact revision.',
-    parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe',
+    parameters: { type: 'object', properties: {  }, additionalProperties: false }, replay: 'safe',
     execute: async () => {
       const read = await resources.read({ target, revision: { kind: 'latest' } }, agent);
       const body = read.kind === 'available'
@@ -51,7 +50,7 @@ export async function startLiveSlice({ port = 0, provider = process.env.SLICE_PR
   // The slice's own conditional save (the agent package has no document tool: workspace agents use Pi's file tools behind the guard).
   const saveTool = defineTool({
     name: 'save_note', description: 'Save this document against its exact saved revision, or create it only if absent.',
-    parameters: Type.Object({ text: Type.String(), expected: Type.Union([Type.Object({ kind: Type.Literal('absent') }), Type.Object({ kind: Type.Literal('revision'), revision: Type.String({ minLength: 1 }) })]) }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { text: { type: 'string' }, expected: { anyOf: [{ type: 'object', properties: { kind: { type: 'string', const: 'absent' } }, required: ['kind'] }, { type: 'object', properties: { kind: { type: 'string', const: 'revision' }, revision: { type: 'string', minLength: 1 } }, required: ['kind', 'revision'] }] } }, required: ['text', 'expected'], additionalProperties: false },
     execute: async (args, api) => {
       const bytes = new TextEncoder().encode(args.text);
       const result = await resources.publication.publish({ operationId: JSON.stringify(['live-slice-v1', api.taskId]), atomicity: 'all-or-nothing', changes: [args.expected.kind === 'absent'

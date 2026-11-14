@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { awaitWithContext, withAbortSignal } from '@earendil-works/chord/context';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { FileError, ok, err } from '@earendil-works/pi-durable/env';
 import type { FileSystem, Result, TextLine, TextLineReader } from '@earendil-works/pi-durable/env';
 import type { WorkspaceIdentity, WorkspaceLease } from './contracts.js';

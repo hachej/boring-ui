@@ -30,7 +30,8 @@
     const size = () => {
       const v = D.views[vp], width = stage.clientWidth;
       frame.style.width = (v.phone ? Math.min(v.w, width) : width) + 'px';
-      frame.style.height = (v.phone ? (innerWidth < 760 ? Math.max(560, Math.min(v.h, innerHeight * 0.82)) : Math.min(v.h, 780)) : Math.min(v.h, 660)) + 'px';
+      const top = stage.getBoundingClientRect().top + scrollY;
+      frame.style.height = Math.max(v.phone ? 480 : 520, Math.min(v.h, innerHeight - top - 12)) + 'px';
     };
     const mark = () => {
       $$('[data-vp]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.vp === vp)));

@@ -315,7 +315,7 @@ test('an unresponsive older-page read times out visibly and retries without acce
 const saying = (conversation, hasEarlier) => ({ open: async () => {
   const watch = await conversation.watch(context);
   const tag = view => hasEarlier === undefined ? view : { ...view, hasEarlier };
-  return { value: tag(watch.value), start: listener => watch.start((view, ...rest) => listener(tag(view), ...rest)), stop: () => watch.stop(), closed: watch.closed };
+  return { value: tag(watch.value), start: listener => watch.start((call, ...rest) => listener(call.kind === 'value' ? { ...call, value: tag(call.value) } : call, ...rest)), stop: () => watch.stop(), closed: watch.closed };
 } });
 
 test('a view that holds the whole conversation has nothing earlier: the first page repeats nothing on screen', { timeout: 10000 }, async t => {

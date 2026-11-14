@@ -13,7 +13,7 @@ import type { MutableModels, Provider } from '@earendil-works/pi-ai/models';
 import type { AuthEvent, AuthPrompt, Credential, CredentialInfo, CredentialStore } from '@earendil-works/pi-ai';
 import type { Conversation, ModelRef } from '@earendil-works/pi-durable';
 import type { SqliteDatabase } from '@earendil-works/pi-durable/storage/sqlite';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { guardStatus, readJsonBody } from '@hachej/boring-files/request-guard';
 
 /** A pi-ai `CredentialStore` over one SQLite table. `modify` is serialized, as the contract requires. */

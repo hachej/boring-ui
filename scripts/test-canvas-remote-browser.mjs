@@ -7,7 +7,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { build } from 'esbuild';
 import { Harness, createRegistry, defineExtension } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
-import { Type } from '@earendil-works/pi-ai';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
@@ -58,8 +57,8 @@ async function attach() {
     const name = `remote_canvas_${command}_${connection.id.replaceAll('-', '')}`;
     names[command] = name;
     return createPresentationTool({ name, description: `Fictional ${command} on one captured mounted canvas`,
-      parameters: command === 'select' ? Type.Object({ shapeIds: Type.Array(Type.String()) }, { additionalProperties: false })
-        : Type.Object({ edits: Type.Array(Type.Any()), summary: Type.String() }, { additionalProperties: false }),
+      parameters: command === 'select' ? { type: 'object', properties: { shapeIds: { type: 'array', items: { type: 'string' } } }, required: ['shapeIds'], additionalProperties: false }
+        : { type: 'object', properties: { edits: { type: 'array', items: {} }, summary: { type: 'string' } }, required: ['edits', 'summary'], additionalProperties: false },
       command: connection[command], target: connection.target, prepareInput: args => ({ ...args, expiresAt: Date.now() + 30000 }),
       authorize: (_input, captured, api) => api.conversationId === conversation.id && !revocation.signal.aborted && captured.subject.scopeId === access.scopeId,
       formatResult: result => ({ output: [{ type: 'text', text: JSON.stringify(result) }] }),

@@ -2,7 +2,7 @@ import { randomUUID } from '@hachej/boring-files/platform';
 import { posix } from 'node:path';
 import { Bash, defineCommand } from 'just-bash';
 import type { BashOptions, InitialFiles, IFileSystem, InMemoryFs } from 'just-bash';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { FileError, ExecutionError, ok, err } from '@earendil-works/pi-durable/env';
 import type { ExecutionEnv, FileInfo, FileSystem, Result, TextLineReader } from '@earendil-works/pi-durable/env';
 import type { WorkspaceProvider, WorkspaceIdentity } from './contracts.js';

@@ -1,7 +1,8 @@
 import { defineDoc } from '@earendil-works/pi-durable';
 import type { ConversationDocToken, ToolExecutionResult, Tx } from '@earendil-works/pi-durable';
-import type { Context, JsonValue } from '@earendil-works/chord';
-import { Check, Errors } from 'typebox/schema';
+import type { Context } from '@earendil-works/chord/context';
+import type { JsonValue } from '@earendil-works/chord/json';
+import { compile } from '@earendil-works/pi-schema';
 
 /**
  * The result protocol of a one-call run: the agent answers by calling one result tool (or in plain text), the host validates it and
@@ -98,7 +99,7 @@ export function resultState(card: ResultCard, messages: readonly ResultMessage[]
     if (!message.isError && checked?.valid === true && message.toolCallId !== undefined) acceptedIds.add(message.toolCallId);
   }
   for (const call of calls) {
-    if (acceptedIds.has(call.id) && all.filter(c => c.id === call.id).length === 1 && card.output && Check(card.output.input, call.arguments)) accepted = call.arguments as Record<string, unknown>;
+    if (acceptedIds.has(call.id) && all.filter(c => c.id === call.id).length === 1 && card.output && compile(card.output.input).check(call.arguments)) accepted = call.arguments as Record<string, unknown>;
   }
   const attempts = calls.length + misses;
   return { accepted, ...(error !== undefined ? { error } : {}), ...(end !== undefined ? { end } : {}), attempts, exhausted: attempts > card.result.repairs + 1 || (attempts === card.result.repairs + 1 && !accepted) };
@@ -166,9 +167,9 @@ export function evidenceOf(card: ResultCard, messages: readonly ResultMessage[])
  * `key` must be fresh for a delivery check. Throws when the validator answers something else than `{ valid, hint? }`.
  */
 export async function validateResult(card: ResultCard, output: unknown, evidence: readonly ResultEvidence[], invoke: ResultInvoke, phase: 'attempt' | 'delivery', key: string): Promise<ResultValidation> {
-  if (card.output && !Check(card.output.input, output)) {
-    const [, errors] = Errors(card.output.input, output);
-    return { valid: false, hint: errors.map(e => `${e.instancePath || '/'}: ${e.message}`).join('; ').slice(0, MAX_HINT) };
+  const schema = card.output && compile(card.output.input);
+  if (schema && !schema.check(output)) {
+    return { valid: false, hint: schema.errors(output).map(e => `${e.path || '/'}: ${e.message}`).join('; ').slice(0, MAX_HINT) };
   }
   if (!card.result?.validate) return { valid: true };
   const checked = await invoke(card.result.validate, { output, evidence, ...(phase === 'delivery' ? { phase } : {}) }, key) as { valid?: unknown; hint?: unknown } | null | undefined;

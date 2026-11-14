@@ -1,4 +1,4 @@
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { awaitWithContext, BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { applyImmutable } from '@earendil-works/chord/delta';
 import type { ConversationView, ConversationWatch, Cursor, InputSubmissionDraft, Page, EntryRecord, SettledSubmissionRecord, SubmissionRecord, WatchEnd } from '@earendil-works/pi-durable';
@@ -302,7 +302,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
       closed,
       lost: () => lost,
       // An explicit stop (the page hidden, the chat disposed) interrupts a draining served end; a served end nobody stops still drains without abort.
-      stop: async () => { if (draining) source.cancel(); else finish({ reason: 'stopped' }); return closed; },
+      stop: async () => { if (draining) source.cancel(); else finish({ kind: 'stopped' }); return closed; },
       start: listener => {
         if (started) throw new Error('Watch already started');
         started = true;
@@ -315,18 +315,18 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
               // `session_closed` (a host restart, for example) is reopened too; `retired`, `stopped` and `revoked` are final.
               if (!frame || frame.kind === 'end') {
                 lost = !frame || frame.reason === 'session_closed';
-                return finish({ reason: frame?.reason === 'retired' ? 'retired' : frame?.reason === 'stopped' ? 'stopped' : 'session_closed' }, frame?.kind === 'end');
+                return finish({ kind: frame?.reason === 'stopped' ? 'stopped' : 'ended' }, frame?.kind === 'end');
               }
               // Native operation batches are replayed with the upstream delta implementation; a view frame resets the replica.
               value = frame.kind === 'view' ? frame.view : applyImmutable(value, frame.ops) as ConversationView;
-              try { await listener(linkImages(value), [], context); }
-              catch (error) { return finish({ reason: 'listener_error', error: error instanceof Error ? error : new Error(String(error)) }); }
+              try { await listener({ kind: 'value', value: linkImages(value), ops: [], retired: false }, context); }
+              catch (error) { return finish({ kind: 'listener_error', error: error instanceof Error ? error : new Error(String(error)) }); }
             }
           } catch (error) {
             if (ended) return;
             // A failed read (network error, silence) is a lost connection; a line the client cannot parse is not.
-            if (error instanceof SyntaxError) return finish({ reason: 'listener_error', error });
-            lost = true; finish({ reason: 'session_closed' });
+            if (error instanceof SyntaxError) return finish({ kind: 'listener_error', error });
+            lost = true; finish({ kind: 'ended' });
           }
         })();
       },
@@ -363,8 +363,8 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
       // Stopped before it started (the owner left while the first view was on its way, D-1434): the first watch is still open, close it.
       const live = current ?? (listener ? undefined : first); current = undefined; void live?.stop();
     };
-    const fail = (error: unknown) => finish({ reason: 'listener_error', error: error instanceof Error ? error : new Error(String(error)) });
-    const forward = async (view: ConversationView) => { last = view; await listener!(view, [], context); };
+    const fail = (error: unknown) => finish({ kind: 'listener_error', error: error instanceof Error ? error : new Error(String(error)) });
+    const forward = async (view: ConversationView) => { last = view; await listener!({ kind: 'value', value: view, ops: [], retired: false }, context); };
     const schedule = () => {
       cancelRetry();
       const delay = Math.min(backoff.max, backoff.base * 2 ** attempt++) * (0.5 + Math.random() / 2);
@@ -378,7 +378,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
         if (ended) return;
         if (watch.lost()) { setReconnecting(true); schedule(); } else finish(end);
       });
-      watch.start(async view => { if (current === watch) await forward(view); });
+      watch.start(async call => { if (current === watch && call.kind === 'value') await forward(call.value); });
     }
     async function open() {
       if (opening || current || !wanted()) return;
@@ -393,7 +393,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
         if (ended) return;
         // The host refused (signed out, revoked, gone): reopening cannot help. A network failure or a 5xx is retried.
         const status = error instanceof WatchRefused ? error.status : 0;
-        if (status >= 400 && status < 500 && status !== 408 && status !== 429) return finish({ reason: 'session_closed' });
+        if (status >= 400 && status < 500 && status !== 408 && status !== 429) return finish({ kind: 'ended' });
         setReconnecting(true); schedule();
       } finally { opening = false; }
     }
@@ -407,7 +407,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     return {
       get value() { return current?.value ?? last; },
       closed,
-      stop: async () => { finish({ reason: 'stopped' }); return closed; },
+      stop: async () => { finish({ kind: 'stopped' }); return closed; },
       start: next => {
         if (listener) throw new Error('Watch already started');
         listener = next;

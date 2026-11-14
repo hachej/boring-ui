@@ -79,3 +79,17 @@ test('artifact rules use result order and revision equality, while compatibility
   assert.equal(recogniseArtifact(call, result('new'), true, undefined).descriptor.revision, 'new');
   assert.equal(recogniseArtifact(call, undefined, true, undefined).state, 'presenting');
 });
+
+test('a run that ended without an answer shows the reason pi.live.runFailure recorded, once', () => {
+  const failure = { taskId: 3, inputs: [1], reason: 'no_model', detail: 'No model is configured for this fictional agent.', first: 1 };
+  const bare = derive({ entries: [user], docs: { 'pi.live': { runFailure: failure } } }, options);
+  assert.deepEqual(bare.rows.map(row => row.type), ['user', 'assistant']);
+  assert.deepEqual(finishNotice(bare.rows), { kind: 'error', summary: failure.detail });
+  const errored = { id: 2, kind: 'message', byTaskId: 3, model: [assistant([], { stopReason: 'error', errorMessage: failure.detail })] };
+  const withEntry = derive({ entries: [user, errored], docs: { 'pi.live': { runFailure: { ...failure, reason: 'model_error' } } } }, options);
+  assert.equal(withEntry.rows.filter(row => row.stopReason === 'error').length, 1, 'the error entry and the record do not both show');
+  const stopped = derive({ entries: [user], docs: { 'pi.live': { runFailure: { ...failure, reason: 'aborted' } } } }, options);
+  assert.deepEqual(stopped.rows.map(row => row.type), ['user'], 'the person stopping a run is not a failure');
+  const running = derive({ entries: [user], docs: { 'pi.live': { run: { taskId: 4 }, runFailure: failure } } }, options);
+  assert.ok(!running.rows.some(row => row.key === 'failure:3'), 'a new run hides the old failure');
+});

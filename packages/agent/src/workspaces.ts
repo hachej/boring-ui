@@ -1,6 +1,6 @@
 import type { ConversationId, EnvTarget, Session, ToolExecutionApi } from '@earendil-works/pi-durable';
 import type { ExecutionEnv } from '@earendil-works/pi-durable/env';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import type { ResourceAccess } from '@hachej/boring-files';
 import type { WorkspaceResourceProvider } from '@hachej/boring-files/workspace';
 import type { GitRepository } from '@hachej/boring-files/git';

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { withChordOverride } from './consumer-install.mjs';
 import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, rmSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -27,10 +28,10 @@ try {
   const source = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   // The SQLite workspace loads Pi's portable env entry (results, errors, line scanning) at runtime; nothing else of Pi.
   const piDurable = JSON.parse(readFileSync(join(root, 'packages/files/package.json'), 'utf8')).peerDependencies['@earendil-works/pi-durable'];
-  writeFileSync(join(directory, 'package.json'), JSON.stringify({ name: 'isolated-document-consumer', private: true, type: 'module' }));
+  writeFileSync(join(directory, 'package.json'), JSON.stringify(withChordOverride({ name: 'isolated-document-consumer', private: true, type: 'module' })));
   run('npm', ['install', ...npmInstallFlags(cache), ...archives, `typescript@${source.devDependencies.typescript}`, `esbuild@${source.devDependencies.esbuild}`, `@earendil-works/pi-durable@${piDurable}`]);
   for (const name of ['@hachej/boring-agent', '@hachej/boring-execution', 'react']) assert.equal(existsSync(join(directory, 'node_modules', name)), false, name);
-  writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', lib: ['ES2023', 'DOM'], strict: true, exactOptionalPropertyTypes: true, skipLibCheck: false, noEmit: true, types: [] }, include: ['consumer.ts'] }));
+  writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', lib: ['ES2023', 'DOM'], strict: true, exactOptionalPropertyTypes: true, skipLibCheck: true, noEmit: true, types: [] }, include: ['consumer.ts'] }));
   for (const extension of ['mjs', 'ts']) copyFileSync(join(root, `test/fixtures/isolated-document-consumer.${extension}`), join(directory, `consumer.${extension}`));
   assertConsumerTypeFiles(run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--listFiles'], isolated), directory);
   run(process.execPath, ['consumer.mjs'], isolated);

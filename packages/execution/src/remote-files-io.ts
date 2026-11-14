@@ -1,5 +1,5 @@
 import { readBoundedJson } from '@hachej/boring-files/request-guard';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 
 /** Read a response body as JSON under a byte cap (the shared guard of `@hachej/boring-files/request-guard`). */
 export function readJson(body: ReadableStream<Uint8Array> | null, context: Context, limit: number): Promise<unknown> {

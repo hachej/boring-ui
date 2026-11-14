@@ -1,7 +1,7 @@
 import git from 'isomorphic-git';
 import type { PromiseFsClient, WalkerEntry } from 'isomorphic-git';
 import { posix } from 'node:path';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import type { FileError, FileInfo, FileSystem, Result } from '@earendil-works/pi-durable/env';
 
 export type GitOperation = 'init' | 'status' | 'add' | 'remove' | 'commit' | 'log' | 'branches' | 'branch' | 'checkout' | 'diff';

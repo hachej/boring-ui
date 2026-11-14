@@ -82,7 +82,7 @@ Preconditions: `npm ci`; run from the repository root.
 
 ## Gotchas
 
-- Keep every `@hachej/boring-*` package on one version; Pi packages are peers at `~1.4.0`.
+- Keep every `@hachej/boring-*` package on one version; Pi packages are peers at `~1.5.2`.
 - The host owns the Harness, policy and credentials; kit packages never open a Harness.
 - Change `ARCHITECTURE.json` before a new package or edge.
 - Explicit `theme.json` installation overwrites matching host variables. Blocks never install it automatically. Factory template/bundle adoption, full mira catalogue qualification, unnested composition, actual host Geist loading, full Phosphor coverage/adoption and a global 14px app ceiling remain separate work; the bounded shared primitive unit supplies flat Cards/compact controls, not host installation or full convergence. Family declarations alone do not load fonts. Ordinary block installation preserving branded tokens is structurally checked here, not installer-qualified by the focused theme test.

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Harness, MemoryStorage, AssistantEntry, ToolResultEntry, ToolTask, createRegistry, defineExtension, defineTask, defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createOutputValidation } from '@hachej/boring-agent/validation';
@@ -22,7 +21,7 @@ const v1View = harness => ({ commit: (fn, ctx) => harness.commit(tx => fn(new Pr
 async function fixture(t, options = {}) {
   let harness, authorizeCalls = 0, validateCalls = 0;
   const tool = defineTool({ name: 'fictional_source', description: 'Return a fictional source result.',
-    parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe',
+    parameters: { type: 'object', properties: {  }, additionalProperties: false }, replay: 'safe',
     ...(options.truncated ? { outputLimits: { maxBytes: 12, maxLines: 100 } } : {}),
     execute: async () => ({ output: [{ type: 'text', text: options.truncated ? 'Fictional source result exceeds the native output limit' : 'Fictional source result' }],
       ...(options.toolError ? { isError: true } : {}),

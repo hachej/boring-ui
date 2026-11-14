@@ -5,7 +5,7 @@
 import { ToolTask } from '@earendil-works/pi-durable';
 import type { Conversation, ConversationDocFamilyToken, JsonObject, TaskId, ToolExecutionApi, Tx } from '@earendil-works/pi-durable';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 
 export class UnknownCall extends Error {}
 export class AmbiguousCall extends Error {}
@@ -69,7 +69,7 @@ export async function waitForDocument<T extends JsonObject>(api: ToolExecutionAp
         signal?.addEventListener('abort', () => reject(signal.reason ?? new Error(`${label} cancelled`)), { once: true });
         void watch.closed.then(() => reject(new Error(`${label} observation closed`)));
         if (deadline) timer = setTimeout(() => { void api.commit(deadline.expire, BACKGROUND_CONTEXT).then(value => resolve(value), reject); }, Math.max(0, deadline.at - Date.now()));
-        watch.start(async value => { if (settled(value)) resolve(value); });
+        watch.start(async call => { const value = call.kind === 'value' ? (call.retired ? null : call.value) : undefined; if (call.kind === 'value' && settled(value)) resolve(value); });
       });
     }
   } catch (error) {

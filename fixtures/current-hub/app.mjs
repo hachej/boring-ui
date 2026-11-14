@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Harness, createRegistry, defineDoc, defineDocFamily, defineExtension, defineTask, defineTool, configure, AgentDoc, AssistantEntry, ToolTask, ToolResultEntry } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
-import { Type } from '@earendil-works/pi-ai';
 import { loadAgentDefinition } from '@hachej/boring-agent/definitions';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
@@ -66,7 +65,7 @@ export async function openFixtureApp({ directory, appId, definitionRef, implemen
     return loaded;
   };
   const report = defineTool({ name: 'prepare_report', description: 'Prepare a fictional report inside its owning app.',
-    parameters: Type.Object({ requestId: Type.String({ pattern: '^[a-z0-9-]{1,80}$' }) }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { requestId: { type: 'string', pattern: '^[a-z0-9-]{1,80}$' } }, required: ['requestId'], additionalProperties: false },
     replay: 'safe', outputLimits: { maxBytes: 131072, maxLines: 131072 },
     execute: async (args, api, ctx) => {
       const admitted = (await api.snapshot(requests, key(args.requestId), ctx))?.binding;

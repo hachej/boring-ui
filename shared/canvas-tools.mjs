@@ -5,7 +5,6 @@
 // No Node-only imports.
 import { canvasMediaType, parseCanvasDocument, applyCanvasEdits } from '@hachej/boring-ui-kit/canvas-document';
 import { defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { parsePublicationResult, publicationDigest } from '@hachej/boring-files/publication';
 import { baselineKey, lastReadRevision, lastReadRevisions, recordRevision } from '@hachej/boring-agent/file-guard';
 import { asWorkspaceResolver, workspaceFor } from '@hachej/boring-agent/workspaces';
@@ -159,7 +158,7 @@ export function createCanvasTools({ files, workspace = files ? { files, root: '/
 
   const readCanvas = defineTool({
     name: 'read_canvas', description: 'Read the saved canvas: a compact list of shapes (id, type, text, x, y, w, h; arrows have from and to shape ids). Read it before you change it. Reports missing when nothing is saved yet.',
-    parameters: Type.Object({}, { additionalProperties: false }), replay: 'safe',
+    parameters: { type: 'object', properties: {  }, additionalProperties: false }, replay: 'safe',
     execute: async (_args, api, context) => {
       const ws = await bind(api, context);
       if (ws.refused) return reply(ws.refused);
@@ -172,22 +171,7 @@ export function createCanvasTools({ files, workspace = files ? { files, root: '/
   const addShapes = defineTool({
     name: 'add_canvas_shapes',
     description: 'Add shapes and arrows to the canvas you read. Coordinates are pixels, x to the right and y downwards; x,y is the top-left corner of a shape. Arrows connect two shape ids (existing or added in the same call) and follow the shapes when they move.',
-    parameters: Type.Object({
-      shapes: Type.Optional(Type.Array(Type.Object({
-        id: Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,39}$', description: 'A new short id of your choice, such as "plan" or "box-2".' }),
-        kind: Type.Union([Type.Literal('rectangle'), Type.Literal('ellipse'), Type.Literal('text')], { description: 'rectangle or ellipse: a labelled box. text: a free text note without a border.' }),
-        text: Type.String(),
-        x: Type.Number(), y: Type.Number(),
-        w: Type.Optional(Type.Number({ minimum: 20, maximum: 2000, description: 'Width, default 180.' })),
-        h: Type.Optional(Type.Number({ minimum: 20, maximum: 2000, description: 'Height, default 90 (ignored for text).' })),
-        color: Type.Optional(Type.Union(COLORS.map(color => Type.Literal(color)))),
-      }, { additionalProperties: false }))),
-      arrows: Type.Optional(Type.Array(Type.Object({
-        from: Type.String({ minLength: 1, description: 'Id of the shape the arrow starts at.' }),
-        to: Type.String({ minLength: 1, description: 'Id of the shape the arrow points to.' }),
-        text: Type.Optional(Type.String({ description: 'Optional label on the arrow.' })),
-      }, { additionalProperties: false }))),
-    }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { shapes: { type: 'array', items: { type: 'object', properties: { id: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{0,39}$', description: 'A new short id of your choice, such as "plan" or "box-2".' }, kind: { anyOf: [{ type: 'string', const: 'rectangle' }, { type: 'string', const: 'ellipse' }, { type: 'string', const: 'text' }], description: 'rectangle or ellipse: a labelled box. text: a free text note without a border.' }, text: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number', minimum: 20, maximum: 2000, description: 'Width, default 180.' }, h: { type: 'number', minimum: 20, maximum: 2000, description: 'Height, default 90 (ignored for text).' }, color: { anyOf: COLORS.map(color => ({ type: 'string', const: color })) } }, required: ['id', 'kind', 'text', 'x', 'y'], additionalProperties: false } }, arrows: { type: 'array', items: { type: 'object', properties: { from: { type: 'string', minLength: 1, description: 'Id of the shape the arrow starts at.' }, to: { type: 'string', minLength: 1, description: 'Id of the shape the arrow points to.' }, text: { type: 'string', description: 'Optional label on the arrow.' } }, required: ['from', 'to'], additionalProperties: false } } }, additionalProperties: false },
     replay: 'safe',
     execute: async (args, api, context) => {
       const start = await mutation(api, context);
@@ -232,7 +216,7 @@ export function createCanvasTools({ files, workspace = files ? { files, root: '/
 
   const removeShapes = defineTool({
     name: 'remove_canvas_shapes', description: 'Remove shapes by id from the canvas you read. Arrows attached to a removed shape are removed too.',
-    parameters: Type.Object({ ids: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }) }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 } }, required: ['ids'], additionalProperties: false },
     replay: 'safe',
     execute: async (args, api, context) => {
       const start = await mutation(api, context);

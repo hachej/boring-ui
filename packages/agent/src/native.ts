@@ -7,4 +7,4 @@ export type {
   ConversationId, Submission, SubmissionDraft, SubmissionId,
   TaskId, TaskOutcome, Storage,
 } from '@earendil-works/pi-durable';
-export type { Context } from '@earendil-works/chord';
+export type { Context } from '@earendil-works/chord/context';

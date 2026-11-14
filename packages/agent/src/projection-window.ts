@@ -40,24 +40,15 @@ function projectRow(entry: EntryRecord, message: NativeMessage, messageIndex: nu
   return content.length ? { ...base, content, clipped } : undefined;
 }
 
-function* newestEntries(entries: readonly EntryRecord[]): Generator<{ entry: EntryRecord; position: number }> {
-  let head = entries[0]?.head === undefined ? undefined : entries[0];
-  const first = head ? 1 : 0;
-  for (let position = entries.length - 1; position >= first; position--) {
-    const entry = entries[position];
-    if (!entry) continue;
-    if (head && head.id > entry.id) { yield { entry: head, position: 0 }; head = undefined; }
-    yield { entry, position };
-  }
-  if (head) yield { entry: head, position: 0 };
-}
-
 export function projectConversationWindow(entries: readonly EntryRecord[], identity: ProjectionIdentity,
   allowEntry: (identity: ProjectionIdentity, entry: EntryRecord) => boolean,
+  earlier = false,
 ): { messages: readonly ConversationTextRow[]; window: { truncated: boolean } } {
   const selected: { row: ConversationTextRow; position: number }[] = [];
-  let bytes = 2, truncated = false;
-  outer: for (const { entry, position } of newestEntries(entries)) {
+  let bytes = 2, truncated = earlier;
+  outer: for (let position = entries.length - 1; position >= 0; position--) {
+    const entry = entries[position];
+    if (!entry) continue;
     if (allowEntry(identity, entry) !== true) continue;
     const model = entry.model ?? [];
     for (let j = model.length - 1; j >= 0; j--) {
@@ -72,4 +63,19 @@ export function projectConversationWindow(entries: readonly EntryRecord[], ident
   }
   selected.sort((a, b) => a.position - b.position || a.row.messageIndex - b.row.messageIndex);
   return { messages: selected.map(item => item.row), window: { truncated } };
+}
+
+/**
+ * The entries of the active conversation: a view's entries are a window over the whole history, and the newest reset or compaction
+ * marker's `head` starts what the conversation is now. Entries below it are archived.
+ */
+export function activeEntries(entries: readonly EntryRecord[]): readonly EntryRecord[] {
+  let head: EntryRecord['id'] | undefined;
+  for (const entry of entries) if (entry.head !== undefined) head = entry.head;
+  return head === undefined ? entries : entries.filter(entry => entry.id >= head!);
+}
+
+/** Whether an entry shows as a message row (the text of a user or assistant message). */
+export function showsRow(entry: EntryRecord): boolean {
+  return (entry.model ?? []).some((message, index) => projectRow(entry, message, index) !== undefined);
 }

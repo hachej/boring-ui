@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 import { Harness, createRegistry, defineDoc, defineExtension, defineTool } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { createModels } from '@earendil-works/pi-ai/models';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { loadAgentDefinition } from '@hachej/boring-agent/definitions';
@@ -39,7 +38,7 @@ async function fixture(t) {
   const provider = openSqliteWorkspaces({ filename: join(directory, 'resources.sqlite'), providerId: 'definitions', authorize: () => true });
   const tool = createSaveNoteTool({ target: target('output.md'), publisher: provider.publication,
     operationNamespace: 'fictional-definition', resolveAccess: () => access });
-  const echo = defineTool({ name: 'fictional_echo', description: 'Return fictional text.', parameters: Type.Object({ text: Type.String() }),
+  const echo = defineTool({ name: 'fictional_echo', description: 'Return fictional text.', parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
     execute: async args => ({ output: [{ type: 'text', text: JSON.stringify({ kind: 'echo', text: args.text }) }] }) });
   const registry = createRegistry();
   registry.install(defineExtension({ name: 'fixture.definition-tools', tools: [tool, echo] }));

@@ -196,9 +196,9 @@ test('Code Interpreter env: a watch never reports names from outside, before or 
   assert.equal(refused.ok ? 'watching' : refused.error.code, 'permission_denied', 'a link to an outside directory is refused for watch');
 
   const reported = [];
-  const watcher = await env.watch([{ path: 'd', recursive: true }, { path: '.', recursive: true }], change => { if (change.paths) reported.push(...change.paths); }, context);
+  const watcher = await env.watch([{ path: 'd', recursive: true }, { path: '.', recursive: true }], change => { if (change.kind === 'paths') reported.push(...change.paths); }, context);
   assert.equal(watcher.ok, true, 'watching the folder');
-  t.after(() => watcher.ok && watcher.value.close());
+  t.after(() => watcher.ok && watcher.value.stop(context));
 
   // The interpreter swaps `d` for a link to the outside folder, then names appear and change out there.
   renameSync(join(root, 'd'), join(root, 'd-real'));

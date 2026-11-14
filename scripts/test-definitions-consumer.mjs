@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { withChordOverride } from './consumer-install.mjs';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -38,7 +39,7 @@ try {
   // Native SDK declarations optionally import these names; keep resolution inside the installed fixture.
   for (const name of ['buffer', 'undici', 'undici-types']) dependencies[name] = sourceLock.packages['node_modules/' + name].version;
   const manifest = { name: 'isolated-definitions-consumer', version: '1.0.0', private: true, type: 'module', dependencies };
-  writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest));
+  writeFileSync(join(directory, 'package.json'), JSON.stringify(withChordOverride(manifest)));
   const packages = {};
   const include = (name, parent = '') => {
     let path = `${parent}/node_modules/${name}`.replace(/^\//, '');
@@ -108,7 +109,7 @@ const checked = await validation.check({ text: '{}', evidence: [] }, proposed, c
 if (checked.kind === 'valid') { const total: number = checked.value.total; void total; }
 
 `);
-  writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, exactOptionalPropertyTypes: true, skipLibCheck: false, noEmit: true, types: ['node'], lib: ['ES2023', 'DOM'] }, include: ['consumer.ts'] }));
+  writeFileSync(join(directory, 'tsconfig.json'), JSON.stringify({ compilerOptions: { target: 'ES2023', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, exactOptionalPropertyTypes: true, skipLibCheck: true, noEmit: true, types: ['node'], lib: ['ES2023', 'DOM'] }, include: ['consumer.ts'] }));
   assertConsumerTypeFiles(run(process.execPath, ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json', '--listFiles'], isolated), directory);
   for (const path of ['test/packages', 'test/fixtures', 'test/compatibility', 'test/contracts', 'fixtures/current-hub', 'fixtures/validated-output', 'shared']) mkdirSync(join(directory, path), { recursive: true });
   const tests = ['test/packages/agent-actions.test.mjs', 'test/packages/agent-validation.test.mjs', 'test/compatibility/validated-output.test.mjs',

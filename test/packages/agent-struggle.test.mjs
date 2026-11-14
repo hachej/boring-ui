@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Harness, MemoryStorage, createRegistry, defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
@@ -10,8 +9,8 @@ import { defineAgent } from '@hachej/boring-agent/agents';
 import { setStruggleSink } from '@hachej/boring-agent/struggle';
 
 const SECRET = 'fictional-private-words';
-const ok = defineTool({ name: 'lookup', description: 'Looks up.', parameters: Type.Object({ topic: Type.String() }), replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: 'Glimmerton' }] }) });
-const broken = defineTool({ name: 'save_meal', description: 'Saves.', parameters: Type.Object({}), replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: `Not done: ${SECRET}` }], isError: true }) });
+const ok = defineTool({ name: 'lookup', description: 'Looks up.', parameters: { type: 'object', properties: { topic: { type: 'string' } }, required: ['topic'] }, replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: 'Glimmerton' }] }) });
+const broken = defineTool({ name: 'save_meal', description: 'Saves.', parameters: { type: 'object', properties: {  } }, replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: `Not done: ${SECRET}` }], isError: true }) });
 
 /** `script` is one reply per model request: a function of the transcript, or a message. After it runs out the model says « Done. ». */
 async function open(t, script = [], spec = {}) {
@@ -163,7 +162,7 @@ test('struggle: false selects nothing; a sink that throws never fails the run', 
 });
 
 test('an app that has its own report_bug keeps it', async t => {
-  const own = defineTool({ name: 'report_bug', description: 'The app\'s own.', parameters: Type.Object({}), replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: 'own' }] }) });
+  const own = defineTool({ name: 'report_bug', description: 'The app\'s own.', parameters: { type: 'object', properties: {  } }, replay: 'safe', execute: async () => ({ output: [{ type: 'text', text: 'own' }] }) });
   const { agent } = await open(t, [], { tools: [ok, broken, own] });
   assert.equal(agent.extensions.flatMap(extension => extension.tools ?? []).filter(tool => tool.name === 'report_bug').length, 1);
 });

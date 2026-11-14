@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Harness, MemoryStorage, ToolResultEntry, createRegistry, defineExtension, defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import * as XLSX from 'xlsx';
@@ -36,7 +35,7 @@ async function setup(t, { images = true, ocr } = {}) {
   };
   const tools = documentTools({ readBytes, images, ...(ocr ? { ocr } : {}) });
   // A host can use the helper on its own stored-file read path; the package never registers another read.
-  const hostRead = defineTool({ name: 'fixture_read', description: 'Host stored-file fixture', replay: 'safe', parameters: Type.Object({ path: Type.String() }), execute: async ({ path }) => readStored(path, await readBytes(path), { images }) });
+  const hostRead = defineTool({ name: 'fixture_read', description: 'Host stored-file fixture', replay: 'safe', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] }, execute: async ({ path }) => readStored(path, await readBytes(path), { images }) });
   const registry = createRegistry();
   registry.install(defineExtension({ name: 'fixture.documents', tools: [...tools, hostRead] }));
   const harness = await Harness.open(new MemoryStorage(), { registry, models: createModels() }, context);

@@ -5,7 +5,6 @@ import { Harness, MemoryStorage, createRegistry, defineExtension } from '@earend
 import { createPresentationTool } from '@hachej/boring-agent/presentation';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { Type } from '@earendil-works/pi-ai';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 import { createMarkdownController } from '@hachej/boring-ui-kit/markdown';
 import { admitDocumentTool, documentToolResult } from '../fixtures/native-document.mjs';
@@ -64,7 +63,7 @@ test('native ToolTask uses a captured mounted Markdown target without owning the
   const commandResults = [];
   let observedCommand;
   const tool = createPresentationTool({ name: 'navigate_markdown', description: 'Navigate fictional mounted notes',
-    parameters: Type.Object({ index: Type.Integer({ minimum: 0 }) }),
+    parameters: { type: 'object', properties: { index: { type: 'integer', minimum: 0 } }, required: ['index'] },
     target: captured,
     command: { ...first.revealHeading, invoke: async (...args) => {
       const result = await first.revealHeading.invoke(...args);

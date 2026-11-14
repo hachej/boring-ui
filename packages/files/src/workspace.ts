@@ -1,5 +1,5 @@
 import { BACKGROUND_CONTEXT, withAbortSignal, type Context } from '@earendil-works/chord/context';
-import type { FileSystem, FileWatcher, WatchChange } from '@earendil-works/pi-durable/env';
+import type { FileChange, FileSystem, FileWatcher } from '@earendil-works/pi-durable/env';
 import type { CommittedChange, PublicationLookupResult, PublicationReceipt, PublicationResult, ReadResult, ResourceAccess, ResourceCapabilities, ResourceExpectation, ResourceLocator, ResourceProvider, ResourceRead, ResourceRef, ResourceChange, PublicationRequest, ResourceRenameRequest, ResourceRenamer, ResourceDeleter } from './contracts.js';
 import { createWorkspaceCatalog } from './workspace-catalog.js';
 import type { WorkspaceCatalogOptions } from './workspace-catalog.js';
@@ -643,15 +643,15 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
     if (known.has(path) && known.get(path) === revision) return;
     emit({ path, revision, source: 'watch' });
   }
-  function onWatch(change: WatchChange): void {
-    if ('paths' in change) {
+  function onWatch(change: FileChange): void {
+    if (change.kind === 'paths') {
       const paths = [...change.paths];
       watchWork = watchWork.then(async () => { for (const path of paths) await watched(path).catch(() => undefined); });
       return;
     }
     // Overflow or a failed watcher: what changed is unknown, so every listener reloads. A failed watcher is not reopened (it would
     // fail again, for example on a tree past the environment's limit); the host's `poll()` at turn end remains.
-    if ('error' in change) { watcher = undefined; watchUnsupported = true; }
+    if (change.kind === 'failed') { watcher = undefined; watchUnsupported = true; }
     append({ kind: 'resnapshot' });
   }
   function startWatching(): void {
@@ -670,7 +670,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   function stopWatching(): void {
     const current = watcher;
     watcher = undefined;
-    void current?.then(value => value?.close(fsContext()));
+    void current?.then(value => value?.stop(fsContext()));
   }
 
   async function* changes(request: ChangeFeedRequest, context: ResourceAccess): AsyncGenerator<WorkspaceChangeEvent> {

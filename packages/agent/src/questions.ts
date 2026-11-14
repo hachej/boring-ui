@@ -1,6 +1,6 @@
 import { ReadAfterWrite, defineDocFamily, defineExtension, defineTask } from '@earendil-works/pi-durable';
 import type { TaskOptions, Tx } from '@earendil-works/pi-durable';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import type { RuntimeQuestionRef } from './contracts.js';
 import { waitUntil } from './wait-until.js';
 
@@ -64,7 +64,7 @@ export function createQuestions(options: QuestionOptions) {
         try {
           if (watch.value.question.state.kind === 'pending') {
             const changed = new Promise<void>(resolve => {
-              watch.start(async value => { if (value?.question?.state.kind !== 'pending') resolve(); });
+              watch.start(async call => { if (call.kind === 'value' && (call.retired || call.value.question?.state.kind !== 'pending')) resolve(); });
             });
             const expiry = waitUntil(runtime, Date.parse(watch.value.question.ref.expiresAt), context);
             try {

@@ -41,7 +41,7 @@ export default {
     { reply: /Not booked: Denied by the person\. harbour_book_mooring was not run/ },
     { reply: /I have no tool to close the harbour \(harbour tools: harbour_tide_times, harbour_book_mooring\)\./ },
     { toolNotCalled: 'harbour_close_harbour' },
-    { reply: /Refused before the harbour: error: [^]*Validation failed for tool "harbour_book_mooring"[^]*boat: must have required properties boat/ },
+    { reply: /Refused before the harbour: error: [^]*Validation failed for tool "harbour_book_mooring"[^]*boat: missing/ },
     { replyNot: /is not offered|harbour is closed/ },
   ],
   async verify(t) {

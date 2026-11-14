@@ -20,8 +20,8 @@ test('native watches preserve async delivery, operations, close reasons and inde
     const aFirst = Promise.withResolvers(), bFirst = Promise.withResolvers(), bSecond = Promise.withResolvers();
     const releaseFirst = Promise.withResolvers();
     let bCalls = 0;
-    a.start(async (_value, ops) => { assert.ok(Array.isArray(ops)); aFirst.resolve(); });
-    b.start(async (_value, ops, ctx) => {
+    a.start(async ({ ops }) => { assert.ok(Array.isArray(ops)); aFirst.resolve(); });
+    b.start(async ({ ops }, ctx) => {
       assert.ok(Array.isArray(ops)); assert.ok(ctx);
       bCalls++;
       if (bCalls === 1) { bFirst.resolve(); await releaseFirst.promise; }
@@ -32,15 +32,15 @@ test('native watches preserve async delivery, operations, close reasons and inde
     await conversation.configure({ instructions: 'second' }, context);
     // A slow listener owns one callback; subsequent frames must await it.
     assert.equal(bCalls, 1);
-    assert.equal((await a.stop()).reason, 'stopped');
-    assert.equal((await a.closed).reason, 'stopped');
+    assert.equal((await a.stop()).kind, 'stopped');
+    assert.equal((await a.closed).kind, 'stopped');
     releaseFirst.resolve();
     await bSecond.promise;
     assert.ok(bCalls >= 2, 'stopping a must not stop b');
     const before = b.value;
     assert.ok(before);
-    assert.equal((await b.stop()).reason, 'stopped');
-    assert.equal((await b.closed).reason, 'stopped');
+    assert.equal((await b.stop()).kind, 'stopped');
+    assert.equal((await b.closed).kind, 'stopped');
     await conversation.configure({ instructions: 'still usable after both observers stop' }, context);
     assert.ok(await conversation.agent(context));
   } finally {

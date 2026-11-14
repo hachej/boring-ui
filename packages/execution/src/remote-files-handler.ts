@@ -1,5 +1,5 @@
 import { awaitWithContext, withAbortSignal, withoutAbortSignal } from '@earendil-works/chord/context';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { FileError, err } from '@earendil-works/pi-durable/env';
 import type { FileSystem, Result, TextLineReader } from '@earendil-works/pi-durable/env';
 import type { WorkspaceIdentity, WorkspaceLease } from './contracts.js';

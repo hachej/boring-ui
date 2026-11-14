@@ -9,7 +9,6 @@ import { ExecutionError, getOrThrow } from '@earendil-works/pi-durable/env';
 import { BACKGROUND_CONTEXT as context, withCancel } from '@earendil-works/chord/context';
 import { Harness, MemoryStorage, createRegistry, defineExtension, defineTool, ToolResultEntry } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
-import { Type } from 'typebox';
 import { admitDocumentTool } from '../fixtures/native-document.mjs';
 
 const identity = { providerId: 'fictional-http-shell', instanceId: 'machine-1', incarnation: 'generation-1', viewId: 'working-1' };
@@ -118,7 +117,7 @@ test('native Harness executes a ToolTask with a borrowed shell-only lease and no
   assert.deepEqual(Object.keys(lease.environment).sort(), ['cleanup', 'exec']);
   const registry = createRegistry();
   registry.install(defineExtension({ name: 'fictional.remote-shell', tools: [defineTool({
-    name: 'remote_command', description: 'Fictional shell-only command', parameters: Type.Object({ command: Type.String() }), replay: 'unsafe',
+    name: 'remote_command', description: 'Fictional shell-only command', parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] }, replay: 'unsafe',
     execute: async (args, api, ctx) => {
       assert.equal(api.env, undefined);
       const result = getOrThrow(await lease.environment.exec(args.command, { onOutput: text => api.output(text) }, ctx));

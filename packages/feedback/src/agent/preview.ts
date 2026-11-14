@@ -1,8 +1,8 @@
-import { Type } from '@earendil-works/pi-ai';
 import type { Conversation, JsonObject, ToolRegistration } from '@earendil-works/pi-durable';
-import type { Context } from '@earendil-works/chord';
+import type { Context } from '@earendil-works/chord/context';
 import { answerBrowserTask, createBrowserTaskTool } from '@hachej/boring-agent/browser-task';
 import { previewAnswerProblem } from '../format/index.js';
+import { obj, opt, str } from '@earendil-works/pi-schema';
 
 /*
  * `browser_preview` (FEEDBACK.md, "Preview"): the server-side builder asks the person's open page for a live preview of a change.
@@ -13,10 +13,7 @@ import { previewAnswerProblem } from '../format/index.js';
 
 export const BROWSER_PREVIEW_TOOL = 'browser_preview';
 
-const parameters = Type.Object({
-  instructions: Type.String({ minLength: 1, maxLength: 2000, description: 'The change to preview, in the person\'s words (for example "make the Save button green").' }),
-  feedback: Type.Optional(Type.String({ pattern: '^fb_[1-9A-HJ-NP-Za-km-z]{16}$', description: 'The feedback report whose pinned elements the preview starts from.' })),
-}, { additionalProperties: false });
+const parameters = obj({ instructions: str({ minLength: 1, maxLength: 2000, description: 'The change to preview, in the person\'s words (for example "make the Save button green").' }), feedback: opt(str({ pattern: '^fb_[1-9A-HJ-NP-Za-km-z]{16}$', description: 'The feedback report whose pinned elements the preview starts from.' })) });
 
 const preset = {
   name: BROWSER_PREVIEW_TOOL,

@@ -1,5 +1,4 @@
 import { Harness, MemoryStorage, AssistantEntry, configure, createRegistry, defineDoc, defineEntry, defineExtension, defineTask, defineTool } from '@earendil-works/pi-durable';
-import { Type } from '@earendil-works/pi-ai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createScriptedModel } from '@hachej/boring-testing/model';
 
@@ -56,7 +55,7 @@ export async function createStagedHost({ settings } = {}) {
     },
   }, abort: async (_running, runtime, ctx) => runtime.commit(() => ({ status: 'terminal', outcome: { status: 'aborted' } }), ctx) });
   const stageTool = defineTool({ name: 'triage_stage', description: 'Generate and validate one fictional stage, in order.', replay: 'safe',
-    parameters: Type.Object({ stage: Type.Integer({ minimum: 1, maximum: 3 }) }, { additionalProperties: false }),
+    parameters: { type: 'object', properties: { stage: { type: 'integer', minimum: 1, maximum: 3 } }, required: ['stage'], additionalProperties: false },
     execute: async (args, api, ctx) => {
       const conversation = await harness.conversation(api.conversationId, ctx);
       const input = (await conversation.context(ctx)).entries.findLast(entry => entry.model?.some(message => message.role === 'user'));

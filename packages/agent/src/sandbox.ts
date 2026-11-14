@@ -1,6 +1,6 @@
 import { defineExtension, hook, ToolTask } from '@earendil-works/pi-durable';
 import type { Extension, ToolRegistration, Wrap } from '@earendil-works/pi-durable';
-import type { JsonValue } from '@earendil-works/chord';
+import type { JsonValue } from '@earendil-works/chord/json';
 
 /** Key under a recorded call's result details: `{ simulated: true, tool, arguments }`. A caller reads it back with `simulatedCalls`. */
 const GUARDS: WeakSet<object> = ((globalThis as Record<symbol, WeakSet<object>>)[Symbol.for('boring.agent.guards')] ??= new WeakSet()); // approval + sandbox extensions: a delegated child inherits them
