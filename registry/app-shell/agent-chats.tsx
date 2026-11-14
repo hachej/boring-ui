@@ -6,7 +6,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { HTMLAttributes, ReactNode, Ref } from 'react';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, Maximize2Icon, Minimize2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
+import { useMessageScroller } from '@/components/ui/message-scroller';
 import { PiChat } from '../pi-chat/pi-chat';
+import { Composer } from '../pi-chat/composer';
+import type { ComposerProps } from '../pi-chat/composer';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { PendingVoiceBubble } from '../pi-chat-voice/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
@@ -47,6 +50,44 @@ export function HistoryButton() {
     {open && <ChatTextProvider value={text}><ConversationHistory conversations={conversations} onClose={close} /></ChatTextProvider>}
   </>;
 }
+
+/** Hidden viewports must not turn an earlier reading position into a request to follow the latest reply. */
+function BarTranscriptPosition() {
+  const { host, folded } = useInternal();
+  const { scrollToMessage, scrollToEnd } = useMessageScroller();
+  const position = useRef<{ readonly kind: 'latest' } | { readonly kind: 'reading'; readonly top: number } | null>(null);
+  useLayoutEffect(() => {
+    if (folded) return;
+    const viewport = host?.querySelector<HTMLElement>('[data-spec=agent] [data-testid=transcript-scroll]');
+    if (!viewport) return;
+    const saved = position.current;
+    let restored = saved === null;
+    const remember = () => {
+      if (!restored || viewport.clientHeight === 0) return;
+      position.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 1
+        ? { kind: 'latest' } : { kind: 'reading', top: viewport.scrollTop };
+    };
+    const restore = () => {
+      if (restored || !saved || viewport.clientHeight === 0) return;
+      if (saved.kind === 'latest') scrollToEnd({ behavior: 'instant' });
+      else {
+        const first = viewport.querySelector<HTMLElement>('[data-message-id]')?.dataset.messageId;
+        if (!first || !scrollToMessage(first, { behavior: 'instant' })) return;
+        viewport.scrollTop = saved.top;
+      }
+      restored = true;
+      remember();
+    };
+    restore();
+    remember();
+    // The persistent chat host can still be detached when its new tray's layout effects run.
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(restore);
+    observer?.observe(viewport);
+    viewport.addEventListener('scroll', remember, { passive: true });
+    return () => { observer?.disconnect(); viewport.removeEventListener('scroll', remember); };
+  }, [folded, host, scrollToMessage, scrollToEnd]);
+  return null;
+}
 /** One agent's PiChat. It stays mounted while hidden, so its scroll, focus and drafts survive a swap with the other spec. */
 function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly visible: boolean; readonly role: Which }) {
   const layer = useInternal();
@@ -74,7 +115,9 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const capturing = layer.voice.phase === 'starting' || layer.voice.phase === 'recording';
   const readOnly = oneRow ? spec.readOnly : undefined;
   const barProps = oneRow ? {
-    ...(readOnly ? { renderComposer: () => <p data-testid="agent-read-only" className="m-0 flex min-h-14 items-center px-4 text-sm text-muted-foreground">{readOnly}</p> } : {}),
+    renderComposer: (props: ComposerProps) => <><BarTranscriptPosition />{readOnly
+      ? <p data-testid="agent-read-only" className="m-0 flex min-h-14 items-center px-4 text-sm text-muted-foreground">{readOnly}</p>
+      : spec.chatProps?.renderComposer ? spec.chatProps.renderComposer(props) : <Composer {...props} />}</>,
     composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerEditLast: true, composerStart: capturing ? <BarMicCancel mic={mic} /> : <ConversationChevron unread={barChat.historyBadge} />,
     // While the agent's question waits, the field says so; a typed message answers it (PiChat's own rule).
     labels: {

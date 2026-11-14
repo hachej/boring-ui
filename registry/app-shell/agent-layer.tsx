@@ -146,7 +146,6 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   specs.current = { agent, improve, snap, shown, pmOpen, together, contentComposer, mode, expanded };
   // Another person's choice (the account switched, no remount) can take the tray or the dock away from under the focus: the one field is the stable control to land on.
   const refocusField = useRef(false);
-  const transcriptPosition = useRef<number | null>(null);
   const [host] = useState(() => typeof document === 'undefined' ? null : Object.assign(document.createElement('div'), { className: 'flex min-h-0 flex-1 flex-col [&_[data-boring=pi-chat]>header]:hidden' }));
   useLayoutEffect(() => {
     let next: AgentMode = 'tray';
@@ -166,13 +165,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const setSnap = useCallback((next: Snap) => setSnapState(next), []);
   // Closing the dock goes back to the tray mode (the content composer only): the next send opens the tray again.
   const leaveDock = useCallback(() => { if (specs.current.contentComposer && specs.current.mode === 'dock' && specs.current.snap !== 'closed') setMode('tray'); }, [setMode]);
-  const close = useCallback(() => {
-    if (bar) {
-      const scroll = host?.querySelector<HTMLElement>('[data-testid=transcript-scroll]');
-      if (scroll && scroll.clientHeight > 0) transcriptPosition.current = scroll.scrollTop;
-    }
-    leaveDock(); setSnapState('closed');
-  }, [leaveDock, bar, host]);
+  const close = useCallback(() => { leaveDock(); setSnapState('closed'); }, [leaveDock]);
   const closePm = useCallback(() => {
     setPmOpen(false);
     if (specs.current.shown === 'improve') setSnapState('closed');
@@ -348,19 +341,6 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const dockOpen = snap !== 'closed' && shown !== 'improve' && (!contentComposer || mode === 'dock');
   // Folded: the card of the work and the reply sits on the field: above it in the column on a wide screen, in the drawer's peek on a phone.
   const folded = bar && (contentComposer ? !trayOpen && !dockOpen : snap === 'peek' && shown === 'agent');
-  useLayoutEffect(() => {
-    if (!bar || folded || transcriptPosition.current === null) return;
-    const top = transcriptPosition.current;
-    transcriptPosition.current = null;
-    const restore = () => {
-      const scroll = host?.querySelector<HTMLElement>('[data-testid=transcript-scroll]');
-      if (scroll) scroll.scrollTop = top;
-    };
-    restore();
-    let next = 0;
-    const first = requestAnimationFrame(() => { restore(); next = requestAnimationFrame(restore); });
-    return () => { cancelAnimationFrame(first); cancelAnimationFrame(next); };
-  }, [bar, folded, host]);
   const uncover = useCallback(() => { if (specs.current.snap === 'half' || specs.current.snap === 'full') setSnapState('peek'); }, []);
   const field = useCallback(() => composerSlotRef.current?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? host?.querySelector<HTMLElement>('[data-spec=agent] [data-testid=composer-input]'), [host]);
   // The right pane and its back stack (agent-pane.tsx): `preview` is a push, `preview(null)` closes it.
