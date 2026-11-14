@@ -291,7 +291,10 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     // The tray takes room from the content column: the row the person cited (focused when they cited it) is kept in view above it.
     const cited = specs.current.contentComposer && specs.current.mode === 'tray' && document.activeElement instanceof HTMLElement && !document.activeElement.closest('[data-testid=composer-dock]') && document.activeElement.closest('[data-testid=agent-content]') ? document.activeElement : null;
     if (cited) requestAnimationFrame(() => requestAnimationFrame(() => (cited.closest('[role=row]') ?? cited).scrollIntoView({ block: 'nearest' })));
-    open('agent', options.at ?? 'half');
+    // A phone quote belongs in the field beside the entry; keep the person's conversation placement.
+    const current = specs.current;
+    const at = options.at ?? (bar && !current.expanded && !options.voice && current.shown === 'agent' && current.snap !== 'closed' ? current.snap : 'half');
+    open('agent', at);
     if (options.voice && selected.voice) {
       setTalkRecording(true);
       // No await or effect: permission belongs to the caller's click or swipe release, even before the chat mounts.
@@ -299,10 +302,10 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     } else {
       focusTimer.current = setTimeout(() => {
         if (specs.current.agent?.controller === selected.controller && specs.current.snap !== 'closed' && specs.current.shown === 'agent') (host?.querySelector<HTMLElement>('[data-spec=agent] [data-testid=composer-input]') ?? composerSlotRef.current?.querySelector<HTMLElement>('[data-testid=composer-input]'))?.focus({ preventScroll: true });
-      }, 520);
+      }, at === 'peek' ? 0 : 520);
     }
     return true;
-  }, [open, voice, host]);
+  }, [bar, open, voice, host]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- a completed or refused capture resets this gesture's presentation once
   useEffect(() => { if (voice.phase === 'idle') setTalkRecording(false); }, [voice.phase]);
   const revealedFailures = useRef(new Set<number>());
