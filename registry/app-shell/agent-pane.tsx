@@ -340,7 +340,7 @@ function useSwipe(onStep: (offset: -1 | 1) => void, enabled: boolean) {
 
 /**
  * The pane: every entry mounted, the top one shown. `column` is the wide Dock, `stacked` over the docked conversation, `screen` the phone: the whole
- * screen above the page and the tabs, under the conversation's drawer, whose peek (the one field) stays over the pane's foot.
+ * screen above the page, leaving the tabs visible under the conversation's drawer, whose peek (the one field) stays over the pane's foot.
  */
 export function PaneStack({ placement, assistant }: { readonly placement: 'column' | 'stacked' | 'screen'; readonly assistant: string }) {
   const layer = useInternal();
@@ -353,7 +353,7 @@ export function PaneStack({ placement, assistant }: { readonly placement: 'colum
   if (!top) return null;
   return <ViewerWindowProvider value={viewer}>
     <aside data-testid="agent-preview" data-placement={placement} data-depth={stack.length} aria-label={`${text.preview} · ${top.title}`} {...swipe}
-      {...(placement === 'screen' ? { style: { paddingBottom: layer.peekPoint } } : {})}
+      {...(placement === 'screen' ? { style: { bottom: layer.tabbar, paddingBottom: `calc(${layer.peekPoint} - ${layer.tabbar}px)` } } : {})}
       className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground [&_.file-tree-row-button]:pointer-coarse:min-h-(--control-min,2.75rem) [&_.file-tree-row-button]:max-md:min-h-(--control-min,2.75rem)', placement === 'screen' ? 'fixed inset-0 z-(--app-shell-z-peek)' : 'relative h-full flex-1')}>
       <div data-testid="agent-preview-body" className="relative min-h-0 flex-1">
         {stack.map((entry, index) => {

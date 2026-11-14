@@ -195,9 +195,10 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   // The popup is portalled to the body, outside the shell root: it is given the measured tab bar height and the z-values explicitly.
   // `bar` (AC-20): Ouvert on a phone is the half, and the tabs stay in view under it (the popup's part over them is clipped, as at peek).
   const keepTabs = layer.bar && snap === 'half';
+  const bottomInset = layer.bar && snap === 'full' ? 'var(--app-shell-safe-bottom, 0px)' : 'var(--app-shell-tabbar, 0px)';
   const keyboardPeek = layer.bar && peek && !recording && liveViewport !== null && window.innerHeight - liveViewport.height - liveViewport.top > 80;
   const style = { '--app-shell-trigger-clear': `${triggerClear}px`, '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-peek-height': layer.bar ? `calc(${PEEK_BAR_REM}rem + ${layer.cardPx}px)` : `${PEEK_REM}rem`, '--app-shell-z-layer': Z.layer,
-    paddingBottom: peek || layer.bar ? 'calc(var(--drawer-snap-point-offset, 0px) + var(--app-shell-tabbar, 0px))' : 'var(--drawer-snap-point-offset, 0px)',
+    paddingBottom: peek || layer.bar ? `calc(var(--drawer-snap-point-offset, 0px) + ${bottomInset})` : 'var(--drawer-snap-point-offset, 0px)',
     ...(pinnedBottom ? { bottom: pinnedBottom } : {}),
     // `bar`, folded, with the keyboard up (K-1): the field is not moved to a full screen; the folded sheet rests on the keyboard at its own height (the field and the card),
     // the page stays visible above it. The drawer's snap arithmetic does not know a keyboard at the peek, so it is set aside while the keyboard shows.
