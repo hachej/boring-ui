@@ -713,8 +713,30 @@ const launch = parseAgentLink('?agent=coach&input=voice');
 
 The app owns its manifest, shortcut icons, and install flow. Real iPhone and Android home-screen launches require consumer testing; the browser journey checks URL consumption, focus, Back, reload, and the idle microphone.
 
+### Which screen is on show (`useScreenActive`)
+
+The shell keeps every screen mounted and hides the ones not on show, so a screen cannot tell from its own mounting whether anyone sees it. `useScreenActive(): boolean`, exported by `app-shell/index.ts`, answers it: `true` in the screen on show, `false` in a screen the shell has hidden, `true` outside a shell (a screen rendered alone, in a test or a story). It follows the shell's own choice (`route.id`, or the first item when the route names none), so it is right on a deep link without a hash, where reading `location.hash` yourself is not. Use it to run a live read (a poll, a timer, a subscription) only on the screen on show:
+
+```tsx
+import { useScreenActive } from '@/components/app-shell';
+
+function Balance() {
+  const active = useScreenActive();
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(refresh, 5000);
+    refresh();
+    return () => clearInterval(timer);
+  }, [active]);
+  // ...
+}
+```
+
+`useScreenHeader`, `ListDetail` and `useAgentContext` already read it: a hidden screen registers no header or context. The context behind it is internal to the shell; only the hook is public.
+
 ### Changes
 
+- `useScreenActive()` is public (`app-shell/index.ts`). Nothing changes for an existing consumer.
 - `AppShell` gained the optional `locale` prop, and the account sheet's title is the generic « Compte » instead of the person's name. Hosts that relied on the name as the sheet title will see « Compte » there.
 
 ## Default kinds (`pi-app-kinds`)

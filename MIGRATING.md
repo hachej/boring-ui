@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`useScreenActive()`: is this screen the one on show (`app-shell`; additive).** The shell keeps every screen mounted, so a screen that polls could not tell whether anyone saw it, and reading `location.hash` was wrong when the address has none (the first screen is on show then). `useScreenActive(): boolean`, exported by `app-shell/index.ts`, is `true` in the screen on show, `false` in a hidden one and `true` outside a shell. Gate a poll, a timer or a subscription on it: `useEffect(() => { if (!active) return; /* start */ return () => { /* stop */ }; }, [active])`. Nothing changes for an existing consumer; the context behind it stays internal.
+
 # Migrating to 0.5.0
 
 - **A run that ended without an answer shows why (`chat-view`; additive; part of the move to pi-durable 1.5).** `derive` reads `pi.live.runFailure` (`model_error`, `no_model`, `faulted`, `restart_limit`, `interrupted`, `orphaned`; not `aborted` or `reset`) and, when no assistant error entry of that run is in the view, adds an assistant row with `stopReason: 'error'` and the recorded `detail` as its `errorMessage`, so `finishNotice` and the chat say the same words as for an error entry. Nothing to change in an app.
