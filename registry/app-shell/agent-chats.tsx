@@ -2,7 +2,7 @@
 
 // The chats and their header: one PiChat per spec in a persistent host element, the slot it moves into, the layer's title row with History and Library.
 import { createPortal } from 'react-dom';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { HTMLAttributes, ReactNode, Ref } from 'react';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, Maximize2Icon, Minimize2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
@@ -100,6 +100,8 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const barred = role === 'agent' && layer.bar;
   // The one composer's row (pill, chevron, attach, Dicter, edit last) wherever the field is: under the page, docked, or in the phone's drawer (AC-20).
   const oneRow = role === 'agent' && layer.bar;
+  const readStop = () => spec.controller.getSnapshot().stop;
+  const stop = useSyncExternalStore(spec.controller.subscribe, readStop, readStop);
   const { markRead } = barChat;
   const unfolded = barred && !layer.folded;
   useEffect(() => { if (unfolded) markRead(); }, [unfolded, markRead]);
@@ -116,9 +118,13 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const capturing = layer.voice.phase === 'starting' || layer.voice.phase === 'recording';
   const readOnly = oneRow ? spec.readOnly : undefined;
   const barProps = oneRow ? {
-    renderComposer: (props: ComposerProps) => <><BarTranscriptPosition />{readOnly
-      ? <InputGroup className="h-auto"><p data-testid="agent-read-only" className="m-0 flex min-h-[var(--control-h,2.75rem)] w-full min-w-0 items-center px-2 text-sm wrap-anywhere text-muted-foreground">{readOnly}</p></InputGroup>
-      : spec.chatProps?.renderComposer ? spec.chatProps.renderComposer(props) : <Composer {...props} />}</>,
+    renderComposer: (props: ComposerProps) => {
+      // Stop confirmation can arrive before the run view catches up, as it does for the folded card.
+      const composer = stop === 'confirmed' ? { ...props, working: false } : props;
+      return <><BarTranscriptPosition />{readOnly
+        ? <InputGroup className="h-auto"><p data-testid="agent-read-only" className="m-0 flex min-h-[var(--control-h,2.75rem)] w-full min-w-0 items-center px-2 text-sm wrap-anywhere text-muted-foreground">{readOnly}</p></InputGroup>
+        : spec.chatProps?.renderComposer ? spec.chatProps.renderComposer(composer) : <Composer {...composer} />}</>;
+    },
     composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerEditLast: true, composerStart: capturing ? <BarMicCancel mic={mic} /> : <ConversationChevron unread={barChat.historyBadge} />,
     // While the agent's question waits, the field says so; a typed message answers it (PiChat's own rule).
     labels: {
