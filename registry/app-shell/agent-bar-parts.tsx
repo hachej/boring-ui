@@ -173,9 +173,11 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
   const { markRead } = bar;
   useEffect(() => { if (stopped) markRead(); }, [stopped, markRead]);
   const labels = { ...composerLabels(layer.locale, layer.agent), ...layer.agent?.chatProps?.labels };
+  const stoppedHint = layer.agent?.chatProps?.labels?.emptyDescription ?? layer.agent?.words?.emptyDescription
+    ?? ((layer.locale ?? layer.agent?.chatProps?.locale) === 'fr' ? 'Envoyez un nouveau message pour continuer.' : 'Send a new message to continue.');
   const action = layer.agent?.replyAction;
   if (!question && status?.state !== 'working' && !reply && !stopped) return null;
-  const header = stopped ? <><SquareIcon className="size-4 shrink-0" aria-hidden="true" /><span data-testid="agent-card-status">{labels.subagentStatus('cancelled')}</span></> : question ? undefined : status?.state === 'working'
+  const header = stopped ? <><SquareIcon weight="fill" className="size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1 text-pretty wrap-anywhere"><span data-testid="agent-card-status">{labels.subagentStatus('cancelled')}</span>{' · '}{stoppedHint}</span></> : question ? undefined : status?.state === 'working'
     ? <><span className="text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{status.text}</span></>
     : reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-(--radius-3xl) bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
       <span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{[text.done, reply.used.join(', ')].filter(Boolean).join(' · ')}</span></> : undefined;
