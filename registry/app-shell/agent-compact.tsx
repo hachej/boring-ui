@@ -252,6 +252,8 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
       className={cn('app-shell box-border z-(--app-shell-z-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)_-_max(1.5rem,var(--app-shell-trigger-clear,0px)))]',
         // Base UI clears inline transitions after a swipe. Keep the bar's rule in CSS so the transform and its padding change together.
         layer.bar && 'transition-opacity duration-(--duration-fast) motion-reduce:transition-none',
+        // A nested History drawer must not scale or resize the sheet that anchors the one field.
+        layer.bar && '[--stack-step:0] [--peek:0px] [--stack-height:var(--drawer-content-height)]',
         // The peek is the top PEEK_REM of the popup; the part that overlaps the tab bar is clipped away, so the tabs stay visible and tappable.
         'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_var(--app-shell-peek-height))_0)]',
         'data-keep-tabs:not-data-swiping:[clip-path:inset(0_0_calc(var(--drawer-snap-point-offset,0px)_+_var(--app-shell-tabbar,0px))_0)]')}>
