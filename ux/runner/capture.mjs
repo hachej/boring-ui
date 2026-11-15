@@ -62,6 +62,8 @@ export async function step(h, s, def, ctx) {
   Object.assign(rec, { firstChangeMs: timing.first, settledMs: timing.settled, cls: timing.cls, repeats: h.repeats, target: h.target, focusAfter: after.focus, expectFocus: pick(def.focus, h.viewport) ?? null,
     moved: Object.fromEntries(watch.map(([name]) => [name, moved(before.watched[name], after.watched[name])])), scrollBefore: before.scroll, scrollAfter: after.scroll,
     offscreen: after.offscreen, overlaps: after.overlaps, truncated: after.truncated, horizontalScroll: after.horizontalScroll, keepScroll: def.keepScroll ?? null });
+  if (def.fixtureStream) { rec.fixtureStreamMs = rec.settledMs; rec.settledMs = rec.firstChangeMs; } // the fixture's scripted reply streams for seconds: settle is when it visibly starts
+  if (def.reflow) { rec.reflowShift = rec.cls; rec.cls = 0; } // a deliberate layout-mode change: the columns reflow by design, judged on settle time and what else moved
   if (h.probe) { rec.shiftSources = timing.sources; rec.shiftAfterInput = timing.afterInput; rec.shiftInPlaceIgnored = timing.inPlaceIgnored; }
   if (ctx.shot) rec.frame = await ctx.shot(`${rec.say}${rec.ok ? '' : def.gap ? ' (NOT IN THE KIT)' : ' (FAILED)'}`, timing.settled, `first change ${timing.first ?? '-'} ms · settled ${timing.settled ?? '-'} ms · layout shift ${timing.cls}`);
   ctx.before = after;
