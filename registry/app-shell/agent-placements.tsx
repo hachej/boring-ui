@@ -18,7 +18,7 @@ import { useBackLayer } from '../utils/back';
 import { DOCK_KEY, FOLDED_FIELD, LayerContext, MIN_MAIN, PM_COLUMN, TRAY_MAX, useInternal } from './layer-context';
 import type { DockSide } from './layer-context';
 import { OneBox, VoiceProblem } from './agent-bar-parts';
-import { ChatSlot, Header, HistoryButton, LibraryButton, useTitle } from './agent-chats';
+import { ChatSlot, Header, HeaderHint, HistoryButton, LibraryButton, useTitle } from './agent-chats';
 import { CompactSheet } from './agent-compact';
 import { PaneDock, PaneStack } from './agent-pane';
 
@@ -82,7 +82,7 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     layer.setMode('tray');
     requestAnimationFrame(() => layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true }));
   };
-  const controls = layer.bar ? <Button variant="ghost" size="icon" data-testid="agent-layer-undock" data-dock-control="" aria-label={text.undock} title={text.undock} onClick={undock}><PanelBottomIcon data-icon="inline-start" aria-hidden="true" /></Button> : <>
+  const controls = layer.bar ? <HeaderHint label={text.undock}><Button variant="ghost" size="icon" data-testid="agent-layer-undock" data-dock-control="" aria-label={text.undock} title={text.undock} onClick={undock}><PanelBottomIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint> : <>
     {!floating && control('float', text.float, PictureInPicture2Icon, () => api.float())}
     {(floating || side === 'right') && control('dock-left', text.dockLeft, PanelLeftIcon, () => { layer.setSide('left'); api.dock(); })}
     {(floating || side === 'left') && control('dock-right', text.dockRight, PanelRightIcon, () => { layer.setSide('right'); api.dock(); })}
@@ -198,11 +198,18 @@ function ContentTray() {
         <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{title}</h2>
         <HistoryButton />
         {layer.bar && <LibraryButton open={layer.openLibrary} text={text} testId="agent-layer-library" />}
-        <Button variant="ghost" size="icon" data-testid="agent-tray-dock" aria-label={dockLabel} title={dockLabel}
-          onClick={moveToDock}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button>
-        {(!boxed || !grown) && <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
-          onClick={() => setGrown(!grown)}>{boxed ? <Maximize2Icon className="size-4" aria-hidden="true" /> : grown ? <ChevronDownIcon className="size-4" aria-hidden="true" /> : <ChevronUpIcon className="size-4" aria-hidden="true" />}</Button>}
-        <Button variant="ghost" size="icon" data-testid="agent-tray-reduce" aria-label={boxed && grown ? text.collapse : text.close} title={boxed && grown ? text.collapse : text.close} onClick={() => { if (boxed && grown) setGrown(false); else reduce(); }}>{boxed && grown ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <XIcon className="size-4" aria-hidden="true" />}</Button>
+        <HeaderHint label={dockLabel}><Button variant="ghost" size="icon" data-testid="agent-tray-dock" aria-label={dockLabel} title={dockLabel}
+          onClick={moveToDock}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>
+        {boxed ? <>
+          <HeaderHint label={grown ? text.collapse : text.expand}><Button variant="ghost" size="icon" data-testid={grown ? 'agent-tray-reduce' : 'agent-tray-grow'} aria-label={grown ? text.collapse : text.expand} title={grown ? text.collapse : text.expand} aria-pressed={grown}
+            onClick={() => setGrown(!grown)}>{grown ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <Maximize2Icon className="size-4" aria-hidden="true" />}</Button></HeaderHint>
+          <Separator orientation="vertical" aria-hidden="true" className="mx-1 my-2" />
+          <Button variant="ghost" size="sm" data-testid={grown ? 'agent-tray-close' : 'agent-tray-reduce'} aria-label={text.close} title={text.close} onClick={reduce}><XIcon data-icon="inline-start" aria-hidden="true" />{text.close}</Button>
+        </> : <>
+          <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
+            onClick={() => setGrown(!grown)}>{grown ? <ChevronDownIcon className="size-4" aria-hidden="true" /> : <ChevronUpIcon className="size-4" aria-hidden="true" />}</Button>
+          <Button variant="ghost" size="icon" data-testid="agent-tray-reduce" aria-label={text.close} title={text.close} onClick={reduce}><XIcon className="size-4" aria-hidden="true" /></Button>
+        </>}
       </div>
       <VoiceProblem />
       <ChatSlot />

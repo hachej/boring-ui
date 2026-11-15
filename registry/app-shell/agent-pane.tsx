@@ -358,7 +358,7 @@ export function PaneStack({ placement, assistant }: { readonly placement: 'colum
       <div data-testid="agent-preview-body" className="relative min-h-0 flex-1">
         {stack.map((entry, index) => {
           const shown = index === stack.length - 1;
-          return <div key={entry.id} data-pane-entry={entry.kind} {...(shown ? { 'data-pane-top': '' } : { inert: true, 'aria-hidden': true })} className={cn('absolute inset-0 flex flex-col', !shown && 'invisible')}>
+          return <div key={entry.id} data-pane-entry={entry.kind} {...(shown ? { 'data-pane-top': '' } : { inert: true, 'aria-hidden': true })} className={cn('absolute inset-0 flex-col', shown ? 'flex' : 'hidden')}>
             <EntryView entry={entry} below={stack[index - 1]} top={shown} placement={placement} assistant={assistant} />
           </div>;
         })}

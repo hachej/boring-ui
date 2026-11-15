@@ -3,10 +3,12 @@
 // The chats and their header: one PiChat per spec in a persistent host element, the slot it moves into, the layer's title row with History and Library.
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { HTMLAttributes, ReactNode, Ref } from 'react';
+import type { HTMLAttributes, ReactElement, ReactNode, Ref } from 'react';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, Maximize2Icon, Minimize2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { InputGroup } from '@/components/ui/input-group';
+import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useMessageScroller } from '@/components/ui/message-scroller';
 import { PiChat } from '../pi-chat/pi-chat';
 import { Composer } from '../pi-chat/composer';
@@ -28,10 +30,16 @@ import { chatWordLabels, composerLabels, shellWords, useInternal } from './layer
 import type { AgentSpec, Snap, Which } from './layer-context';
 import { BarMicButton, BarMicCancel, BarMicStatus, ConversationChevron, FoldedCard, SendProblem, TalkButton, useBarMic } from './agent-bar-parts';
 
+/** The bar's icon controls expose the same words on hover and keyboard focus. */
+export function HeaderHint({ label, children }: { readonly label: string; readonly children: ReactElement }) {
+  const { bar } = useInternal();
+  return bar ? <Tooltip><TooltipTrigger render={children} /><TooltipContent>{label}</TooltipContent></Tooltip> : children;
+}
+
 /** The preview header's Library button, when the app gives one. */
 export function LibraryButton({ open, text, testId = 'agent-preview-library' }: { readonly open: (() => void) | undefined; readonly text: AppShellText; readonly testId?: string }) {
   if (!open) return null;
-  return <Button variant="ghost" size="icon" data-testid={testId} aria-label={text.library} title={text.library} onClick={open}><LibraryIcon data-icon="inline-start" aria-hidden="true" /></Button>;
+  return <HeaderHint label={text.library}><Button variant="ghost" size="icon" data-testid={testId} aria-label={text.library} title={text.library} onClick={open}><LibraryIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>;
 }
 
 /** « Historique » in the conversation's header, when the app gives `chatProps.conversations`: the same list PiChat's own header opens
@@ -46,8 +54,8 @@ export function HistoryButton() {
   const text = { ...chatTextFor(layer.locale ?? chat?.locale), labels: composerLabels(layer.locale, layer.agent) };
   const close = () => { setOpen(false); requestAnimationFrame(() => button.current?.focus({ preventScroll: true })); };
   return <>
-    <Button ref={button} variant="ghost" size="icon" data-testid="history-open" aria-label={text.labels.history} title={text.labels.history} aria-haspopup="dialog" aria-expanded={open}
-      onClick={() => setOpen(now => !now)}><HistoryIcon data-icon="inline-start" aria-hidden="true" /></Button>
+    <HeaderHint label={text.labels.history}><Button ref={button} variant="ghost" size="icon" data-testid="history-open" aria-label={text.labels.history} title={text.labels.history} aria-haspopup="dialog" aria-expanded={open}
+      onClick={() => setOpen(now => !now)}><HistoryIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>
     {open && <ChatTextProvider value={text}><ConversationHistory conversations={conversations} onClose={close} /></ChatTextProvider>}
   </>;
 }
@@ -191,10 +199,11 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
     <HistoryButton />
     <LibraryButton open={library} text={text} testId="agent-layer-library" />
     {actions.length > 0 && <HeaderActions actions={actions} compact={compactSnap !== undefined} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
-    {compactSnap === 'half' && <Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}>{layer.bar ? <Maximize2Icon className="size-4" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>}
-    {compactSnap === 'full' && <Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}>{layer.bar ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <ChevronDownIcon data-icon="inline-start" aria-hidden="true" />}</Button>}
+    {compactSnap === 'half' && <HeaderHint label={text.expand}><Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}>{layer.bar ? <Maximize2Icon className="size-4" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button></HeaderHint>}
+    {compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}>{layer.bar ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <ChevronDownIcon data-icon="inline-start" aria-hidden="true" />}</Button></HeaderHint>}
     {controls}
-    <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
+    {layer.bar && <Separator orientation="vertical" aria-hidden="true" className="mx-1 my-2" />}
+    <Button variant="ghost" size={layer.bar ? 'sm' : 'icon'} ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" />{layer.bar && text.close}</Button>
   </div>;
 }
 
