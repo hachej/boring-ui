@@ -17,10 +17,10 @@ export const launch = () => playwright().chromium.launch({ executablePath: proce
 const queryFor = (s, vp, extra, fast) => ['demo=1', s.fixture.query, pick(s.fixture.queryBy, vp.name), extra, `pace=${fast ? 'instant' : 'real'}`].filter(Boolean).join('&');
 
 // A page, with the probes, errors collected, and the helpers a gesture needs.
-export async function open(browser, s, vp, extra, { fast, video }) {
+export async function open(browser, s, vp, extra, { fast, video, probe }) {
   const ctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: vp.touch ? 2 : 1, isMobile: !!vp.touch, hasTouch: !!vp.touch, locale: 'en-US', ...(video ? { recordVideo: { dir: video, size: { width: vp.width, height: vp.height } } } : {}) });
   const page = await ctx.newPage(); page.setDefaultTimeout(5000);
-  const h = { ctx, page, viewport: vp.name, touch: !!vp.touch, errors: new Set(), failed: new Set(), target: null };
+  const h = { ctx, page, probe: !!probe, viewport: vp.name, touch: !!vp.touch, errors: new Set(), failed: new Set(), target: null };
   page.on('console', m => { if (m.type() === 'error') h.errors.add(m.text().slice(0, 160)); }); page.on('pageerror', e => h.errors.add(String(e).slice(0, 160)));
   page.on('requestfailed', r => { if (r.failure()?.errorText !== 'net::ERR_ABORTED') h.failed.add(r.url().slice(0, 120)); }); // a load the page cancelled (a viewer closed mid-load) is not a failure page.on('response', r => { if (r.status() >= 400) h.failed.add(`${r.status()} ${r.url().slice(0, 100)}`); });
   await page.addInitScript(INIT);
@@ -62,6 +62,7 @@ export async function step(h, s, def, ctx) {
   Object.assign(rec, { firstChangeMs: timing.first, settledMs: timing.settled, cls: timing.cls, repeats: h.repeats, target: h.target, focusAfter: after.focus, expectFocus: pick(def.focus, h.viewport) ?? null,
     moved: Object.fromEntries(watch.map(([name]) => [name, moved(before.watched[name], after.watched[name])])), scrollBefore: before.scroll, scrollAfter: after.scroll,
     offscreen: after.offscreen, overlaps: after.overlaps, truncated: after.truncated, horizontalScroll: after.horizontalScroll, keepScroll: def.keepScroll ?? null });
+  if (h.probe) rec.shiftSources = timing.sources;
   if (ctx.shot) rec.frame = await ctx.shot(`${rec.say}${rec.ok ? '' : def.gap ? ' (NOT IN THE KIT)' : ' (FAILED)'}`, timing.settled, `first change ${timing.first ?? '-'} ms · settled ${timing.settled ?? '-'} ms · layout shift ${timing.cls}`);
   ctx.before = after;
   return rec;
@@ -100,15 +101,15 @@ async function runFlow(browser, s, f, vp, out, opts, result) {
 }
 
 // capture(scenario, outRoot, { fast, only: { flows: [ids], states: [ids] }, browser })
-export async function capture(s, outRoot, { fast = false, onlyFlows, onlyStates, browser: given } = {}) {
+export async function capture(s, outRoot, { fast = false, onlyFlows, onlyStates, onlyViewport, probe = false, browser: given } = {}) {
   const out = join(outRoot, slug(s.target));
   const browser = given ?? await launch();
   s.page = await buildPage(s.fixture.entry, join(outRoot, '_pages', `${slug(s.target)}.html`), { css: s.fixture.css, title: s.title });
   if (!onlyFlows && !onlyStates) rmSync(out, { recursive: true, force: true });
   for (const sub of ['states', 'flows', 'videos']) mkdirSync(join(out, sub), { recursive: true });
   const result = { target: s.target, title: s.title, states: [], stateFailures: [], flows: [], errors: [], fast };
-  const opts = { fast };
-  await Promise.all(s.viewports.map(async vp => {
+  const opts = { fast, probe };
+  await Promise.all(s.viewports.filter(vp => !onlyViewport || vp.name === onlyViewport).map(async vp => {
     if (!onlyFlows) await runStates(browser, s, vp, out, opts, result);
     for (const f of s.flows) { if (onlyStates || (onlyFlows && !onlyFlows.includes(f.id)) || (f.only && String(f.only) !== vp.name)) continue; await runFlow(browser, s, f, vp, out, opts, result); }
   }));

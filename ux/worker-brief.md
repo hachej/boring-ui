@@ -32,6 +32,7 @@ You cannot run a browser, you cannot start the contract tests (they need one), a
 - What got worse since the round before (regressions, fix these first): {{WORSE}}
 - Scoreboard so far: `{{HOME}}/scoreboard.md`.
 {{FOCUS}}
+{{TRACE}}
 {{FEEDBACK}}
 
 ## Method
@@ -39,7 +40,8 @@ You cannot run a browser, you cannot start the contract tests (they need one), a
 2. For the target criterion only, fix the most damaging problem(s) listed (regressions first), keeping to the cap above; do not repeat what was already tried. Prefer the smallest root change (a shared spacing token or class) over per-state patches. Think about every viewport and both themes.
 3. You see the result of this round only next round, so make this pass complete and careful: reason from the pictures and numbers you have, and from the code, about every viewport and both themes.
 4. Re-read your edits against the tests that will run (the contract tests assert the behaviour; read them for what your edit could break).
-5. Write `{{ROUND_DIR}}/changes.md`: per problem: the problem (criterion, where), what you changed (file) and why, whether your own capture shows it fixed. Then "Not fixed" and "Gaps". Keep it short.
+5. Measurement: you cannot start a browser (its sandbox forbids it), so the loop measures for you. The trace above, when present, is the harness on the steps most over their layout-shift threshold, with the elements that moved and their rectangles before and after. Take the cause from that trace, not from reading code alone. If your change aims at specific steps, put one line `Measure: F14@390#4` (flow@viewport#step, comma separated) in changes.md. After your pass the loop measures those steps again; if their layout shift has not fallen it comes back to you with the new trace to repair. Name only steps your change is meant to move.
+6. Write `{{ROUND_DIR}}/changes.md`: per problem: the problem (criterion, where), what you changed (file) and why, whether your own capture shows it fixed. Then "Not fixed" and "Gaps". Keep it short.
 
 ## Design guidance (read the files; they are the full text)
 The worker does not load skills by itself, so the relevant ones are plain markdown in `{{SKILLS}}/`. They guide a polish job on layout and states; ignore parts about animation-heavy work, branding or process that do not apply; never let them override the hard constraints. Read in this order:

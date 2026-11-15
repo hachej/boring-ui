@@ -4,7 +4,9 @@ export const INIT = `(() => { const m = window.__m = { t0: 0, first: null, last:
   const start = () => { if (!m.t0) m.t0 = performance.now(); };
   for (const t of ['pointerdown', 'keydown', 'click', 'dragenter', 'drop']) addEventListener(t, start, true);
   addEventListener('DOMContentLoaded', () => new MutationObserver(() => { const n = performance.now(); if (m.t0) { if (m.first === null) m.first = n; m.last = n; } }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true }));
-  try { new PerformanceObserver(l => { for (const e of l.getEntries()) window.__shifts.push({ v: e.value, t: e.startTime }); }).observe({ type: 'layout-shift', buffered: true }); } catch {}
+  try { new PerformanceObserver(l => { for (const e of l.getEntries()) { const row = { v: e.value, t: e.startTime, src: [] }; window.__shifts.push(row);
+    try { const r = q => ({ x: Math.round(q.x), y: Math.round(q.y), w: Math.round(q.width), h: Math.round(q.height) });
+      for (const x of e.sources || []) { const n = x.node, el = n && n.nodeType === 1 ? n : n && n.parentElement, id = el ? el.tagName.toLowerCase() + (el.dataset?.testid ? '[' + el.dataset.testid + ']' : el.getAttribute('aria-label') ? '[' + el.getAttribute('aria-label') + ']' : '') + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\\s+/).slice(0, 3).join('.') : '') : '(removed)'; row.src.push({ el: id, from: r(x.previousRect), to: r(x.currentRect) }); } } catch {} } }).observe({ type: 'layout-shift', buffered: true }); } catch {}
   window.__begin = prog => { m.t0 = prog ? performance.now() : 0; m.first = null; m.last = 0; window.__mark = window.__shifts.length; };
   if (location.search.includes('kb=1')) { const real = window.visualViewport; const fake = new EventTarget(); let inset = 0;
     for (const key of ['width', 'offsetLeft', 'pageLeft', 'pageTop']) Object.defineProperty(fake, key, { get: () => real[key] });
@@ -44,5 +46,5 @@ export const snap = watch => `((watch) => {
 
 // TIMING: from the gesture to the first DOM change and to the last one; layout shift summed since the gesture.
 export const TIMING = `(() => { const m = window.__m, t0 = m.t0 || 0; const shifts = window.__shifts.slice(window.__mark ?? 0).filter(s => s.t >= t0 - 1);
-  return { first: m.first === null || !t0 ? null : Math.round(m.first - t0), settled: m.last && t0 ? Math.round(m.last - t0) : null, cls: Math.round(shifts.reduce((n, s) => n + s.v, 0) * 1000) / 1000 }; })()`;
+  return { first: m.first === null || !t0 ? null : Math.round(m.first - t0), settled: m.last && t0 ? Math.round(m.last - t0) : null, cls: Math.round(shifts.reduce((n, s) => n + s.v, 0) * 1000) / 1000, sources: shifts.flatMap(s => s.src ?? []) }; })()`;
 export const QUIET = `performance.now() - (window.__m.last || 0) > 150 && document.getAnimations().filter(a => a.playState === 'running' && a.effect?.getTiming().iterations !== Infinity).length === 0`;
