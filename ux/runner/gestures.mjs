@@ -35,7 +35,20 @@ export async function prepare(h, step) {
   const { page, viewport } = h, touch = h.touch;
   const t = pick(step.target, viewport);
   const loc = () => step.text ? page.getByText(pick(step.text, viewport), { exact: false }).first() : step.choice ? page.locator('[data-choice]', { hasText: pick(step.choice, viewport) }).first() : page.locator(css(t)).first();
-  const ready = async () => { const l = loc(); await l.waitFor({ timeout: step.wait ?? 4000 }); const b = await l.boundingBox(); h.target = b ? { w: Math.round(b.width), h: Math.round(b.height) } : null; return [l, b]; };
+  // What a finger reaches: the box, or more when the control's touch area is a pseudo-element (Button size="inline"), found by walking from the centre
+  // along each axis while the point still hits the control. Null (the box alone counts) when the centre is covered.
+  const reach = l => l.evaluate(el => {
+    let r = el.getBoundingClientRect();
+    if (r.y < 0 || r.bottom > innerHeight) { el.scrollIntoView({ block: 'nearest' }); r = el.getBoundingClientRect(); }
+    const x = r.x + r.width / 2, y = r.y + r.height / 2, mine = (px, py) => { const hit = document.elementFromPoint(px, py); return !!hit && el.contains(hit); };
+    if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight || !mine(x, y)) return null;
+    const run = (dx, dy) => { let n = 0; while (n < 60 && mine(x + dx * (n + 1), y + dy * (n + 1))) n++; return n; };
+    return { w: run(-1, 0) + run(1, 0) + 1, h: run(0, -1) + run(0, 1) + 1 };
+  });
+  const ready = async () => {
+    const l = loc(); await l.waitFor({ timeout: step.wait ?? 4000 }); const b = await l.boundingBox(); const a = b && touch ? await reach(l) : null;
+    h.target = b ? { w: Math.round(Math.max(b.width, a?.w ?? 0)), h: Math.round(Math.max(b.height, a?.h ?? 0)) } : null; return [l, b];
+  };
   switch (step.do) {
     case 'tap': case 'click': { const [l] = await ready(); return () => touch ? l.tap() : l.click(); }
     case 'type': { if (t) await page.locator(css(t)).first().focus(); const text = pick(step.text, viewport); return () => page.keyboard.insertText(text); }

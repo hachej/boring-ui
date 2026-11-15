@@ -62,7 +62,7 @@ Phosphor (`@phosphor-icons/react`), never Lucide.
 | Toasts above the chat composer | Automatic (pi-chat sets it); `--toast-offset-bottom` in the theme overrides | `toast-offset` (D-1801) |
 | Screen margin | Automatic: `--screen-gutter` (1rem, 0.75rem compact) is the one left edge the header title and `ScreenBody` share. Never pad a screen root yourself (`p-4`, `px-3`) | `shell-screen-gutter` (D-2030) |
 | Control height | Automatic: `--control-h` is 44px on touch, 36px with a fine pointer. Never set a height on a control | `control-height` (D-1741), `touch-floor` (D-1770) |
-| A link-style action in a row | `Button size="inline"` (text height, 44px touch area; inside a table cell it underlines only on hover and focus) | `pattern-button-inline` (D-1767, D-1814) |
+| A link-style action in a row | `Button size="inline"` (text height, 44px touch area; inside a table cell it underlines only on hover and focus) | `pattern-button-inline` (D-1767, D-1814), `pattern-button-inline-reach` (a row of them that wraps declares `--inline-gap-x` and `--inline-gap-y`) |
 | Underline tabs | `TabsList variant="line"` | shadcn stock |
 | Pasted code or raw data | `Textarea variant="code"` | `pkg-ui-textarea-code` (D-1782) |
 

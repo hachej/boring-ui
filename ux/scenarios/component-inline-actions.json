@@ -1,0 +1,40 @@
+{
+ "target": "component:inline-actions",
+ "title": "Inline link actions",
+ "summary": "A link-style action at text height, in a row that wraps, a table cell and a sentence, with a touch area that never overlaps its neighbours.",
+ "try": [{"label": "Tap an action in a wrapped row", "flow": "F01"}, {"label": "Tap an action in a table row", "flow": "F02"}],
+ "purpose": "Button size=\"inline\" (the bundled primitive): a link label at text height whose 44 px touch area is a pseudo-element. It reaches into the room the layout leaves and no further, so in a row that wraps onto two lines a tap always lands on the button that shows under the finger. Four French actions of different lengths wrap in a narrow row that declares its gaps (--inline-gap-x, --inline-gap-y, set next to the row's own gap); the same row with nothing declared; one inline button per table cell; one in a sentence. Scripted, no model.",
+ "fixture": {
+  "entry": "ux/fixtures/component-inline-actions.jsx",
+  "query": "",
+  "ready": "[data-testid=room-voir]",
+  "install": "npx shadcn@4.23.0 add button",
+  "usage": "<div className=\"flex flex-wrap gap-x-[var(--inline-gap-x)] gap-y-[var(--inline-gap-y)] [--inline-gap-x:1.25rem] [--inline-gap-y:1.5rem]\"><Button size=\"inline\" onClick={voir}>Voir</Button><Button size=\"inline\" onClick={modifier}>Modifier la facture</Button></div>"
+ },
+ "viewports": [
+  { "name": "390", "width": 390, "height": 844, "touch": true },
+  { "name": "1280", "width": 1280, "height": 800 }
+ ],
+ "watch": [["fired", "[data-testid=fired]"], ["row", "[data-case=row-room]"]],
+ "thresholds": { "cls": 0.02, "settledMs": 600, "touchTarget": 44, "truncated": 0 },
+ "notes": "On a phone each inline button's tap area is 44 px high and at least 44 wide where the layout leaves room, and no two areas share a pixel: the last action of the first line and the first action of the second line each handle their own tap. A row that declares nothing gets no extension beyond its text line (it never overlaps, it just has no 44 px floor); the fix for that is to give the row its gap, not to size the button. An isolated button (a table cell, a sentence) keeps the full 44 px.",
+ "states": [
+  { "id": "01", "name": "rest", "steps": [] },
+  { "id": "02", "name": "dark", "query": "dark=1", "steps": [] },
+  { "id": "03", "name": "tapped", "steps": [{ "do": "tap", "target": "room-modifier", "until": "text:[data-testid=fired]~room-modifier" }] }
+ ],
+ "flows": [
+  { "id": "F01", "name": "Tap an action in a wrapped row", "steps": [
+   { "do": "tap", "target": "room-modifier", "say": "Tap “Modifier la facture”, the last action of the first line", "until": "eval:window.__ux.fired() === 'room-modifier'", "expect": "That action handles the tap, not the one below it." },
+   { "do": "tap", "target": "room-relancer", "say": "Tap “Relancer le client”, the first action of the second line", "until": "eval:window.__ux.fired() === 'room-relancer' && window.__ux.count() === 2", "expect": "That action handles the tap, not the one above it." },
+   { "do": "tap", "target": "room-archiver", "say": "Tap “Archiver”, the last action", "until": "eval:window.__ux.fired() === 'room-archiver' && window.__ux.count() === 3", "expect": "Only “Archiver” handles it." }
+  ] },
+  { "id": "F02", "name": "Tap an action in a table row", "steps": [
+   { "do": "tap", "target": "cell1-voir", "say": "Tap “Voir” on the first row", "until": "eval:window.__ux.fired() === 'cell1-voir'", "expect": "The first row's action handles the tap." },
+   { "do": "tap", "target": "cell2-voir", "say": "Tap “Voir” on the second row", "until": "eval:window.__ux.fired() === 'cell2-voir' && window.__ux.count() === 2", "expect": "The second row's action handles it, not the first." }
+  ] },
+  { "id": "F03", "name": "Tap a link in a sentence", "steps": [
+   { "do": "tap", "target": "isolated-compte", "say": "Tap “compte 706” in the sentence", "until": "eval:window.__ux.fired() === 'isolated-compte'", "expect": "The link handles the tap." }
+  ] }
+ ]
+}
