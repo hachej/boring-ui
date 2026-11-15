@@ -2469,6 +2469,16 @@
           ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"input-group\"] [data-slot=\"button\"]": {
             "border-radius": "var(--radius-3xl)"
           },
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"composer\"] :is([data-testid=\"agent-talk\"], [data-testid=\"agent-talk-stop\"], [data-testid=\"composer-submit\"]):not(:disabled)": {
+            "background-color": "var(--info)",
+            "border-color": "var(--info)",
+            "color": "var(--primary-foreground)"
+          },
+          "@media (hover: hover) and (pointer: fine)": {
+            ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"composer\"] :is([data-testid=\"agent-talk\"], [data-testid=\"agent-talk-stop\"], [data-testid=\"composer-submit\"]):not(:disabled):hover": {
+              "background-color": "color-mix(in oklab, var(--info) 90%, var(--foreground))"
+            }
+          },
           ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"input-group\"]": {
             "align-items": "flex-end",
             "padding": "0.5rem",
