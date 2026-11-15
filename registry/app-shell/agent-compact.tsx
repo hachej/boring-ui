@@ -195,8 +195,11 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   // The popup is portalled to the body, outside the shell root: it is given the measured tab bar height and the z-values explicitly.
   // `bar` (AC-20): Ouvert on a phone is the half, and the tabs stay in view under it (the popup's part over them is clipped, as at peek).
   const keepTabs = layer.bar && snap === 'half';
-  const bottomInset = layer.bar && snap === 'full' ? 'var(--app-shell-safe-bottom, 0px)' : 'var(--app-shell-tabbar, 0px)';
-  const keyboardPeek = layer.bar && peek && !recording && liveViewport !== null && window.innerHeight - liveViewport.height - liveViewport.top > 80;
+  const keyboardOpen = liveViewport !== null && window.innerHeight - liveViewport.height - liveViewport.top > 80;
+  // Full covers the tabs, but keeps their space below the field so expanding only grows the transcript upward.
+  const fullInset = keyboardOpen ? 'var(--app-shell-safe-bottom, 0px)' : 'max(var(--app-shell-tabbar, 0px), var(--app-shell-safe-bottom, 0px))';
+  const bottomInset = layer.bar && snap === 'full' ? fullInset : 'var(--app-shell-tabbar, 0px)';
+  const keyboardPeek = layer.bar && peek && !recording && keyboardOpen;
   const style = { '--app-shell-trigger-clear': `${triggerClear}px`, '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-peek-height': layer.bar ? `calc(${PEEK_BAR_REM}rem + ${layer.cardPx}px)` : `${PEEK_REM}rem`, '--app-shell-z-layer': Z.layer,
     paddingBottom: peek || layer.bar ? `calc(var(--drawer-snap-point-offset, 0px) + ${bottomInset})` : 'var(--drawer-snap-point-offset, 0px)',
     ...(pinnedBottom ? { bottom: pinnedBottom } : {}),
