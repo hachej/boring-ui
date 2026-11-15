@@ -2417,6 +2417,9 @@
           ".app-shell [data-one-composer] [data-testid=\"composer-dock\"]": {
             "padding": "0"
           },
+          ".app-shell [data-one-composer][data-folded] [data-slot=\"composer-notices\"]:not(:has(> :not([data-testid=\"preparing\"], [data-testid=\"agent-status\"], [data-testid=\"send-blocked\"], [data-testid=\"send-unknown\"])))": {
+            "display": "none"
+          },
           ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"composer-input\"]:placeholder-shown": {
             "white-space": "nowrap",
             "overflow": "hidden",
