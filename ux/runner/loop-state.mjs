@@ -44,6 +44,13 @@ export const triedText = (all, focus) => {
   const mine = all.filter(t => t.criterion === focus).slice(-12);
   return mine.length ? mine.map(t => `- round ${t.round} (${t.result}): ${t.note}`).join('\n') : 'nothing yet on this criterion';
 };
+// The judge's per-problem answers about the previous accepted round: how many problems are fixed, partly fixed, how many new ones it sees, and how many are still open.
+export function fineSignal(v, prevGrades, keys) {
+  const answers = Object.values(v?.previous ?? {}).map(a => String(a).toLowerCase().trim()), fixed = answers.filter(a => a === 'fixed').length, partly = answers.filter(a => a === 'partly').length, fresh = (v?.new_problems ?? []).length;
+  const dropped = keys.some(k => typeof v?.grades?.[k] === 'number' && v.grades[k] < (prevGrades?.[k] ?? 0));
+  return { fixed, partly, fresh, open: answers.length - fixed + fresh, accept: fixed >= 1 && fresh === 0 && !dropped };
+}
+export const fineText = f => f ? ` [fixed ${f.fixed}, partly ${f.partly}, new ${f.fresh}]` : '';
 // `Spec: 3, 5` in a round's changes.md: the items of the target's spec.md (when its state folder has one) the round says it addressed.
 export const specItems = md => { const line = String(md ?? '').split('\n').find(l => /^\W*spec\b[^:\n]*:/i.test(l)) ?? ''; return [...new Set([...line.slice(line.indexOf(':') + 1).matchAll(/\d+/g)].map(m => m[0]))]; };
 // What the brief says about a spec the person wrote for this target.

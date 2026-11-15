@@ -6,10 +6,14 @@ import { join } from 'node:path';
 import { root } from './build.mjs';
 
 export const KEYS = ['clarity', 'layout', 'states', 'phone', 'polish', 'flows'];
+// The problems the last accepted round listed, one id each (criterion.n), so the judge can say for every one whether it is fixed.
+export const problemIds = v => Object.entries(v?.problems ?? {}).flatMap(([k, xs]) => (xs ?? []).map((x, i) => ({ id: `${k}.${i + 1}`, text: `${x.problem} (where: ${x.where}; fixed looks like: ${x.fixed_looks_like})` })));
 export function judge({ folder, scenario, round = 0, prev, model = 'opus', evidence = '' }) {
+  let before = []; try { before = problemIds(JSON.parse(readFileSync(join(prev, 'verdict.json'), 'utf8'))); } catch { /* baseline, or no verdict */ }
   const template = readFileSync(join(root, 'ux/judge-prompt.md'), 'utf8');
   const prompt = `${template.replaceAll('{{TARGET}}', scenario.target)}\n\n## Paths for this run\n- CRITERIA: ${join(root, 'ux/CRITERIA.md')}\n- TARGET: ${scenario.target} (${scenario.title}): ${scenario.purpose}\n- Target-specific notes: ${scenario.notes ?? 'none'}\n- Round number: ${round}\n- FOLDER: ${folder}\n  (states in ${folder}/states, flows in ${folder}/flows/<id>/strip-<viewport>.png with ${folder}/flows/<id>/<viewport>/metrics.json, summary in ${folder}/result.json)\n`
     + (prev ? `- Previous round FOLDER: ${prev} (its verdict.json is there)\n` : '- Previous round: none (this is the baseline).\n')
+    + (before.length ? `\n## Problems listed by the previous accepted round (answer each in "previous")\n${before.map(p => `- ${p.id}: ${p.text}`).join('\n')}\n` : '')
     + (evidence ? `\n## Evidence from the loop's own measurements\nThe loop does not veto a round on these numbers; you weigh them inside the criterion they belong to (layout shift and settling under layout and states, touch targets under phone, steps that do not complete under flows). The numbers are noisy under machine load: trust a pattern across steps over one value.\n${evidence}\n` : '');
   for (const attempt of [1, 2]) {
     const out = spawnSync('claude', ['-p', '--model', model, '--tools', 'Read,Glob', '--permission-mode', 'dontAsk', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence', '--add-dir', folder, '--add-dir', join(root, 'ux'), ...(prev ? ['--add-dir', prev] : [])],
