@@ -2569,6 +2569,22 @@
           ".app-shell[data-bar-sheet] [data-testid=\"transcript-scroll\"] > div:has(> [data-testid=\"transcript\"])": {
             "justify-content": "flex-start"
           }
+        },
+        "@media (width < 768px), (pointer: coarse)": {
+          ".app-shell [data-pane-entry=\"library\"] [data-boring=\"file-tree\"][data-variant=\"list\"] .file-tree-copy": {
+            "display": "grid",
+            "grid-template-columns": "minmax(0, 1fr)"
+          },
+          ".app-shell [data-pane-entry=\"library\"] [data-boring=\"file-tree\"][data-variant=\"list\"] .file-tree-name:has(+ [data-file-meta])": {
+            "grid-area": "1 / 1",
+            "align-items": "flex-start",
+            "padding-block-end": "1lh"
+          },
+          ".app-shell [data-pane-entry=\"library\"] [data-boring=\"file-tree\"][data-variant=\"list\"] .file-tree-copy > [data-file-meta]": {
+            "grid-area": "1 / 1",
+            "align-self": "end",
+            "pointer-events": "none"
+          }
         }
       },
       "files": [
