@@ -226,7 +226,13 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
   const header = stopped ? <><SquareIcon weight="fill" className="size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1 text-pretty wrap-anywhere"><span data-testid="agent-card-status">{labels.subagentStatus('cancelled')}</span>{' · '}{stoppedHint}</span></> : question ? undefined : status?.state === 'working'
     ? <><span className="text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 whitespace-normal wrap-anywhere md:truncate">{status.text}</span></>
     : reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-(--radius-3xl) bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
-      <span data-testid="agent-card-status" className="min-w-0 flex-1 whitespace-normal wrap-anywhere md:truncate">{[text.done, reply.used.join(', ')].filter(Boolean).join(' · ')}</span></> : undefined;
+      <span data-testid="agent-card-status" className="min-w-0 flex-1 whitespace-normal wrap-anywhere md:truncate">{text.done}{text.done && reply.used.length > 0 ? ' · ' : ''}{reply.used.map((name, index) => {
+        const extension = name.lastIndexOf('.');
+        const split = extension > 0 ? Math.max(1, extension - 3) : name.length;
+        return <span key={name}>{index > 0 ? ', ' : ''}<span title={name} className="inline-flex max-w-full align-bottom whitespace-nowrap">
+          <span className="min-w-0 truncate">{name.slice(0, split)}</span><span className="shrink-0">{name.slice(split)}</span>
+        </span></span>;
+      })}</span></> : undefined;
   return <>
     <section data-testid="agent-card" data-state={stopped ? 'stopped' : question ? 'question' : status?.state === 'working' ? 'working' : 'reply'} aria-label={text.assistant}
       className="flex flex-col gap-2 px-3 pt-2.5 pb-3 text-sm text-card-foreground md:data-[state=working]:pb-2">
