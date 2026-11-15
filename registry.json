@@ -2538,6 +2538,26 @@
             ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"composer\"] [role=\"listitem\"]": {
               "min-height": "var(--control-min, 2.75rem)"
             }
+          },
+          ".app-shell[data-bar-sheet] [data-testid=\"composer-dock\"]": {
+            "transform": "translateY(calc(0px - var(--app-shell-sheet-offset)))"
+          },
+          ".app-shell[data-bar-sheet] [data-testid=\"agent-card-slot\"]": {
+            "position": "absolute",
+            "inset-inline": "0",
+            "bottom": "var(--app-shell-field-height, 0px)",
+            "transform": "translateY(calc(0px - var(--app-shell-sheet-offset)))",
+            "z-index": "1"
+          },
+          ".app-shell[data-bar-sheet][data-peek=\"true\"] [data-boring=\"pi-chat\"]": {
+            "justify-content": "flex-end"
+          },
+          ".app-shell[data-bar-sheet] [data-testid=\"conversation-content\"] > *": {
+            "height": "calc(100% - var(--app-shell-sheet-offset) - var(--app-shell-sheet-header-height, 0px))",
+            "transform": "translateY(var(--app-shell-sheet-header-height, 0px))"
+          },
+          ".app-shell[data-bar-sheet] [data-testid=\"transcript-scroll\"] > div:has(> [data-testid=\"transcript\"])": {
+            "justify-content": "flex-start"
           }
         }
       },
