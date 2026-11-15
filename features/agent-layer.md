@@ -32,6 +32,7 @@ The agent the shell mounts once: a bottom drawer on a phone, a right panel on a 
 - `layer-bar-recovery` With `composer="bar"`, the phone peek measures the reply card, the full footer and the handle together. Attachments and up to six text lines grow upward above the tabs. The page reserves that visible stack. Drawer geometry changes together, without interpolating the field through page rows. An expanded desktop tray reduces to its smaller size before folding; Escape from the chevron folds and focuses the field. Folding saves transcript scroll for reopening. Pane close returns focus to the field; back within a pane keeps the previous entry's opener. A native confirmed stop shows the existing translated cancelled label and suppresses the previous reply. `registry/app-shell/agent-compact.tsx`, `agent-layer.tsx`, `agent-placements.tsx`, `agent-pane.tsx`, `agent-bar-parts.tsx`.
 - `layer-bar-question-hierarchy` The folded question's choices use the kit's primary Button variant, with equal weight for every answer. The one composer's run Stop uses the outline variant (`Composer barActions="attach"`), keeping cancellation secondary to answering. Send and dictation retain their primary variant. `registry/app-shell/agent-bar-parts.tsx`, `registry/pi-chat/composer.tsx`.
 - `layer-bar-reading-position` With `composer="bar"`, reopening preserves an earlier transcript offset. Restoration uses MessageScroller navigation once the viewport is measurable, so its bottom-following cannot overwrite the saved reading position. A person who left the thread at the latest reply continues following it. The first opening still shows the latest reply. `registry/app-shell/agent-chats.tsx` (`BarTranscriptPosition`).
+- `layer-bar-read-only-frame` With `composer="bar"`, the read-only reason uses the same InputGroup as the editable field. The phone keeps its rounded frame and the row follows the control-height token, with room for wrapped reasons and no focusable controls. Desktop keeps the single outer frame. `registry/app-shell/agent-chats.tsx`.
 
 ## How to get to it (user POV)
 
@@ -42,6 +43,7 @@ The agent the shell mounts once: a bottom drawer on a phone, a right panel on a 
 
 Preconditions: as `app-shell.md`.
 
+- `layer-bar-read-only-frame`: open the one-composer fixture with `?readonly=1` at 390 and 1440 in both themes. Compare the frame's position and height with rest. Tab through to confirm the reason takes no focus.
 - **Drawer.** `layer-drawer`: at 390px open the trigger, step peek, half, full, press Escape (back to peek), tap the trigger at half and at full (closed). `npm run app-shell:journey`.
 - **Dock.** `layer-dock`: at desktop width open the layer, float it, dock it left, reload; the side is remembered.
 - **Context.** `layer-context`: switch screens and read the `context` of the next submit in the request.

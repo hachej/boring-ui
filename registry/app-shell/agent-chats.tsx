@@ -6,6 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { HTMLAttributes, ReactNode, Ref } from 'react';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, Maximize2Icon, Minimize2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
+import { InputGroup } from '@/components/ui/input-group';
 import { useMessageScroller } from '@/components/ui/message-scroller';
 import { PiChat } from '../pi-chat/pi-chat';
 import { Composer } from '../pi-chat/composer';
@@ -116,7 +117,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const readOnly = oneRow ? spec.readOnly : undefined;
   const barProps = oneRow ? {
     renderComposer: (props: ComposerProps) => <><BarTranscriptPosition />{readOnly
-      ? <p data-testid="agent-read-only" className="m-0 flex min-h-14 items-center px-4 text-sm text-muted-foreground">{readOnly}</p>
+      ? <InputGroup className="h-auto"><p data-testid="agent-read-only" className="m-0 flex min-h-[var(--control-h,2.75rem)] w-full min-w-0 items-center px-2 text-sm wrap-anywhere text-muted-foreground">{readOnly}</p></InputGroup>
       : spec.chatProps?.renderComposer ? spec.chatProps.renderComposer(props) : <Composer {...props} />}</>,
     composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerEditLast: true, composerStart: capturing ? <BarMicCancel mic={mic} /> : <ConversationChevron unread={barChat.historyBadge} />,
     // While the agent's question waits, the field says so; a typed message answers it (PiChat's own rule).
