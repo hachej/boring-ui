@@ -135,12 +135,16 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
  * a question shows its choices (a form, each question in turn); a reply that came while folded shows « ✓ Terminé · <what it used> », three lines
  * and the files it cites. Nothing floats over the page: the card is in the column's flow, above the field.
  */
-/** A reply's text as a person reads it: a mention (`@uploads/ecarts.csv`) shows as the file's name. */
-const readable = (text: string) => text.replace(MENTION_TOKEN, (_match, before: string, quoted: string | undefined, bare: string | undefined) => {
-  const trail = quoted === undefined ? (bare ?? '').match(/[.,;:!?)\]}'"]+$/)?.[0] ?? '' : '';
-  const path = quoted ?? (bare ?? '').slice(0, (bare ?? '').length - trail.length);
-  return `${before}${path.split('/').at(-1) ?? path}${trail}`;
-});
+/** The folded excerpt names files and ends omitted source lines with one ellipsis. CSS still clamps lines that wrap. */
+const replyExcerpt = (text: string) => {
+  const lines = text.replace(MENTION_TOKEN, (_match, before: string, quoted: string | undefined, bare: string | undefined) => {
+    const trail = quoted === undefined ? (bare ?? '').match(/[.,;:!?)\]}'"]+$/)?.[0] ?? '' : '';
+    const path = quoted ?? (bare ?? '').slice(0, (bare ?? '').length - trail.length);
+    return `${before}${path.split('/').at(-1) ?? path}${trail}`;
+  }).split(/\r?\n/);
+  if (lines.length <= 3) return lines.join('\n');
+  return `${lines.slice(0, 3).join('\n').trimEnd().replace(/[.,;:!?…]+$/u, '')}…`;
+};
 
 /** AC-12, folded: a send that failed says so on one line at the top of the box, with Réessayer. A refused message is already back in the field
  * (the controller restores it): Réessayer sends it again; an attempt of unknown outcome is retried as the same request (no double send). */
@@ -193,7 +197,7 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
       </div>}
       {!stopped && !question && status?.state !== 'working' && reply && <>
         {/* A tap on the reply opens the conversation, as the chevron does (the chevron stays the way for a keyboard). */}
-        <p data-testid="agent-card-reply" onClick={() => layer.open('agent')} className="m-0 line-clamp-3 cursor-pointer whitespace-pre-line">{readable(reply.text)}</p>
+        <p data-testid="agent-card-reply" onClick={() => layer.open('agent')} className="m-0 line-clamp-3 cursor-pointer whitespace-pre-line">{replyExcerpt(reply.text)}</p>
         {(reply.files.length > 0 || action) && <div role="list" data-testid="agent-card-files" className="flex flex-wrap items-center gap-1.5">
           {reply.files.map(path => <span role="listitem" key={path}><Button type="button" variant="outline" size="sm" data-testid="agent-card-file" data-path={path} disabled={!onOpenFile} onClick={() => onOpenFile?.(path, reply.files)}>
             <FileTextIcon data-icon="inline-start" aria-hidden="true" />{path.split('/').at(-1)}</Button></span>)}
