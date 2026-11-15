@@ -204,8 +204,10 @@ export function createNativeChatController(options: NativeChatOptions) {
   const open = () => snapshot.connection.kind === 'connected' || snapshot.connection.kind === 'reconnecting';
   const unlink = options.link?.subscribe(() => {
     if (snapshot.disposed || !watch || !open()) return;
-    const next = live();
-    if (next.kind !== snapshot.connection.kind) publish({ connection: next });
+    const was = snapshot.connection.kind, next = live();
+    if (next.kind !== was) publish({ connection: next });
+    // The stream is back with a complete view: a send that was waiting on the lost connection is settled against what the host holds.
+    if (was === 'reconnecting' && next.kind === 'connected') void recover();
   });
   let stopping: Promise<void> | undefined, retrying: Promise<Submission | undefined> | undefined;
   let historyGeneration = 0, historyPending: Promise<void> | undefined;
@@ -386,7 +388,7 @@ export function createNativeChatController(options: NativeChatOptions) {
         } while (!ended && cursor !== undefined);
         if (!snapshot.disposed && !item.textObserved) putBack([attempt.draft]);
       } catch { /* Missing settlement/history is unknown, never proof of an empty failed answer. */ }
-      finally { restoring.delete(attempt.requestId); waiter.cancel(); }
+      finally { if (restoring.get(attempt.requestId) === item) restoring.delete(attempt.requestId); waiter.cancel(); }
     })();
   }
   async function submitAttempt(attempt: ChatAttempt): Promise<Submission | undefined> {
@@ -431,6 +433,62 @@ export function createNativeChatController(options: NativeChatOptions) {
     }
     if (snapshot.disposed) return;
     return submitAttempt(Object.freeze({ requestId: randomUUID(), draft: selected, whenBusy: item.whenBusy }));
+  }
+  /** The host's record of this attempt, by its request ID; undefined when the host has no such submission. */
+  async function recordOf(attempt: ChatAttempt): Promise<SubmissionRecord | undefined> {
+    const record = await conversation.commit(tx => tx.submissionByRequest(conversation.id, attempt.requestId), context);
+    if (record && (record.conversationId !== conversation.id || record.requestId !== attempt.requestId || record.type !== 'input')) throw new Error('Native submission lookup returned a different binding');
+    return record;
+  }
+  let recoverAfterSend = false;
+  /**
+   * Runs `begin` as the one send in flight, then submits, in order, whatever was taken from the composer meanwhile (`waiting`) for as long
+   * as each is admitted. Whatever still waits afterwards goes back into the composer. A reconnect that came during it is acted on after it.
+   */
+  async function exclusively<T extends Submission | boolean | undefined>(begin: () => Promise<T>): Promise<T> {
+    sending = true;
+    try {
+      const first = await begin();
+      let result: Submission | boolean | undefined = first, next: Outgoing | undefined;
+      while (result && (next = waiting.shift())) {
+        publish({ outbox: Object.freeze(waiting.map(item => item.draft)) });
+        result = await dispatch(next);
+        next.resolve(result);
+      }
+      return first;
+    } finally {
+      sending = false;
+      // Whatever still waits (behind an unknown submission, or after disposal) was never submitted: it goes back into the composer.
+      if (waiting.length) restore([]);
+      if (recoverAfterSend) { recoverAfterSend = false; void recover(); }
+    }
+  }
+  /**
+   * The connection is back (a complete view arrived): a send that was waiting on the lost connection is settled against the host's
+   * record. Unconfirmed: checked, and sent again with the same request ID if the host never had it. Admitted but not in the view with no
+   * record at the host: the host lost the turn (it restarted), so it is sent again the same way; if the host has it, nothing is sent.
+   * Typing and sending go on meanwhile: new messages wait behind it, in order. A host still away leaves the send as it was, for the
+   * next return or for the person (Check, Retry).
+   */
+  async function recover(): Promise<void> {
+    if (snapshot.disposed) return;
+    if (sending) { recoverAfterSend = true; return; }
+    const state = snapshot.send;
+    if (state.kind !== 'unknown' && state.kind !== 'admitted') return;
+    const settle = async (): Promise<boolean> => {
+      if (state.kind === 'unknown') return await controller.reconcile() !== undefined || await controller.retrySameRequest() !== undefined;
+      const { attempt } = state, record = await recordOf(attempt);
+      if (snapshot.disposed || snapshot.send.kind !== 'admitted' || snapshot.send.attempt.requestId !== attempt.requestId) return true;
+      if (record) {
+        if (snapshot.send.record?.status !== record.status) publish({ send: { kind: 'admitted', attempt, submissionId: record.id, record } });
+        return true;
+      }
+      if (!echoOf(attempt.draft)) return true;
+      restoring.get(attempt.requestId)?.cancel();
+      return await submitAttempt(attempt) !== undefined;
+    };
+    try { await exclusively(settle); }
+    catch { /* still away or refused: the send stays as it was */ }
   }
   const controller = {
     conversation,
@@ -573,34 +631,20 @@ export function createNativeChatController(options: NativeChatOptions) {
           publish({ ...cleared, outbox: Object.freeze(waiting.map(item => item.draft)) });
         });
       }
-      sending = true;
-      publish(cleared);
-      try {
+      return exclusively(async () => {
+        publish(cleared);
         // Sent while connecting: held (shown as the person's own) until the first view, so nothing is submitted before the connection is up.
         // If the connection fails first, it and everything behind it go back into the composer, marked not sent.
-        if (held && !await viewed()) { restore([selected], { send: { kind: 'blocked', reason: 'Not connected: the message was not sent' } }); return; }
-        let next: Outgoing | undefined = { draft: selected, whenBusy, resolve: () => {} };
-        const first = await dispatch(next);
-        let result = first;
-        while (result && (next = waiting.shift())) {
-          publish({ outbox: Object.freeze(waiting.map(item => item.draft)) });
-          result = await dispatch(next);
-          next.resolve(result);
-        }
-        return first;
-      } finally {
-        sending = false;
-        // Whatever still waits (behind an unknown submission, or after disposal) was never submitted: it goes back into the composer.
-        if (waiting.length) restore([]);
-      }
+        if (held && !await viewed()) { restore([selected], { send: { kind: 'blocked', reason: 'Not connected: the message was not sent' } }); return undefined; }
+        return dispatch({ draft: selected, whenBusy, resolve: () => {} });
+      });
     },
     reconcile: async (): Promise<SubmissionRecord | undefined> => {
       active();
       if (snapshot.send.kind !== 'unknown') throw new Error('No unconfirmed submission to reconcile');
       const { attempt } = snapshot.send;
-      const record = await conversation.commit(tx => tx.submissionByRequest(conversation.id, attempt.requestId), context);
+      const record = await recordOf(attempt);
       if (record) {
-        if (record.conversationId !== conversation.id || record.requestId !== attempt.requestId || record.type !== 'input') throw new Error('Native submission lookup returned a different binding');
         const admitted = markAdmitted(attempt, record.id, record);
         if (admitted && options.restoreOnError) {
           // Reconciliation observes the original request only; no duplicate submission is made to obtain a handle.
