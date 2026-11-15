@@ -118,12 +118,12 @@ export function ContentColumn({ children }: { readonly children: ReactNode }) {
   // The box only on a wide screen: on a phone the field lives in the drawer.
   const bar = barMode && contentComposer;
   // The page keeps one wrapper whether the tray is open or not, so opening it never remounts the screen; Agrandir only hides it.
-  return <div ref={setDropZone} data-testid="agent-content" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+  return <div ref={setDropZone} data-testid="agent-content" data-bar-tray={bar && trayOpen && !anchored ? (grown ? 'expanded' : 'open') : undefined} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
     <div data-testid="agent-page" className={cn('flex min-h-0 min-w-0 flex-1 flex-col', trayOpen && grown && !anchored && !bar && 'hidden')}>{children}</div>
     {bar ? <OneBox>
       {trayOpen && !anchored && <ContentTray />}
-      <div ref={setCardSlot} data-testid="agent-card-slot" className="shrink-0 empty:hidden" />
-      <div ref={setComposerSlot} data-testid="agent-content-composer" className={cn('shrink-0', folded && FOLDED_FIELD)} />
+      <div ref={setCardSlot} data-testid="agent-card-slot" className={cn('shrink-0 empty:hidden', !anchored && 'relative z-10 bg-card')} />
+      <div ref={setComposerSlot} data-testid="agent-content-composer" className={cn('shrink-0', !anchored && 'relative z-10 rounded-b-(--radius-3xl) bg-card', folded && FOLDED_FIELD)} />
     </OneBox> : <>
       {trayOpen && !anchored && <ContentTray />}
       <div ref={setComposerSlot} data-testid="agent-content-composer" className="shrink-0" />
@@ -159,7 +159,8 @@ export function AgentComposerAnchor({ className }: { readonly className?: string
 /**
  * The reply as a tray just above the field (`composer: 'content'`, wide, the person's default): the desktop twin of the phone's peek to half.
  * The same thread and controller as the dock and the drawer, moved here; its width is the field's, its height min(35%, 360px) of the column,
- * and the page above it shrinks instead of being covered. No second composer: the field below stays the only input.
+ * and the page above it shrinks instead of being covered. The unanchored bar reserves that page space with padding and slides a fixed-height surface.
+ * No second composer: the field below stays the only input.
  */
 function ContentTray() {
   const layer = useInternal();
@@ -189,11 +190,13 @@ function ContentTray() {
   const dockLabel = side === 'left' ? text.dockLeft : text.dockRight;
   // In an anchor the tray sits in the app's column, whose height is not the content column's: a share of the viewport, and Agrandir takes more of it instead of hiding the page.
   const boxed = layer.bar && layer.contentComposer;
+  const overlay = boxed && !layer.anchored;
   const height = boxed ? (grown ? '70dvh' : '30dvh') : layer.anchored ? (grown ? 'min(70dvh, 720px)' : `min(35dvh, ${TRAY_MAX}px)`) : grown ? undefined : `min(35%, ${TRAY_MAX}px)`;
-  return <section data-testid="agent-tray" data-expanded={boxed && grown || undefined} aria-label={title} style={height ? { height } : undefined}
-    className={cn('relative flex min-h-0 min-w-0 flex-col', boxed ? 'shrink-0 bg-card px-3 text-card-foreground' : 'bg-card px-4 text-card-foreground', !boxed && (grown && !layer.anchored ? 'flex-1' : 'shrink-0'))}>
+  const tray = <section data-testid="agent-tray" data-overlay={overlay || undefined} data-expanded={boxed && grown || undefined} aria-label={title} style={height ? { height: overlay ? 'var(--app-shell-bar-tray-size)' : height } : undefined}
+    className={cn('flex min-h-0 min-w-0 flex-col', overlay ? 'pointer-events-auto absolute inset-x-0 top-0 transition-transform duration-(--duration-fast) ease-(--ease-standard) motion-reduce:transition-none' : 'relative bg-card', boxed ? 'shrink-0 px-3 text-card-foreground' : 'px-4 text-card-foreground', !boxed && (grown && !layer.anchored ? 'flex-1' : 'shrink-0'))}>
+    {overlay && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-(--app-shell-bar-tray-expanded) rounded-t-(--radius-3xl) bg-card ring-1 ring-border ring-inset" />}
     {boxed ? null : <Separator className="absolute inset-x-0 top-0" />}
-    <div data-testid="agent-tray-body" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
+    <div data-testid="agent-tray-body" className={cn('mx-auto flex min-h-0 w-full max-w-[720px] flex-col', overlay ? 'relative h-(--app-shell-bar-tray-expanded) shrink-0' : 'flex-1')}>
       <div data-testid="agent-tray-header" className="flex shrink-0 items-center gap-1 pt-1">
         <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{title}</h2>
         <HistoryButton />
@@ -214,8 +217,9 @@ function ContentTray() {
       <VoiceProblem />
       <ChatSlot />
     </div>
-    {boxed && <Separator />}
+    {boxed && !overlay && <Separator />}
   </section>;
+  return overlay ? <div className="pointer-events-none absolute inset-x-0 bottom-full h-(--app-shell-bar-tray-expanded) overflow-hidden">{tray}</div> : tray;
 }
 
 /**

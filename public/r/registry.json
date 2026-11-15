@@ -2393,13 +2393,36 @@
             "--app-shell-safe-bottom": "env(safe-area-inset-bottom)",
             "--app-shell-tabbar-min": "calc(3.5rem + env(safe-area-inset-bottom))",
             "--app-shell-sheet-max": "85dvh",
-            "--app-shell-composer-max": "45rem"
+            "--app-shell-composer-max": "45rem",
+            "--app-shell-bar-tray-open": "30dvh",
+            "--app-shell-bar-tray-expanded": "70dvh"
           },
           ":where(.app-shell [data-slot=\"screen-body\"][data-bleed]) :where(li, tr, [role=\"row\"]) > :first-child": {
             "padding-inline-start": "var(--screen-gutter, 1rem)"
           }
         },
         "@layer utilities": {
+          ".app-shell [data-bar-tray]": {
+            "--app-shell-bar-tray-size": "var(--app-shell-bar-tray-open)"
+          },
+          ".app-shell [data-bar-tray=\"expanded\"]": {
+            "--app-shell-bar-tray-size": "var(--app-shell-bar-tray-expanded)"
+          },
+          ".app-shell [data-bar-tray] [data-bar-page]": {
+            "padding-bottom": "var(--app-shell-bar-tray-size)"
+          },
+          ".app-shell [data-bar-tray] [data-bar-page]::after": {
+            "bottom": "var(--app-shell-bar-tray-size)"
+          },
+          ".app-shell [data-testid=\"agent-tray\"][data-overlay]": {
+            "transform": "translateY(calc(var(--app-shell-bar-tray-expanded) - var(--app-shell-bar-tray-size)))"
+          },
+          ".app-shell [data-testid=\"agent-tray\"][data-overlay] [data-testid=\"agent-tray-body\"]": {
+            "padding-bottom": "calc(var(--app-shell-bar-tray-expanded) - var(--app-shell-bar-tray-size))"
+          },
+          ".app-shell [data-one-composer] [data-testid=\"agent-tray\"][data-overlay] [data-testid=\"transcript-scroll\"] > div:has(> [data-testid=\"transcript\"])": {
+            "justify-content": "flex-start"
+          },
           ".app-shell [data-bar-page]::after": {
             "content": "\"\"",
             "position": "absolute",
