@@ -8,7 +8,7 @@ import { join } from 'node:path';
 export const ADVISOR_TIMEOUT_MS = 10 * 60 * 1000;
 const clip = (t, n) => String(t ?? '').slice(-n);
 
-export function advisorPrompt({ scenario, verdict, scoreboard, tried, failures, folder, home, root }) {
+export function advisorPrompt({ scenario, verdict, scoreboard, tried, failures, folder, home, root, spec = '' }) {
   const raise = Object.entries(verdict?.to_raise ?? {}).map(([k, t]) => `- ${k}: ${t}`).join('\n') || '(the judge gave none)';
   return `You are a senior product designer and front-end engineer advising a worker agent (Codex) in a UX improvement loop. The loop has been stuck: several rounds in a row were discarded because no grade rose. You write no code and edit nothing; you read, then give ONE plan.
 
@@ -20,7 +20,7 @@ Goal: every criterion at 9 (ux/CRITERIA.md in the repo says what 9 means; a grad
 - The latest accepted capture (pictures and metrics; open the ones the notes name): ${folder} (states/*.png, flows/<id>/strip-<viewport>.png, flows/<id>/<viewport>/metrics.json, verdict.json, verdict.md).
 - The scoreboard file: ${join(home, 'scoreboard.md')}
 
-## Grades now
+${spec ? `## Target design spec (written by a person for this target; the worker is told to move toward it, so your plan must too: say which spec items it serves)\n${spec}\n\n` : ''}## Grades now
 ${JSON.stringify(verdict?.grades ?? {})}
 
 ## What the judge says would raise each criterion
@@ -50,8 +50,8 @@ Plain Markdown, at most 400 words, exactly these four headings:
 Do not propose a redesign of the product, new components outside the kit, or changes to the harness, scenario or criteria.`;
 }
 
-export function advise({ scenario, verdict, tried, failures, folder, home, root, out, run = spawnSync, timeout = ADVISOR_TIMEOUT_MS }) {
-  const file = join(home, 'scoreboard.md'), prompt = advisorPrompt({ scenario, verdict, scoreboard: existsSync(file) ? readFileSync(file, 'utf8') : '', tried, failures, folder, home, root });
+export function advise({ scenario, verdict, tried, failures, folder, home, root, spec = '', out, run = spawnSync, timeout = ADVISOR_TIMEOUT_MS }) {
+  const file = join(home, 'scoreboard.md'), prompt = advisorPrompt({ scenario, verdict, scoreboard: existsSync(file) ? readFileSync(file, 'utf8') : '', tried, failures, folder, home, root, spec });
   const r = run('claude', ['-p', '--model', 'opus', '--tools', 'Read,Glob,Grep,Bash', '--allowedTools', 'Bash(node ux/runner/probe.mjs:*)', '--permission-mode', 'dontAsk', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--no-session-persistence', '--add-dir', folder, '--add-dir', home],
     { input: prompt, encoding: 'utf8', cwd: root, timeout, maxBuffer: 1 << 26 });
   const text = String(r.stdout ?? '').trim();

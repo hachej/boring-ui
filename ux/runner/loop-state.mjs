@@ -44,6 +44,10 @@ export const triedText = (all, focus) => {
   const mine = all.filter(t => t.criterion === focus).slice(-12);
   return mine.length ? mine.map(t => `- round ${t.round} (${t.result}): ${t.note}`).join('\n') : 'nothing yet on this criterion';
 };
+// `Spec: 3, 5` in a round's changes.md: the items of the target's spec.md (when its state folder has one) the round says it addressed.
+export const specItems = md => { const line = String(md ?? '').split('\n').find(l => /^\W*spec\b[^:\n]*:/i.test(l)) ?? ''; return [...new Set([...line.slice(line.indexOf(':') + 1).matchAll(/\d+/g)].map(m => m[0]))]; };
+// What the brief says about a spec the person wrote for this target.
+export const specBlock = text => text ? `\n## Target design spec (written by a person; the judge does not see it)\nEvery change must move the target toward this design. Follow its order of work unless this round's targeted criterion points to a later item. In changes.md put one line \`Spec: 3, 5\` naming the item numbers your change addresses.\n\n${text}\n` : '';
 // The first bullet of the worker's changes.md, as the one-line "what was tried".
 export const firstChange = md => oneLine((String(md ?? '').split('\n').find(l => /^\s*[-*]\s+\S/.test(l)) ?? md).replace(/^\s*[-*]\s+/, ''));
 

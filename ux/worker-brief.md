@@ -33,6 +33,7 @@ You cannot run a browser, you cannot start the contract tests (they need one), a
 - Scoreboard so far: `{{HOME}}/scoreboard.md`.
 {{FOCUS}}
 {{TRACE}}
+{{SPEC}}
 {{FEEDBACK}}
 
 ## Method

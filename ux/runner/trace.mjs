@@ -45,6 +45,8 @@ export function traceText(s, flowRun, { only = null, all = false } = {}) {
     const over = !st.ok || st.cls > th.cls || st.settledMs > th.settledMs;
     if (only ? !only.includes(i + 1) : !(all || over)) return;
     out.push(`step ${i + 1} "${st.say}": ${st.ok ? '' : 'DID NOT COMPLETE; '}layout shift ${st.cls}${st.cls > th.cls ? ' (over)' : ''}, settled ${st.settledMs ?? '-'} ms${st.settledMs > th.settledMs ? ' (over)' : ''}, first change ${st.firstChangeMs ?? '-'} ms, focus ends on ${st.focusAfter}`);
+    if (st.shiftInPlaceIgnored) out.push(`    (${st.shiftInPlaceIgnored} more is not counted: rows inside the container the person acted on moved in place, which unfolding or folding content does by definition)`);
+    if (st.shiftAfterInput) out.push(`    (${st.shiftAfterInput} of the ${st.cls} came within 500 ms of the person's own input: the browser's own layout-shift score leaves that part out)`);
     const src = topSources(st.shiftSources); for (const x of src) out.push(`    shifted: ${x.el}  ${rect(x.from)}  ->  ${rect(x.to)}`);
     if (st.cls > 0 && !src.length) out.push('    (the browser reported no source rectangles for this shift)');
   });
