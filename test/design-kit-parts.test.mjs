@@ -112,6 +112,22 @@ test('--manifest names the manifest; blocksCss and writeBlocksCss write the mark
   assert.deepEqual(design(dir, '--manifest', 'recorded.json').findings.map(finding => finding.file), ['web/src/App.tsx']);
 });
 
+test('a registry item whose files have no target is ignored, and a blocks CSS written for every item with css (css-only ones too) is recognised', t => {
+  const dir = kitApp(t);
+  const kitR = join(dir, 'node_modules/@hachej/boring-ui-kit/r');
+  writeFileSync(join(kitR, 'ui-button.json'), JSON.stringify({ name: 'ui-button', type: 'registry:ui', files: [{ path: 'ui/button.tsx', type: 'registry:ui', content: HIT }] }));
+  writeFileSync(join(kitR, 'touch-floor.json'), JSON.stringify(registryItem('touch-floor')));
+  const withCss = [...KIT_ITEMS, 'touch-floor'].map(registryItem);
+  assert.ok(withCss.every(item => item.css), 'touch-floor is css-only');
+  writeBlocksCss(join(dir, 'web/src/kit-blocks.css'), withCss);
+  const report = design(dir);
+  assert.equal(report.error, undefined);
+  assert.deepEqual(report.findings.map(finding => [finding.rule, finding.file]), [['design-color', 'web/src/App.tsx']]);
+  assert.deepEqual([...readFileSync(join(dir, 'web/src/kit-blocks.css'), 'utf8').matchAll(/^\/\* ([\w-]+) \*\/$/gm)].map(match => match[1]), [...KIT_ITEMS, 'touch-floor']);
+  const check = spawnSync(process.execPath, [bin, 'check', '--cwd', join(dir, 'web')], { encoding: 'utf8' });
+  assert.ok(!/TypeError|Cannot read/.test(check.stderr), check.stderr);
+});
+
 test('an exceptions list that still names kit files fails once per file and says what to delete; the app\'s own entries stay valid', t => {
   const dir = kitApp(t);
   writeFileSync(join(dir, 'web/src/design.exceptions.json'), JSON.stringify({

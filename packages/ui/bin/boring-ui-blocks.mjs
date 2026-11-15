@@ -230,7 +230,7 @@ export function checkBlocks(app, components = appPaths(app).components) {
   const { version, items } = installedKit(app);
   const blocks = [];
   for (const item of items) {
-    const paths = item.files.map(file => ({ file, path: join(components, file.target.replace(/^components\//, '')) }));
+    const paths = item.files.filter(file => file.target).map(file => ({ file, path: join(components, file.target.replace(/^components\//, '')) }));
     if (!paths.some(({ path }) => existsSync(path))) continue;
     const edited = [], missing = [];
     for (const { file, path } of paths) {
@@ -1844,6 +1844,7 @@ export function kitParts(dir, { manifest = MANIFEST } = {}) {
   const kit = kitRoot(root ?? dir), items = kit ? readItems(kit) : [];
   const parts = new Map(), targets = new Map();
   for (const item of items) for (const file of item.files ?? []) {
+    if (!file.target) continue; // a ui-<name> item's file has no target: the manifest records the primitive (kind 'shadcn')
     const path = join(components, file.target.replace(/^components\//, ''));
     targets.set(path, { name: item.name, contents: [...(targets.get(path)?.contents ?? []), normal(file.content ?? '')] });
   }
