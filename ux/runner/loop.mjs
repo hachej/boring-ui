@@ -37,6 +37,7 @@ const tail = (t, n = 30) => String(t).split('\n').slice(-n).join('\n');
 const roundDir = n => join(HOME, `round-${n}`), folder = n => join(roundDir(n), S);
 const readJson = f => existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : null;
 const status = d => { if (!d) return ''; try { return execFileSync('git', ['-C', d, 'status', '--porcelain'], { encoding: 'utf8' }); } catch { return ''; } };
+const gained = (a, b) => KEYS.some(k => typeof a?.[k] === 'number' && a[k] > (b?.[k] ?? 0));
 const lowest = v => Math.min(...KEYS.map(k => v?.grades?.[k]).filter(x => typeof x === 'number'));
 const FAILING = join(HOME, 'last-failure.txt'), LINES = join(HOME, 'check-lines.json'), TRIED = join(HOME, 'tried.json'), PID = join(HOME, 'loop.pid'), STATUS = join(HOME, 'status.json');
 const plan = { focus: null, rethink: false, failures: '' }; // what the round in hand targets (set by the main loop before the worker runs)
@@ -53,7 +54,7 @@ function eyes(n, prev, lines) {
 }
 function brief(n, prev, feedback, eyesDir) {
   const v = readJson(join(prev, 'verdict.json')), worse = v?.worse?.length ? v.worse.map(w => `${w.what} (${w.where ?? w.screenshot})`).join('; ') : 'nothing reported';
-  const map = { N: n, TARGET: scenario.target, TITLE: scenario.title, SCENARIO: scenario.file, NOTES: scenario.notes ?? '', WT: root, BRANCH: git('branch', '--show-current'), TEST_CMD, EYES: eyesDir, PREV_DIR: join(eyesDir, 'capture', S), WORSE: worse, HOME, ROUND_DIR: roundDir(n), SKILLS, FOCUS: focusBrief({ focus: plan.focus, problems: v?.problems?.[plan.focus] ?? [], tried: triedText(readTried(TRIED), plan.focus), rethink: plan.rethink, failures: plan.failures, max: MAX_FILES }), FEEDBACK: feedback ? `\n## What the loop found after your last pass (full output in ${roundDir(n)}). Fix exactly this; edit files only:\n${feedback}\n` : '' };
+  const map = { N: n, TARGET: scenario.target, TITLE: scenario.title, SCENARIO: scenario.file, NOTES: scenario.notes ?? '', WT: root, BRANCH: git('branch', '--show-current'), TEST_CMD, EYES: eyesDir, PREV_DIR: join(eyesDir, 'capture', S), WORSE: worse, HOME, ROUND_DIR: roundDir(n), SKILLS, FOCUS: focusBrief({ focus: plan.focus, problems: v?.problems?.[plan.focus] ?? [], raise: v?.to_raise?.[plan.focus] ?? '', blockers: (v?.worst_numbers ?? []).slice(0, 3), tried: triedText(readTried(TRIED), plan.focus), rethink: plan.rethink, failures: plan.failures, max: MAX_FILES }), FEEDBACK: feedback ? `\n## What the loop found after your last pass (full output in ${roundDir(n)}). Fix exactly this; edit files only:\n${feedback}\n` : '' };
   return Object.entries(map).reduce((t, [k, val]) => t.replaceAll(`{{${k}}}`, String(val)), readFileSync(join(root, 'ux/worker-brief.md'), 'utf8'));
 }
 function worker(n, prev, lines, feedback, tag) {
@@ -182,6 +183,12 @@ for (; n <= MAX_ROUNDS; n++) {
   } else {
     const v = judge({ folder: folder(n), scenario, round: n, prev, evidence: evidence(ctx.lines, prevLines) });
     if (!v) { log('judge gave no usable verdict'); discard(root, rec.start); score(n, { checks: ctx.lines?.length, note: 'judge failed; edits discarded' }); lost('judge failed', 'the judge gave no usable verdict'); }
+    else if (!gained(v.grades, prevVerdict.grades) && ctx.lines.length >= prevLines.length) { // nothing rose and no check line went away: unmeasured change stays out of the branch
+      const why = `NO GAIN: no criterion rose and failing check lines ${ctx.lines.length} (was ${prevLines.length}); edits discarded`;
+      log(`round ${n} ${why}; grades ${JSON.stringify(v.grades)}`); discard(root, rec.start); renameSync(join(folder(n), 'verdict.json'), join(folder(n), 'verdict.nogain.json'));
+      writeFileSync(FAILING, `Round ${n} was discarded: ${why}\nWhat you changed: ${firstChange(changesText())}\nJudge: ${readFileSync(join(folder(n), 'verdict.md'), 'utf8').slice(0, 4000)}\n`);
+      score(n, { v, p: prevVerdict, checks: ctx.lines?.length, note: why }); lost('no gain', why);
+    }
     else if (lowest(v) < lowest(prevVerdict)) {
       const why = `REVERTED: lowest criterion ${lowest(v)} < ${lowest(prevVerdict)} of the last accepted round`;
       log(`round ${n} ${why}; grades ${JSON.stringify(v.grades)}`); discard(root, rec.start); renameSync(join(folder(n), 'verdict.json'), join(folder(n), 'verdict.reverted.json'));

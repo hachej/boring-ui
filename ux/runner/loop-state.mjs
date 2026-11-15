@@ -8,12 +8,13 @@ const num = v => typeof v === 'number';
 // Done only when every graded criterion is 9 or more.
 export const allNine = (grades, keys) => keys.every(k => grades?.[k] === undefined || grades[k] >= 9);
 
-// The criterion this round works on: the lowest one that has not stalled (STALL rounds in a row without a gain on it); when all stalled, start over.
+// The criterion this round works on: the lowest one that has not stalled (STALL rounds in a row without a gain on it). When all stalled, the one tried least
+// (fewest misses, then lowest grade), so the turn passes round the criteria instead of returning to the lowest one for ever.
 export function pickFocus(grades, keys, misses = {}) {
   const open = keys.filter(k => num(grades?.[k]) && grades[k] < 9);
   if (!open.length) return null;
-  const live = open.filter(k => (misses[k] ?? 0) < STALL), pool = live.length ? live : open;
-  return [...pool].sort((a, b) => grades[a] - grades[b] || keys.indexOf(a) - keys.indexOf(b))[0];
+  const live = open.filter(k => (misses[k] ?? 0) < STALL), pool = live.length ? live : open, tried = k => (live.length ? 0 : misses[k] ?? 0);
+  return [...pool].sort((a, b) => tried(a) - tried(b) || grades[a] - grades[b] || keys.indexOf(a) - keys.indexOf(b))[0];
 }
 // A round that targeted `focus` and did not raise it counts as a miss; a gain clears the count.
 export function updateMisses(misses, focus, before, after) {
@@ -72,8 +73,8 @@ export async function pauseFor(ms, { stopped, sleep = m => new Promise(r => setT
 }
 
 // What a round tells the worker about its focus, what was tried, and (after repeated failures) to rethink.
-export function focusBrief({ focus, problems = [], tried, rethink, failures = '', max = MAX_FILES }) {
+export function focusBrief({ focus, problems = [], raise = '', blockers = [], tried, rethink, failures = '', max = MAX_FILES }) {
   const probs = problems.length ? problems.slice(0, 3).map(p => `- ${p.problem} (where: ${p.where}; fixed looks like: ${p.fixed_looks_like})`).join('\n') : '- (the judge listed none; read verdict.md)';
-  return `## This round's single target: ${focus ?? 'none'}\nWork on this ONE criterion: one focused change, at most ${max} files outside tests (more and the round is discarded). Leave the other criteria alone unless they are a regression.\nThe judge's notes on it:\n${probs}\n\n## Already tried on ${focus} (do NOT repeat these; try something different, or a different part of the screen)\n${tried}\n`
+  return `## This round's single target: ${focus ?? 'none'}\nWork on this ONE criterion: one focused change, at most ${max} files outside tests (more and the round is discarded). Leave the other criteria alone unless they are a regression.\nThe judge's notes on it:\n${probs}\n${raise ? `\nWhat would raise it, and what a 9 still needs (the judge's words):\n${raise}\n` : ''}${blockers.length ? `\nThe worst measured numbers of the whole capture (they hold several grades down at once, whatever the criterion; if one fits this criterion, it comes first):\n${blockers.map(b => `- ${b}`).join('\n')}\n` : ''}\n## Already tried on ${focus} (do NOT repeat these; try something different, or a different part of the screen)\n${tried}\n`
     + (rethink ? `\n## Rethink round\nThe last rounds in a row were discarded. Their exact failure text is below. Propose a SMALLER and DIFFERENT change than the ones that failed: fewer files, one idea, nothing that touches what failed.\n${failures}\n` : '');
 }
