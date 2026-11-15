@@ -354,7 +354,7 @@ export function PaneStack({ placement, assistant }: { readonly placement: 'colum
   return <ViewerWindowProvider value={viewer}>
     <aside data-testid="agent-preview" data-placement={placement} data-depth={stack.length} aria-label={`${text.preview} · ${top.title}`} {...swipe}
       {...(placement === 'screen' ? { style: { bottom: layer.tabbar, paddingBottom: `calc(${layer.peekPoint} - ${layer.tabbar}px)` } } : {})}
-      className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground [&_.file-tree-row-button]:pointer-coarse:min-h-(--control-min,2.75rem) [&_.file-tree-row-button]:max-md:min-h-(--control-min,2.75rem)', placement === 'screen' ? 'fixed inset-0 z-(--app-shell-z-peek)' : 'relative h-full flex-1')}>
+      className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground [&_.file-tree-row-button]:pointer-coarse:min-h-(--control-min,2.75rem) [&_.file-tree-row-button]:max-md:min-h-(--control-min,2.75rem)', placement === 'screen' ? 'fixed inset-0 z-(--app-shell-z-peek) [&_[data-testid=artifact-csv]]:table-auto' : 'relative h-full flex-1')}>
       <div data-testid="agent-preview-body" className="relative min-h-0 flex-1">
         {stack.map((entry, index) => {
           const shown = index === stack.length - 1;
