@@ -106,12 +106,12 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
     const popped = current.at(-1);
     if (!popped) return 0;
     const next = current.slice(0, -1);
-    commit(next, next.length ? { to: 'element', element: popped.opener, fallback: 'top' } : { to: 'element', element: null, fallback: 'field' });
+    commit(next, { to: 'element', element: popped.opener, fallback: next.length ? 'top' : 'field' });
     return next.length;
   }, [commit]);
   const close = useCallback(() => {
-    const current = latest.current;
-    if (current.length) commit([], { to: 'element', element: null, fallback: 'field' });
+    const first = latest.current[0];
+    if (first) commit([], { to: 'element', element: first.opener, fallback: 'field' });
   }, [commit]);
   const step = useCallback((offset: -1 | 1) => {
     const current = latest.current, top = current.at(-1);
