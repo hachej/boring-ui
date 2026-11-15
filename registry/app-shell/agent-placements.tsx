@@ -194,7 +194,7 @@ function ContentTray() {
   const height = boxed ? (grown ? '70dvh' : '30dvh') : layer.anchored ? (grown ? 'min(70dvh, 720px)' : `min(35dvh, ${TRAY_MAX}px)`) : grown ? undefined : `min(35%, ${TRAY_MAX}px)`;
   const tray = <section data-testid="agent-tray" data-overlay={overlay || undefined} data-expanded={boxed && grown || undefined} aria-label={title} style={height ? { height: overlay ? 'var(--app-shell-bar-tray-size)' : height } : undefined}
     className={cn('flex min-h-0 min-w-0 flex-col', overlay ? 'pointer-events-auto absolute inset-x-0 top-0 transition-transform duration-(--duration-fast) ease-(--ease-standard) motion-reduce:transition-none' : 'relative bg-card', boxed ? 'shrink-0 px-3 text-card-foreground' : 'px-4 text-card-foreground', !boxed && (grown && !layer.anchored ? 'flex-1' : 'shrink-0'))}>
-    {overlay && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-(--app-shell-bar-tray-expanded) rounded-t-(--radius-3xl) bg-card ring-1 ring-border ring-inset" />}
+    {overlay && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-(--app-shell-bar-tray-expanded) rounded-t-(--radius-3xl) bg-card" />}
     {boxed ? null : <Separator className="absolute inset-x-0 top-0" />}
     <div data-testid="agent-tray-body" className={cn('mx-auto flex min-h-0 w-full max-w-[720px] flex-col', overlay ? 'relative h-(--app-shell-bar-tray-expanded) shrink-0' : 'flex-1')}>
       <div data-testid="agent-tray-header" className="flex shrink-0 items-center gap-1 pt-1">
