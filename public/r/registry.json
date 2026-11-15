@@ -2502,6 +2502,11 @@
           "target": "components/app-shell/text.ts"
         },
         {
+          "path": "registry/app-shell/bar-reserve.ts",
+          "type": "registry:lib",
+          "target": "components/app-shell/bar-reserve.ts"
+        },
+        {
           "path": "registry/app-shell/app-shell.tsx",
           "type": "registry:component",
           "target": "components/app-shell/app-shell.tsx"
