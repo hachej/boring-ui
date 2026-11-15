@@ -3,7 +3,8 @@ import test from 'node:test';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { addTried, allNine, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from '../ux/runner/loop-state.mjs';
+import { advise } from '../ux/runner/advisor.mjs';
+import { advisorDue, addTried, allNine, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from '../ux/runner/loop-state.mjs';
 
 const KEYS = ['clarity', 'layout', 'states', 'phone', 'polish', 'flows'], dir = () => mkdtempSync(join(tmpdir(), 'ux-state-'));
 const grades = (...v) => Object.fromEntries(KEYS.map((k, i) => [k, v[i]]));
@@ -91,4 +92,19 @@ test('status.json keeps its start time and moves lastChangeAt only when somethin
   const same = writeStatus(f, { state: 'running', round: 4, focus: 'flows', failedInRow: 0 }, at('2026-11-14T10:05:00Z')); assert.equal(same.lastChangeAt, '2026-11-14T10:00:00.000Z');
   const moved = writeStatus(f, { state: 'paused', round: 4, nextWake: 'w' }, at('2026-11-14T10:10:00Z'));
   assert.equal(moved.startedAt, '2026-11-14T10:00:00.000Z'); assert.equal(moved.lastChangeAt, '2026-11-14T10:10:00.000Z'); assert.equal(JSON.parse(readFileSync(f, 'utf8')).state, 'paused');
+});
+
+test('the advisor is due once per stuck episode, at most every 3 rounds, and its plan becomes the worker instruction', () => {
+  const due = o => advisorDue({ failedInRow: 3, advisedThisEpisode: false, round: 10, lastAdvisedRound: null, ...o });
+  assert.equal(due({}), true); assert.equal(due({ failedInRow: 2 }), false); assert.equal(due({ advisedThisEpisode: true }), false);
+  assert.equal(due({ lastAdvisedRound: 8 }), false); assert.equal(due({ lastAdvisedRound: 7 }), true);
+  const brief = focusBrief({ focus: 'flows', tried: '- x', rethink: true, failures: 'boom', advisor: 'PLAN: fix the root cause' });
+  assert.match(brief, /advisor's plan[\s\S]*PLAN: fix the root cause/); assert.doesNotMatch(brief, /SMALLER and DIFFERENT/);
+});
+
+test('the advisor writes its plan, and a failure or a timeout leaves no plan', () => {
+  const d = dir(), scenario = { target: 't', title: 'T', purpose: 'p', file: 'f.json' }, base = { scenario, verdict: { grades: {}, to_raise: { flows: 'x' } }, tried: '-', failures: '', folder: d, home: d, root: d, out: join(d, 'advisor.md') };
+  const ok = advise({ ...base, run: (c, a, o) => { assert.equal(c, 'claude'); assert.deepEqual(a.slice(0, 4), ['-p', '--model', 'opus', '--tools']); assert.match(o.input, /flows: x/); return { status: 0, stdout: `1. The change: ${'z'.repeat(100)}` }; } });
+  assert.match(readFileSync(join(d, 'advisor.md'), 'utf8'), /The change/); assert.ok(ok.plan);
+  const bad = advise({ ...base, out: join(d, 'no.md'), run: () => ({ status: null, error: { code: 'ETIMEDOUT' } }) }); assert.equal(bad.plan, null); assert.match(bad.why, /timed out/);
 });

@@ -26,6 +26,11 @@ export function updateMisses(misses, focus, before, after) {
 
 // After RETHINK_AFTER rounds in a row with nothing accepted, the next round is a rethink round.
 export const rethinkDue = failedInRow => failedInRow >= RETHINK_AFTER;
+// The advisor runs once per stuck episode (an accepted round or a pause ends the episode) and at most once every ADVISE_GAP rounds, on the round that is due to rethink.
+export const ADVISE_GAP = 3;
+export const advisorDue = ({ failedInRow, advisedThisEpisode, round, lastAdvisedRound }) => rethinkDue(failedInRow) && !advisedThisEpisode && (lastAdvisedRound === null || round - lastAdvisedRound >= ADVISE_GAP);
+// The last attempts that did not gain, one line each, for the advisor.
+export const triedRecent = (all, n = 8) => all.filter(t => t.result !== 'accepted').slice(-n).map(t => `- round ${t.round} on ${t.criterion} (${t.result}): ${t.note}`).join('\n') || 'nothing yet';
 export const pauseDue = failedInRow => failedInRow >= PAUSE_AFTER;
 export const pauseHours = pauses => PAUSE_HOURS[Math.min(pauses, PAUSE_HOURS.length - 1)];
 
@@ -73,8 +78,9 @@ export async function pauseFor(ms, { stopped, sleep = m => new Promise(r => setT
 }
 
 // What a round tells the worker about its focus, what was tried, and (after repeated failures) to rethink.
-export function focusBrief({ focus, problems = [], raise = '', blockers = [], tried, rethink, failures = '', max = MAX_FILES }) {
+export function focusBrief({ focus, problems = [], raise = '', blockers = [], tried, rethink, failures = '', advisor = '', max = MAX_FILES }) {
   const probs = problems.length ? problems.slice(0, 3).map(p => `- ${p.problem} (where: ${p.where}; fixed looks like: ${p.fixed_looks_like})`).join('\n') : '- (the judge listed none; read verdict.md)';
+  if (advisor) return `## The advisor's plan (Opus read the loop's state and the code after several discarded rounds): this is your instruction for this round. Follow it: one focused change, at most ${max} files outside tests.\n${advisor}\n\n## The judge's notes on ${focus}, for reference\n${probs}\n${raise ? `\n${raise}\n` : ''}\n## Already tried (do NOT repeat)\n${tried}\n`;
   return `## This round's single target: ${focus ?? 'none'}\nWork on this ONE criterion: one focused change, at most ${max} files outside tests (more and the round is discarded). Leave the other criteria alone unless they are a regression.\nThe judge's notes on it:\n${probs}\n${raise ? `\nWhat would raise it, and what a 9 still needs (the judge's words):\n${raise}\n` : ''}${blockers.length ? `\nThe worst measured numbers of the whole capture (they hold several grades down at once, whatever the criterion; if one fits this criterion, it comes first):\n${blockers.map(b => `- ${b}`).join('\n')}\n` : ''}\n## Already tried on ${focus} (do NOT repeat these; try something different, or a different part of the screen)\n${tried}\n`
     + (rethink ? `\n## Rethink round\nThe last rounds in a row were discarded. Their exact failure text is below. Propose a SMALLER and DIFFERENT change than the ones that failed: fewer files, one idea, nothing that touches what failed.\n${failures}\n` : '');
 }
