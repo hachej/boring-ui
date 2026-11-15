@@ -2471,13 +2471,19 @@
           ".app-shell [data-one-composer] [data-testid=\"transcript-scroll\"] > div, .app-shell [data-one-dock] [data-testid=\"transcript-scroll\"] > div": {
             "padding-top": "calc(var(--spacing) * 3)"
           },
-          ".app-shell [data-one-composer] [data-testid=\"agent-tray\"] [data-testid=\"transcript-scroll\"] > div:has(> [data-testid=\"transcript\"])": {
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"transcript-scroll\"] > div:has(> [data-testid=\"transcript\"])": {
+            "display": "flex",
+            "flex-direction": "column",
+            "justify-content": "flex-end",
+            "min-height": "100%",
             "padding-block": "calc(var(--spacing) * 3)"
           },
-          ".app-shell [data-one-composer] [data-testid=\"agent-tray\"] [data-testid=\"transcript\"]": {
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"transcript\"]": {
+            "flex": "none",
+            "min-height": "0",
             "gap": "calc(var(--spacing) * 4)"
           },
-          ".app-shell [data-one-composer] [data-testid=\"agent-tray\"] [data-testid=\"activity\"]": {
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"activity\"]": {
             "margin-block": "0"
           },
           ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"button\"] svg": {
