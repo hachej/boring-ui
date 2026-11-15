@@ -37,6 +37,18 @@ test('a stall rotates to the next lowest criterion after two rounds without a ga
   assert.deepEqual(simulate([0, 0, 0]).log, ['flows', 'flows', 'layout']);
 });
 
+test('when every criterion has stalled the turn passes round them: the one tried least goes next, never the lowest for ever', () => {
+  const g = grades(7, 6.5, 6.5, 6.5, 6.5, 6.5); let misses = {};
+  assert.equal(pickFocus(g, KEYS, { clarity: 2, layout: 11, states: 2, phone: 2, polish: 2, flows: 2 }), 'states');
+  assert.equal(new Set(Array.from({ length: 14 }, () => { const k = pickFocus(g, KEYS, misses); misses = updateMisses(misses, k, g, g); return k; })).size, 6, 'every criterion gets a turn');
+});
+
+test('the brief carries what would raise the criterion and the worst numbers of the capture', () => {
+  const text = focusBrief({ focus: 'flows', tried: '- x', raise: 'Expand shifts 0.205; under 0.02 gives 7.', blockers: ['F13@1440 Expand: shift 0.205'] });
+  assert.match(text, /What would raise it[\s\S]*under 0\.02 gives 7/); assert.match(text, /worst measured numbers[\s\S]*F13@1440 Expand/);
+  assert.doesNotMatch(focusBrief({ focus: 'flows', tried: '- x' }), /What would raise it|worst measured numbers/);
+});
+
 test('three rounds in a row with nothing accepted make the next a rethink round; an accepted round ends it', () => {
   assert.deepEqual([2, 3].map(rethinkDue), [false, true]);
   assert.deepEqual(simulate([0, 0, 0, 0, 1]).log, ['flows', 'flows', 'layout', 'layout rethink', 'phone rethink']);

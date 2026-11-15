@@ -35,6 +35,7 @@ ONLY this JSON object, no code fence, no text before or after:
     "clarity": [ { "problem": "...", "where": "390-07-docked.png or F03@1440 step 2", "fixed_looks_like": "..." }, ... three, most damaging first ],
     "layout": [...], "states": [...], "phone": [...], "polish": [...], "flows": [...]
   },
+  "to_raise": { "clarity": "...", "layout": "...", "states": "...", "phone": "...", "polish": "...", "flows": "..." },
   "gaps": [ "what the kit lacks that a flow needs" ],
   "worse": [ { "what": "...", "where": "..." } ],
   "improved": [ "..." ],
@@ -42,5 +43,7 @@ ONLY this JSON object, no code fence, no text before or after:
   "verdict_md": "Short Markdown a person reads in a minute: a table of the grades (with the change since the previous round), the one fix that matters most, the three worst measured numbers, what got worse, one sentence on whether it can ship."
 }
 ```
+
+`to_raise` is one or two sentences per graded criterion: the state or flow that caps the grade today, the change that would lift it by half a point, and what a 9 still needs, each stated as a number or a picture (never "improve spacing"). Say so plainly when the grade is held by a problem listed under another criterion.
 
 Three problems per criterion, even one graded 9 (then the three smallest flaws). Write in English; quote UI strings as they appear.
