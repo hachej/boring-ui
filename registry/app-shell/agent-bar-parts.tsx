@@ -215,16 +215,20 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
   const controller = layer.agent!.controller;
   const readStop = () => controller.getSnapshot().stop;
   const stop = useSyncExternalStore(controller.subscribe, readStop, readStop);
+  const readRunning = () => Boolean(controller.getSnapshot().view?.docs['pi.live']?.['run']);
+  const running = useSyncExternalStore(controller.subscribe, readRunning, readRunning);
   const stopped = stop === 'confirmed';
+  const working = !stopped && !question && (running || status?.state === 'working');
+  const workingText = working ? (status?.state === 'working' ? status.text : layer.agent?.workingWords?.({ text: text.working })?.trim() || text.working) : undefined;
   const { markRead } = bar;
   useEffect(() => { if (stopped) markRead(); }, [stopped, markRead]);
   const labels = { ...composerLabels(layer.locale, layer.agent), ...layer.agent?.chatProps?.labels };
   const stoppedHint = layer.agent?.chatProps?.labels?.emptyDescription ?? layer.agent?.words?.emptyDescription
     ?? ((layer.locale ?? layer.agent?.chatProps?.locale) === 'fr' ? 'Envoyez un nouveau message pour continuer.' : 'Send a new message to continue.');
   const action = layer.agent?.replyAction;
-  if (!question && status?.state !== 'working' && !reply && !stopped) return null;
-  const header = stopped ? <><SquareIcon weight="fill" className="size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1 text-pretty wrap-anywhere"><span data-testid="agent-card-status">{labels.subagentStatus('cancelled')}</span>{' · '}{stoppedHint}</span></> : question ? undefined : status?.state === 'working'
-    ? <><span className="text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 whitespace-normal wrap-anywhere md:truncate">{status.text}</span></>
+  if (!question && !working && !reply && !stopped) return null;
+  const header = stopped ? <><SquareIcon weight="fill" className="size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1 text-pretty wrap-anywhere"><span data-testid="agent-card-status">{labels.subagentStatus('cancelled')}</span>{' · '}{stoppedHint}</span></> : question ? undefined : working
+    ? <><span className="text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 whitespace-normal wrap-anywhere md:truncate">{workingText}</span></>
     : reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-(--radius-3xl) bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
       <span data-testid="agent-card-status" className="min-w-0 flex-1 whitespace-normal wrap-anywhere md:truncate">{text.done}{text.done && reply.used.length > 0 ? ' · ' : ''}{reply.used.map((name, index) => {
         const extension = name.lastIndexOf('.');
@@ -234,7 +238,7 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
         </span></span>;
       })}</span></> : undefined;
   return <>
-    <section data-testid="agent-card" data-state={stopped ? 'stopped' : question ? 'question' : status?.state === 'working' ? 'working' : 'reply'} aria-label={text.assistant}
+    <section data-testid="agent-card" data-state={stopped ? 'stopped' : question ? 'question' : working ? 'working' : 'reply'} aria-label={text.assistant}
       className="flex flex-col gap-2 px-3 pt-2.5 pb-3 text-sm text-card-foreground md:data-[state=working]:pb-2">
       {header && <p role="status" className="m-0 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">{header}</p>}
       {!stopped && question && <div data-testid="agent-question" aria-label={question.title} className="flex flex-col gap-2">
@@ -243,7 +247,7 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
         <p className="m-0 text-base font-semibold">{question.title}</p>
         <div className="flex flex-wrap gap-2">{question.choices.map(choice => <Button key={choice} type="button" variant="outline" data-choice="" onClick={() => question.onAnswer({ text: choice, source: 'choice' })}>{choice}</Button>)}</div>
       </div>}
-      {!stopped && !question && status?.state !== 'working' && reply && <>
+      {!stopped && !question && !working && reply && <>
         {/* A tap on the reply opens the conversation, as the chevron does (the chevron stays the way for a keyboard). */}
         <FoldedReply text={reply.text} onOpen={() => layer.open('agent')} />
         {(reply.files.length > 0 || action) && <div role="list" data-testid="agent-card-files" className="flex flex-wrap items-center gap-1.5">
