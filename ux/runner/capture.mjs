@@ -40,7 +40,7 @@ export async function step(h, s, def, ctx) {
   h.target = null; h.repeats = 0;
   const before = ctx.before;
   const run = async () => {
-    try { const go = await prepare(h, def); await page.evaluate(prog => window.__begin(prog), def.do === 'fixture' || def.do === 'wait'); h.t = Date.now(); await go(); }
+    try { const go = await prepare(h, def); await page.evaluate(([prog, inPlace]) => window.__begin(prog, inPlace), [def.do === 'fixture' || def.do === 'wait', def.inPlace ?? null]); h.t = Date.now(); await go(); }
     catch (error) { rec.error = String(error.message).split('\n')[0]; h.t ||= Date.now(); }
   };
   h.t = 0;
@@ -62,7 +62,7 @@ export async function step(h, s, def, ctx) {
   Object.assign(rec, { firstChangeMs: timing.first, settledMs: timing.settled, cls: timing.cls, repeats: h.repeats, target: h.target, focusAfter: after.focus, expectFocus: pick(def.focus, h.viewport) ?? null,
     moved: Object.fromEntries(watch.map(([name]) => [name, moved(before.watched[name], after.watched[name])])), scrollBefore: before.scroll, scrollAfter: after.scroll,
     offscreen: after.offscreen, overlaps: after.overlaps, truncated: after.truncated, horizontalScroll: after.horizontalScroll, keepScroll: def.keepScroll ?? null });
-  if (h.probe) rec.shiftSources = timing.sources;
+  if (h.probe) { rec.shiftSources = timing.sources; rec.shiftAfterInput = timing.afterInput; rec.shiftInPlaceIgnored = timing.inPlaceIgnored; }
   if (ctx.shot) rec.frame = await ctx.shot(`${rec.say}${rec.ok ? '' : def.gap ? ' (NOT IN THE KIT)' : ' (FAILED)'}`, timing.settled, `first change ${timing.first ?? '-'} ms · settled ${timing.settled ?? '-'} ms · layout shift ${timing.cls}`);
   ctx.before = after;
   return rec;

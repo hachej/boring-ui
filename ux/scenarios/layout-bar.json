@@ -337,8 +337,12 @@
      "target": "composer-input"
     },
     {
+     "do": "keyboard",
+     "px": 300
+    },
+    {
      "do": "wait",
-     "ms": 200
+     "ms": 300
     }
    ],
    "only": "390",
@@ -465,6 +469,7 @@
      "do": "tap",
      "text": "uploads",
      "say": "Unfold the folder “uploads”",
+     "inPlace": "[data-testid=fixture-library]",
      "until": "text:fixture-library~discrepancies-january.csv",
      "expect": "The folder opens in place."
     },
@@ -584,7 +589,7 @@
     { "do": "tap", "target": "agent-layer-library", "say": "Tap “Library”", "motion": true, "until": "visible:fixture-library & eval:(window.__pw = document.querySelector('[data-dock=preview]')?.getBoundingClientRect().width ?? 0) > 0", "expect": "The library opens in the right column." },
     { "do": "focus", "target": "[role=separator]:has(+ [data-dock=preview])", "say": "Focus the column's edge" },
     { "do": "press", "key": "ArrowLeft ArrowLeft ArrowLeft ArrowLeft", "say": "Widen it with the arrow keys", "until": "eval:(window.__pw2 = document.querySelector('[data-dock=preview]').getBoundingClientRect().width) > window.__pw + 40", "expect": "The column grows; the page beside it narrows." },
-    { "do": "tap", "text": "uploads", "say": "Unfold “uploads”", "until": "text:fixture-library~discrepancies-january.csv" },
+    { "do": "tap", "text": "uploads", "say": "Unfold “uploads”", "inPlace": "[data-testid=fixture-library]", "until": "text:fixture-library~discrepancies-january.csv" },
     { "do": "tap", "text": "discrepancies-january.csv", "say": "Open “discrepancies-january.csv”", "motion": true, "until": "visible:artifact-csv & text:agent-preview-title~discrepancies-january.csv & text:agent-preview-back~Library", "expect": "The file opens on top of the library, at the same width." },
     { "do": "tap", "target": "agent-preview-close", "say": "Close it", "until": "gone:agent-preview" },
     { "do": "tap", "target": "agent-layer-library", "say": "Open the library again", "until": "visible:fixture-library & eval:Math.abs(document.querySelector('[data-dock=preview]').getBoundingClientRect().width - window.__pw2) < 2", "expect": "The column comes back at the width I chose." }

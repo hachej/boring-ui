@@ -22,7 +22,7 @@ import { loadAll, slug } from './scenario.mjs';
 import { advise } from './advisor.mjs';
 import { probeFlow } from './probe.mjs';
 import { declared, declaredExcess, run as flowRun, totals, traceText, worstSteps } from './trace.mjs';
-import { advisorDue, triedRecent, allNine, addTried, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from './loop-state.mjs';
+import { specBlock, specItems, advisorDue, triedRecent, allNine, addTried, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from './loop-state.mjs';
 
 const args = process.argv.slice(2), opt = n => { const i = args.indexOf(`--${n}`); return i < 0 ? undefined : args[i + 1]; };
 const DRY = args.includes('--dry-run'), BASELINE = args.includes('--baseline');
@@ -44,6 +44,7 @@ const status = d => { if (!d) return ''; try { return execFileSync('git', ['-C',
 const gained = (a, b) => KEYS.some(k => typeof a?.[k] === 'number' && a[k] > (b?.[k] ?? 0));
 const lowest = v => Math.min(...KEYS.map(k => v?.grades?.[k]).filter(x => typeof x === 'number'));
 const FAILING = join(HOME, 'last-failure.txt'), LINES = join(HOME, 'check-lines.json'), TRIED = join(HOME, 'tried.json'), PID = join(HOME, 'loop.pid'), STATUS = join(HOME, 'status.json');
+const SPEC_FILE = join(HOME, 'spec.md'), specText = () => existsSync(SPEC_FILE) ? readFileSync(SPEC_FILE, 'utf8').trim() : '';
 const plan = { focus: null, rethink: false, failures: '', advisor: '', trace: '' }; // what the round in hand targets (set by the main loop before the worker runs)
 // `layout:bar F01@1440 step 3 "Tap": layout shift 0.095 > 0.08` keyed with the numbers after the step name blanked: a metric moving is not a new problem.
 const lineKey = shiftKey;
@@ -69,7 +70,7 @@ function eyes(n, prev, lines) {
 }
 function brief(n, prev, feedback, eyesDir) {
   const v = readJson(join(prev, 'verdict.json')), worse = v?.worse?.length ? v.worse.map(w => `${w.what} (${w.where ?? w.screenshot})`).join('; ') : 'nothing reported';
-  const map = { N: n, TARGET: scenario.target, TITLE: scenario.title, SCENARIO: scenario.file, NOTES: scenario.notes ?? '', WT: root, BRANCH: git('branch', '--show-current'), TEST_CMD, EYES: eyesDir, PREV_DIR: join(eyesDir, 'capture', S), WORSE: worse, HOME, ROUND_DIR: roundDir(n), SKILLS, TRACE: plan.trace, FOCUS: focusBrief({ focus: plan.focus, problems: v?.problems?.[plan.focus] ?? [], raise: v?.to_raise?.[plan.focus] ?? '', blockers: (v?.worst_numbers ?? []).slice(0, 3), tried: triedText(readTried(TRIED), plan.focus), rethink: plan.rethink, failures: plan.failures, advisor: plan.advisor, max: MAX_FILES }), FEEDBACK: feedback ? `\n## What the loop found after your last pass (full output in ${roundDir(n)}). Fix exactly this; edit files only:\n${feedback}\n` : '' };
+  const map = { N: n, TARGET: scenario.target, TITLE: scenario.title, SCENARIO: scenario.file, NOTES: scenario.notes ?? '', WT: root, BRANCH: git('branch', '--show-current'), TEST_CMD, EYES: eyesDir, PREV_DIR: join(eyesDir, 'capture', S), WORSE: worse, HOME, ROUND_DIR: roundDir(n), SKILLS, TRACE: plan.trace, SPEC: specBlock(specText()), FOCUS: focusBrief({ focus: plan.focus, problems: v?.problems?.[plan.focus] ?? [], raise: v?.to_raise?.[plan.focus] ?? '', blockers: (v?.worst_numbers ?? []).slice(0, 3), tried: triedText(readTried(TRIED), plan.focus), rethink: plan.rethink, failures: plan.failures, advisor: plan.advisor, max: MAX_FILES }), FEEDBACK: feedback ? `\n## What the loop found after your last pass (full output in ${roundDir(n)}). Fix exactly this; edit files only:\n${feedback}\n` : '' };
   return Object.entries(map).reduce((t, [k, val]) => t.replaceAll(`{{${k}}}`, String(val)), readFileSync(join(root, 'ux/worker-brief.md'), 'utf8'));
 }
 function worker(n, prev, lines, feedback, tag) {
@@ -137,9 +138,10 @@ async function flowGuard(n, prevResult) {
 function score(n, { v, p, commit = '-', checks = '-', note = '', excess = null }) {
   const cells = KEYS.map(k => v?.grades?.[k] ?? '-'), nums = cells.filter(x => typeof x === 'number');
   const up = v && p ? KEYS.filter(k => v.grades[k] > (p.grades[k] ?? 0)).join(', ') || 'none' : '-', down = v && p ? KEYS.filter(k => v.grades[k] < (p.grades[k] ?? 0)).join(', ') || 'none' : '-';
+  const claimed = specText() ? specItems(existsSync(join(roundDir(n), 'changes.md')) ? readFileSync(join(roundDir(n), 'changes.md'), 'utf8') : '') : [];
   const file = join(HOME, DRY ? 'scoreboard.dry.md' : 'scoreboard.md'); mkdirSync(HOME, { recursive: true });
   if (!existsSync(file)) writeFileSync(file, `| round | ${KEYS.join(' | ')} | lowest | improved | worse | failing check lines | commit | result |\n|${'---|'.repeat(KEYS.length + 6)}\n`);
-  appendFileSync(file, `| ${n} | ${cells.join(' | ')} | ${nums.length ? Math.min(...nums) : '-'} | ${up} | ${down} | ${checks ?? '-'} | ${commit} | ${(excess === null ? note : `${note} [shift excess ${excess}]`).replace(/\s+/g, ' ').slice(0, 300)} |\n`);
+  appendFileSync(file, `| ${n} | ${cells.join(' | ')} | ${nums.length ? Math.min(...nums) : '-'} | ${up} | ${down} | ${checks ?? '-'} | ${commit} | ${(`${note}${excess === null ? '' : ` [shift excess ${excess}]`}${claimed.length ? ` [spec ${claimed.join(',')}]` : ''}`).replace(/\s+/g, ' ').slice(0, 300)} |\n`);
 }
 // Handed to the judge: the loop vetoes only on the fast checks, the contract tests, a step that stopped completing and the exam; the rest is evidence.
 const evidence = (lines, before) => `Failing check lines now: ${lines.length} (accepted round before: ${before.length}). Steps that do not complete now: ${incomplete(lines).length} (before: ${incomplete(before).length}).\n${lines.length ? lines.join('\n') : 'none'}\n`;
@@ -164,7 +166,7 @@ let prevLines = readJson(LINES) ?? (existsSync(baselineText) ? readFileSync(base
 if (!prevVerdict && !DRY) { log('no round-0 verdict: run --baseline first'); process.exit(1); }
 if (args.includes('--advise')) { // one real advisor call against the current state, then exit (no worker, no pid claim)
   mkdirSync(roundDir(n), { recursive: true });
-  const a = advise({ scenario, verdict: prevVerdict, tried: triedRecent(readTried(TRIED)), failures: existsSync(FAILING) ? readFileSync(FAILING, 'utf8') : '', folder: prev, home: HOME, root, out: join(roundDir(n), 'advisor.md') });
+  const a = advise({ scenario, verdict: prevVerdict, tried: triedRecent(readTried(TRIED)), failures: existsSync(FAILING) ? readFileSync(FAILING, 'utf8') : '', folder: prev, home: HOME, root, spec: specText(), out: join(roundDir(n), 'advisor.md') });
   log(a.plan ? `advise: plan written to ${join(roundDir(n), 'advisor.md')}` : `advise: failed (${a.why})`); process.exit(a.plan ? 0 : 1);
 }
 if (!DRY) { // one loop per state folder, checked by pid
@@ -190,7 +192,7 @@ for (; n <= MAX_ROUNDS; n++) {
   plan.advisor = '';
   if (!DRY && advisorDue({ failedInRow, advisedThisEpisode, round: n, lastAdvisedRound })) { // stuck: Opus plans once, the worker follows it; a failure leaves a plain rethink round
     advisedThisEpisode = true; lastAdvisedRound = n; mkdirSync(roundDir(n), { recursive: true }); say({ state: 'advising', round: n, focus: plan.focus, advisor: true, nextWake: null });
-    const a = advise({ scenario, verdict: prevVerdict, tried: triedRecent(readTried(TRIED)), failures: plan.failures, folder: prev, home: HOME, root, out: join(roundDir(n), 'advisor.md') });
+    const a = advise({ scenario, verdict: prevVerdict, tried: triedRecent(readTried(TRIED)), failures: plan.failures, folder: prev, home: HOME, root, spec: specText(), out: join(roundDir(n), 'advisor.md') });
     if (a.plan) { plan.advisor = a.plan; log(`round ${n}: advisor (Opus) wrote a plan: ${join(roundDir(n), 'advisor.md')}`); } else log(`round ${n}: advisor failed (${a.why}); plain rethink round`);
   }
   plan.trace = DRY ? '' : await beforeTrace(prevResult);

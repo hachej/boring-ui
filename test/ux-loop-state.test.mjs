@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { advise } from '../ux/runner/advisor.mjs';
 import { declared, declaredExcess, shiftExcess, topSources, totals, traceText, worstSteps } from '../ux/runner/trace.mjs';
-import { advisorDue, addTried, allNine, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from '../ux/runner/loop-state.mjs';
+import { specBlock, specItems, advisorDue, addTried, allNine, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from '../ux/runner/loop-state.mjs';
 
 const KEYS = ['clarity', 'layout', 'states', 'phone', 'polish', 'flows'], dir = () => mkdtempSync(join(tmpdir(), 'ux-state-'));
 const grades = (...v) => Object.fromEntries(KEYS.map((k, i) => [k, v[i]]));
@@ -120,4 +120,9 @@ test('a measured step: shift excess, the steps a round declares, and the trace t
   assert.equal(declaredExcess(s, result, [{ flow: 'F14', viewport: '390', step: 2 }]), 1.09); assert.equal(declaredExcess(s, result, [{ flow: 'F02', viewport: '390', step: null }]), 0.6);
   assert.equal(topSources(result.flows[0].steps[1].shiftSources)[0].el, 'div[a]');
   assert.match(traceText(s, result.flows[0], { only: [2] }), /step 2 "Reopen it": layout shift 0.167 \(over\).*\n    shifted: div\[a\]  390x98 at 0,690  ->  390x378 at 0,410/);
+});
+
+test('a target spec reaches the brief, and the items a round claims are read from its changes.md', () => {
+  assert.deepEqual(specItems('# R\nSpec: items 3, 5 and 3\n'), ['3', '5']); assert.deepEqual(specItems('nothing'), []);
+  assert.match(specBlock('1. one'), /Target design spec[\s\S]*order of work[\s\S]*Spec: 3, 5[\s\S]*1\. one/); assert.equal(specBlock(''), '');
 });
