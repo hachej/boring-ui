@@ -314,6 +314,17 @@ A sent message that mentions an upload (`@uploads/<path>`, what `attachments` sa
 
 `fileChanges` on `PiChat` or `AmbientChat` opts into the same file-card renderer for successful native `write` and `edit` calls with a `path`. One card per path appears below the reply, outside collapsed activity, labelled Created for `write` or Edited for `edit`. A write followed by edits stays Created. Failed, pending and unrelated calls show no file card. Clicking uses `onOpenFile`, falling back to `mentions.open`; without either, the card is not clickable. This is a view of native tool results, not publication evidence or a pinned revision. It is off by default because a host's tools named `write` or `edit` need not operate on workspace files. The workspace demo enables it.
 
+## Enter and Send in `pi-chat` (`enterSends`)
+
+`enterSends` (on `PiChat`, `AmbientChat`, `Composer`, and in `AgentSpec.chatProps` of the app shell) says what Enter does in the message field.
+
+| Value | Physical keyboard | Touch device (`(pointer: coarse)`) |
+| --- | --- | --- |
+| `'keyboard'` (default, nothing changes for an existing app) | Enter sends, Shift+Enter adds a line | Enter adds a line (a phone keyboard has no Shift+Enter); the Send button sends |
+| `'always'` | Enter sends, Shift+Enter adds a line | Enter sends, Shift+Enter adds a line |
+
+In both values an input method that is composing a candidate (`isComposing`, `keyCode` 229) never sends, an empty field never sends, and `onComposerKeyDown` runs first and can stop the key with `preventDefault()`. Use `'always'` for a one-line message to an assistant, typed by a person who expects Return to send; keep the default where messages are long and a phone's Return is a new line. The option needs no edit of the installed block, so `boring-ui-blocks check` stays green. The `AgentBar` field is its own input and always sends on Enter. Test: `CHROMIUM=... node --test test/contracts/one-composer.test.mjs --test-name-pattern "touch|fine pointer"`.
+
 ## Voice messages in `pi-chat`
 
 Install the `pi-chat-voice` item and spread its `voiceMessagePlugin` (recorder hook, microphone button, pending bubble) into `voiceMessage`, or use `withChatPlugins`; without them `pi-chat` shows no microphone.
