@@ -239,6 +239,15 @@
       "@media (width < 768px)": {
         ".app-shell [data-bar-page]::after": {
           "bottom": "var(--app-shell-bar-height, 0px)"
+        },
+        ".app-shell [data-one-dock] [data-role=\"assistant\"] [data-slot=\"message-content\"]": {
+          "gap": "0"
+        },
+        ".app-shell [data-one-dock] [data-role=\"assistant\"] [data-slot=\"message-body\"]": {
+          "gap": "calc(var(--spacing) * 2)"
+        },
+        ".app-shell [data-one-dock] [data-role=\"assistant\"] [data-slot=\"message-actions\"]": {
+          "margin-top": "0"
         }
       },
       ".app-shell [data-one-composer] [data-testid=\"composer-dock\"]": {
