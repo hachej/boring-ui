@@ -12,6 +12,7 @@ Scenarios as data (`ux/scenarios/*.json`), one per layout or component, that a r
 - `ux-showcase` `node ux/runner/cli.mjs site` builds a static, English documentation site from a capture: left navigation, the playable demo first on every page (and on the home page) with "things to try" that play a flow in it, usage, then the collapsed status, steps and recordings. `ux/runner/site.mjs`, run by `.github/workflows/ux-showcase.yml` (on a release or by hand; publishes whenever capture succeeds, shows the check status in neutral words, and blocks only when `UX_ENFORCE` is on; see the runbook).
 - `ux-scripted-agent` the demos' assistant is data (`ux/scenarios/scripts/*.json`): turns with tool steps, streamed text, questions; `pace=real` for people and videos, `pace=instant` for `check`. `ux/fixtures/scripted-agent.mjs`.
 - `ux-demo-entry-controls` the bookkeeping demo uses kit Buttons for entry labels and quoting, so the kit owns their touch sizing. `test/fixtures/themes/one-composer.jsx`, `test/fixtures/themes/one-composer-demo.jsx`.
+- `ux-demo-entry-status` the bookkeeping page shows a translated status word below each amount on phones, using kit Badge variants for reconciled, gap and receipt states. Desktop keeps its separate status column. `test/fixtures/themes/one-composer.jsx`.
 
 ## How to get to it (user POV)
 
@@ -29,6 +30,7 @@ Preconditions: `npm ci && npm run build`, `CHROMIUM` set to a Chromium binary, `
 - `ux-showcase`: `node ux/runner/cli.mjs site --from .cache/ux --out .cache/site`, then open `.cache/site/index.html`.
 - `ux-scripted-agent`: open a fixture page with `?demo=1` and type “Reconcile the January statement”; any other text gets the script's plain fallback sentence.
 - `ux-demo-entry-controls`: at 390 px in `layout:bar`, tap the Jan 09 or Jan 15 entry label, then “Quote in the assistant”. Both controls use the kit's 44 px touch floor. Entry labels also open with Enter or Space. F03 and F04 drive these controls.
+- `ux-demo-entry-status`: inspect `layout:bar` at 390 px in light and dark. Scroll through the page and check that each amount has “Reconciled”, “Gap” or “Needs a receipt” beneath it. Open and close Jan 09 and Jan 15 in F03 and F04, then scroll to the last entry and confirm it remains above the composer. At 1440 px, status stays in its own column.
 
 ## Gotchas
 

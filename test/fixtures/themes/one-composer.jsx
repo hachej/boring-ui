@@ -1,6 +1,7 @@
 import { useLayoutEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { AppShell } from '../../../registry/app-shell/app-shell.tsx';
 import { useAgentLayer } from '../../../registry/app-shell/agent-layer.tsx';
 import { SlashPicker } from '../../../registry/pi-chat-slash/slash-menu.tsx';
@@ -130,6 +131,7 @@ const LINES_EN = [['Jan 02', 'Transfer Delmore House', '$1,240.00', 'ok'], ['Jan
 const LINES = EN ? LINES_EN : LINES_FR;
 const STATUS_CLASS = { ok: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300', gap: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300', wait: 'bg-muted text-muted-foreground' };
 const STATUS_WORDS = EN ? { ok: 'Reconciled', gap: 'Gap', wait: 'Needs a receipt' } : { ok: 'Rapprochée', gap: 'Écart', wait: 'À justifier' };
+const STATUS_VARIANT = { ok: 'success', gap: 'warning', wait: 'secondary' };
 const STATUS = Object.fromEntries(Object.keys(STATUS_CLASS).map(key => [key, [STATUS_WORDS[key], STATUS_CLASS[key]]]));
 const quote = date => window.__layer.talkAbout('@ecriture:' + date.replace(/[/ ]/g, '-'));
 const openRecord = line => window.__layer.preview(recordView(line, () => quote(line[0]), KIT ? (file, files) => window.__layer.pane.push({ file, files }) : undefined));
@@ -141,7 +143,11 @@ const RealPage = () => <div data-testid="page" className="flex min-h-0 flex-1 fl
   <div className="flex gap-2 text-sm">{T(['Toutes', 'Écarts', 'À justifier'], ['All', 'Gaps', 'Needs a receipt']).map((tab, i) => <span key={tab} className={`rounded-full border px-3 py-1 ${i === 0 ? 'bg-foreground text-background' : ''}`}>{tab}</span>)}</div>
   <div className="shrink-0 overflow-hidden rounded-lg border bg-card">{LINES.map(([date, label, amount, status]) => <div key={date + label} role="row" data-testid="page-row" {...(DEMO ? { onClick: () => openRecord([date, label, amount, status]) } : {})} className={`flex items-center gap-3 border-b text-sm last:border-b-0 ${DEMO ? 'cursor-pointer px-3 md:py-1 hover:bg-muted/50' : 'p-3'}`}>
     <span className="w-12 shrink-0 text-muted-foreground">{date}</span>{DEMO ? <Button type="button" variant="ghost" className="block h-auto min-h-(--control-h) min-w-0 flex-1 whitespace-normal py-2 text-left sm:py-1" title={label}>{label}</Button> : <span className="min-w-0 flex-1 truncate">{label}</span>}
-    <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-xs sm:inline ${STATUS[status][1]}`}>{STATUS[status][0]}</span><span aria-label={STATUS[status][0]} className={`size-2 shrink-0 rounded-full sm:hidden ${status === 'ok' ? 'bg-emerald-500' : status === 'gap' ? 'bg-amber-500' : 'bg-muted-foreground'}`} /><span className="w-24 shrink-0 text-right tabular-nums">{amount}</span></div>)}</div>
+    <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-xs sm:inline ${STATUS[status][1]}`}>{STATUS[status][0]}</span>
+    <span className="flex w-24 shrink-0 flex-col items-end gap-1 sm:contents">
+      <span className="w-24 shrink-0 text-right tabular-nums">{amount}</span>
+      <Badge variant={STATUS_VARIANT[status]} className="sm:hidden">{STATUS_WORDS[status]}</Badge>
+    </span></div>)}</div>
 </div>;
 const Screen = (DEMO || params.get('page') === 'real') ? RealPage : Page;
 const nav = [{ id: 'dossier', label: T('Dossier', 'File'), icon: DEMO ? FileTextIcon : Icon, render: () => <Screen /> },
