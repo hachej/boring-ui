@@ -167,9 +167,10 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
 
   // The sheet stops under the page header it opens over, so the trigger there is not covered: at full the sheet would otherwise reach 1.5rem from the top and sit on it.
   const [measuredClear, setTriggerClear] = useState(0);
-  const triggerClear = open && !peek ? measuredClear : 0;
+  const triggerClear = open && (layer.bar || !peek) ? measuredClear : 0;
   useLayoutEffect(() => {
-    if (!open || peek) return;
+    // Keep the bar's popup height stable across snaps, including while its transcript is folded.
+    if (!open || (peek && !layer.bar)) return;
     // Follows the real geometry while open: a header that grows later (an async leading control) moves the trigger down. The lowest of the triggers in the top half counts.
     // State is set only from the callbacks below (the first call is the observer's initial one), never synchronously in this effect.
     const measure = () => {
@@ -198,7 +199,7 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
       window.removeEventListener('resize', measure); window.visualViewport?.removeEventListener('resize', measure);
       document.removeEventListener('transitionend', measure, true);
     };
-  }, [open, peek, vv?.height]);
+  }, [open, peek, layer.bar, vv?.height]);
 
   // While « Améliorer l'app » shows, the PM panel owns the layer's Back entry (AgentLayerProvider).
   useBackLayer((snap === 'half' || snap === 'full') && layer.showing !== 'improve', layer.close, 'agent');
