@@ -37,8 +37,12 @@ const markdownKind: LocalTextKind = {
   load: () => import('../pi-chat-markdown/markdown').then(module => ({ default: ({ text }: { readonly text: string }) => <div data-testid="pane-markdown" className="pi-chat text-sm"><module.Markdown text={text} /></div> })),
 };
 const TEXT_KINDS: readonly LocalTextKind[] = [csvKind, markdownKind];
-// The viewer (image, PDF and their libraries) loads the first time a file opens: a page that only uses the layer keeps none of it up front.
-const LocalFileViewer = lazy(() => import('../viewer-pdf/local-file-viewer').then(module => ({ default: module.LocalFileViewer })));
+let readyFileViewer: typeof import('../viewer-pdf/local-file-viewer').LocalFileViewer | undefined;
+const loadFileViewer = () => import('../viewer-pdf/local-file-viewer').then(module => {
+  readyFileViewer = module.LocalFileViewer;
+  return { default: module.LocalFileViewer };
+});
+const LocalFileViewer = lazy(loadFileViewer);
 
 /** The files cited or attached in the message that names `path` (the latest one): the set previous and next step through. */
 export function citedWith(controller: NativeChatController | undefined, path: string): readonly string[] {
@@ -76,6 +80,12 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
   const focusPlan = useRef<{ readonly to: 'top' } | { readonly to: 'same'; readonly testId: string } | { readonly to: 'element'; readonly element: HTMLElement | null; readonly fallback: 'top' | 'field' } | null>(null);
   const commit = useCallback((next: readonly PaneEntry[], plan: typeof focusPlan.current) => { latest.current = next; focusPlan.current = plan; setStack(next); }, []);
   const files = agent?.files;
+  useEffect(() => {
+    if (!bar || !files) return;
+    // Warm module code together, without reading host files, so opening a CSV does not wait on two successive lazy imports.
+    void loadFileViewer().catch(() => {});
+    void csvKind.load().catch(() => {});
+  }, [bar, files]);
   const opener = () => document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
 
   // Opening the pane leaves the conversation as it is (folded stays folded): the page keeps its place, the one field stays where it was.
@@ -295,7 +305,8 @@ function FileEntry({ entry, frame, read, onShown }: { readonly entry: Extract<Pa
     <p role="status" data-testid={`${id}-status`} className="m-0 p-4 text-sm text-muted-foreground">{blob === null ? text.fileUnavailable : text.fileLoading}</p>
   </ViewerFrame>;
   if (!blob) return waiting;
-  return <Suspense fallback={waiting}><LocalFileViewer key={path} name={path} blob={blob} kinds={TEXT_KINDS} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose} />{id === 'agent-preview' && <RefocusTitle key={path} />}</Suspense>;
+  const Viewer = readyFileViewer ?? LocalFileViewer;
+  return <Suspense fallback={waiting}><Viewer key={path} name={path} blob={blob} kinds={TEXT_KINDS} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose} />{id === 'agent-preview' && <RefocusTitle key={path} />}</Suspense>;
 }
 
 /**
