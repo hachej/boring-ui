@@ -2487,6 +2487,9 @@
             "min-height": "100%",
             "padding-block": "calc(var(--spacing) * 3)"
           },
+          ".app-shell [data-one-composer] [data-testid=\"agent-tray\"][data-expanded] [data-testid=\"transcript-scroll\"] > div:has(> [data-testid=\"transcript\"])": {
+            "justify-content": "flex-start"
+          },
           ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"transcript\"]": {
             "flex": "none",
             "min-height": "0",

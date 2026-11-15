@@ -190,7 +190,7 @@ function ContentTray() {
   // In an anchor the tray sits in the app's column, whose height is not the content column's: a share of the viewport, and Agrandir takes more of it instead of hiding the page.
   const boxed = layer.bar && layer.contentComposer;
   const height = boxed ? (grown ? '70dvh' : '30dvh') : layer.anchored ? (grown ? 'min(70dvh, 720px)' : `min(35dvh, ${TRAY_MAX}px)`) : grown ? undefined : `min(35%, ${TRAY_MAX}px)`;
-  return <section data-testid="agent-tray" aria-label={title} style={height ? { height } : undefined}
+  return <section data-testid="agent-tray" data-expanded={boxed && grown || undefined} aria-label={title} style={height ? { height } : undefined}
     className={cn('relative flex min-h-0 min-w-0 flex-col', boxed ? 'shrink-0 bg-card px-3 text-card-foreground' : 'bg-card px-4 text-card-foreground', !boxed && (grown && !layer.anchored ? 'flex-1' : 'shrink-0'))}>
     {boxed ? null : <Separator className="absolute inset-x-0 top-0" />}
     <div data-testid="agent-tray-body" className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
