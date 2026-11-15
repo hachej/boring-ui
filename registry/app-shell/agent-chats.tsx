@@ -202,7 +202,7 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
     {compactSnap === 'half' && <HeaderHint label={text.expand}><Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}>{layer.bar ? <Maximize2Icon className="size-4" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button></HeaderHint>}
     {compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}>{layer.bar ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <ChevronDownIcon data-icon="inline-start" aria-hidden="true" />}</Button></HeaderHint>}
     {controls}
-    {layer.bar && <Separator orientation="vertical" aria-hidden="true" className="mx-1 my-2" />}
+    {layer.bar && <Separator orientation="vertical" aria-hidden="true" className="mx-1 my-2 w-px self-stretch" />}
     <Button variant="ghost" size={layer.bar ? 'sm' : 'icon'} ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" />{layer.bar && text.close}</Button>
   </div>;
 }
