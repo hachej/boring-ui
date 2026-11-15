@@ -12,7 +12,7 @@ import type { AnswerOutcome, ChatArtifactsConfig, ChatCards, CommandMentions } f
 import { ActivityBlock } from './activity';
 import type { ActivityState } from './activity';
 import { Shimmer } from './shimmer';
-import { ToolCard } from './tool';
+import { ToolCard, failedSummary } from './tool';
 import { imageSource, thumbnail } from './composer';
 import { ImageViewer } from './image-viewer';
 import { displayName, fileKind, isUploadPath, isVoicePath, mentionKind, pieces, visibleParts } from '@hachej/boring-ui-kit/chat-text';
@@ -61,6 +61,8 @@ export interface RowContext {
   readonly cards?: ChatCards | undefined;
   /** `presentation="natural"`: no "working" shimmer in a reply (the chat shows one status instead). */
   readonly natural?: boolean | undefined;
+  /** `toolDetails="none"`: tool steps never show arguments, results or error text; a failed one carries `labels.toolFailedSummary`. */
+  readonly plainTools?: boolean | undefined;
   readonly groupTool: DeriveOptions['groupTool'];
   readonly commandMentions: CommandMentions | undefined;
   /** Host openers keep their single image argument; the workspace's default also accepts the message gallery. */
@@ -456,7 +458,9 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
       <CollapsibleContent><pre className="whitespace-pre-wrap">{row.text}</pre></CollapsibleContent>
     </Collapsible></article>;
     case 'orphan-result': return <article data-row-id={row.key} data-role="toolResult"><Notice tone="error" testid="tool-error" icon={<AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>
-      <strong className="font-semibold">{labels.toolFailed(row.message.toolName)}</strong><span data-mono-id className="mt-1 block font-mono text-xs whitespace-pre-wrap">{resultText(row.message)}</span></Notice><ImageThumbnails images={images} onOpenImage={context.onOpenImage} /></article>;
+      {context.plainTools
+        ? <strong className="font-semibold">{failedSummary(labels, row.message.toolName)}</strong>
+        : <><strong className="font-semibold">{labels.toolFailed(row.message.toolName)}</strong><span data-mono-id className="mt-1 block font-mono text-xs whitespace-pre-wrap">{resultText(row.message)}</span></>}</Notice><ImageThumbnails images={images} onOpenImage={context.onOpenImage} /></article>;
     case 'assistant': {
       const settled = !row.streaming;
       const nativeActions = settled;
@@ -488,7 +492,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
               const failed = chunk.steps.some(failedStep) && (context.developer || (!active && !gotPast(row, chunk.steps, chunks.slice(at + 1))));
               const unfinished = chunk.steps.some(step => step.kind === 'tool' && step.entry.status === 'unfinished');
               const state: ActivityState = failed || row.stopReason === 'error' ? 'failed' : row.stopReason === 'aborted' || (!active && unfinished) ? 'stopped' : active && at === chunks.length - 1 ? 'running' : 'done';
-              return <ActivityBlock key={chunk.key} steps={chunk.steps} state={state} streaming={row.streaming} developer={context.developer} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
+              return <ActivityBlock key={chunk.key} steps={chunk.steps} state={state} streaming={row.streaming} developer={context.developer} plain={context.plainTools === true} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
             }
             const part = chunk.part;
             if (part.kind === 'card') return <div key={part.key}>{part.content}</div>;
@@ -513,7 +517,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
               return <artifacts.Card key={part.key} artifact={artifact} open={artifact.state === 'ready' && (artifacts.isOpen?.(descriptor) ?? false)}
                 onOpen={artifact.state === 'ready' && artifacts.open ? () => artifacts.open(descriptor) : undefined} kinds={artifacts.kinds} />;
             }
-            return part.entry.custom ? <div key={part.key}>{part.entry.custom}</div> : <ToolCard key={part.key} entry={part.entry} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
+            return part.entry.custom ? <div key={part.key}>{part.entry.custom}</div> : <ToolCard key={part.key} entry={part.entry} plain={context.plainTools === true} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
           })}
           <ImageThumbnails images={images} onOpenImage={context.onOpenImage} />
           {files.size > 0 && <ul data-testid="reply-files" className="m-0 flex list-none flex-wrap gap-2 p-0">

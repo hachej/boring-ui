@@ -1,0 +1,183 @@
+{
+ "target": "component:tool-steps",
+ "title": "Tool steps without technical details",
+ "summary": "A failed tool step stays closed and says one plain sentence, with no arguments or error text, for a chat read by non-technical people.",
+ "purpose": "PiChat toolDetails: with \"none\" a tool step never shows its arguments, its result or its error text, a failed step is not opened and its line carries the host's plain sentence (labels.toolFailedSummary), and the header of a failed activity names no tool. The default (\"auto\") opens a failed step with both, and the kit's developer switch shows everything again. The assistant is scripted: no model, no network.",
+ "try": [
+  {
+   "label": "Send a message whose tool fails",
+   "flow": "F01"
+  },
+  {
+   "label": "The default opens the failure with its details",
+   "flow": "F02"
+  },
+  {
+   "label": "The same inside the app shell",
+   "flow": "F03"
+  }
+ ],
+ "fixture": {
+  "entry": "ux/fixtures/component-tool-steps.jsx",
+  "query": "",
+  "ready": "[data-testid=composer-input]",
+  "install": "npx shadcn@4.23.0 add pi-chat",
+  "usage": "<PiChat controller={controller} toolDetails=\"none\" labels={{ toolFailedSummary: 'This did not work out.' }} />"
+ },
+ "viewports": [
+  {
+   "name": "390",
+   "width": 390,
+   "height": 844,
+   "touch": true
+  },
+  {
+   "name": "1280",
+   "width": 1280,
+   "height": 800
+  }
+ ],
+ "watch": [
+  [
+   "surface",
+   "[data-testid=surface]"
+  ],
+  [
+   "activity",
+   "[data-testid=activity]"
+  ]
+ ],
+ "thresholds": {
+  "cls": 0.08,
+  "settledMs": 1200,
+  "touchTarget": 44
+ },
+ "notes": "The failed step is open on the plain sentence only: no JSON block, no error alert, no disclosure arrow on the step. The header of the failed activity says that a step did not work out and never names the tool. The default keeps today's behaviour.",
+ "states": [
+  {
+   "id": "01",
+   "name": "none-failed",
+   "query": "seed=1&details=none",
+   "steps": []
+  },
+  {
+   "id": "02",
+   "name": "none-failed-own-words",
+   "query": "seed=1&details=none&words=1",
+   "steps": []
+  },
+  {
+   "id": "03",
+   "name": "auto-failed",
+   "query": "seed=1&details=auto",
+   "steps": []
+  },
+  {
+   "id": "04",
+   "name": "none-developer-switch",
+   "query": "seed=1&details=none&chatMode=developer",
+   "steps": []
+  }
+ ],
+ "flows": [
+  {
+   "id": "F01",
+   "name": "A failed step reads plainly",
+   "query": "details=none",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Find the Brown & Sons invoice",
+     "say": "Type the question",
+     "until": "value:composer-input~Brown",
+     "expect": "The question is in the field."
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Send it",
+     "until": "visible:tool-failed-summary",
+     "timeout": 9000,
+     "expect": "The step that failed reads one plain sentence."
+    },
+    {
+     "do": "wait",
+     "ms": 900,
+     "say": "Look at the failed step",
+     "until": "text:activity-label~did not work out & eval:document.querySelectorAll('[data-testid=tool-details]').length===0 & eval:!/Traceback|KeyError|ledger_fictional|grep/.test(document.querySelector('[data-testid=surface]').textContent)",
+     "timeout": 9000,
+     "expect": "No arguments and no error text anywhere: one plain sentence."
+    }
+   ]
+  },
+  {
+   "id": "F02",
+   "name": "The default opens the failure",
+   "query": "details=auto",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Find the Brown & Sons invoice",
+     "say": "Type the question",
+     "until": "value:composer-input~Brown",
+     "expect": "The question is in the field."
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Send it",
+     "until": "visible:tool-details",
+     "timeout": 9000,
+     "expect": "The failed step opens with its arguments and its error."
+    },
+    {
+     "do": "wait",
+     "ms": 300,
+     "say": "Look at the step",
+     "until": "eval:/Traceback/.test(document.querySelector('[data-testid=surface]').textContent) & eval:document.querySelectorAll('[data-testid=tool-failed-summary]').length===0",
+     "expect": "Without the option, nothing changes."
+    }
+   ]
+  },
+  {
+   "id": "F03",
+   "name": "The same inside the app shell",
+   "query": "shell=1&details=none",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Find the Brown & Sons invoice",
+     "say": "Type the question",
+     "until": "value:composer-input~Brown",
+     "expect": "The question is in the field."
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Send it",
+     "until": "text:agent-card-status~Running bash & eval:!/grep|ledger/.test(document.querySelector('[data-testid=agent-card-status]').textContent)",
+     "timeout": 9000,
+     "expect": "The folded card says the agent runs a command, without the command itself."
+    },
+    {
+     "do": "tap",
+     "target": "agent-bar-conversation",
+     "say": "Open the conversation",
+     "until": "visible:tool-failed-summary",
+     "timeout": 9000,
+     "expect": "The conversation shows the plain sentence for the failed step."
+    },
+    {
+     "do": "wait",
+     "ms": 300,
+     "say": "Look at the step",
+     "until": "eval:document.querySelectorAll('[data-testid=tool-details]').length===0 & eval:!/Traceback|KeyError|ledger_fictional|grep/.test([...document.querySelectorAll('[data-testid=activity]')].map(e => e.textContent).join(' '))",
+     "expect": "No arguments and no error text in the shell's conversation."
+    }
+   ]
+  }
+ ]
+}

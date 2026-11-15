@@ -342,6 +342,20 @@ One status, `<p role="status" data-testid="preparing">` with the `preparing` lab
 
 Limits: assistant prose that narrates technical work is kept (nothing is stripped by pattern), and a host `renderTool` card is hidden unless it is `required`; a running `present` card is its own status. Use `mode="developer"` without the prop to see everything.
 
+## Plain tool steps in `pi-chat`
+
+`toolDetails` on `PiChat` or `AmbientChat` is for a chat read by non-technical people who should still see that a step ran and failed. `'auto'` (the default, today's behaviour) opens a failed step with its raw arguments and its error text. `'none'` never does: no step shows its arguments (not even the hint after the tool's name), result text or error text, no step has a disclosure, and a failed step stays closed. It changes rendering only, never the controller or the stored history, and without the prop nothing changes.
+
+| Part | With `toolDetails="none"` |
+| --- | --- |
+| a failed step | its line keeps the tool's name (`labels.toolName`) and `labels.toolFailedStatus`; under it, `labels.toolFailedSummary` wraps as a sentence (or a function of the tool id) (default « This did not work out. », FR « Cela n’a pas abouti. ») |
+| the header of an activity with failed steps | `labels.activityFailedPlain(count)` (default « A step did not work out »), never the tool names that `labels.activityFailed` lists |
+| the live header while a tool runs (the chat's, and the app shell's folded card) | `labels.toolActivity(tool, '')`: the verb, without the command, path or progress |
+| a tool result with no call | the sentence only, not the raw text |
+| the response-error notice | unchanged: set `replyError` for its words |
+
+`toolDetails="none"` wins over `mode="developer"` as `presentation="natural"` does. The kit's own switch (`?chatMode=developer`) still replaces it and shows everything. Cards from `renderTool` and `toolRenderers` keep priority over the step. `AgentSpec.chatProps` takes the prop like any `PiChat` prop, so `<AppShell agent={{ controller, chatProps: { toolDetails: 'none' } }} />` reaches the agent layer's conversation.
+
 ## Regular chat or shared chat
 
 Choose the copied item explicitly. The headless package root stays lean; channel data is available only from the existing `@hachej/boring-ui-kit/shared-chat` subpath.
