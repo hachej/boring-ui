@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { advise } from '../ux/runner/advisor.mjs';
+import { declared, declaredExcess, shiftExcess, topSources, totals, traceText, worstSteps } from '../ux/runner/trace.mjs';
 import { advisorDue, addTried, allNine, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from '../ux/runner/loop-state.mjs';
 
 const KEYS = ['clarity', 'layout', 'states', 'phone', 'polish', 'flows'], dir = () => mkdtempSync(join(tmpdir(), 'ux-state-'));
@@ -104,7 +105,19 @@ test('the advisor is due once per stuck episode, at most every 3 rounds, and its
 
 test('the advisor writes its plan, and a failure or a timeout leaves no plan', () => {
   const d = dir(), scenario = { target: 't', title: 'T', purpose: 'p', file: 'f.json' }, base = { scenario, verdict: { grades: {}, to_raise: { flows: 'x' } }, tried: '-', failures: '', folder: d, home: d, root: d, out: join(d, 'advisor.md') };
-  const ok = advise({ ...base, run: (c, a, o) => { assert.equal(c, 'claude'); assert.deepEqual(a.slice(0, 4), ['-p', '--model', 'opus', '--tools']); assert.match(o.input, /flows: x/); return { status: 0, stdout: `1. The change: ${'z'.repeat(100)}` }; } });
+  const ok = advise({ ...base, run: (c, a, o) => { assert.equal(c, 'claude'); assert.deepEqual(a.slice(0, 4), ["-p", "--model", "opus", "--tools"]); assert.match(o.input, /flows: x/); return { status: 0, stdout: `1. The change: ${'z'.repeat(100)}` }; } });
   assert.match(readFileSync(join(d, 'advisor.md'), 'utf8'), /The change/); assert.ok(ok.plan);
   const bad = advise({ ...base, out: join(d, 'no.md'), run: () => ({ status: null, error: { code: 'ETIMEDOUT' } }) }); assert.equal(bad.plan, null); assert.match(bad.why, /timed out/);
+});
+
+test('a measured step: shift excess, the steps a round declares, and the trace the worker reads', () => {
+  const s = { target: 't', thresholds: { cls: 0.08, settledMs: 1200 } }, step = (cls, ok = true) => ({ say: 'Reopen it', ok, cls, settledMs: 250, firstChangeMs: 100, focusAfter: 'x', shiftSources: cls ? [{ el: 'div[a]', from: { x: 0, y: 690, w: 390, h: 98 }, to: { x: 0, y: 410, w: 390, h: 378 } }, { el: 'p', from: { x: 0, y: 1, w: 5, h: 5 }, to: { x: 0, y: 2, w: 5, h: 5 } }] : [] });
+  const result = { flows: [{ id: 'F14', viewport: '390', name: 'long', steps: [step(0), step(0.167), step(0.04)] }, { id: 'F02', viewport: '390', name: 'o', steps: [step(0.128)] }] };
+  assert.ok(Math.abs(shiftExcess({ cls: 0.08 }, step(0.167)) - 1.0875) < 1e-9); assert.equal(shiftExcess({ cls: 0.08 }, step(0.167, false)), 0);
+  assert.deepEqual(totals(s, result), { shift: 1.69, settle: 0 });
+  assert.deepEqual(worstSteps(s, result, 1), [{ flow: 'F14', viewport: '390', step: 2, excess: 1.09 }]);
+  assert.deepEqual(declared('# Round\nMeasure: F14@390#2, F02@390 and more\n'), [{ flow: 'F14', viewport: '390', step: 2 }, { flow: 'F02', viewport: '390', step: null }]); assert.deepEqual(declared('no line'), []);
+  assert.equal(declaredExcess(s, result, [{ flow: 'F14', viewport: '390', step: 2 }]), 1.09); assert.equal(declaredExcess(s, result, [{ flow: 'F02', viewport: '390', step: null }]), 0.6);
+  assert.equal(topSources(result.flows[0].steps[1].shiftSources)[0].el, 'div[a]');
+  assert.match(traceText(s, result.flows[0], { only: [2] }), /step 2 "Reopen it": layout shift 0.167 \(over\).*\n    shifted: div\[a\]  390x98 at 0,690  ->  390x378 at 0,410/);
 });
