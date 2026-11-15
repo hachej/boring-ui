@@ -1,7 +1,7 @@
 'use client';
 
 // `composer: 'bar'`'s own pieces: the microphone's tap or hold, the conversation's chevron, the folded card on the field, its send problem, the box.
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, Loader2Icon, MicIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
@@ -135,7 +135,7 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
  * a question shows its choices (a form, each question in turn); a reply that came while folded shows « ✓ Terminé · <what it used> », three lines
  * and the files it cites. Nothing floats over the page: the card is in the column's flow, above the field.
  */
-/** The folded excerpt names files and ends omitted source lines with one ellipsis. CSS still clamps lines that wrap. */
+/** The folded excerpt names files and ends omitted source lines with one ellipsis. */
 const replyExcerpt = (text: string) => {
   const lines = text.replace(MENTION_TOKEN, (_match, before: string, quoted: string | undefined, bare: string | undefined) => {
     const trail = quoted === undefined ? (bare ?? '').match(/[.,;:!?)\]}'"]+$/)?.[0] ?? '' : '';
@@ -145,6 +145,48 @@ const replyExcerpt = (text: string) => {
   if (lines.length <= 3) return lines.join('\n');
   return `${lines.slice(0, 3).join('\n').trimEnd().replace(/[.,;:!?…]+$/u, '')}…`;
 };
+
+/** Keep the last visible word whole inside the existing three-line preview. */
+function FoldedReply({ text, onOpen }: { readonly text: string; readonly onOpen: () => void }) {
+  const source = replyExcerpt(text);
+  const visible = useRef<HTMLSpanElement>(null);
+  const [excerpt, setExcerpt] = useState(source);
+  useLayoutEffect(() => {
+    const element = visible.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    let width = 0;
+    const fit = () => {
+      if (!element.clientWidth) return;
+      width = element.clientWidth;
+      const previous = element.textContent;
+      element.textContent = source;
+      const fits = () => element.scrollHeight <= element.clientHeight + 1 && element.scrollWidth <= element.clientWidth + 1;
+      if (!fits()) {
+        const ends = Array.from(source.matchAll(/\S+/gu), match => match.index + match[0].length);
+        let low = 0, high = ends.length;
+        const prefix = (count: number) => `${source.slice(0, count ? ends[count - 1] : 0).trimEnd().replace(/[.,;:!?…]+$/u, '')}…`;
+        while (low < high) {
+          const middle = Math.ceil((low + high) / 2);
+          element.textContent = prefix(middle);
+          if (fits()) low = middle;
+          else high = middle - 1;
+        }
+        element.textContent = prefix(low);
+      }
+      const next = element.textContent ?? '';
+      element.textContent = previous;
+      setExcerpt(next);
+    };
+    const observer = new ResizeObserver(() => { if (element.clientWidth !== width) fit(); });
+    observer.observe(element);
+    document.fonts.addEventListener('loadingdone', fit);
+    return () => { observer.disconnect(); document.fonts.removeEventListener('loadingdone', fit); };
+  }, [source]);
+  return <p data-testid="agent-card-reply" onClick={onOpen} className="m-0 line-clamp-3 cursor-pointer whitespace-pre-line">
+    <span className="sr-only">{source}</span>
+    <span ref={visible} aria-hidden="true" className="line-clamp-3">{excerpt}</span>
+  </p>;
+}
 
 /** AC-12, folded: a send that failed says so on one line at the top of the box, with Réessayer. A refused message is already back in the field
  * (the controller restores it): Réessayer sends it again; an attempt of unknown outcome is retried as the same request (no double send). */
@@ -197,7 +239,7 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
       </div>}
       {!stopped && !question && status?.state !== 'working' && reply && <>
         {/* A tap on the reply opens the conversation, as the chevron does (the chevron stays the way for a keyboard). */}
-        <p data-testid="agent-card-reply" onClick={() => layer.open('agent')} className="m-0 line-clamp-3 cursor-pointer whitespace-pre-line">{replyExcerpt(reply.text)}</p>
+        <FoldedReply text={reply.text} onOpen={() => layer.open('agent')} />
         {(reply.files.length > 0 || action) && <div role="list" data-testid="agent-card-files" className="flex flex-wrap items-center gap-1.5">
           {reply.files.map(path => <span role="listitem" key={path}><Button type="button" variant="outline" size="sm" data-testid="agent-card-file" data-path={path} disabled={!onOpenFile} onClick={() => onOpenFile?.(path, reply.files)}>
             <FileTextIcon data-icon="inline-start" aria-hidden="true" />{path.split('/').at(-1)}</Button></span>)}
