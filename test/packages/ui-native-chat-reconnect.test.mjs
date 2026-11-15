@@ -16,13 +16,13 @@ const called = fake => Promise.race([fake.nextCall(), new Promise((_, reject) =>
 const messages = view => view.entries.flatMap(entry => entry.model ?? []);
 const said = (view, role) => messages(view).filter(message => message.role === role).map(message => typeof message.content === 'string' ? message.content : message.content.map(part => part.text ?? '').join(''));
 
-async function host(t, options = {}) {
+async function host(t, options = {}, remoteOptions = {}) {
   const fake = createFakeChatModel();
   const harness = await Harness.open(new MemoryStorage(), { registry: createRegistry(), models: fake.models }, context);
   t.after(() => harness.close(context));
   const conversation = await harness.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: fake.model } }, context);
   const handler = createChatTransportHandler({ heartbeatMs: 40, authenticate: async () => ({ conversation, context }) });
-  const network = { down: false, watches: [], submits: [], lookups: 0, ackedButLost: 0, replyLost: 0 };
+  const network = { down: false, amnesia: false, watches: [], submits: [], lookups: 0, ackedButLost: 0, replyLost: 0 };
   const fetch = async request => {
     const op = new URL(request.url).searchParams.get('op');
     if (op === 'submit') network.submits.push((await request.clone().json()).requestId);
@@ -32,7 +32,7 @@ async function host(t, options = {}) {
       if (network.ackedButLost > 0) { network.ackedButLost--; return Response.json({ submissionId: 4000 + network.submits.length }); }
       if (network.replyLost > 0) { network.replyLost--; await handler(request); network.down = true; throw new TypeError('fetch failed'); }
     }
-    if (op === 'submission') network.lookups++;
+    if (op === 'submission') { network.lookups++; if (network.amnesia) return Response.json({ record: null }); }
     const response = await handler(request);
     if (op !== 'watch') return response;
     let cut;
@@ -42,7 +42,7 @@ async function host(t, options = {}) {
   };
   /** The host restarts: open streams die, requests fail for `ms`, then it is back. */
   network.restart = async (ms = 60) => { network.down = true; for (const cut of network.watches.splice(0)) cut(); await new Promise(resolve => setTimeout(resolve, ms)); network.down = false; };
-  const remote = await createRemoteChat({ endpoint, fetch, pollMs: 10, reconnect: { baseDelayMs: 10, maxDelayMs: 40 } });
+  const remote = await createRemoteChat({ endpoint, fetch, pollMs: 10, reconnect: { baseDelayMs: 10, maxDelayMs: 40 }, ...remoteOptions });
   const controller = createNativeChatController({ identity, ...remote, ...options });
   t.after(() => controller.dispose());
   await controller.connect();
@@ -89,15 +89,47 @@ test('a send whose answer was lost with the connection is checked and settled wh
 
 test('a send that never reached the host is retried through the same request when the connection returns', { timeout: 15000 }, async t => {
   const { fake, network, controller, connected } = await host(t);
-  network.down = true; for (const cut of network.watches.splice(0)) cut();
+  network.down = true;
   controller.setText('Fictional message sent into the outage'); await controller.send();
   assert.equal(controller.getSnapshot().send.kind, 'unknown');
+  for (const cut of network.watches.splice(0)) cut();
   network.down = false;
   await until('retried by itself', () => connected() && controller.getSnapshot().send.kind === 'admitted');
   assert.equal(network.submits.length, 2); assert.equal(network.submits[0], network.submits[1]);
   (await called(fake)).respond('Fictional reply.');
   await until('the turn is in the view', () => said(controller.getSnapshot().view, 'assistant').length === 1);
   assert.deepEqual(said(controller.getSnapshot().view, 'user'), ['Fictional message sent into the outage']);
+});
+
+test('a message sent while the host is restarting, after a settled turn the new host does not remember, is held and goes out by itself once, with no second Enter', { timeout: 15000 }, async t => {
+  const { fake, network, controller } = await host(t, {}, { reconnect: { baseDelayMs: 1000, maxDelayMs: 1000 } });
+  controller.setText('First fictional message'); await controller.send(); (await called(fake)).respond('First reply.');
+  await until('the first turn is settled', () => said(controller.getSnapshot().view, 'assistant').length === 1);
+  network.amnesia = true;
+  const away = network.restart(300);
+  await until('the stream is being reopened', () => controller.getSnapshot().connection.kind === 'reconnecting');
+  controller.setText('Second fictional message');
+  const sent = controller.send();
+  assert.equal(controller.getSnapshot().draft.text, '', 'the message is taken at once');
+  assert.deepEqual(controller.getSnapshot().echo.map(item => item.state), ['sending'], 'and shown as the person\'s own, waiting');
+  await away;
+  assert.ok(await sent, 'it goes out once the host is back, from the same controller');
+  (await called(fake)).respond('Second reply.');
+  await until('both turns', () => said(controller.getSnapshot().view, 'assistant').length === 2);
+  assert.deepEqual(said(controller.getSnapshot().view, 'user'), ['First fictional message', 'Second fictional message']);
+  assert.equal(network.submits.length, 2); assert.notEqual(network.submits[0], network.submits[1]);
+});
+
+test('a message sent while only the stream is down does not wait out the reconnect backoff', { timeout: 15000 }, async t => {
+  const { fake, network, controller } = await host(t, {}, { reconnect: { baseDelayMs: 5000, maxDelayMs: 5000 } });
+  controller.setText('First'); await controller.send(); (await called(fake)).respond('One.');
+  for (const cut of network.watches.splice(0)) cut();
+  await until('the stream is being reopened', () => controller.getSnapshot().connection.kind === 'reconnecting');
+  controller.setText('Second'); const started = Date.now();
+  assert.ok(await controller.send());
+  assert.ok(Date.now() - started < 2000, `sent after ${Date.now() - started} ms`);
+  (await called(fake)).respond('Two.');
+  await until('both turns', () => said(controller.getSnapshot().view, 'assistant').length === 2);
 });
 
 test('a drop while nothing was sent changes nothing and asks the host nothing', { timeout: 15000 }, async t => {

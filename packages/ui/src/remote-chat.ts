@@ -353,7 +353,9 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     reconnecting = next;
     for (const listener of [...linkListeners]) { try { listener(); } catch { /* a viewer's listener never breaks the link */ } }
   };
-  const link: ChatLink = { reconnecting: () => reconnecting, subscribe: listener => { linkListeners.add(listener); return () => { linkListeners.delete(listener); }; } };
+  /** Set by the supervised watch: reopens a lost stream now, skipping the backoff wait. */
+  let reopenNow: (() => void) | undefined;
+  const link: ChatLink = { reconnecting: () => reconnecting, subscribe: listener => { linkListeners.add(listener); return () => { linkListeners.delete(listener); }; }, reconnectNow: () => reopenNow?.() };
 
   /**
    * Wrap a watch so its stream can be lost and reopened, and (with `pauseWhenHidden`) released while the page is hidden. The
@@ -413,6 +415,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
       last = live.value; current = undefined; await live.stop();
     }
     function onVisibility() { if (hidden()) void pause(); else { cancelRetry(); void open(); } }
+    reopenNow = () => { if (!current && !opening && retry !== undefined) { cancelRetry(); void open(); } };
     page?.addEventListener('visibilitychange', onVisibility);
     return {
       get value() { return current?.value ?? last; },

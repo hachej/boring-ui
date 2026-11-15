@@ -63,6 +63,8 @@ export interface ChatConversation {
 export interface ChatLink {
   readonly reconnecting: () => boolean;
   readonly subscribe: (listener: () => void) => () => void;
+  /** Reopen the lost stream now instead of waiting out the backoff; the controller asks when a message is waiting for the connection. */
+  readonly reconnectNow?: (() => void) | undefined;
 }
 export interface NativeChatHistorySource {
   readonly id: Conversation['id'];
@@ -322,11 +324,11 @@ export function createNativeChatController(options: NativeChatOptions) {
     publish({ send: { kind: 'admitted', attempt, submissionId, ...(record ? { record } : {}) }, ...(found ? { echo: echoView() } : {}) });
     return true;
   };
-  /** Resolves true once a view is there, false if the controller is disposed or its connection fails first. */
-  const viewed = (): Promise<boolean> => snapshot.view ? Promise.resolve(true) : new Promise(resolve => {
+  /** Resolves true once the connection is usable (connected, with a view), false if the controller is disposed or its connection fails first. */
+  const usable = (): Promise<boolean> => snapshot.view && snapshot.connection.kind === 'connected' ? Promise.resolve(true) : new Promise(resolve => {
     const check = () => {
       const failed = snapshot.disposed || snapshot.connection.kind === 'error' || snapshot.connection.kind === 'closed';
-      if (snapshot.view || failed) { listeners.delete(check); resolve(Boolean(snapshot.view) && !snapshot.disposed); }
+      if (failed || (snapshot.view && snapshot.connection.kind === 'connected')) { listeners.delete(check); resolve(!failed && Boolean(snapshot.view)); }
     };
     listeners.add(check);
   });
@@ -419,6 +421,19 @@ export function createNativeChatController(options: NativeChatOptions) {
   /** Validates and submits one message; a validation refusal puts it back into the composer. */
   async function dispatch(item: Outgoing): Promise<Submission | undefined> {
     const selected = item.draft;
+    // Sent while the connection is away (connecting with no view, or its stream lost): held, shown as the person's own, and sent once it is
+    // back, after the send that was waiting on it has been settled. If the connection fails first, it goes back into the composer.
+    const kind = snapshot.connection.kind;
+    if (kind === 'reconnecting' || (kind === 'connecting' && !snapshot.view)) {
+      if (kind === 'reconnecting') options.link?.reconnectNow?.();
+      const back = await usable();
+      if (!back) { restore([selected], { send: { kind: 'blocked', reason: 'Not connected: the message was not sent' } }); return; }
+      let settled = false;
+      try { settled = await settlePending(); } catch { /* the host went away again: the message waits in the composer */ }
+      recoverAfterSend = false;
+      if (!settled || snapshot.send.kind === 'unknown') { restore([selected]); return; }
+      if (snapshot.disposed) return;
+    }
     publish({ send: { kind: 'validating', draft: selected }, ...(!stopping && snapshot.stop !== 'idle' ? { stop: 'idle' as const } : {}) });
     if (snapshot.disposed) return;
     try {
@@ -470,24 +485,25 @@ export function createNativeChatController(options: NativeChatOptions) {
    * Typing and sending go on meanwhile: new messages wait behind it, in order. A host still away leaves the send as it was, for the
    * next return or for the person (Check, Retry).
    */
+  async function settlePending(): Promise<boolean> {
+    const state = snapshot.send;
+    if (state.kind === 'unknown') return await controller.reconcile() !== undefined || await controller.retrySameRequest() !== undefined;
+    if (state.kind !== 'admitted') return true;
+    const { attempt } = state, record = await recordOf(attempt);
+    if (snapshot.disposed || snapshot.send.kind !== 'admitted' || snapshot.send.attempt.requestId !== attempt.requestId) return true;
+    if (record) {
+      if (snapshot.send.record?.status !== record.status) publish({ send: { kind: 'admitted', attempt, submissionId: record.id, record } });
+      return true;
+    }
+    if (!echoOf(attempt.draft)) return true;
+    restoring.get(attempt.requestId)?.cancel();
+    return await submitAttempt(attempt) !== undefined;
+  }
   async function recover(): Promise<void> {
     if (snapshot.disposed) return;
     if (sending) { recoverAfterSend = true; return; }
-    const state = snapshot.send;
-    if (state.kind !== 'unknown' && state.kind !== 'admitted') return;
-    const settle = async (): Promise<boolean> => {
-      if (state.kind === 'unknown') return await controller.reconcile() !== undefined || await controller.retrySameRequest() !== undefined;
-      const { attempt } = state, record = await recordOf(attempt);
-      if (snapshot.disposed || snapshot.send.kind !== 'admitted' || snapshot.send.attempt.requestId !== attempt.requestId) return true;
-      if (record) {
-        if (snapshot.send.record?.status !== record.status) publish({ send: { kind: 'admitted', attempt, submissionId: record.id, record } });
-        return true;
-      }
-      if (!echoOf(attempt.draft)) return true;
-      restoring.get(attempt.requestId)?.cancel();
-      return await submitAttempt(attempt) !== undefined;
-    };
-    try { await exclusively(settle); }
+    if (snapshot.send.kind !== 'unknown' && snapshot.send.kind !== 'admitted') return;
+    try { await exclusively(settlePending); }
     catch { /* still away or refused: the send stays as it was */ }
   }
   const controller = {
@@ -599,7 +615,7 @@ export function createNativeChatController(options: NativeChatOptions) {
      * Sends the composer draft (or `input`) and empties the composer at once. While another send is still being confirmed the message
      * waits in `outbox` and is submitted, in order, after it. A refused message, and any waiting behind it, go back into the composer
      * ahead of what was typed since; nothing is dropped or merged into another message. Sent before any view (while connecting), it is
-     * held until the first view arrives and then submitted, in order; if the connection fails first it goes back into the composer. Resolves with the native submission, or
+     * held until the first view arrives (or, while its stream is being reopened, until it is back) and then submitted, in order; if the connection fails first it goes back into the composer. Resolves with the native submission, or
      * undefined when the message was not admitted (refused, unknown, or the controller was disposed).
      */
     send: async (whenBusy: ChatAttempt['whenBusy'] = 'followUp', input?: ChatSendInput): Promise<Submission | undefined> => {
@@ -612,7 +628,7 @@ export function createNativeChatController(options: NativeChatOptions) {
         return;
       }
       if (input?.restore) restoreOf.set(selected, draft(input.restore.text, input.restore.attachments ?? [], 0));
-      // Connecting with no view yet: the message is held until the first view (below), which is then its echo's baseline.
+      // Connecting with no view yet: the message is held until the first view (see `dispatch`), which is then its echo's baseline.
       const held = !snapshot.view && snapshot.connection.kind === 'connecting';
       // The message is the person's from this moment: it is drawn at once (the echo) and the composer is emptied, before any
       // validation or network call. The server's copy replaces it when it arrives; a refusal puts the words back in the composer.
@@ -633,9 +649,6 @@ export function createNativeChatController(options: NativeChatOptions) {
       }
       return exclusively(async () => {
         publish(cleared);
-        // Sent while connecting: held (shown as the person's own) until the first view, so nothing is submitted before the connection is up.
-        // If the connection fails first, it and everything behind it go back into the composer, marked not sent.
-        if (held && !await viewed()) { restore([selected], { send: { kind: 'blocked', reason: 'Not connected: the message was not sent' } }); return undefined; }
         return dispatch({ draft: selected, whenBusy, resolve: () => {} });
       });
     },
