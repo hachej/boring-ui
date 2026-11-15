@@ -1,5 +1,7 @@
 # Unreleased
 
+- **The package ships the kit's own shadcn primitives (`ui`, `ui-<name>`; additive; nothing changes for an app that does not install them).** `shadcn/ui/` (button, input, label, field, card, alert, empty, sheet, sidebar, table and the rest) is now one registry item per file, `ui-<name>`, plus `ui`, which installs them all, in `r/` of `@hachej/boring-ui-kit`. An app scaffolded from the package alone installs them with `npx boring-ui-blocks add <registry>/ui.json` (or `ui-button.json` and so on), version-locked to the kit release, into its `ui` alias; the blocks keep borrowing whatever that alias holds. `boring-ui-blocks manifest` and `add` record them in `SHADCN-GENERATED.json` and `check` reports a hand edit as `ui edited`; they are not listed as blocks, and `update` does not reinstall them (use `add <registry>/ui.json --overwrite`). `registry/README.md#the-kits-own-primitives-ui` has the details.
+
 # Migrating to 0.5.0
 
 - **A run that ended without an answer shows why (`chat-view`; additive; part of the move to pi-durable 1.5).** `derive` reads `pi.live.runFailure` (`model_error`, `no_model`, `faulted`, `restart_limit`, `interrupted`, `orphaned`; not `aborted` or `reset`) and, when no assistant error entry of that run is in the view, adds an assistant row with `stopReason: 'error'` and the recorded `detail` as its `errorMessage`, so `finishNotice` and the chat say the same words as for an error entry. Nothing to change in an app.

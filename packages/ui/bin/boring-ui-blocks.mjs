@@ -193,6 +193,9 @@ export function checkBlocks(app, components = appPaths(app).components) {
   const { version, items } = installedKit(app);
   const blocks = [];
   for (const item of items) {
+    // The kit's primitives (`ui-<name>`, `ui`) carry no target: shadcn writes them to the app's ui alias like its own components, so they are
+    // the generated ui files that the manifest records and `checkUi` verifies, not blocks (an app's own shadcn button is not "edited").
+    if (item.files.some(file => !file.target)) continue;
     const paths = item.files.map(file => ({ file, path: join(components, file.target.replace(/^components\//, '')) }));
     if (!paths.some(({ path }) => existsSync(path))) continue;
     const edited = [], missing = [];

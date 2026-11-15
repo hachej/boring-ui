@@ -1,0 +1,18 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "ui-skeleton",
+  "title": "UI skeleton",
+  "description": "The kit's own compact skeleton primitive (shadcn/ui/skeleton.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+  "dependencies": [],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+  ],
+  "files": [
+    {
+      "path": "shadcn/ui/skeleton.tsx",
+      "content": "import { cn } from \"@/components/utils/utils\"\n\nfunction Skeleton({ className, ...props }: React.ComponentProps<\"div\">) {\n  return (\n    <div\n      data-slot=\"skeleton\"\n      className={cn(\"animate-pulse rounded-md bg-muted\", className)}\n      {...props}\n    />\n  )\n}\n\nexport { Skeleton }\n",
+      "type": "registry:ui"
+    }
+  ],
+  "type": "registry:ui"
+}
