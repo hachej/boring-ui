@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { ConversationView } from '@earendil-works/pi-durable';
 import { derive as deriveView } from '@hachej/boring-ui-kit/chat-view';
 import type * as View from '@hachej/boring-ui-kit/chat-view';
+import type { ReplyRef } from './config';
 
 /*
  * The row model lives in the kit (`@hachej/boring-ui-kit/chat-view`): native Pi view → display rows, the waiting rule and the run
@@ -16,4 +17,6 @@ export type Derived = View.Derived<ReactNode>;
 export type DeriveOptions = View.DeriveOptions<ReactNode>;
 export type Step = View.Step<ReactNode>;
 export type Segment = View.Segment<ReactNode>;
+/** A reply row as a host's reply hooks (`messageActions`, `replyError`, …) receive it. */
+export const replyRef = (row: Pick<Extract<Row, { type: 'assistant' }>, 'key' | 'text' | 'entryId' | 'timestamp' | 'model' | 'durationMs'>): ReplyRef => ({ key: row.key, text: row.text, entryId: row.entryId, timestamp: row.timestamp, model: row.model, durationMs: row.durationMs });
 export const derive: (view: ConversationView | undefined, options: DeriveOptions) => Derived = deriveView;

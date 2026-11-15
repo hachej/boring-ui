@@ -9,10 +9,12 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExterna
 import { derive, formAnswer, parseQuestion, waitingPart } from '@hachej/boring-ui-kit/chat-view';
 import { mentionedPaths } from '@hachej/boring-ui-kit/chat-text';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
+import type { ReplyRef } from '../pi-chat/config';
 import type { ChatLabels } from '../pi-chat/labels';
 import { frenchChatLabels } from '../pi-chat/labels-fr';
 import { liveLabel, preview } from '../pi-chat/tool';
 import type { AgentAnswer, AgentQuestionData } from './agent-question';
+import { failedReply } from './folded-card';
 
 /** What the host lets the person do, as PiChat's `actions`: `answer` resolves a pending question (without it no question card is offered). */
 export interface AgentBarChatActions {
@@ -51,6 +53,11 @@ export interface AgentBarChat {
   readonly status: AgentBarChatStatus | undefined;
   /** The reply of the run that just ended, until `markRead` (or the next run). Undefined for the history the hook found when it mounted. */
   readonly reply: AgentBarChatReply | undefined;
+  /**
+   * The last turn failed (an assistant message that ended in an error, or a run that ended without an answer) and nothing was said since: the same `ReplyRef` the
+   * thread's `replyError` receives. It goes when the person sends again or the assistant answers. While work runs or a question waits the card shows those first (`foldedCardKind`).
+   */
+  readonly failed: ReplyRef | undefined;
   /** For `AgentBar historyBadge`: the dot while `reply` is unread. */
   readonly historyBadge: { readonly label: string } | undefined;
   /** The person saw the conversation: the reply is read. */
@@ -170,7 +177,10 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
     void live.send('followUp', { text: value, attachments: [], restore: { text: value, attachments: [] } }).catch(() => {});
   }, []);
 
+  // A turn that ended in an error: kept until a later message. Work in progress hides it (`foldedCardKind`), so the next turn clears it as soon as it starts.
+  const failed = useMemo(() => failedReply(derived.rows), [derived.rows]);
+
   const status = working ? { state: 'working' as const, text: doing, onCancel }
     : finished ? { state: 'done' as const, text: text.done } : undefined;
-  return { question, status, reply, historyBadge: reply ? { label: text.unread } : undefined, markRead, onSend };
+  return { question, status, reply, failed, historyBadge: reply ? { label: text.unread } : undefined, markRead, onSend };
 }
