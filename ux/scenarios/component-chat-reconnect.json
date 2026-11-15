@@ -1,0 +1,49 @@
+{
+ "target": "component:chat-reconnect",
+ "title": "Chat after a connection drop",
+ "summary": "The chat keeps working when its connection drops and comes back: the same composer sends again.",
+ "purpose": "PiChat over the real chat controller and the real remote client, with a fictional host that can drop its stream, restart, or lose a message it had confirmed. Shows that after the connection returns the message that was waiting is settled (sent again once, never twice), the typed text is kept, and the next message goes out from the same composer.",
+ "fixture": {
+  "entry": "ux/fixtures/component-chat-reconnect.jsx",
+  "query": "",
+  "ready": "[data-testid=composer-input]",
+  "install": "npx shadcn@4.23.0 add pi-chat pi-chat-markdown",
+  "usage": "const remote = await createRemoteChat({ endpoint, fetch }); const controller = createNativeChatController({ ...remote, identity }); <PiChat controller={controller} locale=\"en\" renderText={markdownText} />"
+ },
+ "viewports": [
+  { "name": "390", "width": 390, "height": 844, "touch": true },
+  { "name": "1440", "width": 1440, "height": 900 }
+ ],
+ "watch": [["field", "[data-testid=composer]"], ["surface", "[data-testid=surface]"]],
+ "thresholds": { "cls": 0.08, "settledMs": 1500, "touchTarget": 44, "truncated": 0 },
+ "notes": "The fictional host lives in the page: `window.__ux.restart()` drops every stream and refuses requests for half a second, `loseNext()` makes the host confirm the next message and then lose it. The flows are the proof: the second message must go out from the same composer, and each message must show once in the thread.",
+ "states": [
+  { "id": "01", "name": "empty", "steps": [] },
+  { "id": "02", "name": "answered", "steps": [
+   { "do": "type", "target": "composer-input", "text": "Reconcile the January statement" },
+   { "do": "tap", "target": "composer-submit", "until": "text:[data-role=assistant]~January", "timeout": 4000 }] },
+  { "id": "03", "name": "typing-after-restart", "steps": [
+   { "do": "type", "target": "composer-input", "text": "Reconcile the January statement" },
+   { "do": "tap", "target": "composer-submit", "until": "text:[data-role=assistant]~January", "timeout": 4000 },
+   { "do": "fixture", "name": "restart" },
+   { "do": "type", "target": "composer-input", "text": "And the February one", "until": "value:composer-input~February" }] }
+ ],
+ "flows": [
+  { "id": "F01", "name": "Send, the host restarts, send again", "steps": [
+   { "do": "type", "target": "composer-input", "text": "Reconcile the January statement", "say": "Type the first message", "until": "value:composer-input~January", "expect": "The text shows in the field." },
+   { "do": "tap", "target": "composer-submit", "say": "Send", "until": "text:[data-role=assistant]~January", "timeout": 4000, "expect": "The message is in the thread and the reply comes." },
+   { "do": "fixture", "name": "restart", "say": "The host restarts", "expect": "The connection drops for a moment." },
+   { "do": "type", "target": "composer-input", "text": "And the February one", "say": "Type the next message", "until": "value:composer-input~February", "expect": "The text shows in the field; nothing is lost." },
+   { "do": "tap", "target": "composer-submit", "say": "Send again", "until": "eval:document.body.textContent.includes('Noted: “And the February one”')", "timeout": 8000, "expect": "The second message goes out from the same composer and is answered." }
+  ] },
+  { "id": "F02", "name": "The host lost the message it had confirmed", "steps": [
+   { "do": "fixture", "name": "loseNext", "say": "The host will confirm the next message and then lose it", "expect": "Nothing shows yet." },
+   { "do": "type", "target": "composer-input", "text": "Reconcile the January statement", "say": "Type the first message", "until": "value:composer-input~January" },
+   { "do": "tap", "target": "composer-submit", "say": "Send", "until": "visible:composer-input", "expect": "The message shows at once, waiting for its reply." },
+   { "do": "fixture", "name": "restart", "say": "The host restarts", "expect": "The connection drops and comes back." },
+   { "do": "wait", "ms": 1500, "say": "Wait for the connection", "until": "text:[data-role=assistant]~January", "timeout": 8000, "expect": "The message is sent again by itself and answered, once." },
+   { "do": "type", "target": "composer-input", "text": "And the February one", "say": "Type the next message", "until": "value:composer-input~February" },
+   { "do": "tap", "target": "composer-submit", "say": "Send", "until": "eval:document.body.textContent.includes('Noted: “And the February one”')", "timeout": 6000, "expect": "The next message goes out from the same composer." }
+  ] }
+ ]
+}

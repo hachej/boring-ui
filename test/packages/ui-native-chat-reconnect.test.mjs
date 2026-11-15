@@ -25,9 +25,9 @@ async function host(t, options = {}) {
   const network = { down: false, watches: [], submits: [], lookups: 0, ackedButLost: 0, replyLost: 0 };
   const fetch = async request => {
     const op = new URL(request.url).searchParams.get('op');
+    if (op === 'submit') network.submits.push((await request.clone().json()).requestId);
     if (network.down) throw new TypeError('fetch failed');
     if (op === 'submit') {
-      network.submits.push((await request.clone().json()).requestId);
       // The host confirmed the message and then restarted before it kept it.
       if (network.ackedButLost > 0) { network.ackedButLost--; return Response.json({ submissionId: 4000 + network.submits.length }); }
       if (network.replyLost > 0) { network.replyLost--; await handler(request); network.down = true; throw new TypeError('fetch failed'); }
