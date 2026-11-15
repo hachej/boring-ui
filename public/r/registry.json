@@ -2408,12 +2408,6 @@
           ".app-shell [data-bar-tray=\"expanded\"]": {
             "--app-shell-bar-tray-size": "var(--app-shell-bar-tray-expanded)"
           },
-          ".app-shell [data-bar-tray] [data-bar-page]": {
-            "padding-bottom": "var(--app-shell-bar-tray-size)"
-          },
-          ".app-shell [data-bar-tray] [data-bar-page]::after": {
-            "bottom": "var(--app-shell-bar-tray-size)"
-          },
           ".app-shell [data-testid=\"agent-tray\"][data-overlay]": {
             "transform": "translateY(calc(var(--app-shell-bar-tray-expanded) - var(--app-shell-bar-tray-size)))"
           },

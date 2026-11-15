@@ -86,21 +86,20 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   // While the person talks the sheet holds still: the viewport height and the keyboard inset are pinned at what they were when the recording
   // began, the composer takes no focus and no keyboard, so nothing moves under the finger on the microphone.
   const [sheet, setSheet] = useState<HTMLDivElement | null>(null);
-  // Snap translation does not resize the bar layout. Reserve only the stack above the tabs.
+  // The page reserves the folded stack above the tabs, independent of the sheet's snap.
   useLayoutEffect(() => {
     const popup = sheet?.closest<HTMLElement>('[data-slot=drawer-popup]');
     const body = sheet;
     if (!layer.bar || !popup || !body) return;
     const root = document.documentElement;
     const measure = () => {
-      const offset = popup.hasAttribute('data-bar-sheet') ? parseFloat(getComputedStyle(popup).getPropertyValue('--drawer-snap-point-offset')) || 0 : 0;
       const footer = body.querySelector<HTMLElement>('[data-testid=composer-dock]');
       const header = body.querySelector<HTMLElement>('[data-testid=agent-layer-header]');
       body.style.setProperty('--app-shell-field-height', `${footer?.offsetHeight ?? 0}px`);
       body.style.setProperty('--app-shell-sheet-header-height', `${header?.offsetHeight ?? 0}px`);
       if (footer) observer.observe(footer);
       if (header) observer.observe(header);
-      root.style.setProperty('--app-shell-bar-height', `${Math.max(0, body.offsetHeight + (popup.querySelector<HTMLElement>('[data-slot=drawer-swipe-handle]')?.offsetHeight ?? 0) - offset)}px`);
+      root.style.setProperty('--app-shell-bar-height', `${Math.max(0, parseFloat(layer.peekPoint) - layer.tabbar)}px`);
     };
     const observer = new ResizeObserver(measure);
     measure();
@@ -110,7 +109,7 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
     // The persistent chat mounts inside ChatSlot after the sheet's first measurement.
     position.observe(body, { childList: true, subtree: true });
     return () => { observer.disconnect(); position.disconnect(); root.style.removeProperty('--app-shell-bar-height'); };
-  }, [layer.bar, sheet]);
+  }, [layer.bar, layer.peekPoint, layer.tabbar, sheet]);
   const idleViewport = useRef(liveViewport);
   // eslint-disable-next-line react-hooks/refs -- ref cache: the last viewport seen while not recording, pinned during a recording; no setState during render
   if (!recording) idleViewport.current = liveViewport;
