@@ -2420,6 +2420,12 @@
           ".app-shell [data-one-composer][data-folded] [data-slot=\"composer-notices\"]:not(:has(> :not([data-testid=\"preparing\"], [data-testid=\"agent-status\"], [data-testid=\"send-blocked\"], [data-testid=\"send-unknown\"])))": {
             "display": "none"
           },
+          ".app-shell[data-peek=\"true\"] [data-one-dock] [data-slot=\"composer-notices\"]:not(:has(> :not([data-testid=\"preparing\"], [data-testid=\"agent-status\"], [data-testid=\"send-blocked\"], [data-testid=\"send-unknown\"])))": {
+            "display": "none"
+          },
+          ".app-shell[data-peek=\"true\"] [data-one-dock] :is([data-testid=\"agent-card\"][data-state=\"working\"], [data-testid=\"agent-send-problem\"])": {
+            "padding-bottom": "0"
+          },
           ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"composer-input\"]:placeholder-shown": {
             "white-space": "nowrap",
             "overflow": "hidden",
