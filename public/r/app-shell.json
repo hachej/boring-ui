@@ -264,6 +264,10 @@
         "gap": "0.375rem",
         "min-height": "3.5rem"
       },
+      ".app-shell [data-one-composer]:has([data-testid=\"agent-card\"], [data-testid=\"agent-send-problem\"]) [data-testid=\"composer\"] [data-slot=\"input-group\"]": {
+        "padding-block-start": "0",
+        "min-height": "0"
+      },
       ".app-shell [data-one-composer] [data-slot=\"input-group\"], .app-shell [data-one-composer] [data-slot=\"input-group\"]:focus-within": {
         "border-color": "transparent",
         "background-color": "transparent",
