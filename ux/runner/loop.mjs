@@ -22,7 +22,7 @@ import { loadAll, slug } from './scenario.mjs';
 import { advise } from './advisor.mjs';
 import { probeFlow } from './probe.mjs';
 import { declared, declaredExcess, run as flowRun, totals, traceText, worstSteps } from './trace.mjs';
-import { specBlock, specItems, advisorDue, triedRecent, allNine, addTried, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from './loop-state.mjs';
+import { fineSignal, fineText, specBlock, specItems, advisorDue, triedRecent, allNine, addTried, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from './loop-state.mjs';
 
 const args = process.argv.slice(2), opt = n => { const i = args.indexOf(`--${n}`); return i < 0 ? undefined : args[i + 1]; };
 const DRY = args.includes('--dry-run'), BASELINE = args.includes('--baseline');
@@ -136,12 +136,13 @@ async function flowGuard(n, prevResult) {
 }
 // Scoreboard: per round the commit, the criteria, the failing check lines, and why a round failed, was reverted or changed nothing.
 function score(n, { v, p, commit = '-', checks = '-', note = '', excess = null }) {
+  const fine = v?.previous ? fineSignal(v, p?.grades, KEYS) : null;
   const cells = KEYS.map(k => v?.grades?.[k] ?? '-'), nums = cells.filter(x => typeof x === 'number');
   const up = v && p ? KEYS.filter(k => v.grades[k] > (p.grades[k] ?? 0)).join(', ') || 'none' : '-', down = v && p ? KEYS.filter(k => v.grades[k] < (p.grades[k] ?? 0)).join(', ') || 'none' : '-';
   const claimed = specText() ? specItems(existsSync(join(roundDir(n), 'changes.md')) ? readFileSync(join(roundDir(n), 'changes.md'), 'utf8') : '') : [];
   const file = join(HOME, DRY ? 'scoreboard.dry.md' : 'scoreboard.md'); mkdirSync(HOME, { recursive: true });
   if (!existsSync(file)) writeFileSync(file, `| round | ${KEYS.join(' | ')} | lowest | improved | worse | failing check lines | commit | result |\n|${'---|'.repeat(KEYS.length + 6)}\n`);
-  appendFileSync(file, `| ${n} | ${cells.join(' | ')} | ${nums.length ? Math.min(...nums) : '-'} | ${up} | ${down} | ${checks ?? '-'} | ${commit} | ${(`${note}${excess === null ? '' : ` [shift excess ${excess}]`}${claimed.length ? ` [spec ${claimed.join(',')}]` : ''}`).replace(/\s+/g, ' ').slice(0, 300)} |\n`);
+  appendFileSync(file, `| ${n} | ${cells.join(' | ')} | ${nums.length ? Math.min(...nums) : '-'} | ${up} | ${down} | ${checks ?? '-'} | ${commit} | ${(`${note}${fineText(fine)}${excess === null ? '' : ` [shift excess ${excess}]`}${claimed.length ? ` [spec ${claimed.join(',')}]` : ''}`).replace(/\s+/g, ' ').slice(0, 300)} |\n`);
 }
 // Handed to the judge: the loop vetoes only on the fast checks, the contract tests, a step that stopped completing and the exam; the rest is evidence.
 const evidence = (lines, before) => `Failing check lines now: ${lines.length} (accepted round before: ${before.length}). Steps that do not complete now: ${incomplete(lines).length} (before: ${incomplete(before).length}).\n${lines.length ? lines.join('\n') : 'none'}\n`;
@@ -173,8 +174,8 @@ if (!DRY) { // one loop per state folder, checked by pid
   const claim = claimPid(PID); if (!claim.ok) { log(`another loop is running (pid ${claim.pid}, ${PID}): not starting a second one`); process.exit(3); }
   process.on('exit', () => releasePid(PID));
 }
-let failedInRow = 0, pauses = 0, misses = {}, advisedThisEpisode = false, lastAdvisedRound = null, lastAccepted = prevVerdict ? { round: n - 1, grades: prevVerdict.grades } : null, recent = [], lastResult = '';
-if (!DRY) { const old = readJson(STATUS); if (old) { failedInRow = old.failedInRow ?? 0; misses = old.misses ?? {}; } } // a restart keeps the stuck count and the rotation
+let fixedTotal = 0, openProblems = null, failedInRow = 0, pauses = 0, misses = {}, advisedThisEpisode = false, lastAdvisedRound = null, lastAccepted = prevVerdict ? { round: n - 1, grades: prevVerdict.grades } : null, recent = [], lastResult = '';
+if (!DRY) { const old = readJson(STATUS); if (old) { failedInRow = old.failedInRow ?? 0; misses = old.misses ?? {}; fixedTotal = old.problemsFixed ?? 0; openProblems = old.openProblems ?? null; } } // a restart keeps the stuck count and the rotation
 const stopped = () => existsSync(join(HOME, 'STOP')), say = s => { if (!DRY) writeStatus(STATUS, { target: scenario.target, pid: process.pid, lastAccepted, failedInRow, misses, ...s }); };
 log(`start ${scenario.target} at round ${n}${DRY ? ' (dry run)' : ''}, branch ${git('branch', '--show-current')}, ${prevLines.length} failing check lines to start from`);
 for (; n <= MAX_ROUNDS; n++) {
@@ -196,7 +197,7 @@ for (; n <= MAX_ROUNDS; n++) {
     if (a.plan) { plan.advisor = a.plan; log(`round ${n}: advisor (Opus) wrote a plan: ${join(roundDir(n), 'advisor.md')}`); } else log(`round ${n}: advisor failed (${a.why}); plain rethink round`);
   }
   plan.trace = DRY ? '' : await beforeTrace(prevResult);
-  say({ state: 'running', round: n, focus: plan.focus, rethink: plan.rethink, advisor: Boolean(plan.advisor), shiftExcess: totals(scenario, prevResult).shift, settleExcess: totals(scenario, prevResult).settle, nextWake: null });
+  say({ state: 'running', round: n, focus: plan.focus, rethink: plan.rethink, advisor: Boolean(plan.advisor), problemsFixed: fixedTotal, openProblems, shiftExcess: totals(scenario, prevResult).shift, settleExcess: totals(scenario, prevResult).settle, nextWake: null });
   log(`round ${n}: target ${plan.focus}${plan.rethink ? ' (rethink round)' : ''}, ${failedInRow} failed in a row`);
   const mainBefore = status(MAIN), ctx = { prevLines, prevResult }, before = prevVerdict?.grades;
   if (DRY) { worker(n, prev, prevLines, '', ''); await waitForLoad({ max: LOAD_MAX, log }); const s = await retried(() => capture(scenario, roundDir(n)), { log }); log(`dry run: ${check(scenario, s.result).length} check lines`); break; }
@@ -207,6 +208,7 @@ for (; n <= MAX_ROUNDS; n++) {
     runChecks: changed => loopChecks(n, changed, ctx),
   });
   const changesText = () => { const f = join(roundDir(n), 'changes.md'); return existsSync(f) ? readFileSync(f, 'utf8') : ''; };
+  const fineOk = v => fineSignal(v, prevVerdict.grades, KEYS).accept && ctx.lines.length <= prevLines.length && totals(scenario, ctx.fast).shift <= totals(scenario, prevResult).shift; // finer gain: a listed problem fixed, none new, no grade down, checks and measures no worse
   const lost = (result, note) => { // nothing accepted this round: remember what was tried, count the miss, keep the failure text for a rethink
     lastResult = `round ${n} discarded: ${note}`.slice(0, 300); failedInRow++; misses = updateMisses(misses, plan.focus, before, before); addTried(TRIED, { round: n, criterion: plan.focus, result, note: `${note}${changesText() ? `; tried: ${firstChange(changesText())}` : ''}` });
     recent = [...recent, String(existsSync(FAILING) ? readFileSync(FAILING, 'utf8') : note).slice(0, 3000)].slice(-3);
@@ -219,7 +221,7 @@ for (; n <= MAX_ROUNDS; n++) {
   } else {
     const v = judge({ folder: folder(n), scenario, round: n, prev, evidence: evidence(ctx.lines, prevLines) });
     if (!v) { log('judge gave no usable verdict'); discard(root, rec.start); score(n, { checks: ctx.lines?.length, excess: ctx.fast ? totals(scenario, ctx.fast).shift : null, note: 'judge failed; edits discarded' }); lost('judge failed', 'the judge gave no usable verdict'); }
-    else if (!gained(v.grades, prevVerdict.grades) && ctx.lines.length >= prevLines.length) { // nothing rose and no check line went away: unmeasured change stays out of the branch
+    else if (!gained(v.grades, prevVerdict.grades) && ctx.lines.length >= prevLines.length && !fineOk(v)) { // nothing rose and no check line went away: unmeasured change stays out of the branch
       const why = `NO GAIN: no criterion rose and failing check lines ${ctx.lines.length} (was ${prevLines.length}); edits discarded`;
       log(`round ${n} ${why}; grades ${JSON.stringify(v.grades)}`); discard(root, rec.start); renameSync(join(folder(n), 'verdict.json'), join(folder(n), 'verdict.nogain.json'));
       writeFileSync(FAILING, `Round ${n} was discarded: ${why}\nWhat you changed: ${firstChange(changesText())}\nJudge: ${readFileSync(join(folder(n), 'verdict.md'), 'utf8').slice(0, 4000)}\n`);
@@ -237,6 +239,7 @@ for (; n <= MAX_ROUNDS; n++) {
         score(n, { v, p: prevVerdict, commit: sha, checks: ctx.lines.length, excess: totals(scenario, ctx.fast).shift });
         const gain = plan.focus && v.grades[plan.focus] > (before[plan.focus] ?? 0);
         addTried(TRIED, { round: n, criterion: plan.focus, result: gain ? 'accepted' : 'accepted, no gain on it', note: firstChange(changesText()) });
+        if (v.previous) { const f = fineSignal(v, before, KEYS); fixedTotal += f.fixed; openProblems = f.open; log(`judge: fixed ${f.fixed}, partly ${f.partly}, new ${f.fresh}; open ${f.open}; fixed in total ${fixedTotal}`); }
         misses = updateMisses(misses, plan.focus, before, v.grades); failedInRow = 0; pauses = 0; advisedThisEpisode = false; lastResult = `round ${n} accepted (${sha})`; recent = []; lastAccepted = { round: n, grades: v.grades };
         log(`round ${n} committed ${sha}; grades ${JSON.stringify(v.grades)}; ${ctx.lines.length} failing check lines`);
         prev = folder(n); prevVerdict = v; prevResult = ctx.shot.result; prevLines = ctx.lines; writeFileSync(LINES, JSON.stringify(prevLines)); rmSync(FAILING, { force: true });

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { advise } from '../ux/runner/advisor.mjs';
 import { declared, declaredExcess, shiftExcess, topSources, totals, traceText, worstSteps } from '../ux/runner/trace.mjs';
-import { specBlock, specItems, advisorDue, addTried, allNine, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from '../ux/runner/loop-state.mjs';
+import { fineSignal, fineText, specBlock, specItems, advisorDue, addTried, allNine, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from '../ux/runner/loop-state.mjs';
 
 const KEYS = ['clarity', 'layout', 'states', 'phone', 'polish', 'flows'], dir = () => mkdtempSync(join(tmpdir(), 'ux-state-'));
 const grades = (...v) => Object.fromEntries(KEYS.map((k, i) => [k, v[i]]));
@@ -125,4 +125,15 @@ test('a measured step: shift excess, the steps a round declares, and the trace t
 test('a target spec reaches the brief, and the items a round claims are read from its changes.md', () => {
   assert.deepEqual(specItems('# R\nSpec: items 3, 5 and 3\n'), ['3', '5']); assert.deepEqual(specItems('nothing'), []);
   assert.match(specBlock('1. one'), /Target design spec[\s\S]*order of work[\s\S]*Spec: 3, 5[\s\S]*1\. one/); assert.equal(specBlock(''), '');
+});
+
+test('the finer gain: a listed problem fixed, none new, no grade down is accepted; the judge lists what is open', () => {
+  const keys = ['clarity', 'layout'], g = (a, b) => ({ clarity: a, layout: b });
+  const v = (previous, extra = {}) => ({ grades: g(7, 6.5), previous, new_problems: [], ...extra });
+  assert.deepEqual(fineSignal(v({ 'layout.1': 'fixed', 'layout.2': 'partly', 'clarity.1': 'not fixed' }), g(7, 6.5), keys), { fixed: 1, partly: 1, fresh: 0, open: 2, accept: true });
+  assert.equal(fineSignal(v({ 'layout.1': 'partly' }), g(7, 6.5), keys).accept, false, 'partly is not enough');
+  assert.equal(fineSignal(v({ 'layout.1': 'fixed' }, { new_problems: ['layout: a new thing'] }), g(7, 6.5), keys).accept, false, 'a new problem');
+  assert.equal(fineSignal(v({ 'layout.1': 'fixed' }, { grades: g(7, 6) }), g(7, 6.5), keys).accept, false, 'a grade fell');
+  assert.equal(fineSignal({ grades: g(7, 6.5) }, g(7, 6.5), keys).accept, false, 'no answers, no signal'); assert.equal(fineText(null), '');
+  assert.equal(fineText({ fixed: 1, partly: 2, fresh: 0 }), ' [fixed 1, partly 2, new 0]');
 });
