@@ -111,7 +111,7 @@ function ScreenContent({ item }: { readonly item: NavItem }): ReactNode { return
 function Screens({ items, activeId, scrolls, slot, centred, bar }: { readonly items: readonly NavItem[]; readonly activeId: string; readonly scrolls: boolean; readonly slot: HTMLElement | null; readonly centred: boolean; readonly bar: boolean }) {
   return <div data-bar-page={bar || undefined} className={cn('relative min-h-0 flex-1', bar && 'max-md:pb-(--app-shell-bar-height,0px)')}>
     {items.map(item => <ScreenActiveContext.Provider key={item.id} value={item.id === activeId}><ScreenHeaderSlotContext.Provider value={item.id === activeId ? slot : null}>
-      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={scrolls ? 'h-full overflow-y-auto overscroll-contain' : 'h-full overflow-hidden'}>{centred ? <div data-testid="screen-centred" style={bar ? { marginInlineStart: 'clamp(0px, calc((100cqw - var(--container-3xl)) / 2), max(0px, calc(100% - var(--container-xs, 20rem))))', width: 'auto' } : undefined} className="mx-auto flex h-full w-full max-w-3xl flex-col"><ScreenContent item={item} /></div> : <ScreenContent item={item} />}</div>
+      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={scrolls ? 'h-full overflow-y-auto overscroll-contain' : 'h-full overflow-hidden'}>{centred ? <div data-testid="screen-centred" style={bar ? { marginInlineStart: 'clamp(0px, calc((100cqw - var(--container-3xl)) / 2), max(0px, calc(100% - var(--container-3xl))))', width: 'auto' } : undefined} className="mx-auto flex h-full w-full max-w-3xl flex-col"><ScreenContent item={item} /></div> : <ScreenContent item={item} />}</div>
     </ScreenHeaderSlotContext.Provider></ScreenActiveContext.Provider>)}
   </div>;
 }
