@@ -419,6 +419,7 @@
      "do": "tap",
      "target": "composer-submit",
      "say": "Send",
+     "fixtureStream": true,
      "until": "visible:agent-card-file",
      "timeout": 14000,
      "expect": "The reply appears on the card with the file it cites as a chip."
@@ -544,6 +545,7 @@
      "do": "tap",
      "target": "composer-submit",
      "say": "Send",
+     "fixtureStream": true,
      "motion": true,
      "until": "eval:window.__sent.length >= 1",
      "timeout": 8000,
@@ -575,7 +577,7 @@
    "name": "A file from a reply, closed with Esc",
    "steps": [
     { "do": "type", "target": "composer-input", "text": "Reconcile the January statement", "say": "Ask the assistant to reconcile January" },
-    { "do": "tap", "target": "composer-submit", "say": "Send", "until": "visible:agent-card-file", "timeout": 14000, "expect": "The reply cites a file." },
+    { "do": "tap", "target": "composer-submit", "say": "Send", "fixtureStream": true, "until": "visible:agent-card-file", "timeout": 14000, "expect": "The reply cites a file." },
     { "do": "tap", "target": "agent-card-file", "say": "Open the cited file", "motion": true, "until": "visible:artifact-csv", "focus": "agent-preview-title", "expect": "The file opens in the kit's viewer and focus moves to its heading." },
     { "do": "press", "key": "Escape", "say": "Press Esc", "motion": true, "until": "gone:agent-preview", "focus": "agent-card-file", "expect": "The file closes and focus is back on the chip that opened it (the conversation stayed folded)." }
    ]
@@ -588,10 +590,10 @@
     { "do": "tap", "target": "agent-bar-conversation", "say": "Open the conversation", "until": "visible:agent-tray" },
     { "do": "tap", "target": "agent-layer-library", "say": "Tap “Library”", "motion": true, "until": "visible:fixture-library & eval:(window.__pw = document.querySelector('[data-dock=preview]')?.getBoundingClientRect().width ?? 0) > 0", "expect": "The library opens in the right column." },
     { "do": "focus", "target": "[role=separator]:has(+ [data-dock=preview])", "say": "Focus the column's edge" },
-    { "do": "press", "key": "ArrowLeft ArrowLeft ArrowLeft ArrowLeft", "say": "Widen it with the arrow keys", "until": "eval:(window.__pw2 = document.querySelector('[data-dock=preview]').getBoundingClientRect().width) > window.__pw + 40", "expect": "The column grows; the page beside it narrows." },
+    { "do": "press", "key": "ArrowLeft ArrowLeft ArrowLeft ArrowLeft", "say": "Widen it with the arrow keys", "reflow": true, "until": "eval:(window.__pw2 = document.querySelector('[data-dock=preview]').getBoundingClientRect().width) > window.__pw + 40", "expect": "The column grows; the page beside it narrows." },
     { "do": "tap", "text": "uploads", "say": "Unfold “uploads”", "inPlace": "[data-testid=fixture-library]", "until": "text:fixture-library~discrepancies-january.csv" },
     { "do": "tap", "text": "discrepancies-january.csv", "say": "Open “discrepancies-january.csv”", "motion": true, "until": "visible:artifact-csv & text:agent-preview-title~discrepancies-january.csv & text:agent-preview-back~Library", "expect": "The file opens on top of the library, at the same width." },
-    { "do": "tap", "target": "agent-preview-close", "say": "Close it", "until": "gone:agent-preview" },
+    { "do": "tap", "target": "agent-preview-close", "say": "Close it", "reflow": true, "until": "gone:agent-preview" },
     { "do": "tap", "target": "agent-layer-library", "say": "Open the library again", "until": "visible:fixture-library & eval:Math.abs(document.querySelector('[data-dock=preview]').getBoundingClientRect().width - window.__pw2) < 2", "expect": "The column comes back at the width I chose." }
    ]
   },
@@ -601,7 +603,7 @@
    "only": "1440",
    "steps": [
     { "do": "tap", "target": "agent-bar-conversation", "say": "Open the conversation", "until": "visible:agent-tray" },
-    { "do": "tap", "target": "agent-tray-dock", "say": "Dock it to the right", "motion": true, "until": "visible:agent-layer[data-state=open]" },
+    { "do": "tap", "target": "agent-tray-dock", "say": "Dock it to the right", "reflow": true, "motion": true, "until": "visible:agent-layer[data-state=open]" },
     { "do": "tap", "target": "history-open", "say": "Tap “History”", "motion": true, "until": "visible:conversations", "expect": "The list opens in the column, under its header." },
     { "do": "tap", "target": "conversation-row[data-conversation-id=relance]", "say": "Open “December customer reminders”", "until": "gone:conversations & text:transcript~Three reminders", "expect": "The docked column shows that conversation." }
    ]
@@ -924,6 +926,7 @@
      "do": "tap",
      "target": "agent-tray-dock",
      "say": "Dock to the right",
+     "reflow": true,
      "only": "1440",
      "motion": true,
      "until": "visible:agent-layer[data-state=open]",
@@ -933,6 +936,7 @@
      "do": "tap",
      "target": "agent-layer-undock",
      "say": "Undock to the bottom",
+     "reflow": true,
      "only": "1440",
      "motion": true,
      "until": "visible:agent-tray",

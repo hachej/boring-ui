@@ -8,7 +8,7 @@ export const INIT = `(() => { const m = window.__m = { t0: 0, first: null, last:
     try { const r = q => ({ x: Math.round(q.x), y: Math.round(q.y), w: Math.round(q.width), h: Math.round(q.height) });
       for (const x of e.sources || []) { const n = x.node, el = n && n.nodeType === 1 ? n : n && n.parentElement, id = el ? el.tagName.toLowerCase() + (el.dataset?.testid ? '[' + el.dataset.testid + ']' : el.getAttribute('aria-label') ? '[' + el.getAttribute('aria-label') + ']' : '') + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\\s+/).slice(0, 3).join('.') : '') : '(removed)'; row.src.push({ el: id, from: r(x.previousRect), to: r(x.currentRect) });
         const sel = window.__inPlace, a = window.__acted, ctl = a && a.closest ? a.closest('button,[role=button],a[href],li') : null;
-        (row.inside ??= []).push(Boolean(sel && el && el.closest(sel) && el !== ctl)); } } catch {} } }).observe({ type: 'layout-shift', buffered: true }); } catch {}
+        (row.inside ??= []).push(Boolean(sel && el && typeof el.closest === 'function' && el.closest(sel) && el !== ctl)); } } catch {} } }).observe({ type: 'layout-shift', buffered: true }); } catch {}
   window.__begin = (prog, inPlace) => { window.__inPlace = inPlace || null; window.__acted = null; m.t0 = prog ? performance.now() : 0; m.first = null; m.last = 0; window.__mark = window.__shifts.length; };
   if (location.search.includes('kb=1')) { const real = window.visualViewport; const fake = new EventTarget(); let inset = 0;
     for (const key of ['width', 'offsetLeft', 'pageLeft', 'pageTop']) Object.defineProperty(fake, key, { get: () => real[key] });
