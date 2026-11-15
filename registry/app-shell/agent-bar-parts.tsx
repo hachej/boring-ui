@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { MENTION_TOKEN } from '@hachej/boring-ui-kit/chat-text';
+import { isFileBlock, withoutTarget } from '@hachej/boring-ui-kit/chat-view';
 import { useHoldToRecord } from '../pi-chat-voice/use-hold-to-record';
 import { voiceClock } from '../pi-chat/config';
 import { VoiceMessageButton } from '../pi-chat-voice/voice-message';
@@ -213,13 +214,16 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const { question, status, reply } = bar;
   const controller = layer.agent!.controller;
-  const readStop = () => controller.getSnapshot().stop;
-  const stop = useSyncExternalStore(controller.subscribe, readStop, readStop);
-  const readRunning = () => Boolean(controller.getSnapshot().view?.docs['pi.live']?.['run']);
-  const running = useSyncExternalStore(controller.subscribe, readRunning, readRunning);
-  const stopped = stop === 'confirmed';
+  const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  const running = Boolean(snapshot.view?.docs['pi.live']?.['run']);
+  const stopped = snapshot.stop === 'confirmed';
   const working = !stopped && !question && (running || status?.state === 'working');
-  const workingText = working ? (status?.state === 'working' ? status.text : layer.agent?.workingWords?.({ text: text.working })?.trim() || text.working) : undefined;
+  const request = working && status?.state !== 'working'
+    ? snapshot.view?.entries.flatMap(entry => entry.model ?? []).findLast(message => message.role === 'user') : undefined;
+  const task = request?.role === 'user' ? withoutTarget(typeof request.content === 'string' ? request.content
+    : request.content.flatMap(part => part.type === 'text' && !isFileBlock(part.text) ? [part.text] : []).join('\n')).trim() : '';
+  const continuing = task ? `${text.working} · ${task}` : text.working;
+  const workingText = working ? (status?.state === 'working' ? status.text : layer.agent?.workingWords?.({ text: continuing })?.trim() || continuing) : undefined;
   const { markRead } = bar;
   useEffect(() => { if (stopped) markRead(); }, [stopped, markRead]);
   const labels = { ...composerLabels(layer.locale, layer.agent), ...layer.agent?.chatProps?.labels };
@@ -228,7 +232,7 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
   const action = layer.agent?.replyAction;
   if (!question && !working && !reply && !stopped) return null;
   const header = stopped ? <><SquareIcon weight="fill" className="size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1 text-pretty wrap-anywhere"><span data-testid="agent-card-status">{labels.subagentStatus('cancelled')}</span>{' · '}{stoppedHint}</span></> : question ? undefined : working
-    ? <><span className="text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 whitespace-normal wrap-anywhere md:truncate">{workingText}</span></>
+    ? <><span className="shrink-0 text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 whitespace-normal text-pretty wrap-anywhere">{workingText}</span></>
     : reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-(--radius-3xl) bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
       <span data-testid="agent-card-status" className="min-w-0 flex-1 whitespace-normal wrap-anywhere md:truncate">{text.done}{text.done && reply.used.length > 0 ? ' · ' : ''}{reply.used.map((name, index) => {
         const extension = name.lastIndexOf('.');
@@ -240,7 +244,7 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
   return <>
     <section data-testid="agent-card" data-state={stopped ? 'stopped' : question ? 'question' : working ? 'working' : 'reply'} aria-label={text.assistant}
       className="flex flex-col gap-2 px-3 pt-2.5 pb-3 text-sm text-card-foreground md:data-[state=working]:pb-2">
-      {header && <p role="status" className="m-0 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">{header}</p>}
+      {header && <p role="status" className={cn('m-0 flex min-w-0 items-center gap-2', working ? 'text-sm font-medium text-card-foreground' : 'text-xs text-muted-foreground')}>{header}</p>}
       {!stopped && question && <div data-testid="agent-question" aria-label={question.title} className="flex flex-col gap-2">
         {question.step && <p data-testid="agent-question-step" className="m-0 text-xs text-muted-foreground">{question.step}</p>}
         {question.answered && <p data-testid="agent-question-answered" className="m-0 flex items-center gap-1.5 text-xs text-muted-foreground"><CheckIcon className="size-3.5 shrink-0" aria-hidden="true" />{question.answered}</p>}
