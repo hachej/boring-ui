@@ -50,14 +50,14 @@ function createHost() {
 }
 
 const host = createHost();
-window.__ux = { drop: () => host.cut(), restart: () => host.restart(500), loseNext: () => host.loseNext(), sends: () => host.received() };
+window.__ux = { drop: () => host.cut(), restart: () => host.restart(1500), loseNext: () => host.loseNext(), sends: () => host.received() };
 
 function App() {
   const [controller, setController] = useState();
   useEffect(() => {
     let owned, remote, gone = false;
     void (async () => {
-      remote = await createRemoteChat({ endpoint: new URL('https://fixture.invalid/chat'), fetch: request => host.fetch(request), pollMs: 100, reconnect: { baseDelayMs: 150, maxDelayMs: 300 } });
+      remote = await createRemoteChat({ endpoint: new URL('https://fixture.invalid/chat'), fetch: request => host.fetch(request), pollMs: 100, reconnect: { baseDelayMs: 400, maxDelayMs: 800 } });
       owned = createNativeChatController({ ...remote, identity: { runtimeId: 'fictional', scopeId: 'chat-reconnect', principalId: 'julie' } });
       if (gone) { await owned.dispose(); await remote.close(); return; }
       setController(owned);

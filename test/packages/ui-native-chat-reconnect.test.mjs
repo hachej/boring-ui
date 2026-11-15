@@ -179,3 +179,29 @@ test('a submission handle waits through a host restart instead of failing with t
   call.respond('Fictional reply.');
   assert.equal((await waiting).status, 'done');
 });
+
+test('a message sent while the chat is still connecting waits for the first view and goes out once; if the connection fails it returns to the composer', { timeout: 15000 }, async t => {
+  const { fake, network, remote } = await host(t);
+  const slow = (gate) => ({ ...remote, conversation: { ...remote.conversation, watch: async (...args) => { await gate; return remote.conversation.watch(...args); } } });
+  let open; const gate = new Promise(resolve => { open = resolve; });
+  const controller = createNativeChatController({ identity, ...slow(gate) });
+  t.after(() => controller.dispose());
+  const connecting = controller.connect();
+  controller.setText('Sent before the first view');
+  const sent = controller.send();
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(network.submits.length, 0, 'nothing is submitted before the connection is up');
+  assert.equal(controller.getSnapshot().draft.text, '');
+  open(); await connecting;
+  assert.ok(await sent);
+  (await called(fake)).respond('Fictional reply.');
+  await until('the turn is in the view', () => said(controller.getSnapshot().view, 'assistant').length === 1);
+  assert.deepEqual(said(controller.getSnapshot().view, 'user'), ['Sent before the first view']);
+
+  const failing = createNativeChatController({ identity, ...{ ...remote, conversation: { ...remote.conversation, watch: async () => { throw new Error('Fictional host refused'); } } } });
+  t.after(() => failing.dispose());
+  const failed = failing.connect(); failing.setText('Sent into a refused connection');
+  const refused = failing.send(); await failed;
+  assert.equal(await refused, undefined);
+  assert.equal(failing.getSnapshot().draft.text, 'Sent into a refused connection', 'the words are back in the composer');
+});

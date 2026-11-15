@@ -15,8 +15,8 @@
   { "name": "1440", "width": 1440, "height": 900 }
  ],
  "watch": [["field", "[data-testid=composer]"], ["surface", "[data-testid=surface]"]],
- "thresholds": { "cls": 0.08, "settledMs": 1500, "touchTarget": 44, "truncated": 0 },
- "notes": "The fictional host lives in the page: `window.__ux.restart()` drops every stream and refuses requests for half a second, `loseNext()` makes the host confirm the next message and then lose it. The flows are the proof: the second message must go out from the same composer, and each message must show once in the thread.",
+ "thresholds": { "cls": 0.08, "settledMs": 4000, "touchTarget": 44, "truncated": 0 },
+ "notes": "The fictional host lives in the page: `window.__ux.restart()` drops every stream and refuses requests for a second and a half, `loseNext()` makes the host confirm the next message and then lose it. The flows are the proof: the second message must go out from the same composer, and each message must show once in the thread.",
  "states": [
   { "id": "01", "name": "empty", "steps": [] },
   { "id": "02", "name": "answered", "steps": [
@@ -34,7 +34,8 @@
    { "do": "tap", "target": "composer-submit", "say": "Send", "until": "text:[data-role=assistant]~January", "timeout": 4000, "expect": "The message is in the thread and the reply comes." },
    { "do": "fixture", "name": "restart", "say": "The host restarts", "expect": "The connection drops for a moment." },
    { "do": "type", "target": "composer-input", "text": "And the February one", "say": "Type the next message", "until": "value:composer-input~February", "expect": "The text shows in the field; nothing is lost." },
-   { "do": "tap", "target": "composer-submit", "say": "Send again", "until": "eval:document.body.textContent.includes('Noted: “And the February one”')", "timeout": 8000, "expect": "The second message goes out from the same composer and is answered." }
+   { "do": "press", "key": "Enter", "only": "1440", "say": "Press Enter at once, while the connection is still coming back", "until": "eval:document.body.textContent.includes('Noted: “And the February one”')", "timeout": 8000, "expect": "The message is taken, waits for the connection and goes out by itself from the same composer; it is answered once." },
+   { "do": "tap", "target": "composer-submit", "only": "390", "say": "Tap Send at once, while the connection is still coming back", "until": "eval:document.body.textContent.includes('Noted: “And the February one”')", "timeout": 8000, "expect": "The message is taken, waits for the connection and goes out by itself from the same composer; it is answered once." }
   ] },
   { "id": "F02", "name": "The host lost the message it had confirmed", "steps": [
    { "do": "fixture", "name": "loseNext", "say": "The host will confirm the next message and then lose it", "expect": "Nothing shows yet." },
