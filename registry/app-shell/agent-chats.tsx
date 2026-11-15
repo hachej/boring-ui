@@ -97,6 +97,26 @@ function BarTranscriptPosition() {
   }, [folded, host, scrollToMessage, scrollToEnd]);
   return null;
 }
+/** The input row stays at the bottom while chips and earlier text lines grow the surrounding surface upward. */
+function PinnedBarComposer(props: ComposerProps) {
+  const root = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = root.current;
+    const form = element?.querySelector<HTMLElement>('[data-testid=composer]');
+    const stack = form?.querySelector<HTMLElement>('[data-slot=composer-stack]');
+    if (!element || !form || !stack) return;
+    const measure = () => {
+      element.style.paddingTop = `${Math.max(0, stack.offsetHeight - form.offsetHeight)}px`;
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    observer?.observe(form);
+    observer?.observe(stack);
+    return () => observer?.disconnect();
+  }, []);
+  return <div ref={root} data-pinned-composer=""><Composer {...props} /></div>;
+}
+
 /** One agent's PiChat. It stays mounted while hidden, so its scroll, focus and drafts survive a swap with the other spec. */
 function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly visible: boolean; readonly role: Which }) {
   const layer = useInternal();
@@ -131,7 +151,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
       const composer = stop === 'confirmed' ? { ...props, working: false } : props;
       return <><BarTranscriptPosition />{readOnly
         ? <InputGroup className="h-auto"><p data-testid="agent-read-only" className="m-0 flex min-h-[var(--control-h,2.75rem)] w-full min-w-0 items-center px-2 text-sm wrap-anywhere text-muted-foreground">{readOnly}</p></InputGroup>
-        : spec.chatProps?.renderComposer ? spec.chatProps.renderComposer(composer) : <Composer {...composer} />}</>;
+        : spec.chatProps?.renderComposer ? spec.chatProps.renderComposer(composer) : <PinnedBarComposer {...composer} />}</>;
     },
     composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerEditLast: true, composerStart: capturing ? <BarMicCancel mic={mic} /> : <ConversationChevron unread={barChat.historyBadge} />,
     // While the agent's question waits, the field says so; a typed message answers it (PiChat's own rule).

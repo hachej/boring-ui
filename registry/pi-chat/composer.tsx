@@ -416,8 +416,7 @@ export function Composer(props: ComposerProps) {
 
   // One shadcn InputGroup: the chips, the text and a row of controls (`card`, also used for the `stacked` and `inline` compatibility
   // values), or one row with the text between the controls (`pill`, chips above it). Its look is the host's; ours is layout only.
-  return <form data-testid="composer" data-layout={layout} data-dragging={dragging || undefined} onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
-    className={cn('relative flex flex-col gap-2', pill && '@container/composer')}>
+  const contents = <>
     {fileEl}
     {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} {...(props.barActions === 'attach' ? { bare: true } : {})} />}
     {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} header={typeof mentions.pickerHeader === 'function' ? mentions.pickerHeader(trigger!.query) : mentions.pickerHeader} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
@@ -450,5 +449,9 @@ export function Composer(props: ComposerProps) {
       </InputGroupAddon>
     </InputGroup>}
     {cameraOpen && Camera && <Camera onClose={() => setCameraOpen(false)} onCapture={file => { setCameraOpen(false); props.onPickFiles([file]); }} />}
+  </>;
+  return <form data-testid="composer" data-layout={layout} data-dragging={dragging || undefined} onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
+    className={cn('relative flex flex-col gap-2', pill && '@container/composer')}>
+    {props.barActions === 'attach' ? <div data-slot="composer-stack" className="relative flex flex-col gap-2">{contents}</div> : contents}
   </form>;
 }
