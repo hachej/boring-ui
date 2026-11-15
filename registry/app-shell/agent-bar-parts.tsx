@@ -215,7 +215,9 @@ export function OneBox({ children }: { readonly children: ReactNode }) {
   return <div className={cn('shrink-0 bg-card px-6 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]', dockOpen && 'hidden')}>
     <div data-one-composer="" data-folded={folded || undefined} data-testid="agent-composer-box" style={anchored ? undefined : { marginInlineStart: 'clamp(0px, calc((100cqw - var(--app-shell-composer-max)) / 2 - var(--spacing) * 6), max(0px, calc(100% - var(--container-xs, 20rem))))', marginInlineEnd: 0, width: 'auto' }} className={cn('mx-auto flex w-full max-w-[720px] min-w-0 flex-col rounded-(--radius-3xl) bg-card text-card-foreground ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring', !anchored && 'relative', trayOpen && !anchored ? 'overflow-visible' : 'overflow-hidden')}>
       {children}
-      {trayOpen && !anchored && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 z-20 rounded-(--radius-3xl) ring-1 ring-inset ring-border" style={{ top: 'calc(0px - var(--app-shell-bar-tray-size))' }} />}
+      {trayOpen && !anchored && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 z-20 overflow-hidden rounded-b-(--radius-3xl)" style={{ top: 'calc(0px - var(--app-shell-bar-tray-expanded))' }}>
+        <div className="absolute inset-0 rounded-(--radius-3xl) ring-1 ring-inset ring-border transition-transform duration-(--duration-fast) ease-(--ease-standard) motion-reduce:transition-none" style={{ transform: 'translateY(calc(var(--app-shell-bar-tray-expanded) - var(--app-shell-bar-tray-size)))' }} />
+      </div>}
     </div>
   </div>;
 }
