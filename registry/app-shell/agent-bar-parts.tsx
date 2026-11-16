@@ -160,9 +160,9 @@ function useControllerActions(): readonly ControllerAction[] {
 function ControllerCell({ action, extra, round, dot, ...rest }: { readonly action: ControllerAction; readonly extra: boolean; readonly round: boolean; readonly dot: { readonly label: string } | undefined } & Record<string, unknown>) {
   return <button type="button" {...rest} data-testid={action.testId} data-action={action.id} aria-label={action.label} onClick={action.onSelect}
     {...(action.expanded !== undefined ? { 'aria-expanded': action.expanded } : {})} {...(action.on ? { 'aria-pressed': true } : {})}
-    className={cn('relative inline-flex h-4 shrink-0 items-center justify-center text-muted-foreground transition-colors duration-(--duration-fast) hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground aria-pressed:text-foreground motion-reduce:transition-none',
+    className={cn('relative inline-flex h-4 shrink-0 items-center justify-center text-muted-foreground transition-colors duration-(--duration-fast) pointer-fine:hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground aria-pressed:text-foreground motion-reduce:transition-none max-md:h-11 pointer-coarse:h-11',
       'before:absolute before:-inset-y-3.5 before:inset-x-0 before:content-[""] [&_svg]:size-[11px]',
-      extra ? 'w-0 overflow-hidden opacity-0 group-hover/ctl:w-7 group-hover/ctl:opacity-100 group-has-[:focus-visible]/ctl:w-7 group-has-[:focus-visible]/ctl:opacity-100 pointer-coarse:w-7 pointer-coarse:opacity-100' : 'w-8 rounded-l-full', round && 'rounded-r-full')}>
+      extra ? 'w-0 overflow-hidden opacity-0 group-hover/ctl:w-7 group-hover/ctl:opacity-100 group-has-[:focus-visible]/ctl:w-7 group-has-[:focus-visible]/ctl:opacity-100 max-md:w-11 max-md:opacity-100 pointer-coarse:w-11 pointer-coarse:opacity-100' : 'w-8 rounded-l-full max-md:w-11 pointer-coarse:w-11', round && 'rounded-r-full')}>
     {action.icon}
     {dot && <span role="img" aria-label={dot.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-0 right-1 size-1.5 rounded-(--radius-3xl) bg-primary" />}
   </button>;
@@ -188,8 +188,10 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
     <TooltipTrigger render={<ControllerCell action={action} extra={extra} round={extra ? last : rest.length === 0} dot={action.primary ? unread : undefined} />} />
     <TooltipContent side="top">{action.label}</TooltipContent></Tooltip>;
   const strip = <span data-testid="composer-controller" style={box && overlay ? { top: 'calc(0px - var(--app-shell-bar-tray-size))' } : undefined}
-    className="group/ctl absolute top-0 left-1/2 z-30 -translate-x-4 -translate-y-1/2">
-    <span className="flex h-4 items-center rounded-full bg-card ring-4 ring-card outline-1 outline-offset-4 outline-border/70">
+    className="group/ctl absolute top-0 left-1/2 z-30 -translate-x-4 -translate-y-1/2 max-md:-translate-x-5.5 pointer-coarse:-translate-x-5.5">
+    {/* The notch is drawn 16 px high behind the cells; on touch the cells themselves are 44 px boxes (no overlap), so the hit areas are real. */}
+    <span className="relative flex items-center">
+      <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-4 -translate-y-1/2 rounded-full bg-card ring-4 ring-card outline-1 outline-offset-4 outline-border/70" />
       {cell(first, false, false)}
       {rest.map((action, i) => cell(action, true, i === rest.length - 1))}
     </span>

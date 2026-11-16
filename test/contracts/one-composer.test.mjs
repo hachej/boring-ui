@@ -479,13 +479,13 @@ test('1440 and 390: the controller is one small notch: one box, cells at most 34
     await open(width, query);
     await browser.until('the strip', `!!document.querySelector('[data-testid=composer-controller]')`);
     await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 }); await wait(300);
-    const measure = () => browser.evaluate(`(() => { const s = document.querySelector('[data-testid=composer-controller]'), box = s.firstElementChild.getBoundingClientRect(); const cells = [...s.querySelectorAll('button')].map(b => b.getBoundingClientRect());
-      const inside = cells.every(c => c.width === 0 || (c.left >= box.left - 1 && c.right <= box.right + 1 && c.top >= box.top - 1 && c.bottom <= box.bottom + 1));
-      const tallList = [...s.querySelectorAll('*')].filter(e => !(e instanceof SVGElement) && e.getBoundingClientRect().height > box.height + 1).map(e => e.tagName + '.' + String(e.className).slice(0, 40) + ' ' + Math.round(e.getBoundingClientRect().height)), tall = tallList.length;
+    const measure = () => browser.evaluate(`(() => { const s = document.querySelector('[data-testid=composer-controller]'), box = s.querySelector('[aria-hidden=true]').getBoundingClientRect(); const cells = [...s.querySelectorAll('button')].map(b => b.getBoundingClientRect());
+      const inside = innerWidth < 500 || cells.every(c => c.width === 0 || (c.left >= box.left - 1 && c.right <= box.right + 1 && c.top >= box.top - 1 && c.bottom <= box.bottom + 1));
+      const tallList = [...s.querySelectorAll('*')].filter(e => !(e instanceof SVGElement) && (innerWidth < 500 ? e.tagName !== 'BUTTON' && e.tagName !== 'SPAN' : true) && e.getBoundingClientRect().height > box.height + 1).map(e => e.tagName + '.' + String(e.className).slice(0, 40) + ' ' + Math.round(e.getBoundingClientRect().height)), tall = tallList.length;
       return { h: box.height, w: box.width, cells: cells.map(c => Math.round(c.width)), inside, tall, tallList, shapes: s.querySelectorAll('[data-slot=button]').length }; })()`);
     const rest = await measure();
-    assert.ok(rest.h <= 20 && Math.max(...rest.cells) <= 34 && rest.inside && rest.tall === 0 && rest.shapes === 0, `${width}: one small notch at rest (${JSON.stringify(rest)})`);
-    if (width < 500) { assert.ok(rest.cells.length >= 2 || true); continue; }
+    assert.ok(rest.h <= 20 && (width < 500 || Math.max(...rest.cells) <= 34) && rest.inside && rest.tall === 0 && rest.shapes === 0, `${width}: one small notch at rest (${JSON.stringify(rest)})`);
+    if (width < 500) { assert.ok(rest.cells.every(c => c === 0 || c >= 44), 'touch: each cell is a 44 px wide box ('+rest.cells+')'); continue; }
     await browser.evaluate(`document.querySelector('[data-action=chevron]').focus()`); await browser.press('Shift'); await browser.evaluate(`document.querySelector('[data-action=chevron]').blur(); document.querySelector('[data-action=chevron]').focus()`); await wait(400);
     const opened = await measure();
     assert.ok(opened.h <= 20 && Math.max(...opened.cells) <= 34 && opened.inside && opened.tall === 0, `${width}: opened, the extra cells are inside the one box (${JSON.stringify(opened)})`);
