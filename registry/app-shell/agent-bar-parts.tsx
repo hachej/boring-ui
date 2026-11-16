@@ -189,7 +189,7 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
     <TooltipContent side="top">{action.label}</TooltipContent></Tooltip>;
   const strip = <span data-testid="composer-controller" style={box && overlay ? { top: 'calc(0px - var(--app-shell-bar-tray-size))' } : undefined}
     className="group/ctl absolute top-0 left-1/2 z-30 -translate-x-4 -translate-y-1/2">
-    <span className="flex h-4 items-center rounded-full bg-card ring-4 ring-card shadow-[0_0_0_5px_color-mix(in_srgb,var(--border)_70%,transparent)]">
+    <span className="flex h-4 items-center rounded-full bg-card ring-4 ring-card outline-1 outline-offset-4 outline-border/70">
       {cell(first, false, false)}
       {rest.map((action, i) => cell(action, true, i === rest.length - 1))}
     </span>
