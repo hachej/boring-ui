@@ -259,11 +259,18 @@ test('folded, 1280 and 390: a failed turn is one sentence on the card, in the ap
 
 // Julien: "not centered vertically". The bar's rule aligned its row to the end, so any slack between the row and the bar's minimum height put the controls low.
 const offsets = () => browser.evaluate(`(() => { const g = document.querySelector('[data-testid=composer] [data-slot=input-group]').getBoundingClientRect(); const mid = g.top + g.height / 2;
-  return [...document.querySelectorAll('[data-testid=composer] [data-slot=input-group] button, [data-testid=composer] [data-slot=input-group] textarea')].filter(e => e.getClientRects().length > 0).map(e => { const r = e.getBoundingClientRect(); return Math.abs(r.top + r.height / 2 - mid); }); })()`);
-for (const [width, query] of [[1280, ''], [390, 'tabs=1']]) test(`${width}: the chevron, attach, field and action sit on the bar's midline, empty and with several lines`, { skip, timeout: 120000 }, async () => {
+  return [...document.querySelectorAll('[data-testid=composer] [data-slot=input-group] button:not([data-testid=agent-bar-conversation]), [data-testid=composer] [data-slot=input-group] textarea')].filter(e => e.getClientRects().length > 0).map(e => { const r = e.getBoundingClientRect(); return Math.abs(r.top + r.height / 2 - mid); }); })()`);
+for (const [width, query] of [[1280, ''], [390, 'tabs=1']]) test(`${width}: the attach, field and action sit on the bar's midline, empty and with several lines; the expand tab straddles the top border at the middle`, { skip, timeout: 120000 }, async () => {
   await open(width, query);
   await browser.until('the field', `!!document.querySelector('[data-testid=composer-input]')`);
   for (const offset of await offsets()) assert.ok(offset < 0.6, `empty: ${offset}px off the midline`);
+  const tab = await browser.evaluate(`(() => { const g = document.querySelector('[data-testid=composer] [data-slot=input-group]').getBoundingClientRect(), t = document.querySelector('[data-testid=agent-bar-conversation]'), r = t.getBoundingClientRect(), pill = t.firstElementChild.getBoundingClientRect();
+    return { across: Math.abs((r.top + r.height / 2) - g.top), middle: Math.abs((r.left + r.width / 2) - (g.left + g.width / 2)), pillAbove: pill.top < g.top - 1 && pill.bottom > g.top + 1, hit: Math.min(r.width, r.height), name: t.getAttribute('aria-label'), expanded: t.getAttribute('aria-expanded') }; })()`);
+  assert.ok(tab.across <= 1.5, `the tab's middle is on the bar's top border (${tab.across}px off)`);
+  assert.ok(tab.middle <= 1, `the tab is in the middle of the bar (${tab.middle}px off)`);
+  assert.equal(tab.pillAbove, true, 'half of the pill is above the border, half below');
+  assert.ok(tab.name && tab.expanded === 'false', 'the tab keeps its name and aria-expanded');
+  if (width < 500) assert.ok(tab.hit >= 44, `a 44 px hit area on touch (${tab.hit})`);
   await type('create a new file tt..md');
   await wait(150);
   for (const offset of await offsets()) assert.ok(offset < 1, `typed, with Send: ${offset}px off the midline`);

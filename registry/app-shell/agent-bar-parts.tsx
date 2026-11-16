@@ -126,15 +126,24 @@ export function VoiceProblem() {
   return voice.problem ? <p role="alert" data-testid="agent-voice-problem" className="m-0 shrink-0 px-3 pb-1 text-xs leading-4 text-destructive">{voice.problem}</p> : null;
 }
 
-/** `composer: 'bar'`: the chevron at the start of the field. It unfolds the conversation above the field and folds it back; a dot while a reply is unread. */
+/**
+ * `composer: 'bar'`: the tab on the field's top border, centred and straddling it (half above, half below). It unfolds the conversation above the field and folds it
+ * back; a dot while a reply is unread. The row keeps no control for it. The button is the hit area (the touch floor, 44 px, or 40 by 24 on a pointer) and the pill is
+ * its look; the field's group is the positioned box it sits on.
+ */
 export function ConversationChevron({ unread }: { readonly unread: { readonly label: string } | undefined }) {
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const open = layer.expanded ? layer.trayOpen || layer.dockOpen : layer.snap === 'half' || layer.snap === 'full';
-  return <span className="relative inline-flex shrink-0">
-    <Button type="button" variant="secondary" size="icon" data-testid="agent-bar-conversation" aria-label={text.conversation} title={text.conversation} aria-expanded={open}
-      onClick={() => { if (open) { layer.close(); requestAnimationFrame(() => (layer.host?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]'))?.focus({ preventScroll: true })); } else layer.open('agent'); }}>{open ? <ChevronDownIcon data-icon="inline-start" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>
-    {unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-(--radius-3xl) bg-primary" />}
+  return <span className="absolute top-0 left-1/2 z-30 -translate-x-1/2 -translate-y-1/2">
+    <Button type="button" variant="ghost" size="icon" data-testid="agent-bar-conversation" aria-label={text.conversation} title={text.conversation} aria-expanded={open}
+      className="h-6 w-10 rounded-full p-0 hover:bg-transparent aria-expanded:bg-transparent max-md:min-w-11 pointer-coarse:min-w-11"
+      onClick={() => { if (open) { layer.close(); requestAnimationFrame(() => (layer.host?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]'))?.focus({ preventScroll: true })); } else layer.open('agent'); }}>
+      <span className="relative flex h-4 w-7 items-center justify-center rounded-full border bg-card text-muted-foreground">
+        {open ? <ChevronDownIcon className="size-3" aria-hidden="true" /> : <ChevronUpIcon className="size-3" aria-hidden="true" />}
+        {unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute -top-0.5 -right-0.5 size-2 rounded-(--radius-3xl) bg-primary" />}
+      </span>
+    </Button>
   </span>;
 }
 
