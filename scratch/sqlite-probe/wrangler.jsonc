@@ -1,0 +1,8 @@
+{
+  "name": "probe-shared-sqlite",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": { "bindings": [{ "name": "PROBE", "class_name": "Probe" }, { "name": "FILES", "class_name": "FilesBox" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Probe", "FilesBox"] }]
+}
