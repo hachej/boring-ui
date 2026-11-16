@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { Harness, createRegistry, defineExtension } from '@earendil-works/pi-durable';
 import { createEditTool, createReadTool, createWriteTool } from '@earendil-works/pi-durable/tools';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
-import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
+import { createFolderEnv } from '@hachej/boring-execution/folder';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { openaiProvider } from '@earendil-works/pi-ai/providers/openai';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
@@ -39,7 +39,7 @@ models.setProvider(openaiProvider());
 // 2. One workspace: a directory, one ExecutionEnv over it and ONE provider (revisions, history, change feed).
 const person = { scopeId: 'demo-team', principalId: 'demo-person', initiatorId: 'demo-person' };
 const agentAccess = { ...person, principalId: 'demo-agent' };
-const env = new NodeExecutionEnv({ cwd: root });
+const env = createFolderEnv({ cwd: root });
 const db = openNodeConnection(join(data, 'workspace.sqlite'));
 const files = createWorkspaceProvider({
   identity: { providerId: 'workspace', instanceId: 'app', incarnation: 'app', viewId: 'published' },

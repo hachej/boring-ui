@@ -46,6 +46,10 @@
       "types": "./dist/virtual-sqlite.d.ts",
       "import": "./dist/virtual-sqlite.js"
     },
+    "./folder": {
+      "types": "./dist/folder.d.ts",
+      "import": "./dist/folder.js"
+    },
     "./aws-code-interpreter": {
       "types": "./dist/aws-code-interpreter.d.ts",
       "import": "./dist/aws-code-interpreter.js"
