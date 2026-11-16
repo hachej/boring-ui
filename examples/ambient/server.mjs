@@ -20,7 +20,7 @@ import { answerUserQuestion, createAskUserTool } from '@hachej/boring-agent/ask-
 import { createPresentTool } from '@hachej/boring-agent/artifacts';
 import { createFileGuard } from '@hachej/boring-agent/file-guard';
 import { createChatTransportHandler } from '@hachej/boring-agent/chat-transport';
-import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
+import { createFolderEnv } from '@hachej/boring-execution/folder';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
@@ -58,7 +58,7 @@ export async function startAmbient({ directory, port = 0, provider = process.env
   // The workspace: a directory of files, one provider over it for the viewers and `present`, and the guard in front of Pi's file tools.
   const root = join(directory, 'workspace');
   mkdirSync(root, { recursive: true });
-  const env = new NodeExecutionEnv({ cwd: root });
+  const env = createFolderEnv({ cwd: root });
   const workspaceDb = openNodeConnection(join(directory, 'workspace.sqlite'));
   const files = createWorkspaceProvider({ identity: { providerId: 'workspace', instanceId: 'ambient', incarnation: 'ambient', viewId: 'published' }, fs: env, journal: createWorkspaceJournal(workspaceDb) });
 
