@@ -1,0 +1,29 @@
+{
+ "target": "layout:default",
+ "title": "Default layout",
+ "summary": "The app shell at its defaults over an empty app view: navigation, header, the assistant's bar, the right pane, and on a phone the tab bar and the sheet.",
+ "try": [{ "label": "Open the conversation", "flow": "F01" }],
+ "purpose": "AppShell layout=\"screen\" composer=\"bar\" with no app styling and one kit Empty part as the app view.",
+ "fixture": {
+  "entry": "ux/fixtures/layout-default.jsx",
+  "query": "",
+  "ready": "[data-testid=composer-input]",
+  "install": "npx shadcn@4.23.0 add app-shell pi-chat agent-bar",
+  "usage": "<AppShell layout=\"screen\" composer=\"bar\" nav={nav} agent={{ controller }} />"
+ },
+ "viewports": [
+  { "name": "390", "width": 390, "height": 844, "touch": true },
+  { "name": "1280", "width": 1280, "height": 800 }
+ ],
+ "thresholds": { "cls": 0.08, "settledMs": 1200, "touchTarget": 44 },
+ "notes": "The empty app view is one kit Empty part. The page is the design system's layout section.",
+ "states": [
+  { "id": "01", "name": "rest", "steps": [] },
+  { "id": "02", "name": "dark", "query": "dark=1", "steps": [] }
+ ],
+ "flows": [
+  { "id": "F01", "name": "Open the conversation", "steps": [
+   { "do": "tap", "target": "agent-bar-conversation", "say": "Open the conversation", "motion": true, "until": "visible:agent-tray|agent-layer[data-state=half]", "expect": "The conversation opens above the field." }
+  ] }
+ ]
+}

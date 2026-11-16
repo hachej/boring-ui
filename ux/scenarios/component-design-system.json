@@ -1,0 +1,24 @@
+{
+ "target": "component:design-system",
+ "title": "Design system",
+ "summary": "The kit's defaults, light and dark: colours, type, radius and shadow, buttons, form controls, status, rows, tables, cards, tabs, a dialog, the empty state, and the default layout.",
+ "purpose": "Every default kit part and token in one page, with no app styling, and the default AppShell layout framed at the end. Built from kit parts and theme tokens only.",
+ "fixture": {
+  "entry": "ux/fixtures/design-system.jsx",
+  "query": "",
+  "ready": "[data-testid=ds-colours]",
+  "install": "npx shadcn@4.23.0 add theme button input checkbox badge item table card tabs dialog empty",
+  "usage": "import { Button } from '@/components/ui/button'  // the kit's parts, no app classes"
+ },
+ "viewports": [
+  { "name": "390", "width": 390, "height": 844, "touch": true },
+  { "name": "1280", "width": 1280, "height": 800 }
+ ],
+ "thresholds": { "cls": 0.08, "settledMs": 1200, "touchTarget": 44 },
+ "notes": "A reference page, not a flow: it has no gestures. Its fixture is held to the design check like every showcase fixture.",
+ "states": [
+  { "id": "01", "name": "rest", "steps": [] },
+  { "id": "02", "name": "dark", "query": "dark=1", "steps": [] }
+ ],
+ "flows": []
+}

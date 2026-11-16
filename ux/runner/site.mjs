@@ -44,7 +44,7 @@ export async function site({ from, out, scenarios = [] }) {
   for (const c of cards) {
     writeFileSync(join(out, c.name, 'index.html'), page({ title: `${c.meta.title} · Boring UI`, description: c.meta.purpose, depth: 1, cards: nav, current: c.name, body: targetBody(c) }));
   }
-  const main = cards.find(c => c.scenario && c.name === 'layout-bar') ?? cards.find(c => c.scenario && c.meta.level === 'layout') ?? cards.find(c => c.scenario) ?? cards[0];
+  const main = cards.find(c => c.scenario && c.name === 'component-design-system') ?? cards.find(c => c.scenario && c.name === 'layout-bar') ?? cards.find(c => c.scenario && c.meta.level === 'layout') ?? cards.find(c => c.scenario) ?? cards[0];
   writeFileSync(join(out, 'index.html'), page({ title: 'Boring UI', description: about(), depth: 0, cards: nav, current: '', body: targetBody({ ...main, home: 'Boring UI', lead: about(), demoBase: `${main.name}/` }) }));
   console.log(`site: ${cards.length} target${cards.length === 1 ? '' : 's'} -> ${out}`);
 }

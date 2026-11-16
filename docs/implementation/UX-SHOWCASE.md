@@ -6,6 +6,8 @@ The pages are written for a visitor: no harness explanation on them, one footer 
 
 The workflow is `.github/workflows/ux-showcase.yml`.
 
+The home page is the design system: `component:design-system` shows the kit's tokens and default parts in light and dark, then frames the default layout (`layout:default`, the app shell over an empty app view). Both are built from kit parts only, so `scripts/check-showcase-design.mjs` (part of `npm run check`) holds them to the kit's design rules. The bank demo (`layout:bar`) is a page of its own in the navigation.
+
 ## Enable it once
 
 1. Settings > Pages > Source: **GitHub Actions** (nothing else to configure; no secret is used).
