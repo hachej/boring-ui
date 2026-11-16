@@ -41,10 +41,14 @@ export async function site({ from, out, scenarios = [] }) {
     cards.push({ name, meta, result, scenario: hasDemo ? scenario : undefined, kitVersion: meta.kitVersion, sum: summary(scenario, result) });
   }
   const nav = cards.map(c => ({ name: c.name, meta: { ...c.meta, kitVersion: c.kitVersion } }));
+  // A `fullscreen` scenario is the app itself: its demo page is the page (no site chrome, no frame), given the site's pages as links.
+  const fullscreen = (c, up) => readFileSync(join(from, '_pages', `${c.name}.html`), 'utf8').replace('</head>', `<script>window.__pages=${JSON.stringify(nav.filter(n => n.name !== c.name).map(n => ({ title: n.meta.title, href: `${up}${n.name}/index.html` }))).replace(/</g, '\\u003c')}</script></head>`);
   for (const c of cards) {
+    if (c.scenario?.fullscreen) { writeFileSync(join(out, c.name, 'index.html'), fullscreen(c, '../')); continue; }
     writeFileSync(join(out, c.name, 'index.html'), page({ title: `${c.meta.title} · Boring UI`, description: c.meta.purpose, depth: 1, cards: nav, current: c.name, body: targetBody(c) }));
   }
   const main = cards.find(c => c.scenario && c.name === 'component-design-system') ?? cards.find(c => c.scenario && c.name === 'layout-bar') ?? cards.find(c => c.scenario && c.meta.level === 'layout') ?? cards.find(c => c.scenario) ?? cards[0];
-  writeFileSync(join(out, 'index.html'), page({ title: 'Boring UI', description: about(), depth: 0, cards: nav, current: '', body: targetBody({ ...main, home: 'Boring UI', lead: about(), demoBase: `${main.name}/` }) }));
+  if (main.scenario?.fullscreen) writeFileSync(join(out, 'index.html'), fullscreen(main, ''));
+  else writeFileSync(join(out, 'index.html'), page({ title: 'Boring UI', description: about(), depth: 0, cards: nav, current: '', body: targetBody({ ...main, home: 'Boring UI', lead: about(), demoBase: `${main.name}/` }) }));
   console.log(`site: ${cards.length} target${cards.length === 1 ? '' : 's'} -> ${out}`);
 }

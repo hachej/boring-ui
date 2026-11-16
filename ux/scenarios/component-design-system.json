@@ -1,12 +1,13 @@
 {
  "target": "component:design-system",
  "title": "Design system",
+ "fullscreen": true,
  "summary": "The kit's defaults, light and dark: colours, type, radius and shadow, buttons, form controls, status, rows, tables, cards, tabs, a dialog, the empty state, and the default layout.",
- "purpose": "Every default kit part and token in one page, with no app styling, and the default AppShell layout framed at the end. Built from kit parts and theme tokens only.",
+ "purpose": "Every default kit part and token in one page, with no app styling, as the app view of the default AppShell layout, full screen. Built from kit parts and theme tokens only.",
  "fixture": {
   "entry": "ux/fixtures/design-system.jsx",
   "query": "",
-  "ready": "[data-testid=ds-colours]",
+  "ready": "[data-testid=composer-input]",
   "install": "npx shadcn@4.23.0 add theme button input checkbox badge item table card tabs dialog empty",
   "usage": "import { Button } from '@/components/ui/button'  // the kit's parts, no app classes"
  },

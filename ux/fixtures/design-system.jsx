@@ -1,4 +1,8 @@
+import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { AppShell } from '../../registry/app-shell/app-shell.tsx';
+import { ScreenBody } from '../../registry/app-shell/screen-body.tsx';
+import { FileTextIcon, FolderIcon } from '../../registry/_shared/icons';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,18 +20,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 
-// Component scenario `component:design-system`, the site's home: the kit's defaults, built from kit parts and theme tokens only, no app styling.
-// Query: `dark=1`. The default layout is its own demo (`layout:default`), framed at the end of the page.
-if (new URLSearchParams(location.search).get('dark') === '1') document.documentElement.classList.add('dark');
+// Component scenario `component:design-system`, the site's home, full screen: the page IS the app. The kit's AppShell at its defaults (navigation, header, the
+// assistant's bar, the right pane, the phone's tab bar) with the design system as its app view, and an empty app view as its second screen. Kit parts and tokens only.
+// The site injects `window.__pages` (its other pages, as links in the sidebar). Query: `dark=1`; the theme otherwise follows the site's switch.
+const stored = (() => { try { return localStorage.getItem('ux-theme'); } catch { return null; } })();
+const initial = new URLSearchParams(location.search).get('dark') === '1' || stored === 'dark' || (!stored && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+const applyTheme = value => { document.documentElement.classList.toggle('dark', value === 'dark'); try { localStorage.setItem('ux-theme', value); } catch { /* private mode */ } };
+applyTheme(initial);
 const COLOURS = [['background', 'bg-background'], ['foreground', 'bg-foreground'], ['card', 'bg-card'], ['muted', 'bg-muted'], ['muted-foreground', 'bg-muted-foreground'], ['primary', 'bg-primary'], ['primary-foreground', 'bg-primary-foreground'], ['secondary', 'bg-secondary'], ['accent', 'bg-accent'], ['border', 'bg-border'], ['input', 'bg-input'], ['ring', 'bg-ring'], ['destructive', 'bg-destructive'], ['success', 'bg-success'], ['warning', 'bg-warning'], ['info', 'bg-info']];
 const SCALE = ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl', 'text-2xl'];
 const Section = ({ id, title, children }) => <section data-testid={`ds-${id}`} className="flex flex-col gap-3"><h2 className="m-0 text-lg font-semibold">{title}</h2>{children}</section>;
 const Row = ({ children }) => <div className="flex flex-wrap items-center gap-2">{children}</div>;
-const layoutUrl = `${location.pathname.includes('/_pages/') ? 'layout-default.html' : '../layout-default/demo.html'}${location.search}`;
 
 function Page() {
-  return <main className="mx-auto flex max-w-3xl flex-col gap-8 p-4 text-sm">
-    <header><h1 className="m-0 text-2xl font-semibold">Boring UI design system</h1><p className="m-0 text-muted-foreground">The kit's defaults, light and dark. Fictional content.</p></header>
+  return <div className="mx-auto flex max-w-3xl flex-col gap-8 text-sm">
+    <p className="m-0 text-muted-foreground">The kit's defaults, light and dark: switch the theme in the account menu. Fictional content.</p>
     <Section id="colours" title="Colours"><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{COLOURS.map(([name, bg]) => <div key={name} className="flex flex-col gap-1"><div className={`h-10 rounded-md border ${bg}`} /><span className="text-xs">{name}</span></div>)}</div></Section>
     <Section id="type" title="Type, radius, shadow">
       {SCALE.map(size => <p key={size} className={`m-0 ${size}`}>{size} The quick brown fox</p>)}
@@ -52,7 +59,29 @@ function Page() {
       <Empty><EmptyHeader><EmptyTitle>Nothing here yet</EmptyTitle><EmptyDescription>The app view starts like this.</EmptyDescription></EmptyHeader></Empty>
       <Skeleton className="h-8 w-full" />
     </Section>
-    <Section id="layout" title="Default layout"><iframe title="Default layout" src={layoutUrl} className="h-136 w-full rounded-lg border" /></Section>
-  </main>;
+  </div>;
 }
-createRoot(document.getElementById('root')).render(<Page />);
+const Placeholder = () => <Empty><EmptyHeader><EmptyTitle>Nothing here yet</EmptyTitle><EmptyDescription>The app's screen goes here.</EmptyDescription></EmptyHeader></Empty>;
+let snapshot = { identity: { runtimeId: 'fictional', scopeId: 'design-system', principalId: 'fictional-reader' }, conversationId: 'design-system', connection: { kind: 'connected' },
+  view: { entries: [], docs: {} }, draft: { text: '', attachments: [], version: 0 }, outbox: [], echo: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
+const listeners = new Set();
+const change = patch => { snapshot = { ...snapshot, ...patch }; for (const listener of listeners) listener(); };
+const controller = {
+  getSnapshot: () => snapshot, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
+  setText: text => change({ draft: { ...snapshot.draft, text, version: snapshot.draft.version + 1 } }),
+  setAttachments: attachments => change({ draft: { ...snapshot.draft, attachments, version: snapshot.draft.version + 1 } }),
+  send: async () => undefined, connect: async () => {}, stop: async () => {}, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {},
+};
+const pages = window.__pages ?? [];
+const links = () => <nav aria-label="Pages" className="flex flex-col gap-1 p-2">{pages.map(page => <Button key={page.href} variant="ghost" href={page.href} className="justify-start">{page.title}</Button>)}</nav>;
+const nav = [
+  { id: 'design', label: 'Design system', icon: FileTextIcon, render: () => <ScreenBody><Page /></ScreenBody>, ...(pages.length ? { sidebar: links, sidebarLabel: 'Pages' } : {}) },
+  { id: 'empty', label: 'Empty app view', icon: FolderIcon, render: () => <ScreenBody><Placeholder /></ScreenBody> },
+];
+const agent = { controller, label: 'Assistant', library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en' } };
+function App() {
+  const [route, setRoute] = useState('design'), [theme, setTheme] = useState(initial);
+  return <AppShell layout="screen" locale="en" title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" agent={agent}
+    account={{ name: 'Visitor', menu: [], theme: { value: theme, onChange: value => { applyTheme(value); setTheme(value); } } }} />;
+}
+createRoot(document.getElementById('root')).render(<App />);
