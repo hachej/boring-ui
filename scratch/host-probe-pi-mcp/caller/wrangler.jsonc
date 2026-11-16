@@ -1,0 +1,9 @@
+{
+  "name": "probe-pi-mcp-caller",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": { "bindings": [{ "name": "HOME_DO", "class_name": "Home" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Home"] }],
+  "vars": { "DOOR": "http://127.0.0.1:8801" }
+}
