@@ -30,7 +30,7 @@ test('inline Button in a TableCell: no underline at rest, underline on hover and
   assert.ok(cell.closest('[data-slot=table-cell]'), 'the Button sits inside a real kit TableCell');
   const c = classes(cell);
   for (const cls of ['in-data-[slot=table-cell]:no-underline', 'in-data-[slot=table-cell]:hover:underline', 'in-data-[slot=table-cell]:focus-visible:underline']) assert.ok(c.has(cls), `table-cell variant ${cls}`);
-  for (const cls of ['decoration-current', 'underline-offset-2', 'text-primary', 'focus-visible:ring-3', "pointer-coarse:after:h-[var(--control-min,2.75rem)]"]) assert.ok(c.has(cls), `${cls} stays`);
+  for (const cls of ['decoration-current', 'underline-offset-2', 'text-primary', 'focus-visible:ring-3', 'pointer-coarse:after:absolute']) assert.ok(c.has(cls), `${cls} stays`);
 
   await act(async () => react.render(h('p', null, 'Read ', h(Button, { size: 'inline', 'data-testid': 'in-prose' }, 'the terms'))));
   const prose = host.querySelector('[data-testid=in-prose]');

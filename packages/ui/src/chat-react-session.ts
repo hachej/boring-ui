@@ -185,7 +185,8 @@ export function useChatSession<Content = unknown>(options: ChatSessionOptions<Co
   // Before the first view the composer already takes messages: the controller holds them, shown as the person's own, and sends them once
   // connected (or puts them back if the connection fails).
   const firstConnect = state.connection.kind === 'connecting' && !state.view;
-  const sendBlocked = uploading > 0 || state.disposed || !(connected || firstConnect) || unconfirmed;
+  // A stream being reopened holds the message too (the controller sends it, in order, once the connection is back).
+  const sendBlocked = uploading > 0 || state.disposed || !(connected || firstConnect || state.connection.kind === 'reconnecting') || unconfirmed;
   /** Puts a message back into the composer ahead of whatever is there now (nothing is dropped). */
   const putBack = (text: string, images: readonly ChatAttachment[]) => {
     if (controller.getSnapshot().disposed) return;

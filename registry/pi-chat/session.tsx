@@ -36,6 +36,11 @@ export interface ChatFeatureProps {
   readonly mode?: Mode;
   /** `natural` shows only messages, replies and question, approval and artifact cards, with one "Preparing…" status while the agent works: no tool steps, reasoning, file discovery or raw error text. Omit it and nothing changes. */
   readonly presentation?: 'natural';
+  /**
+   * `none` keeps every tool step plain, whatever `mode` says: no arguments (not even the hint after the tool's name), no result text, no error text, no disclosure, and a failed step is never opened. A sentence under its line carries `labels.toolFailedSummary` (a sentence, or a function of the tool id) and a failed activity's header is `labels.activityFailedPlain`, with no tool names.
+   * `auto` (the default) is today's behaviour: a failed step opens with its arguments and error. `?chatMode=developer` replaces `none`, as it replaces `presentation="natural"`.
+   */
+  readonly toolDetails?: 'auto' | 'none';
   /** Show a retained voice message's audio player. Default false: transcript only; uploaded audio and stored tokens are unchanged. */
   readonly voiceReplay?: boolean;
   /** The words on the chip of a sent message that starts with a `<target>` block (point-and-speak). Undefined keeps the default label; the chip never shows the raw fields on hover. */
@@ -73,6 +78,8 @@ export interface ChatFeatureProps {
   readonly onOpenImage?: (image: ImageContent) => void;
   readonly onCopy?: (text: string) => Promise<void>;
   readonly onComposerKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  /** What Enter does in the message field (`Composer enterSends`). `'keyboard'` (default): a physical keyboard sends, a touch device adds a line. `'always'`: Enter sends everywhere; Shift+Enter adds a line. */
+  readonly enterSends?: ComposerProps['enterSends'];
   readonly fileAccept?: string;
   /** Optional pills at the left of the composer's controls row. */
   readonly composerChips?: ComposerProps['chips'];
@@ -156,7 +163,7 @@ export function useCursorInOpened(textarea: { readonly current: HTMLTextAreaElem
 
 /** Presentation adapter; all session state and controller protocols live in the kit. */
 export function useChatSession(options: ChatSessionOptions) {
-  const { controller, activeController, mode, presentation, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
+  const { controller, activeController, mode, presentation, toolDetails, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, enterSends, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, sendContext, onOpenFile, fileChanges, composerChips, composerHeader, composerHasContent, onPickFiles, pasteToFile } = options;
   const { labels } = useChatText();
   const textarea = useRef<HTMLTextAreaElement | null>(null);
@@ -168,7 +175,7 @@ export function useChatSession(options: ChatSessionOptions) {
     afterSend, feedback: sendContext ?? feedback, onOpenFile, onPickFiles, commandMentions, labels, onFocus: () => textarea.current?.focus() });
   const { state, developer, natural, connected, working, sendBlocked, act } = session;
   const rowContext = useMemo<RowContext>(() => ({
-    developer, natural, voiceReplay, targetLabel, sentContent, renderText, cards, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
+    developer, natural, plainTools: toolDetails === 'none', voiceReplay, targetLabel, sentContent, renderText, cards, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: session.activateMention } : undefined,
     answer: actions?.answer,
     artifacts: offered?.Card ? { open: offered.open, isOpen: offered.isOpen, kinds: offered.kinds, Card: offered.Card } : undefined,
@@ -177,7 +184,7 @@ export function useChatSession(options: ChatSessionOptions) {
     pieces: slash?.skills?.length || mentions || attachments ? { kinds: mentions?.kinds, mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview, audioUrl: mentions?.audioUrl } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the fields rows read, not whole objects: activateMention changes every render and must not rebuild every row.
-  }), [controller, developer, natural, voiceReplay, targetLabel, sentContent, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, offered?.open, offered?.isOpen, offered?.kinds, offered?.Card, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
+  }), [controller, developer, natural, toolDetails, voiceReplay, targetLabel, sentContent, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, offered?.open, offered?.isOpen, offered?.kinds, offered?.Card, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {
@@ -195,7 +202,7 @@ export function useChatSession(options: ChatSessionOptions) {
   const camera = attachments ? attachments.Camera : options.camera;
   /** Everything `Composer` needs from the session; a surface adds its layout and slots. */
   const composer = {
-    text: state.draft.text, onText: (text: string) => controller.setText(text), onKeyDown: onComposerKeyDown, textareaRef: textarea,
+    text: state.draft.text, onText: (text: string) => controller.setText(text), onKeyDown: onComposerKeyDown, enterSends, textareaRef: textarea,
     attachments: state.draft.attachments.map(item => ({ id: item.id, name: item.name, mimeType: item.content.mimeType, data: item.content.data })),
     onRemoveAttachment: (id: string) => controller.setAttachments(controller.getSnapshot().draft.attachments.filter(item => item.id !== id)),
     // A typed message answers the waiting question, so the primary button sends it.

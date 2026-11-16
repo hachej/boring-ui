@@ -1,0 +1,47 @@
+{
+ "target": "layout:update-notice",
+ "title": "App shell with the update notice",
+ "summary": "A newer version of the app is online while the page is open: one status row, a Reload action, a dismiss that holds for that version.",
+ "try": [{"label": "A newer version comes online", "flow": "F01"}, {"label": "Reload", "flow": "F02"}, {"label": "Dismiss, then another version", "flow": "F03"}, {"label": "Reach the last control of a long screen", "flow": "F04"}],
+ "purpose": "AppShell update={{ available, version, onReload }}: the kit's own notice at the foot of the screen column (above the phone's tab bar), in the shell's words (English or French), never covering the last control of a long screen, dismissed for the version it names.",
+ "fixture": {
+  "entry": "ux/fixtures/layout-update-notice.jsx",
+  "query": "",
+  "ready": "[data-testid=app-shell]",
+  "install": "npx shadcn@4.23.0 add app-shell",
+  "usage": "<AppShell layout=\"screen\" title=\"Harbor Studio\" nav={nav} route={route} update={{ available, version, onReload }} />"
+ },
+ "viewports": [
+  { "name": "390", "width": 390, "height": 844, "touch": true },
+  { "name": "1280", "width": 1280, "height": 800 }
+ ],
+ "watch": [["notice", "[data-testid=update-notice]"], ["last", "[data-testid=close-month]"]],
+ "thresholds": { "cls": 0.08, "settledMs": 1200, "touchTarget": 44 },
+ "notes": "The notice is a status row in the flow, not an overlay: the screen above it shrinks, so the last control of a long screen stays reachable and is never under the notice. It takes no focus. Reload and the dismiss are 44 px on a phone. A dismiss holds for the version named; another version shows it again.",
+ "states": [
+  { "id": "01", "name": "rest", "steps": [] },
+  { "id": "02", "name": "notice", "query": "update=1", "steps": [] },
+  { "id": "03", "name": "notice-dark", "query": "update=1&dark=1", "steps": [] },
+  { "id": "04", "name": "notice-fr", "query": "update=1&lang=fr", "steps": [] },
+  { "id": "05", "name": "notice-fr-dark", "query": "update=1&lang=fr&dark=1", "steps": [] },
+  { "id": "06", "name": "last-control", "query": "update=1", "steps": [{ "do": "scroll", "target": "screen-journal", "to": 9999 }] },
+  { "id": "07", "name": "last-control-dark", "query": "update=1&dark=1", "steps": [{ "do": "scroll", "target": "screen-journal", "to": 9999 }] }
+ ],
+ "flows": [
+  { "id": "F01", "name": "A newer version comes online", "steps": [
+   { "do": "fixture", "name": "setUpdate", "arg": true, "say": "The app learns that a newer version is online", "motion": true, "until": "visible:update-notice", "expect": "A status row appears above the tab bar, with Reload and a dismiss; the focus does not move." }
+  ] },
+  { "id": "F02", "name": "Reload", "query": "update=1", "steps": [
+   { "do": "tap", "target": "update-reload", "say": "Tap Reload", "until": "eval:window.__ux.reloads() === 1", "expect": "The host's reload handler runs once." }
+  ] },
+  { "id": "F03", "name": "Dismiss, then another version", "query": "update=1", "steps": [
+   { "do": "tap", "target": "update-dismiss", "say": "Tap the dismiss button", "until": "gone:update-notice", "expect": "The notice goes and the screen takes its room back." },
+   { "do": "fixture", "name": "setUpdate", "arg": true, "say": "The same version is announced again", "until": "gone:update-notice", "expect": "A dismiss holds for the version it was made on: nothing comes back." },
+   { "do": "fixture", "name": "newVersion", "arg": "v3", "say": "A later version comes online", "until": "visible:update-notice", "expect": "The notice shows again for the later version." }
+  ] },
+  { "id": "F04", "name": "Reach the last control of a long screen", "query": "update=1", "steps": [
+   { "do": "scroll", "target": "screen-journal", "to": 9999, "say": "Scroll to the end of the journal", "until": "eval:document.querySelector('[data-testid=close-month]').getBoundingClientRect().bottom <= document.querySelector('[data-testid=update-notice]').getBoundingClientRect().top", "expect": "The last button ends above the notice, not under it." },
+   { "do": "tap", "target": "close-month", "say": "Tap “Close the month”", "until": "eval:window.__ux.closed() === 1", "expect": "The tap reaches the button." }
+  ] }
+ ]
+}

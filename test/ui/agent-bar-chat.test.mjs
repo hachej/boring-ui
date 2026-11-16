@@ -22,6 +22,9 @@ const idle = { entries: [user, round(2, assistant([{ type: 'text', text: 'Fait.'
 // D-2198: a read that publishes its progress, a two-question form, a reply that cites a file.
 const reading = { entries: [user, round(2, assistant([{ type: 'toolCall', id: 'r', name: 'read', arguments: { path: 'uploads/releve-fictif.pdf' } }]))], docs: { 'pi.live': { run: { taskId: 1 }, tools: [{ callId: 'r', status: 'running', details: { progress: '3 lignes sur 9' } }] } } };
 const FORM = { question: 'Deux précisions', questions: [{ question: 'Quel exercice ?', options: ['2025', '2026'] }, { question: 'Quel journal ?', options: ['Achats', 'Ventes'] }] };
+// A turn that ended in an error (an assistant message with stopReason error), then the person's next message and the next turn's work.
+const failedTurn = { entries: [user, round(2, assistant([], 'error'))], docs: {} };
+const sentAgain = { entries: [...failedTurn.entries, { id: 3, kind: 'message', byTaskId: 1, model: [{ role: 'user', content: 'Réessaie.', timestamp: 4 }] }], docs: running };
 const formAsking = { entries: [user, round(2, assistant([ask('q', FORM)]))], docs: running };
 const replied = { entries: [user, round(2, assistant([{ type: 'toolCall', id: 'r', name: 'read', arguments: { path: 'uploads/releve-fictif.pdf' } }])), round(3, { role: 'toolResult', toolCallId: 'r', toolName: 'read', content: [{ type: 'text', text: '9 lignes' }], isError: false, timestamp: 2 }), round(4, assistant([{ type: 'text', text: 'Rapproché. Voir @uploads/ecarts-fictifs.csv.' }]))], docs: {} };
 
@@ -45,6 +48,7 @@ test('AgentBar, AgentQuestion and AgentStatus follow the chat controller through
       globalThis.__question = bar.question;
       return <>{bar.status ? <AgentStatus {...bar.status} /> : null}
         {bar.reply ? <p data-testid="probe-reply" data-used={bar.reply.used.join(',')} data-files={bar.reply.files.join(',')}>{bar.reply.text}</p> : null}
+        {bar.failed ? <p data-testid="probe-failed" data-key={bar.failed.key}>failed</p> : null}
         <button type="button" data-testid="probe-read" onClick={bar.markRead}>read</button>
         <AgentBar onSend={bar.onSend} onHistory={() => {}} {...(bar.historyBadge ? { historyBadge: bar.historyBadge } : {})} {...(bar.question ? { question: bar.question } : {})} /></>;
     }`, resolveDir: new URL('../../registry/', import.meta.url).pathname, loader: 'tsx' }, outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', loader: { '.css': 'empty' } });
@@ -126,6 +130,17 @@ test('AgentBar, AgentQuestion and AgentStatus follow the chat controller through
     await act(async () => { globalThis.__question.onAnswer({ text: '   ', source: 'text' }); });
     assert.equal(q('agent-question')?.getAttribute('aria-label'), 'Quel exercice ?', 'still the first question');
     assert.equal(answers.length, 0);
+  });
+  await t.test('a failed turn is reported at once, also when it is found at mount, and goes when the person sends again', async () => {
+    await draw(failedTurn);
+    assert.notEqual(q('probe-failed'), null, 'a failed last turn');
+    assert.equal(q('probe-reply'), null, 'a failure is not a reply');
+    await draw(working);
+    await publish(failedTurn);
+    assert.notEqual(q('probe-failed'), null, 'a run that ends in an error');
+    await publish(sentAgain);
+    assert.equal(q('probe-failed'), null, 'the next turn clears it');
+    assert.equal(q('agent-status')?.getAttribute('data-state'), 'working');
   });
   await t.test('D-2198: a reply after a run is kept with the dot until read; history found at mount is not a new reply', async () => {
     await draw(replied);

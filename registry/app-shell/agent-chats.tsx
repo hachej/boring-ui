@@ -132,7 +132,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const locale = layer.locale ?? spec.chatProps?.locale;
   const words = shellWords(locale, layer.agent);
   // `composer: 'bar'`: the folded card and the chevron's dot read the same chat as the thread, through the agent bar's own adapter.
-  const barChat = useAgentBarChat(spec.controller, { actions: spec.chatProps?.actions, toolLabels: chatTextFor(locale).labels, workingWords: spec.workingWords,
+  const barChat = useAgentBarChat(spec.controller, { actions: spec.chatProps?.actions, toolLabels: chatTextFor(locale).labels, plainTools: spec.chatProps?.toolDetails === 'none', workingWords: spec.workingWords,
     labels: { working: words.working, done: words.done, unread: words.unread, step: (index, count) => `${index} ${words.of} ${count}` } });
   const barred = role === 'agent' && layer.bar;
   // The one composer's row (pill, chevron, attach, Dicter, edit last) wherever the field is: under the page, docked, or in the phone's drawer (AC-20).

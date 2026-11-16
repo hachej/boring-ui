@@ -3,7 +3,7 @@
 // `composer: 'bar'`'s own pieces: the microphone's tap or hold, the conversation's chevron, the folded card on the field, its send problem, the box.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, Loader2Icon, MicIcon, SquareIcon, XIcon } from '../_shared/icons';
+import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, Loader2Icon, MicIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
@@ -14,6 +14,7 @@ import { useHoldToRecord } from '../pi-chat-voice/use-hold-to-record';
 import { voiceClock } from '../pi-chat/config';
 import { VoiceMessageButton } from '../pi-chat-voice/voice-message';
 import { cn } from '../utils/utils';
+import { foldedCardKind } from '../agent-bar/folded-card';
 import type { AgentBarChat } from '../agent-bar/use-agent-bar-chat';
 import { composerLabels, shellWords, useInternal } from './layer-context';
 
@@ -140,7 +141,8 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
 /**
  * `composer: 'bar'`, folded: one card joined to the top of the field, at its width. While the agent works its header is what the running tool does;
  * a question shows its choices (a form, each question in turn); a reply that came while folded shows « ✓ Terminé · <what it used> », three lines
- * and the files it cites. Nothing floats over the page: the card is in the column's flow, above the field.
+ * and the files it cites. A turn that failed shows one sentence, `chatProps.replyError` or the chat's `labels.responseFailed` (the thread's own notice is out
+ * of sight while folded), until the next turn starts. Nothing floats over the page: the card is in the column's flow, above the field.
  */
 /** The folded excerpt names files and ends omitted source lines with one ellipsis. */
 const replyExcerpt = (text: string) => {
@@ -221,7 +223,7 @@ export function SendProblem({ controller }: { readonly controller: NativeChatCon
 export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly onOpenFile: ((path: string, files: readonly string[]) => void) | undefined }) {
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  const { question, status, reply } = bar;
+  const { question, status, reply, failed } = bar;
   const controller = layer.agent!.controller;
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const running = Boolean(snapshot.view?.docs['pi.live']?.['run']);
@@ -239,10 +241,12 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
   const stoppedHint = layer.agent?.chatProps?.labels?.emptyDescription ?? layer.agent?.words?.emptyDescription
     ?? ((layer.locale ?? layer.agent?.chatProps?.locale) === 'fr' ? 'Envoyez un nouveau message pour continuer.' : 'Send a new message to continue.');
   const action = layer.agent?.replyAction;
-  if (!question && !working && !reply && !stopped) return null;
+  // One kind at a time: stopped, then the question, the work under way, a failed turn (it beats a reply), a reply.
+  const kind = stopped ? 'stopped' : foldedCardKind({ question: Boolean(question), working, failed: Boolean(failed), reply: Boolean(reply) });
+  if (!kind) return null;
   const header = stopped ? <><SquareIcon weight="fill" className="size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1 text-pretty wrap-anywhere"><span data-testid="agent-card-status">{labels.subagentStatus('cancelled')}</span>{' · '}{stoppedHint}</span></> : question ? undefined : working
     ? <><span className="shrink-0 text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 whitespace-normal text-pretty wrap-anywhere">{workingText}</span></>
-    : reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-(--radius-3xl) bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
+    : kind === 'reply' && reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-(--radius-3xl) bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
       <span data-testid="agent-card-status" className="min-w-0 flex-1 whitespace-normal wrap-anywhere md:truncate">{text.done}{text.done && reply.used.length > 0 ? ' · ' : ''}{reply.used.map((name, index) => {
         const extension = name.lastIndexOf('.');
         const split = extension > 0 ? Math.max(1, extension - 3) : name.length;
@@ -251,8 +255,11 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
         </span></span>;
       })}</span></> : undefined;
   return <>
-    <section data-testid="agent-card" data-state={stopped ? 'stopped' : question ? 'question' : working ? 'working' : 'reply'} aria-label={text.assistant}
+    <section data-testid="agent-card" data-state={kind} aria-label={text.assistant}
       className="flex flex-col gap-2 px-3 pt-2.5 pb-3 text-sm text-card-foreground md:data-[state=working]:pb-2">
+      {kind === 'failed' && failed && <p role="alert" className="m-0 flex min-w-0 items-start gap-2 text-sm text-destructive">
+        <AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        <span data-testid="agent-card-failed" className="min-w-0 flex-1 line-clamp-3">{layer.agent?.chatProps?.replyError?.(failed) ?? labels.responseFailed}</span></p>}
       {header && <p role="status" className={cn('m-0 flex min-w-0 items-center gap-2', working ? 'text-sm font-medium text-card-foreground' : 'text-xs text-muted-foreground')}>{header}</p>}
       {!stopped && question && <div data-testid="agent-question" aria-label={question.title} className="flex flex-col gap-2">
         {question.step && <p data-testid="agent-question-step" className="m-0 text-xs text-muted-foreground">{question.step}</p>}
@@ -263,7 +270,7 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
           question.onAnswer({ text: choice, source: 'choice' });
         }}>{choice}</Button>)}</div>
       </div>}
-      {!stopped && !question && !working && reply && <>
+      {kind === 'reply' && reply && <>
         {/* A tap on the reply opens the conversation, as the chevron does (the chevron stays the way for a keyboard). */}
         <FoldedReply text={reply.text} onOpen={() => layer.open('agent')} />
         {(reply.files.length > 0 || action) && <div role="list" data-testid="agent-card-files" className="flex flex-wrap items-center gap-1.5">

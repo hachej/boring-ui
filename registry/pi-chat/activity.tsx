@@ -23,14 +23,15 @@ function summary(steps: readonly Step[], labels: ChatLabels): string | undefined
   return [...counts].map(([name, count]) => `${labels.toolNoun(name)}${count > 1 ? ` ×${count}` : ''}`).join(' · ');
 }
 
-function header(steps: readonly Step[], state: ActivityState, streaming: boolean, labels: ChatLabels): string {
+function header(steps: readonly Step[], state: ActivityState, streaming: boolean, labels: ChatLabels, plain: boolean): string {
   if (state === 'running') {
     const running = steps.filter(step => stepStatus(step) === 'running');
     const current = streaming ? running[running.length - 1] : running[0];
     if (!current) return labels.thinkingStep;
-    return current.kind === 'tool' ? liveLabel(current.entry.call, labels) : labels.thinkingStep;
+    return current.kind === 'tool' ? liveLabel(current.entry.call, labels, plain) : labels.thinkingStep;
   }
   if (state === 'failed') {
+    if (plain) return labels.activityFailedPlain(steps.filter(step => step.kind === 'tool' && step.entry.status === 'failed').length);
     const failed = steps.flatMap(step => step.kind === 'tool' && step.entry.status === 'failed' ? [step.entry.call.name] : []);
     return labels.activityFailed(failed.length, [...new Set(failed)].join(' · '));
   }
@@ -53,8 +54,8 @@ function Thinking({ text, streaming, details }: { readonly text: string; readonl
 }
 
 /** Presentation only: native Pi steps and host cards keep their existing ownership and order. */
-export function ActivityBlock({ steps, state, streaming, developer, onOpenImage }: {
-  readonly steps: readonly Step[]; readonly state: ActivityState; readonly streaming: boolean; readonly developer: boolean; readonly onOpenImage?: (image: Image) => void;
+export function ActivityBlock({ steps, state, streaming, developer, plain = false, onOpenImage }: {
+  readonly steps: readonly Step[]; readonly state: ActivityState; readonly streaming: boolean; readonly developer: boolean; readonly plain?: boolean; readonly onOpenImage?: (image: Image) => void;
 }) {
   const { labels } = useChatText();
   const [chosen, setChosen] = useState<boolean | undefined>();
@@ -65,7 +66,7 @@ export function ActivityBlock({ steps, state, streaming, developer, onOpenImage 
       <TraceCollapsibleTrigger className="min-h-8 max-md:min-h-11 pointer-coarse:min-h-11">
         <TraceLine {...(state === 'running' ? { status: 'running' } : state === 'failed' ? { status: 'error' } : {})}>
           <TraceIcon><Icon aria-hidden="true" /></TraceIcon>
-          <TraceTitle data-testid="activity-label">{header(steps, state, streaming, labels)}</TraceTitle>
+          <TraceTitle data-testid="activity-label">{header(steps, state, streaming, labels, plain)}</TraceTitle>
           <TraceDescription data-testid="activity-count">{labels.steps(steps.length)}</TraceDescription>
         </TraceLine>
       </TraceCollapsibleTrigger>
@@ -73,7 +74,7 @@ export function ActivityBlock({ steps, state, streaming, developer, onOpenImage 
         <Trace data-testid="activity-steps">
           {steps.map(step => <div key={step.key} data-testid="activity-step" data-kind={step.kind} data-status={stepStatus(step)}>
             {step.kind === 'tool'
-              ? <ToolCard entry={step.entry} details={developer || step.entry.status === 'failed'} {...(onOpenImage ? { onOpenImage } : {})} />
+              ? <ToolCard entry={step.entry} details={developer || step.entry.status === 'failed'} plain={plain} {...(onOpenImage ? { onOpenImage } : {})} />
               : <Thinking text={step.text} streaming={step.streaming} details={developer} />}
           </div>)}
         </Trace>

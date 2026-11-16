@@ -30,17 +30,24 @@ function Section({ title, children }: { readonly title: string; readonly childre
 }
 
 /** A short live label for a call: "Reading notes/consultation.md", "Running bash", "Running working_git" (`labels.toolActivity`). */
-export function liveLabel(call: ToolCall, labels: Pick<ChatLabels, 'toolActivity'> = defaultChatLabels): string {
-  return labels.toolActivity(call.name, preview(call.arguments));
+export function liveLabel(call: ToolCall, labels: Pick<ChatLabels, 'toolActivity'> = defaultChatLabels, plain = false): string {
+  return labels.toolActivity(call.name, plain ? '' : preview(call.arguments));
 }
 
-/** One Trace step. Failures open by default; quiet successful steps have no disclosure. */
-export function ToolCard({ entry, onOpenImage, details = true }: { readonly entry: ToolEntry; readonly details?: boolean; readonly onOpenImage?: (image: Extract<ToolResultMessage['content'][number], { type: 'image' }>) => void }) {
+/** `labels.toolFailedSummary` for one tool: the host's plain sentence on a failed step (`toolDetails="none"`). */
+export function failedSummary(labels: Pick<ChatLabels, 'toolFailedSummary'>, tool: string): string {
+  const summary = labels.toolFailedSummary;
+  return typeof summary === 'function' ? summary(tool) : summary;
+}
+
+/** One Trace step. Failures open by default; quiet successful steps have no disclosure. `plain` (`toolDetails="none"`): never any arguments, result or error text, no disclosure, and a failed line carries the host's plain sentence. */
+export function ToolCard({ entry, onOpenImage, details: wanted = true, plain = false }: { readonly entry: ToolEntry; readonly details?: boolean; readonly plain?: boolean; readonly onOpenImage?: (image: Extract<ToolResultMessage['content'][number], { type: 'image' }>) => void }) {
   const { labels } = useChatText();
   const [chosen, setChosen] = useState<boolean | undefined>();
   const { call, result, status } = entry;
+  const details = wanted && !plain;
   const open = details && (chosen ?? status === 'failed');
-  const hint = preview(call.arguments);
+  const hint = plain ? '' : preview(call.arguments);
   const line = <TraceLine {...(status === 'running' ? { status: 'running' } : status === 'failed' ? { status: 'error' } : {})}>
     <TraceIcon><WrenchIcon /></TraceIcon>
     <TraceTitle><span data-testid="tool-name" data-tool-id={call.name}>{labels.toolName(call.name)}</span>{hint && ` · ${hint}`}</TraceTitle>
@@ -54,6 +61,7 @@ export function ToolCard({ entry, onOpenImage, details = true }: { readonly entr
   </>;
   return <TraceCollapsible data-testid="tool-card" data-boring="tool-card" data-status={status} data-tool={call.name} data-call-id={call.id} open={open} onOpenChange={setChosen}>
     {details ? <TraceCollapsibleTrigger className="min-h-8 max-md:min-h-11 pointer-coarse:min-h-11">{line}</TraceCollapsibleTrigger> : line}
+    {plain && status === 'failed' && <p data-testid="tool-failed-summary" className="m-0 ps-6 text-sm text-muted-foreground [overflow-wrap:anywhere]">{failedSummary(labels, call.name)}</p>}
     {details && <TraceCollapsibleContent><div data-testid="tool-details" className="flex flex-col gap-3">
       <Section title={labels.arguments}><pre className="m-0 max-h-60 overflow-auto bg-secondary p-2 whitespace-pre-wrap [overflow-wrap:anywhere]">{JSON.stringify(call.arguments, null, 2)}</pre></Section>
       {result && <Section title={result.isError ? labels.error : labels.result}>

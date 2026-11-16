@@ -44,7 +44,14 @@ test('floating and docking a chat changes the placement sent with the next submi
   const view = { conversation: { id: 'c1' }, entries: [], docs: {} };
   const fetch = async request => {
     const op = new URL(request.url).searchParams.get('op');
-    if (op === 'watch') return new Response(JSON.stringify({ kind: 'view', view }) + '\n', { headers: { 'content-type': 'application/x-ndjson' } });
+    // The stream stays open until the chat closes it, as a host's does: one that ended at once would put the controller into reconnecting
+    // between sends, and a send made then waits for the connection (slower hosts reach that moment, fast ones do not).
+    if (op === 'watch') return new Response(new ReadableStream({
+      start(stream) {
+        stream.enqueue(new TextEncoder().encode(JSON.stringify({ kind: 'view', view }) + '\n'));
+        request.signal.addEventListener('abort', () => { try { stream.close(); } catch { /* already closed */ } });
+      },
+    }), { headers: { 'content-type': 'application/x-ndjson' } });
     if (op === 'submit') { submits.push(await request.json()); return Response.json({ submissionId: submits.length }); }
     return new Response('{}', { status: 404 });
   };

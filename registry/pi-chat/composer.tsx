@@ -104,6 +104,12 @@ export interface ComposerProps {
   readonly fileAccept: string;
   readonly onPickFiles: (files: readonly File[]) => void;
   readonly onKeyDown?: ((event: KeyboardEvent<HTMLTextAreaElement>) => void) | undefined;
+  /**
+   * What Enter does. `'keyboard'` (default): a physical keyboard sends and a touch device (`(pointer: coarse)`) adds a line, because a phone keyboard
+   * has no Shift+Enter and the Send button sends. `'always'`: Enter sends everywhere, Shift+Enter adds a line, and an input method composing
+   * a candidate never sends. For a one-line message to an assistant, where the person expects Return to send.
+   */
+  readonly enterSends?: 'keyboard' | 'always' | undefined;
   readonly textareaRef: Ref<HTMLTextAreaElement>;
   readonly placeholder?: string;
   /** Optional visual placeholder (for an inline icon); the textarea keeps its accessible label. */
@@ -338,9 +344,9 @@ export function Composer(props: ComposerProps) {
     const undo = (props.uploads ?? []).filter(item => item.state === 'uploading' && item.cancel && item.restoreWhile === props.text).pop();
     if (undo && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'z') { event.preventDefault(); undo.cancel!(); return; }
     // Never send while an input method editor is composing (Enter confirms the candidate).
-    // A phone keyboard has no Shift+Enter: on a touch device Enter inserts a newline and the Send button sends.
-    const touch = globalThis.matchMedia?.('(pointer: coarse)').matches === true;
-    if (event.key === 'Enter' && !touch && !event.shiftKey && !composing.current && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+    // A phone keyboard has no Shift+Enter: by default, on a touch device Enter inserts a newline and the Send button sends (`enterSends="always"` sends there too).
+    const newline = props.enterSends !== 'always' && globalThis.matchMedia?.('(pointer: coarse)').matches === true;
+    if (event.key === 'Enter' && !newline && !event.shiftKey && !composing.current && !event.nativeEvent.isComposing && event.keyCode !== 229) {
       event.preventDefault();
       if (canSubmit) props.onSend();
     }

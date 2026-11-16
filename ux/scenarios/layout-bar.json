@@ -349,6 +349,27 @@
    "query": "kb=1"
   },
   {
+   "id": "17",
+   "name": "failed",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Send the March report"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "until": "text:agent-card-failed~The response failed",
+     "timeout": 8000
+    },
+    {
+     "do": "wait",
+     "ms": 400
+    }
+   ]
+  },
+  {
    "id": "20",
    "name": "rest-dark",
    "steps": [],
@@ -399,6 +420,28 @@
      "do": "tap",
      "target": "agent-bar-conversation",
      "until": "visible:agent-tray|agent-layer[data-state=half]"
+    }
+   ],
+   "query": "dark=1"
+  },
+  {
+   "id": "23",
+   "name": "failed-dark",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Send the March report"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "until": "text:agent-card-failed~The response failed",
+     "timeout": 8000
+    },
+    {
+     "do": "wait",
+     "ms": 400
     }
    ],
    "query": "dark=1"
@@ -880,6 +923,42 @@
      "until": "gone:agent-send-problem",
      "timeout": 6000,
      "expect": "The same message is sent; the line goes."
+    }
+   ]
+  },
+  {
+   "id": "F19",
+   "name": "A failed answer, seen with the conversation folded",
+   "steps": [
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Send the March report",
+     "say": "Ask for the March report"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Send; the conversation stays folded",
+     "motion": true,
+     "until": "text:agent-card-failed~The response failed & gone:agent-tray & gone:agent-layer[data-state=half] & gone:agent-layer[data-state=full]",
+     "timeout": 8000,
+     "expect": "The card above the field says in one sentence that the answer failed, without opening the conversation."
+    },
+    {
+     "do": "type",
+     "target": "composer-input",
+     "text": "Reconcile the January statement",
+     "say": "Ask something else"
+    },
+    {
+     "do": "tap",
+     "target": "composer-submit",
+     "say": "Send again",
+     "motion": true,
+     "until": "visible:agent-card-status & gone:agent-card-failed",
+     "timeout": 6000,
+     "expect": "The sentence goes as soon as the next turn starts; the card shows the work."
     }
    ]
   },

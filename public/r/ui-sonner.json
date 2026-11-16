@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "ui-sonner",
+  "title": "UI sonner",
+  "description": "The kit's own compact sonner primitive (shadcn/ui/sonner.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+  "dependencies": [
+    "next-themes@^0.4.6",
+    "sonner@^2.0.8"
+  ],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json"
+  ],
+  "files": [
+    {
+      "path": "shadcn/ui/sonner.tsx",
+      "content": "\"use client\"\n\nimport { useTheme } from \"next-themes\"\nimport { Toaster as Sonner, type ToasterProps } from \"sonner\"\nimport { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from \"@/components/_shared/icons\"\n\nconst Toaster = ({ ...props }: ToasterProps) => {\n  const { theme = \"system\" } = useTheme()\n\n  return (\n    <Sonner\n      theme={theme as ToasterProps[\"theme\"]}\n      className=\"toaster group\"\n      icons={{\n        success: (\n          <CircleCheckIcon className=\"size-4\" />\n        ),\n        info: (\n          <InfoIcon className=\"size-4\" />\n        ),\n        warning: (\n          <TriangleAlertIcon className=\"size-4\" />\n        ),\n        error: (\n          <OctagonXIcon className=\"size-4\" />\n        ),\n        loading: (\n          <Loader2Icon className=\"size-4 animate-spin\" />\n        ),\n      }}\n      style={\n        {\n          \"--normal-bg\": \"var(--popover)\",\n          \"--normal-text\": \"var(--popover-foreground)\",\n          \"--normal-border\": \"var(--border)\",\n          \"--border-radius\": \"var(--radius)\",\n        } as React.CSSProperties\n      }\n      // Bottom toasts clear what the app docks there: an app's theme sets --toast-offset-bottom and always wins; else pi-chat's --toast-offset-composer while its composer is docked below lg; else sonner's own offsets.\n      offset={{ bottom: \"var(--toast-offset-bottom, var(--toast-offset-composer, 24px))\" }}\n      mobileOffset={{ bottom: \"var(--toast-offset-bottom, var(--toast-offset-composer, 16px))\" }}\n      toastOptions={{\n        classNames: {\n          toast: \"cn-toast\",\n        },\n      }}\n      {...props}\n    />\n  )\n}\n\nexport { Toaster }\n",
+      "type": "registry:ui"
+    }
+  ],
+  "type": "registry:ui"
+}
