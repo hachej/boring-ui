@@ -94,6 +94,8 @@ const runs = {
   tool: () => ({ entries: [...history, ask, read], docs: live([{ callId: 'c1', taskId: 8, status: 'running', details: { progress: T('12 lignes sur 40', '12 of 40 lines') } }]) }),
   form: () => ({ entries: [...history, ask, read, readDone, form], docs: live() }),
   reply: () => ({ entries: [...history, ask, read, readDone, entry(14, assistant([{ type: 'text', text: REPLY }]))], docs: {} }),
+  // The turn ends in an error: an assistant message with stopReason `error` and no text.
+  failed: () => ({ entries: [...history, ask, read, readDone, entry(15, assistant([], 'error'))], docs: {} }),
 };
 window.__ux = { failNext: () => { window.__failNext = true; }, setText: text => controller.setText(text) };
 window.__run = kind => change({ view: runs[kind]() });
@@ -164,7 +166,7 @@ const agent = { controller, icon: DEMO ? SparklesIcon : Icon, label: 'Assistant'
   // `?fork=1`: the host's conversations with fork and new (edit last, D3): `window.__forked` holds the entries forked at, `window.__new` counts new ones.
   // `?enter=always`: `chatProps.enterSends`, so Enter sends on a touch device too.
   chatProps: { ...(params.get('enter') === 'always' ? { enterSends: 'always' } : {}), ...(params.get('fork') === '1' ? { conversations: { items: [{ id: 'one-composer', title: 'Dossier Cèdre' }], activeId: 'one-composer', onSelect() {},
-    onNew() { window.__new = (window.__new ?? 0) + 1; }, fork: async at => { (window.__forked ??= []).push(String(at)); } } } : {}), title: 'Assistant', locale: LOCALE, mentions: { kinds: { ecriture: { label: id => T(`Écriture ${id}`, `Entry ${id}`), icon: <Icon className="size-4" /> }, task: { label: id => id, icon: <Icon className="size-4" /> } } }, labels: { ...(params.get('tu') === '1' ? {} : { placeholder: T('Demandez, ou « / » pour une action', 'Ask, or type /') }) }, actions, attachments, slash, ...(KIT ? {} : { onOpenFile }) } };
+    onNew() { window.__new = (window.__new ?? 0) + 1; }, fork: async at => { (window.__forked ??= []).push(String(at)); } } } : {}), title: 'Assistant', locale: LOCALE, mentions: { kinds: { ecriture: { label: id => T(`Écriture ${id}`, `Entry ${id}`), icon: <Icon className="size-4" /> }, task: { label: id => id, icon: <Icon className="size-4" /> } } }, ...(params.get('replyError') === '1' ? { replyError: () => T('Le relevé n’a pas pu être lu (fictif).', 'The statement could not be read (fictional).') } : {}), labels: { ...(params.get('tu') === '1' ? {} : { placeholder: T('Demandez, ou « / » pour une action', 'Ask, or type /') }) }, actions, attachments, slash, ...(KIT ? {} : { onOpenFile }) } };
 const showEntries = entries => change({ view: { entries, docs: {} }, draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } });
 const App = () => { const conv = useDemoConversations(showEntries, history); const shellAgent = { ...agent, chatProps: { ...agent.chatProps, ...conv } };
   return <AppShell layout="screen" locale={LOCALE} title={DEMO ? 'Books · Harbor Studio' : T('Compta fictive', 'Demo books')} nav={nav} route={{ id: 'dossier', onChange(id) { window.__route = id; } }} composer={params.get('composer') ?? 'bar'} rail="icon" agent={shellAgent}

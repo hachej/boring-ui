@@ -239,6 +239,24 @@ test('1280, folded: the card on the field says what the tool does, asks both que
   await oneField('reply read');
 });
 
+test('folded, 1280 and 390: a failed turn is one sentence on the card, in the app\'s words when it gives replyError, and the next turn clears it', { skip, timeout: 120000 }, async () => {
+  for (const [width, query] of [[1280, ''], [390, 'tabs=1'], [1280, 'replyError=1']]) {
+    await open(width, query);
+    await browser.evaluate(`window.__run('failed')`);
+    await browser.until('failed card', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'failed'`);
+    const sentence = await text('[data-testid=agent-card-failed]');
+    assert.equal(sentence, query === 'replyError=1' ? 'Le relevé n’a pas pu être lu (fictif).' : 'La réponse a échoué', `one plain sentence at ${width} (${query || 'default'})`);
+    assert.equal(await count('[data-testid=agent-card] [data-testid=agent-card-status]'), 0, 'no « Terminé » for a failed turn');
+    assert.equal(await count('[data-testid=agent-bar-unread]'), 0, 'a failure is not an unread reply');
+    assert.equal(await count('[data-testid=agent-tray]') + (await browser.evaluate(`document.querySelector('[data-testid=agent-layer]')?.dataset.state`) === 'half' ? 1 : 0), 0, 'the conversation stays folded');
+    assert.equal(await browser.evaluate(`(r => r.bottom <= innerHeight && r.height > 0)(document.querySelector('[data-testid=agent-card-failed]').getBoundingClientRect())`), true, 'on screen');
+    await browser.screenshot(`one-composer-${width}-light-collapsed-failed${query === 'replyError=1' ? '-own-words' : ''}.png`);
+    await browser.evaluate(`window.__run('think')`);
+    await browser.until('the next turn', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'working' || !document.querySelector('[data-testid=agent-card-failed]')`);
+    assert.equal(await count('[data-testid=agent-card-failed]'), 0, 'the sentence goes when the next turn starts');
+  }
+});
+
 test('1280: typing keeps the buttons on the last line; a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
   await open(1280);
   await type('Prépare la relance du dossier Cèdre :');

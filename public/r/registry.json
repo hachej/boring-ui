@@ -995,6 +995,11 @@
           "path": "registry/agent-bar/use-agent-bar-chat.ts",
           "type": "registry:hook",
           "target": "components/agent-bar/use-agent-bar-chat.ts"
+        },
+        {
+          "path": "registry/agent-bar/folded-card.ts",
+          "type": "registry:lib",
+          "target": "components/agent-bar/folded-card.ts"
         }
       ],
       "css": {
@@ -3771,6 +3776,984 @@
           "type": "registry:component",
           "target": "components/data-table/data-table.tsx"
         }
+      ]
+    },
+    {
+      "name": "ui-accordion",
+      "type": "registry:ui",
+      "title": "UI accordion",
+      "description": "The kit's own compact accordion primitive (shadcn/ui/accordion.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/accordion.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-alert-dialog",
+      "type": "registry:ui",
+      "title": "UI alert dialog",
+      "description": "The kit's own compact alert dialog primitive (shadcn/ui/alert-dialog.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/alert-dialog.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-alert",
+      "type": "registry:ui",
+      "title": "UI alert",
+      "description": "The kit's own compact alert primitive (shadcn/ui/alert.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "class-variance-authority@0.7.1",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/alert.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-attachment",
+      "type": "registry:ui",
+      "title": "UI attachment",
+      "description": "The kit's own compact attachment primitive (shadcn/ui/attachment.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "class-variance-authority@0.7.1",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/attachment.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-avatar",
+      "type": "registry:ui",
+      "title": "UI avatar",
+      "description": "The kit's own compact avatar primitive (shadcn/ui/avatar.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/avatar.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-badge",
+      "type": "registry:ui",
+      "title": "UI badge",
+      "description": "The kit's own compact badge primitive (shadcn/ui/badge.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "class-variance-authority@0.7.1"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/badge.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-breadcrumb",
+      "type": "registry:ui",
+      "title": "UI breadcrumb",
+      "description": "The kit's own compact breadcrumb primitive (shadcn/ui/breadcrumb.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/breadcrumb.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-bubble",
+      "type": "registry:ui",
+      "title": "UI bubble",
+      "description": "The kit's own compact bubble primitive (shadcn/ui/bubble.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "class-variance-authority@0.7.1",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/bubble.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-button-group",
+      "type": "registry:ui",
+      "title": "UI button group",
+      "description": "The kit's own compact button group primitive (shadcn/ui/button-group.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "class-variance-authority@0.7.1"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-separator.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/button-group.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-button",
+      "type": "registry:ui",
+      "title": "UI button",
+      "description": "The kit's own compact button primitive (shadcn/ui/button.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "class-variance-authority@0.7.1",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/button.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-card",
+      "type": "registry:ui",
+      "title": "UI card",
+      "description": "The kit's own compact card primitive (shadcn/ui/card.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/card.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-checkbox",
+      "type": "registry:ui",
+      "title": "UI checkbox",
+      "description": "The kit's own compact checkbox primitive (shadcn/ui/checkbox.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/checkbox.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-collapsible",
+      "type": "registry:ui",
+      "title": "UI collapsible",
+      "description": "The kit's own compact collapsible primitive (shadcn/ui/collapsible.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/collapsible.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-dialog",
+      "type": "registry:ui",
+      "title": "UI dialog",
+      "description": "The kit's own compact dialog primitive (shadcn/ui/dialog.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/dialog.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-drawer",
+      "type": "registry:ui",
+      "title": "UI drawer",
+      "description": "The kit's own compact drawer primitive (shadcn/ui/drawer.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/drawer.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-dropdown-menu",
+      "type": "registry:ui",
+      "title": "UI dropdown menu",
+      "description": "The kit's own compact dropdown menu primitive (shadcn/ui/dropdown-menu.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/dropdown-menu.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-empty",
+      "type": "registry:ui",
+      "title": "UI empty",
+      "description": "The kit's own compact empty primitive (shadcn/ui/empty.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "class-variance-authority@0.7.1"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/empty.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-field",
+      "type": "registry:ui",
+      "title": "UI field",
+      "description": "The kit's own compact field primitive (shadcn/ui/field.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "class-variance-authority@0.7.1",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-label.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-separator.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/field.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-input-group",
+      "type": "registry:ui",
+      "title": "UI input group",
+      "description": "The kit's own compact input group primitive (shadcn/ui/input-group.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "class-variance-authority@0.7.1",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-input.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-textarea.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/input-group.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-input",
+      "type": "registry:ui",
+      "title": "UI input",
+      "description": "The kit's own compact input primitive (shadcn/ui/input.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/input.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-item",
+      "type": "registry:ui",
+      "title": "UI item",
+      "description": "The kit's own compact item primitive (shadcn/ui/item.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "class-variance-authority@0.7.1",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-separator.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/item.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-kbd",
+      "type": "registry:ui",
+      "title": "UI kbd",
+      "description": "The kit's own compact kbd primitive (shadcn/ui/kbd.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/kbd.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-label",
+      "type": "registry:ui",
+      "title": "UI label",
+      "description": "The kit's own compact label primitive (shadcn/ui/label.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/label.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-marker",
+      "type": "registry:ui",
+      "title": "UI marker",
+      "description": "The kit's own compact marker primitive (shadcn/ui/marker.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "class-variance-authority@0.7.1",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/marker.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-message-scroller",
+      "type": "registry:ui",
+      "title": "UI message scroller",
+      "description": "The kit's own compact message scroller primitive (shadcn/ui/message-scroller.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@shadcn/react@0.3.1",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/message-scroller.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-message",
+      "type": "registry:ui",
+      "title": "UI message",
+      "description": "The kit's own compact message primitive (shadcn/ui/message.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/message.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-native-select",
+      "type": "registry:ui",
+      "title": "UI native select",
+      "description": "The kit's own compact native select primitive (shadcn/ui/native-select.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/native-select.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-pagination",
+      "type": "registry:ui",
+      "title": "UI pagination",
+      "description": "The kit's own compact pagination primitive (shadcn/ui/pagination.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/pagination.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-popover",
+      "type": "registry:ui",
+      "title": "UI popover",
+      "description": "The kit's own compact popover primitive (shadcn/ui/popover.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/popover.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-progress",
+      "type": "registry:ui",
+      "title": "UI progress",
+      "description": "The kit's own compact progress primitive (shadcn/ui/progress.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/progress.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-radio-group",
+      "type": "registry:ui",
+      "title": "UI radio group",
+      "description": "The kit's own compact radio group primitive (shadcn/ui/radio-group.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/radio-group.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-scroll-area",
+      "type": "registry:ui",
+      "title": "UI scroll area",
+      "description": "The kit's own compact scroll area primitive (shadcn/ui/scroll-area.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/scroll-area.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-select",
+      "type": "registry:ui",
+      "title": "UI select",
+      "description": "The kit's own compact select primitive (shadcn/ui/select.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/select.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-separator",
+      "type": "registry:ui",
+      "title": "UI separator",
+      "description": "The kit's own compact separator primitive (shadcn/ui/separator.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/separator.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-sheet",
+      "type": "registry:ui",
+      "title": "UI sheet",
+      "description": "The kit's own compact sheet primitive (shadcn/ui/sheet.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/sheet.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-sidebar",
+      "type": "registry:ui",
+      "title": "UI sidebar",
+      "description": "The kit's own compact sidebar primitive (shadcn/ui/sidebar.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "class-variance-authority@0.7.1",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-input.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-separator.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-sheet.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-skeleton.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-tooltip.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-use-mobile.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/sidebar.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-skeleton",
+      "type": "registry:ui",
+      "title": "UI skeleton",
+      "description": "The kit's own compact skeleton primitive (shadcn/ui/skeleton.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/skeleton.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-sonner",
+      "type": "registry:ui",
+      "title": "UI sonner",
+      "description": "The kit's own compact sonner primitive (shadcn/ui/sonner.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "next-themes@^0.4.6",
+        "sonner@^2.0.8"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/sonner.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-spinner",
+      "type": "registry:ui",
+      "title": "UI spinner",
+      "description": "The kit's own compact spinner primitive (shadcn/ui/spinner.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/spinner.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-switch",
+      "type": "registry:ui",
+      "title": "UI switch",
+      "description": "The kit's own compact switch primitive (shadcn/ui/switch.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/switch.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-table",
+      "type": "registry:ui",
+      "title": "UI table",
+      "description": "The kit's own compact table primitive (shadcn/ui/table.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/table.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-tabs",
+      "type": "registry:ui",
+      "title": "UI tabs",
+      "description": "The kit's own compact tabs primitive (shadcn/ui/tabs.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "class-variance-authority@0.7.1"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/tabs.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-textarea",
+      "type": "registry:ui",
+      "title": "UI textarea",
+      "description": "The kit's own compact textarea primitive (shadcn/ui/textarea.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/textarea.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-toggle-group",
+      "type": "registry:ui",
+      "title": "UI toggle group",
+      "description": "The kit's own compact toggle group primitive (shadcn/ui/toggle-group.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "class-variance-authority@0.7.1",
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-toggle.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/toggle-group.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-toggle",
+      "type": "registry:ui",
+      "title": "UI toggle",
+      "description": "The kit's own compact toggle primitive (shadcn/ui/toggle.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0",
+        "class-variance-authority@0.7.1"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/toggle.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-tooltip",
+      "type": "registry:ui",
+      "title": "UI tooltip",
+      "description": "The kit's own compact tooltip primitive (shadcn/ui/tooltip.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "@base-ui/react@1.9.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/tooltip.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-trace",
+      "type": "registry:ui",
+      "title": "UI trace",
+      "description": "The kit's own compact trace primitive (shadcn/ui/trace.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-collapsible.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/trace.tsx",
+          "type": "registry:ui"
+        }
+      ]
+    },
+    {
+      "name": "ui-use-mobile",
+      "type": "registry:hook",
+      "title": "UI use mobile",
+      "description": "The kit's own compact use mobile hook (shadcn/ui/use-mobile.ts), installed in the app's hooks alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "files": [
+        {
+          "path": "shadcn/ui/use-mobile.ts",
+          "type": "registry:hook"
+        }
+      ]
+    },
+    {
+      "name": "ui",
+      "type": "registry:component",
+      "title": "Kit primitives",
+      "description": "All of the kit's own shadcn primitives (47 components and the use-mobile hook of shadcn/ui/) in one install: `boring-ui-blocks add <registry>/ui.json`. No file of its own.",
+      "files": [],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-accordion.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-alert-dialog.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-alert.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-attachment.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-avatar.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-badge.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-breadcrumb.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-bubble.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-button-group.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-button.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-card.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-checkbox.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-collapsible.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-dialog.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-drawer.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-dropdown-menu.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-empty.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-field.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-input-group.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-input.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-item.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-kbd.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-label.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-marker.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-message-scroller.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-message.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-native-select.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-pagination.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-popover.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-progress.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-radio-group.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-scroll-area.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-select.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-separator.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-sheet.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-sidebar.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-skeleton.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-sonner.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-spinner.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-switch.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-table.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-tabs.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-textarea.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-toggle-group.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-toggle.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-tooltip.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-trace.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/ui-use-mobile.json"
       ]
     }
   ]

@@ -17,6 +17,7 @@ The `markdown-editor` and `html-viewer` items copy thin React wrappers and scope
 | `provider-setup` | copied source in `components/provider-setup/` | none: props and callbacks only |
 | `theme` | the shadcn tokens (light, dark) and their `@theme inline` bindings, merged into the host's CSS | none |
 | `utils`, `button` | `cn`/`copyText`/`useDraggable` and the host-action adapters in `components/button/actions.tsx`; controls come from the app's shadcn components (its `ui` alias) | none |
+| `ui`, `ui-<name>` | the kit's own shadcn primitives (`shadcn/ui/`), each in the app's `ui` alias; see [the kit's primitives](#the-kits-own-primitives-ui) | none |
 
 ## What the app needs first
 
@@ -28,6 +29,8 @@ Blocks are written against an app that already has shadcn set up. They import it
    ```sh
    npx shadcn@4.23.0 add alert attachment avatar badge bubble button card checkbox collapsible dialog drawer dropdown-menu empty input input-group item label message message-scroller native-select popover progress scroll-area separator sheet sidebar spinner switch table textarea toggle toggle-group tooltip trace
    ```
+
+   The kit ships the same components itself (every name of that list has an item `ui-<name>`): `npx boring-ui-blocks add <registry>/ui.json` installs the kit's own compact versions instead of shadcn's, at this kit release and without the `npx shadcn@4.23.0 add` above ([below](#the-kits-own-primitives-ui)).
 
    Installing all of them once is simplest; an app that adds only some blocks can add only the components those blocks import (`grep -rho "@/components/ui/[a-z-]*" components/<block>`). Blocks never restyle them: they pass layout classes only, so the app's own shadcn theme decides how every control looks.
 3. **The shadcn tokens** (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive`, `sidebar-*` and the rest), which `shadcn init` writes into the app's CSS. A host deliberately adopting the kit's default tokens runs `npx shadcn@4.23.0 add <registry>/theme.json` (light and dark). This overwrites matching host tokens, including tokens already written by `init`; review `add <registry>/theme.json --dry-run --diff` first. Do not add the theme automatically to branded apps. No block installs `theme`: blocks keep their own few variables scoped in their item `css`. The one shared exception is the fileless `touch-floor` item (the global 44px touch floor, D-1770): `theme` and the blocks with floored controls list it, so it reaches every app that installs one, with or without the theme.
@@ -83,6 +86,23 @@ Drive `node --test test/contracts/default-icons.test.mjs`: source/registry closu
 - Generic Table is fixed-layout, 12px, with wrapping cells/headers and quiet semantic dividers instead of an internal horizontal scroll container. It does not clip long text. Explicit caller min-widths, nowrap descendants or wide embedded controls can still overflow and must be reviewed. This is **not** the schema-aware stacked DataTable projection required below ~520px; that remains a separate unit.
 
 Drive `CHROMIUM=/path/to/chromium node --test test/contracts/compact-primitives.test.mjs`. It bundles actual shared primitive sources (including nested UI-alias imports, never the older example components), checks enabled status/description/destructive Button contrast and chat-body typography, measures 1440/390 light/dark geometry and table internals at 360/520/720px, drives native Button/Select/Tabs and keyboard focus, and records PNGs plus hashed sources. Set `COMPACT_EVIDENCE` to a fresh ignored directory; optional `COMPACT_FONT_DIR` supplies `sans.woff2` and `mono.woff2`, loaded under the exact registry-declared Geist/Geist Mono family names. `COMPACT_BASELINE_DIR` allows comparison with a captured pre-change source directory. `COMPACT_TOOLCHAIN_DIR` optionally resolves the existing pinned esbuild/Tailwind tooling read-only from a separate node_modules tree. Neither the fixture nor this primitive unit proves a newly published Factory bundle, full app typography, loaded host fonts, Phosphor identity, schema-aware stacking or Astra acceptance. Review captures must wait for finite theme transitions before measuring; immediate dark toggles can show transient light row/outline colours despite correct inherited roles.
+
+### The kit's own primitives (`ui`)
+
+`shadcn/ui/` also ships in the npm package, so an app scaffolded from the package alone (no kit checkout) gets the compact primitives the blocks were designed against. Each file of `shadcn/ui/` is one registry item, `ui-<name>` (`ui-button`, `ui-input`, `ui-label`, `ui-field`, `ui-card`, `ui-alert`, `ui-empty`, `ui-sheet`, `ui-sidebar`, `ui-table`, ... and the hook `ui-use-mobile`), and `ui` lists them all. `scripts/ui-primitives.mjs` derives the items from the sources (`node scripts/ui-primitives.mjs --write` rewrites them in `registry.json`) and `scripts/check-registry-blocks.mjs` fails when `registry.json` differs, when a name of `SHADCN_BUILTINS` has no item, or when this section loses the install line.
+
+```sh
+npx boring-ui-blocks add <registry>/ui.json              # all of them
+npx boring-ui-blocks add <registry>/ui-button.json <registry>/ui-input.json <registry>/ui-label.json <registry>/ui-field.json   # some
+```
+
+`<registry>` is `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r` (the kit release the app installed), or the package's own `node_modules/@hachej/boring-ui-kit/r` folder for a script that installs offline.
+
+- **Where they land.** Files carry no `target`, so the shadcn CLI writes them where it writes its own components: the app's `ui` alias (`components/ui/<name>.tsx` for the default `@/components/ui`; `use-mobile.ts` in the `hooks` alias). Blocks keep importing `@/components/ui/<name>` and find them there.
+- **`cn` and icons.** The sources import `cn` as `"cn"` and icons as `../../registry/_shared/icons`, which Factory's bundle resolves by alias and an app cannot. `scripts/build-registry.mjs` rewrites exactly those two import strings in the published content (`installable` in `scripts/ui-primitives.mjs`; the sources keep their text, so the bundle is unchanged): `"cn"` becomes `@/components/utils/utils` (the `utils` item, the `cn` the blocks already use) and the icon map becomes `@/components/_shared/icons` (the `_shared` item). An item lists `@boring-ui/utils`, `@boring-ui/_shared` and the primitives it imports (`@/components/ui/<name>` becomes `@boring-ui/ui-<name>`) in `registryDependencies`, and its npm packages (`@base-ui/react`, `class-variance-authority`, `react`, plus `sonner` and `next-themes` for `ui-sonner`, `@shadcn/react` for `ui-message-scroller`) in `dependencies`; the CLI installs them.
+- **Offline.** A script installs an item from the package's `r/<name>.json` without the network: read the item, install each `registryDependencies` entry first (the file name of its URL is the item name), then write each file's `content` to its `target`, or, without one, to the `ui` alias (the `hooks` alias for `registry:hook`). The content is final: its imports use the app's aliases already.
+- **Generated, not blocks.** `boring-ui-blocks manifest` and `add` record these files in `SHADCN-GENERATED.json` like any shadcn file under the `ui` alias, and `check` reports a hand edit as `ui edited`. `check` does not list them under `blocks` (an app's own shadcn `button.tsx` is not an edited kit block), and `update` reinstalls blocks only: refresh primitives with `boring-ui-blocks add <registry>/ui.json --overwrite` after a kit bump.
+- **Not a restyle of the blocks.** Installing them changes which primitives the app has; the blocks still borrow whatever the `ui` alias holds (BORING-UI-1). Mixing is fine, but the app owns a file it already had: `add` keeps an existing file that differs and lists it.
 
 ## Blocks: what to install
 
@@ -724,8 +744,35 @@ const launch = parseAgentLink('?agent=coach&input=voice');
 
 The app owns its manifest, shortcut icons, and install flow. Real iPhone and Android home-screen launches require consumer testing; the browser journey checks URL consumption, focus, Back, reload, and the idle microphone.
 
+### Which screen is on show (`useScreenActive`)
+
+The shell keeps every screen mounted and hides the ones not on show, so a screen cannot tell from its own mounting whether anyone sees it. `useScreenActive(): boolean`, exported by `app-shell/index.ts`, answers it: `true` in the screen on show, `false` in a screen the shell has hidden, `true` outside a shell (a screen rendered alone, in a test or a story). It follows the shell's own choice (`route.id`, or the first item when the route names none), so it is right on a deep link without a hash, where reading `location.hash` yourself is not. Use it to run a live read (a poll, a timer, a subscription) only on the screen on show:
+
+```tsx
+import { useScreenActive } from '@/components/app-shell';
+
+function Balance() {
+  const active = useScreenActive();
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(refresh, 5000);
+    refresh();
+    return () => clearInterval(timer);
+  }, [active]);
+  // ...
+}
+```
+
+`useScreenHeader`, `ListDetail` and `useAgentContext` already read it: a hidden screen registers no header or context. The context behind it is internal to the shell; only the hook is public.
+
+### A failed answer, with the conversation folded (`composer="bar"`)
+
+With the one composer the conversation is folded at rest (the phone's peek, the wide bar's field), so the thread's own error notice is out of sight. When the assistant's last turn failed (an assistant message with `stopReason: 'error'`, or a run that ended without an answer), the folded card shows one sentence with an alert icon: `agent.chatProps.replyError(reply)` when the app gives it (the same hook and `ReplyRef` the thread's notice uses), else `chatProps.labels.responseFailed`, else the locale's « La réponse a échoué » / "The response failed". It never shows the raw error detail. There is no retry button on this card: the controller's `retrySameRequest` retries an unconfirmed send (the card above keeps its « Réessayer » for that), not a failed turn. The sentence goes when the person sends again (the card shows the work of the new turn) or the assistant answers; a question or work in progress always shows before it. A successful turn is drawn as before. `useAgentBarChat` returns it as `failed` (a `ReplyRef`); `foldedCardKind` (`agent-bar/folded-card.ts`) is the pure rule for what the card shows: question, working, failed, reply.
+
 ### Changes
 
+- `useScreenActive()` is public (`app-shell/index.ts`). Nothing changes for an existing consumer.
+- `composer="bar"`: a failed assistant turn now shows on the folded card (phone peek and wide bar) as one sentence (`replyError` or `labels.responseFailed`) until the next turn; `useAgentBarChat` returns `failed`; the `agent-bar` item gains `folded-card.ts`. A successful turn is unchanged.
 - `AppShell` gained the optional `locale` prop, and the account sheet's title is the generic « Compte » instead of the person's name. Hosts that relied on the name as the sheet title will see « Compte » there.
 
 ## Default kinds (`pi-app-kinds`)
