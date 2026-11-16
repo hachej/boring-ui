@@ -7,6 +7,9 @@ import { FileTreeView } from '../../registry/file-tree/file-tree.tsx';
 import { useAgentLayer } from '../../registry/app-shell/agent-layer.tsx';
 import { DEMO_KINDS, demoTree } from '../../test/fixtures/themes/one-composer-demo.jsx';
 import { demoFiles } from '../../test/fixtures/themes/one-composer-files.js';
+import { createDemoController } from './demo-controller.mjs';
+import { installFakeMic } from './fake-mic.mjs';
+import script from '../scenarios/scripts/design-system.json';
 import { UpdateNotice } from '../../registry/app-shell/update-notice.tsx';
 import { appShellText } from '../../registry/app-shell/text.ts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -71,21 +74,15 @@ function Page() {
   </div>;
 }
 const Placeholder = () => <Empty><EmptyHeader><EmptyTitle>Nothing here yet</EmptyTitle><EmptyDescription>The app's screen goes here.</EmptyDescription></EmptyHeader></Empty>;
-let snapshot = { identity: { runtimeId: 'fictional', scopeId: 'design-system', principalId: 'fictional-reader' }, conversationId: 'design-system', connection: { kind: 'connected' },
-  view: { entries: [], docs: {} }, draft: { text: '', attachments: [], version: 0 }, outbox: [], echo: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
-const listeners = new Set();
-const change = patch => { snapshot = { ...snapshot, ...patch }; for (const listener of listeners) listener(); };
-const controller = {
-  getSnapshot: () => snapshot, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
-  setText: text => change({ draft: { ...snapshot.draft, text, version: snapshot.draft.version + 1 } }),
-  setAttachments: attachments => change({ draft: { ...snapshot.draft, attachments, version: snapshot.draft.version + 1 } }),
-  send: async () => undefined, connect: async () => {}, stop: async () => {}, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {},
-};
+const { controller, actions, reset } = createDemoController({ script, pace: new URLSearchParams(location.search).get('pace') === 'instant' ? 0.15 : 1 });
+window.__ux = { reset };
+installFakeMic();
+const attachments = { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })) };
 const nav = [
   { id: 'design', label: 'Design system', icon: FileTextIcon, render: () => <ScreenBody><Page /></ScreenBody> },
   { id: 'empty', label: 'Empty app view', icon: FolderIcon, render: () => <ScreenBody><Placeholder /></ScreenBody> },
 ];
-const agent = { controller, label: 'Assistant', files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en' } };
+const agent = { controller, label: 'Assistant', voice: { transcribe: async () => 'Dictated text (fictional)' }, files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en', actions, attachments } };
 function App() {
   const [route, setRoute] = useState('design'), [theme, setTheme] = useState(initial);
   return <AppShell layout="screen" locale="en" title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" agent={agent}

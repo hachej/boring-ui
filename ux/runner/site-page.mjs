@@ -36,7 +36,7 @@ function tries(scenario) {
     const flow = scenario.flows.find(f => f.id === item.flow), steps = item.steps ?? flow?.steps ?? [];
     const byViewport = Object.fromEntries(scenario.viewports.map(vp => [vp.name, compile(scenario, steps, vp.name)]).filter(([, s]) => s));
     if (Object.keys(byViewport).length) out.push({ label: item.label, query: item.query ?? flow?.query ?? '', steps: byViewport });
-    if (out.length === 6) break;
+    if (out.length === 12) break;
   }
   return out;
 }
@@ -106,8 +106,9 @@ ${scenario ? demoBlock(scenario, demoBase) : ''}${home ? '' : `${usage(fixture)}
 }
 // A `fullscreen` scenario: the demo fills the page under the site's top bar, which carries the one Phone and Desktop switch. No headings, no usage, no status.
 export function frameBody(scenario, base) {
-  const { views, data } = demoData(scenario, base);
-  return { switcher: `<div class="seg" role="group" aria-label="Screen">${views.map((v, i) => `<button type="button" data-vp="${i}" aria-pressed="false">${v.label}</button>`).join('')}</div>`,
+  const { views, list, data } = demoData(scenario, base);
+  const play = list.length ? `<select class="icon-btn" id="play" aria-label="Play"><option value="">Play…</option>${list.map((t, i) => `<option value="${i}">${esc(t.label)}</option>`).join('')}<option value="reset">Reset the conversation</option></select>` : '';
+  return { play, switcher: `<div class="seg" role="group" aria-label="Screen">${views.map((v, i) => `<button type="button" data-vp="${i}" aria-pressed="false">${v.label}</button>`).join('')}</div>`,
     stage: `<div class="stage" id="stage" data-full><iframe id="demo" title="Live demo"></iframe></div><script type="application/json" id="page-data">${data}</script>` };
 }
 export { esc };
