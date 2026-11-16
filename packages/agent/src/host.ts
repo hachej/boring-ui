@@ -28,4 +28,5 @@ export const Session = host.Session;
 export type Session = Host.Session;
 export const Unauthorized = host.Unauthorized;
 export type Unauthorized = Host.Unauthorized;
+export type { AppHostProps, Assets, HostBuild, HostEntry, MountApp, MountOptions, OpenHarness, Person, ResolveLanguage, RouteName, SecretByName, WriteAttribution } from './host/contract.js';
 export type { AgentKit, AppDefinition, AppWords, Format, KitLanguage, Languages, Member, Need, Operation, Seed, View, ViewProps, Wake } from './host/index.js';

@@ -12,7 +12,7 @@ export default defineApp({
   name: "notes", languages: { base: "fr", words: { fr, en } },
   models: [Notebook], handlers: NotebookHandlers, api: NotebookApi,
   expose: {
-    page: ["AddNote", "Deposit", "AddContact", ...reads],
+    page: ["CreateNotebook", "SetMember", "RemoveMember", "AddNote", "Deposit", "AddContact", ...reads],
     mcp: ["AddNote", "Notes.get", "Documents.get"],
     assistant: ["AddNote", "AddContact", "RecordGist", ...reads],
     researcher: ["Notes.get", "Documents.get"],
@@ -23,7 +23,8 @@ export default defineApp({
   wakes: [{ policy: ReaderOnDeposit, agent: "reader", key: (e: any) => String(e.number), message: (e: any) => `Document n°${e.number} « ${e.name} » :\n${e.body}` }],
   seed: {
     people: [{ name: "Camille Martin", email: "camille.p1@example.test" }, { name: "Dominique Leroy", email: "dominique.p1@example.test" }, { name: "Edgar Faure", email: "edgar.p1@example.test" }],
-    operations: [{ as: "camille.p1@example.test", op: "AddNote", input: { text: "Appeler le garage lundi" } }],
+    operations: [{ as: "camille.p1@example.test", op: "CreateNotebook", input: { name: "Carnet" } }, { as: "camille.p1@example.test", op: "AddNote", input: { text: "Appeler le garage lundi" } }],
   },
+  units: { view: "Notes.get", members: (state: any) => state.members },
   needs: ["files"],
 });
