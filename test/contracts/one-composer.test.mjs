@@ -1434,6 +1434,7 @@ test('1440: Expand goes to grown, Full fills the main area while the left nav an
     await browser.until('grown', `!document.querySelector('${FULL}')`);
     await click('[data-testid=agent-tray-reduce]');
     await browser.until('closed', `!document.querySelector('${FULL}') && !document.querySelector('[data-testid=agent-tray]')`);
+    await browser.until('focus is back on the field', `document.activeElement?.dataset.testid === 'composer-input'`);
     assert.equal(await focusedId(), 'composer-input', 'the chevron\'s collapse returns to the field');
     await oneField('closed');
   }
