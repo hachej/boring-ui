@@ -1,5 +1,7 @@
 # Unreleased
 
+- **The expand control is a tab on the bar's top border, and the pane can draw artifact kinds (`app-shell`, `pi-chat`; additive: `AgentSpec.fileKinds`).** With `composer="bar"` the chevron is a small pill centred on the field's top border (44 px hit area on touch) instead of the first control of the row. `AgentSpec.fileKinds` (optional) lets the right pane draw a diagram, drawing, mock-up, records or maquette file, and the pane now draws SVG. Re-add `app-shell` and `pi-chat` to pick it up.
+
 - **The bar follows the main view, one pane header and surface, a docked conversation on one surface (`app-shell`; no API change; behaviour fix; all behind `composer="bar"`).** With the right pane open the bar is centred on the main view (the area left of the pane) instead of the whole window. Back in a pushed pane is an arrow (its name is the aria-label), Close is an X with no visible word, a pushed pane is on the card surface, and the docked conversation's header is as tall as the pane headers on the card surface, Close last with no divider. Re-add `app-shell` to pick it up.
 
 - **The bar's controls sit on its midline and the pane has one base (`app-shell`, `pi-chat`; no API change; behaviour fix).** The `composer="bar"` input group aligned its row to the end inside its minimum height, so the chevron, attach, field and action sat low; they are now centred. Content an app pushes on the right pane gets the kit's text size and the theme border colour once, in the pane's body. Re-add `app-shell` and `pi-chat` to pick it up.
