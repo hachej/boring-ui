@@ -2,7 +2,7 @@
 
 // The chats and their header: one PiChat per spec in a persistent host element, the slot it moves into, the layer's title row with History and Library.
 import { createPortal } from 'react-dom';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { HTMLAttributes, ReactElement, ReactNode, Ref } from 'react';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, Maximize2Icon, Minimize2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { sentFeedbackContent } from '../feedback/sent-content';
 import { usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
+import { ROW_MENTION, rowMentionKind } from '../viewer-code/row-reference';
 import { useAgentBarChat } from '../agent-bar/use-agent-bar-chat';
 import type { AppShellLocale, AppShellText } from './text';
 import { HeaderActions } from './header-actions';
@@ -149,7 +150,10 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const openFile = ownOpen ?? kitOpen;
   // The agent's `present` and the chat's artifact cards open in the pane too, unless the app routes artifacts itself.
   const presented = role === 'agent' && !spec.chatProps?.artifacts ? layer.presented : undefined;
-  const chatProps = kitOpen || presented ? { ...spec.chatProps, ...(kitOpen ? { onOpenFile: (path: string) => kitOpen(path) } : {}), ...(presented ? { artifacts: { open: presented.open, isOpen: presented.isOpen } } : {}) } : spec.chatProps;
+  // An app with `@` mentions also takes the table row reference (`row`): the pane's row action puts a `row` mention in the field, and it shows as a chip.
+  const mentions = role === 'agent' ? spec.chatProps?.mentions : undefined;
+  const rowMentions = useMemo(() => mentions && !mentions.kinds?.[ROW_MENTION] ? { ...mentions, kinds: { ...mentions.kinds, [ROW_MENTION]: rowMentionKind } } : undefined, [mentions]);
+  const chatProps = kitOpen || presented || rowMentions ? { ...spec.chatProps, ...(rowMentions ? { mentions: rowMentions } : {}), ...(kitOpen ? { onOpenFile: (path: string) => kitOpen(path) } : {}), ...(presented ? { artifacts: { open: presented.open, isOpen: presented.isOpen } } : {}) } : spec.chatProps;
   const mic = useBarMic();
   const capturing = layer.voice.phase === 'starting' || layer.voice.phase === 'recording';
   const readOnly = oneRow ? spec.readOnly : undefined;

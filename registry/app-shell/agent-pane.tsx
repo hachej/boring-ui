@@ -10,13 +10,15 @@ import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { ArrowLeftIcon, LibraryIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { useArtifactFollow } from '@hachej/boring-ui-kit/chat-react';
-import { pieces } from '@hachej/boring-ui-kit/chat-text';
+import { mentionToken, pieces } from '@hachej/boring-ui-kit/chat-text';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { Dock } from '../dock/dock';
 import { ViewerFrame, ViewerWindowProvider } from '../viewer-frame/viewer-frame';
 import { frenchViewerLabels } from '../viewer-frame/viewer-labels-fr';
 import type { LocalTextKind } from '../viewer-pdf/local-file-viewer';
 import { csvKind, svgKind } from '../viewer-code/code-kinds';
+import { RowReferenceContext, rowMentionPath } from '../viewer-code/row-reference';
+import type { RowReferenceTarget } from '../viewer-code/row-reference';
 import { StepButtons, stepIndex, stepOffset } from '../pi-chat/image-viewer';
 import { useBackLayer } from '../utils/back';
 import { cn } from '../utils/utils';
@@ -286,8 +288,8 @@ function RefocusTitle() {
 }
 
 /** A file entry: its bytes read through `agent.files`, shown by `LocalFileViewer`; once shown, a presented revision is acknowledged. */
-function FileEntry({ entry, frame, read, onShown, fileKinds }: { readonly entry: Extract<PaneEntry, { kind: 'file' }>; readonly frame: { readonly id: string; readonly headerStart: ReactNode; readonly controls: ReactNode; readonly onClose: () => void; readonly text: AppShellText };
-  readonly read: FileReader; readonly onShown: PanePresent['shown'] | undefined; readonly fileKinds: readonly FileKind[] | undefined }) {
+function FileEntry({ entry, frame, read, onShown, fileKinds, rows }: { readonly entry: Extract<PaneEntry, { kind: 'file' }>; readonly frame: { readonly id: string; readonly headerStart: ReactNode; readonly controls: ReactNode; readonly onClose: () => void; readonly text: AppShellText };
+  readonly read: FileReader; readonly onShown: PanePresent['shown'] | undefined; readonly fileKinds: readonly FileKind[] | undefined; readonly rows: RowReferenceTarget | null }) {
   const kinds = useMemo(() => withKinds(fileKinds), [fileKinds]);
   const [loaded, setLoaded] = useState<{ readonly path: string; readonly blob: Blob | null; readonly revision?: string | undefined }>();
   useEffect(() => {
@@ -310,7 +312,7 @@ function FileEntry({ entry, frame, read, onShown, fileKinds }: { readonly entry:
   </ViewerFrame>;
   if (!blob) return waiting;
   const Viewer = readyFileViewer ?? LocalFileViewer;
-  return <Suspense fallback={waiting}><Viewer key={path} name={path} blob={blob} kinds={kinds} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose} />{id === 'agent-preview' && <RefocusTitle key={path} />}</Suspense>;
+  return <Suspense fallback={waiting}><RowReferenceContext.Provider value={rows}><Viewer key={path} name={path} blob={blob} kinds={kinds} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose} /></RowReferenceContext.Provider>{id === 'agent-preview' && <RefocusTitle key={path} />}</Suspense>;
 }
 
 /**
@@ -323,12 +325,15 @@ function EntryView({ entry, below, top, placement, assistant }: { readonly entry
   const id = top ? 'agent-preview' : 'agent-preview-under';
   const backTitle = below?.title ?? (placement === 'stacked' ? assistant : undefined);
   const headerStart = backTitle ? <BackButton title={backTitle} text={text} onBack={layer.pane.back} testId={`${id}-back`} /> : undefined;
+  // A table file offers « @ » on each row when the app's chat has mentions: the row goes to the field as one `row` mention (the same `talkAbout` path as a quoted page entry).
+  const { talkAbout } = layer, hasMentions = layer.agent?.chatProps?.mentions !== undefined, filePath = entry.kind === 'file' ? entry.path : undefined;
+  const rows = useMemo<RowReferenceTarget | null>(() => hasMentions && filePath ? { path: filePath, label: text.referenceRow, reference: row => { talkAbout(mentionToken(rowMentionPath(row))); } } : null, [hasMentions, filePath, talkAbout, text.referenceRow]);
   const library = entry.kind === 'view' && layer.openLibrary ? [{ id: 'library', label: text.library, icon: LibraryIcon, onSelect: layer.openLibrary, placement: 'header' as const }] : undefined;
   if (entry.kind === 'file' && layer.agent?.files) {
     // A phone folds a frame's controls into its « … » menu: there previous and next sit under the file instead.
     const steps = <FileSteps entry={entry} text={text} onStep={layer.step} />;
     return <>
-      <div className="flex min-h-0 flex-1 flex-col"><FileEntry entry={entry} read={layer.agent.files.read} onShown={layer.presented?.shown} fileKinds={layer.agent.fileKinds} frame={{ id, headerStart, controls: placement === 'screen' ? undefined : steps, onClose: layer.pane.close, text }} /></div>
+      <div className="flex min-h-0 flex-1 flex-col"><FileEntry entry={entry} read={layer.agent.files.read} onShown={layer.presented?.shown} fileKinds={layer.agent.fileKinds} rows={rows} frame={{ id, headerStart, controls: placement === 'screen' ? undefined : steps, onClose: layer.pane.close, text }} /></div>
       {placement === 'screen' && entry.files.length > 1 && <div className="flex shrink-0 justify-center px-2 py-1">{steps}</div>}
     </>;
   }

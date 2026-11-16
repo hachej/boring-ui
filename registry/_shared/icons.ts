@@ -9,6 +9,7 @@ import type { IconProps } from '@phosphor-icons/react';
 export {
   WarningCircleIcon as AlertCircleIcon,
   ArchiveIcon,
+  AtIcon,
   TrayArrowUpIcon as ArchiveRestoreIcon,
   ArrowDownIcon,
   ArrowLeftIcon,

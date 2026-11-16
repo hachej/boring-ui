@@ -72,6 +72,8 @@ export interface AppShellText {
   /** A file the kit opens in its viewer, while it is read, and when it cannot be read. */
   readonly fileLoading: string;
   readonly fileUnavailable: string;
+  /** A table's row action: puts the row in the assistant's field as an @ mention (the row's number follows). */
+  readonly referenceRow: string;
   /** The update notice (`AppShell update`): the sentence, its Reload action and the name of its dismiss button. */
   readonly updateAvailable: string;
   readonly updateReload: string;
@@ -121,6 +123,7 @@ const en: AppShellText = {
   nextFile: 'Next file',
   fileLoading: 'Opening…',
   fileUnavailable: 'This file cannot be opened.',
+  referenceRow: 'Reference in the assistant, row',
   updateAvailable: 'An update is available.',
   updateReload: 'Reload',
   updateDismiss: 'Dismiss the update notice',
@@ -169,6 +172,7 @@ const fr: AppShellText = {
   nextFile: 'Fichier suivant',
   fileLoading: 'Ouverture…',
   fileUnavailable: 'Ce fichier ne peut pas être ouvert.',
+  referenceRow: 'Citer dans l’assistant, ligne',
   updateAvailable: 'Une mise à jour est disponible.',
   updateReload: 'Recharger',
   updateDismiss: 'Masquer l’avis de mise à jour',
