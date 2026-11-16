@@ -22,7 +22,8 @@ export const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 
 const TREE = {
   '': [['uploads', 'directory'], ['invoices', 'directory'], ['receipts', 'directory'], ['exports', 'directory'], ['videos', 'directory'], ['samples', 'directory'], ['closing-notes.md', 'file', 2400]],
-  samples: DEMO_FILES.filter(path => path.startsWith('samples/')).map(path => [path.slice(8), 'file', 2000]),
+  samples: [['archive', 'directory'], ...DEMO_FILES.filter(path => path.startsWith('samples/') && !path.startsWith('samples/archive/')).map(path => [path.slice(8), 'file', 2000])],
+  'samples/archive': DEMO_FILES.filter(path => path.startsWith('samples/archive/')).map(path => [path.slice(16), 'file', 800]),
   receipts: [['receipt-harbor-garage-0109.pdf', 'file', 2100], ['note-gap-0109.md', 'file', 300], ['ticket-harbor-garage-0109.png', 'file', 18000]],
   exports: [['entries-january.json', 'file', 400], ['reminder-delmore.txt', 'file', 200]],
   videos: [['studio-tour.webm', 'file', 30000]],
