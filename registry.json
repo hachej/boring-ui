@@ -995,6 +995,11 @@
           "path": "registry/agent-bar/use-agent-bar-chat.ts",
           "type": "registry:hook",
           "target": "components/agent-bar/use-agent-bar-chat.ts"
+        },
+        {
+          "path": "registry/agent-bar/folded-card.ts",
+          "type": "registry:lib",
+          "target": "components/agent-bar/folded-card.ts"
         }
       ],
       "css": {
