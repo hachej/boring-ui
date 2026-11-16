@@ -1,5 +1,7 @@
 import { useLayoutEffect } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { AppShell } from '../../../registry/app-shell/app-shell.tsx';
 import { useAgentLayer } from '../../../registry/app-shell/agent-layer.tsx';
 import { SlashPicker } from '../../../registry/pi-chat-slash/slash-menu.tsx';
@@ -70,14 +72,14 @@ const controller = {
     // `window.__failNext`: the next send is refused, as a real controller does it: the text stays in the field and `send` says why.
     if (window.__failNext) { window.__failNext = false; change({ send: { kind: 'blocked', reason: T('Hors ligne (fictif)', 'Offline (fictional)') } }); return undefined; }
     window.__sent.push(text);
-    if (DEMO) { change({ send: { kind: 'idle' }, draft: { text: '', attachments: [], version: snapshot.draft.version + 1 }, view: { entries: [...snapshot.view.entries, say(++demoId, text)], docs: live() } }); void scripted.say(text); return undefined; }
+    if (DEMO) { change({ stop: 'idle', send: { kind: 'idle' }, draft: { text: '', attachments: [], version: snapshot.draft.version + 1 }, view: { entries: [...snapshot.view.entries, say(++demoId, text)], docs: live() } }); void scripted.say(text); return undefined; }
     const next = snapshot.view.entries.length + 1;
     // As a real run: the agent works a moment, then replies.
     const asked = [...snapshot.view.entries, say(next, text)];
     change({ send: { kind: 'idle' }, draft: { text: '', attachments: [], version: snapshot.draft.version + 1 }, view: { entries: asked, docs: live() } });
     setTimeout(() => change({ view: { entries: [...asked, reply(next + 1, T('Réponse fictive : noté.', 'Fictional reply: noted.'))], docs: {} } }), 800);
   },
-  connect: async () => {}, stop: async () => { window.__stops = (window.__stops ?? 0) + 1; if (DEMO) scripted.stop(); else change({ view: runs.reply() }); }, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {},
+  connect: async () => {}, stop: async () => { window.__stops = (window.__stops ?? 0) + 1; if (DEMO) { scripted.stop(); change({ stop: 'confirmed' }); } else change({ view: runs.reply() }); }, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {},
 };
 // The agent's scripted turns, after the person's question (entry 10).
 const ask = say(10, T('Rapproche le relevé de janvier.', 'Reconcile the January statement.'));
@@ -131,6 +133,7 @@ const LINES_EN = [['Jan 02', 'Transfer Delmore House', '$1,240.00', 'ok'], ['Jan
 const LINES = EN ? LINES_EN : LINES_FR;
 const STATUS_CLASS = { ok: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300', gap: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300', wait: 'bg-muted text-muted-foreground' };
 const STATUS_WORDS = EN ? { ok: 'Reconciled', gap: 'Gap', wait: 'Needs a receipt' } : { ok: 'Rapprochée', gap: 'Écart', wait: 'À justifier' };
+const STATUS_VARIANT = { ok: 'success', gap: 'warning', wait: 'secondary' };
 const STATUS = Object.fromEntries(Object.keys(STATUS_CLASS).map(key => [key, [STATUS_WORDS[key], STATUS_CLASS[key]]]));
 const quote = date => window.__layer.talkAbout('@ecriture:' + date.replace(/[/ ]/g, '-'));
 const openRecord = line => window.__layer.preview(recordView(line, () => quote(line[0]), KIT ? (file, files) => window.__layer.pane.push({ file, files }) : undefined));
@@ -140,15 +143,21 @@ const RealPage = () => <div data-testid="page" className="flex min-h-0 flex-1 fl
     <button type="button" className="h-9 rounded-md border px-3 text-sm">{T('Exporter', 'Export')}</button></div>
   <div className="grid grid-cols-3 gap-3">{[[T('Rapprochées', 'Reconciled'), '13 / 16'], [T('Écarts', 'Gaps'), '2'], [T('Solde banque', 'Bank balance'), T('8 412,10 €', '$8,412.10')]].map(([label, value]) => <div key={label} className="rounded-lg border bg-card p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-base font-semibold md:text-xl">{value}</p></div>)}</div>
   <div className="flex gap-2 text-sm">{T(['Toutes', 'Écarts', 'À justifier'], ['All', 'Gaps', 'Needs a receipt']).map((tab, i) => <span key={tab} className={`rounded-full border px-3 py-1 ${i === 0 ? 'bg-foreground text-background' : ''}`}>{tab}</span>)}</div>
-  <div className="overflow-hidden rounded-lg border bg-card">{LINES.map(([date, label, amount, status]) => <div key={date + label} role="row" data-testid="page-row" {...(DEMO ? { tabIndex: 0, onClick: () => openRecord([date, label, amount, status]), onKeyDown: event => { if (event.key === 'Enter') openRecord([date, label, amount, status]); } } : {})} className={`flex items-center gap-3 border-b p-3 text-sm last:border-b-0 ${DEMO ? 'cursor-pointer hover:bg-muted/50' : ''}`}>
-    <span className="w-12 shrink-0 text-muted-foreground">{date}</span><span className="min-w-0 flex-1 truncate">{label}</span>
-    <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-xs sm:inline ${STATUS[status][1]}`}>{STATUS[status][0]}</span><span aria-label={STATUS[status][0]} className={`size-2 shrink-0 rounded-full sm:hidden ${status === 'ok' ? 'bg-emerald-500' : status === 'gap' ? 'bg-amber-500' : 'bg-muted-foreground'}`} /><span className="w-24 shrink-0 text-right tabular-nums">{amount}</span></div>)}</div>
+  <div className="shrink-0 overflow-hidden rounded-lg border bg-card">{LINES.map(([date, label, amount, status]) => <div key={date + label} role="row" data-testid="page-row" {...(DEMO ? { onClick: () => openRecord([date, label, amount, status]) } : {})} className={`flex items-center gap-3 border-b text-sm last:border-b-0 ${DEMO ? 'cursor-pointer px-3 md:py-1 hover:bg-muted/50' : 'p-3'}`}>
+    <span className="w-12 shrink-0 text-muted-foreground">{date}</span>{DEMO ? <Button type="button" variant="ghost" className="block h-auto min-h-(--control-h) min-w-0 flex-1 whitespace-normal py-2 text-left sm:py-1" title={label}>{label}</Button> : <span className="min-w-0 flex-1 truncate">{label}</span>}
+    <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-xs sm:inline ${STATUS[status][1]}`}>{STATUS[status][0]}</span>
+    <span className="flex w-24 shrink-0 flex-col items-end gap-1 sm:contents">
+      <span className="w-24 shrink-0 text-right tabular-nums">{amount}</span>
+      <Badge variant={STATUS_VARIANT[status]} className="sm:hidden">{STATUS_WORDS[status]}</Badge>
+    </span></div>)}</div>
 </div>;
 const Screen = (DEMO || params.get('page') === 'real') ? RealPage : Page;
 const nav = [{ id: 'dossier', label: T('Dossier', 'File'), icon: DEMO ? FileTextIcon : Icon, render: () => <Screen /> },
   // `?tabs=1`: a second screen, so a phone shows its bottom tabs (AC-20).
   ...(params.get('tabs') === '1' ? [{ id: 'pieces', label: T('Pièces', 'Documents'), icon: DEMO ? FolderIcon : Icon, render: () => <Screen /> }] : [])];
-const attachments = { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })) };
+// `?camera=1`: an app that gives the phone camera sheet (`attachments.Camera`).
+const FakeCamera = ({ onClose }) => <div role="dialog" aria-label="Camera" data-testid="fixture-camera"><button type="button" onClick={onClose}>Close</button></div>;
+const attachments = { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })), ...(params.get('camera') === '1' ? { Camera: FakeCamera } : {}) };
 const slash = { Picker: SlashPicker, commands: [{ name: T('relance', 'reminder'), description: T('Rédiger une relance fictive.', 'Draft a fictional reminder.'), run: api => api.setText(T('Relance du dossier Cèdre', 'Reminder for the Harbor file')) }], skills: [] };
 if (DEMO) slash.commands.push({ name: 'reconcile', description: 'Reconcile the month’s statement.', run: api => api.setText('Reconcile the January statement') }, { name: 'summarize', description: 'Summarize the discrepancies.', run: api => api.setText('Summarize the January discrepancies') });
 const FILES = EN ? ['uploads/statement-january.pdf', 'uploads/discrepancies-january.csv', 'uploads/statement-february.pdf'] : ['uploads/releve-janvier.pdf', 'uploads/ecarts-janvier.csv', 'uploads/releve-fevrier.pdf'];
@@ -160,7 +169,7 @@ window.__undone = 0;
 const TU = { conversation: 'Ton fil', dictate: 'Dicte', listening: 'Je t’écoute…', releaseToSend: 'Relâche et j’envoie', answerHere: 'Ou réponds ici', sendFailed: 'Ton message n’est pas parti : il est revenu dans le champ.',
   placeholder: 'Dis-moi ce que tu as mangé', send: 'Envoie', stop: 'Arrête', attachFiles: 'Joins un fichier', retry: 'Réessaie', voiceStop: 'Arrête de m’écouter', voiceCancel: 'Annule', emptyTitle: 'Parle-moi', emptyDescription: 'Dis-moi ce que tu as mangé.' };
 const agent = { controller, icon: DEMO ? SparklesIcon : Icon, label: 'Assistant', library: DEMO ? demoLibrary(KIT ? undefined : onOpenFile) : library, ...(KIT ? { files: demoFiles } : {}),
-  ...(params.get('action') === '1' ? { replyAction: { label: T('Annuler', 'Undo'), onSelect() { window.__undone += 1; } } } : {}),
+  ...((DEMO ? params.get('action') !== '0' : params.get('action') === '1') ? { replyAction: { label: DEMO ? T('Annuler le rapprochement', 'Undo reconciliation') : T('Annuler', 'Undo'), onSelect() { window.__undone += 1; } } } : {}),
   ...(params.get('status') === '1' ? { workingWords: ({ tool }) => tool === 'read' ? 'Max compte…' : 'Max réfléchit…' } : {}),
   ...(params.get('tu') === '1' ? { words: TU } : {}), ...(params.get('words') === '1' ? { words: { dictate: 'Parler', conversation: 'Le fil' } } : {}), ...(params.get('readonly') === '1' ? { readOnly: T('Lecture seule : votre rôle permet de lire, pas d’écrire (fictif).', 'Read only: your role may read, not write (fictional).') } : {}), voice: { transcribe: async () => T('Texte dicté fictif', 'Dictated text (fictional)'), send: 'draft' },
   // `?fork=1`: the host's conversations with fork and new (edit last, D3): `window.__forked` holds the entries forked at, `window.__new` counts new ones.

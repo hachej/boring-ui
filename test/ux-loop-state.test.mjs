@@ -1,0 +1,139 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { advise } from '../ux/runner/advisor.mjs';
+import { declared, declaredExcess, shiftExcess, topSources, totals, traceText, worstSteps } from '../ux/runner/trace.mjs';
+import { fineSignal, fineText, specBlock, specItems, advisorDue, addTried, allNine, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from '../ux/runner/loop-state.mjs';
+
+const KEYS = ['clarity', 'layout', 'states', 'phone', 'polish', 'flows'], dir = () => mkdtempSync(join(tmpdir(), 'ux-state-'));
+const grades = (...v) => Object.fromEntries(KEYS.map((k, i) => [k, v[i]]));
+
+// The loop's decisions driven by a fake worker (an accepted gain or not) and a fake judge, round by round, as loop.mjs does.
+function simulate(outcomes, { start = grades(7, 6, 7, 6, 6.5, 5.5) } = {}) {
+  let g = start, misses = {}, failed = 0, pauses = 0; const log = [];
+  for (const gain of outcomes) {
+    if (allNine(g, KEYS)) { log.push('done'); break; }
+    if (pauseDue(failed)) { log.push(`pause ${pauseHours(pauses++)}h`); failed = 3; }
+    const focus = pickFocus(g, KEYS, misses), rethink = rethinkDue(failed); log.push(`${focus}${rethink ? ' rethink' : ''}`);
+    const next = gain ? { ...g, [focus]: g[focus] + 1 } : g;
+    misses = updateMisses(misses, focus, g, next);
+    if (gain) { g = next; failed = 0; pauses = 0; } else failed++;
+  }
+  return { g, log };
+}
+
+test('the loop ends only when every criterion is 9 or more, and a criterion switched off does not count', () => {
+  assert.equal(allNine(grades(9, 9, 9, 9, 9, 8.5), KEYS), false); assert.equal(allNine(grades(9, 9, 9, 9, 9, 9), KEYS), true);
+  assert.equal(allNine({ ...grades(9, 9, 9, 9, 9, 9), flows: undefined }, KEYS), true);
+  assert.deepEqual(simulate([1, 1, 1], { start: grades(9, 9, 9, 9, 9, 8) }).log, ['flows', 'done']);
+});
+
+test('a stall rotates to the next lowest criterion after two rounds without a gain; a gain keeps the target', () => {
+  const g = grades(7, 6, 7, 6, 6.5, 5.5);
+  assert.equal(pickFocus(g, KEYS, {}), 'flows'); assert.equal(pickFocus(g, KEYS, { flows: 1 }), 'flows'); assert.equal(pickFocus(g, KEYS, { flows: 2 }), 'layout');
+  assert.equal(pickFocus(g, KEYS, { flows: 2, layout: 2 }), 'phone'); assert.equal(pickFocus(g, KEYS, Object.fromEntries(KEYS.map(k => [k, 2]))), 'flows', 'all stalled: start over');
+  assert.equal(pickFocus(grades(9, 9, 9, 9, 9, 9), KEYS), null);
+  assert.deepEqual(updateMisses({ flows: 1 }, 'flows', g, { ...g, flows: 6 }), { flows: 0 }); assert.deepEqual(updateMisses({ flows: 1 }, 'flows', g, g), { flows: 2 });
+  assert.deepEqual(simulate([0, 0, 0]).log, ['flows', 'flows', 'layout']);
+});
+
+test('when every criterion has stalled the turn passes round them: the one tried least goes next, never the lowest for ever', () => {
+  const g = grades(7, 6.5, 6.5, 6.5, 6.5, 6.5); let misses = {};
+  assert.equal(pickFocus(g, KEYS, { clarity: 2, layout: 11, states: 2, phone: 2, polish: 2, flows: 2 }), 'states');
+  assert.equal(new Set(Array.from({ length: 14 }, () => { const k = pickFocus(g, KEYS, misses); misses = updateMisses(misses, k, g, g); return k; })).size, 6, 'every criterion gets a turn');
+});
+
+test('the brief carries what would raise the criterion and the worst numbers of the capture', () => {
+  const text = focusBrief({ focus: 'flows', tried: '- x', raise: 'Expand shifts 0.205; under 0.02 gives 7.', blockers: ['F13@1440 Expand: shift 0.205'] });
+  assert.match(text, /What would raise it[\s\S]*under 0\.02 gives 7/); assert.match(text, /worst measured numbers[\s\S]*F13@1440 Expand/);
+  assert.doesNotMatch(focusBrief({ focus: 'flows', tried: '- x' }), /What would raise it|worst measured numbers/);
+});
+
+test('three rounds in a row with nothing accepted make the next a rethink round; an accepted round ends it', () => {
+  assert.deepEqual([2, 3].map(rethinkDue), [false, true]);
+  assert.deepEqual(simulate([0, 0, 0, 0, 1]).log, ['flows', 'flows', 'layout', 'layout rethink', 'phone rethink']);
+  assert.match(focusBrief({ focus: 'flows', tried: '- x', rethink: true, failures: 'boom text' }), /Rethink round[\s\S]*SMALLER and DIFFERENT[\s\S]*boom text/);
+  assert.doesNotMatch(focusBrief({ focus: 'flows', tried: '- x', rethink: false }), /Rethink round/);
+});
+
+test('eight rounds in a row with nothing accepted pause the loop: 6 h, then 12, then 24 at most, and a rethink after the wake', () => {
+  assert.deepEqual([0, 1, 2, 3, 9].map(pauseHours), [6, 12, 24, 24, 24]); assert.deepEqual([7, 8].map(pauseDue), [false, true]);
+  const log = simulate(Array(10).fill(0)).log, at = log.indexOf('pause 6h'); assert.equal(at, 8, 'after 8 rounds'); assert.match(log[7], / rethink$/); assert.match(log[at + 1], / rethink$/);
+});
+
+test('a pause sleeps in short steps, ends at once on STOP, and otherwise wakes', async () => {
+  let slept = 0; assert.equal(await pauseFor(90, { stopped: () => false, sleep: async () => { slept++; }, step: 30 }), 'woke'); assert.equal(slept, 3);
+  slept = 0; assert.equal(await pauseFor(1e9, { stopped: () => slept >= 2, sleep: async () => { slept++; }, step: 30 }), 'stop'); assert.equal(slept, 2);
+});
+
+test('a round that touches more than 8 files outside tests is over the cap; tests do not count', () => {
+  const files = n => Array.from({ length: n }, (_, i) => `registry/app-shell/f${i}.tsx`);
+  assert.deepEqual(overCap(files(8)), []); assert.match(overCap(files(9))[0], /9 files outside tests \(the cap is 8\)/);
+  assert.deepEqual(overCap([...files(8), 'test/x.test.mjs', 'registry/y.test.tsx']), []);
+});
+
+test('what was tried on a criterion is one line per round and goes to the worker for that criterion only', () => {
+  const f = join(dir(), 'tried.json'); addTried(f, { round: 4, criterion: 'flows', result: 'failed', note: 'npm run check still failing\n   after 3 repairs' }); addTried(f, { round: 5, criterion: 'layout', result: 'accepted', note: 'x' });
+  assert.equal(readTried(f).length, 2); assert.equal(triedText(readTried(f), 'flows'), '- round 4 (failed): npm run check still failing after 3 repairs'); assert.equal(triedText(readTried(f), 'phone'), 'nothing yet on this criterion');
+  assert.equal(firstChange('# Round\n\n- **Flows.** Close returns focus.\n- other'), '- **Flows.** Close returns focus.'.replace(/^- /, ''));
+});
+
+test('one loop per state folder: a live pid refuses a second start, a dead or reused pid does not, release removes only our own', () => {
+  const f = join(dir(), 'loop.pid'); assert.deepEqual(claimPid(f, { pid: 100 }), { ok: true, pid: 100 });
+  assert.deepEqual(claimPid(f, { pid: 200, isAlive: p => p === 100 }), { ok: false, pid: 100 }); assert.equal(readFileSync(f, 'utf8'), '100\n');
+  assert.deepEqual(claimPid(f, { pid: 200, isAlive: () => false }), { ok: true, pid: 200 }); releasePid(f, 100); assert.equal(readFileSync(f, 'utf8'), '200\n'); releasePid(f, 200);
+  assert.deepEqual(claimPid(f, { pid: 300, isAlive: () => true }), { ok: true, pid: 300 }, 'no file: nothing to refuse');
+});
+
+test('status.json keeps its start time and moves lastChangeAt only when something changed', () => {
+  const f = join(dir(), 'status.json'), at = t => () => new Date(t);
+  writeStatus(f, { state: 'running', round: 4, focus: 'flows', failedInRow: 0 }, at('2026-11-14T10:00:00Z'));
+  const same = writeStatus(f, { state: 'running', round: 4, focus: 'flows', failedInRow: 0 }, at('2026-11-14T10:05:00Z')); assert.equal(same.lastChangeAt, '2026-11-14T10:00:00.000Z');
+  const moved = writeStatus(f, { state: 'paused', round: 4, nextWake: 'w' }, at('2026-11-14T10:10:00Z'));
+  assert.equal(moved.startedAt, '2026-11-14T10:00:00.000Z'); assert.equal(moved.lastChangeAt, '2026-11-14T10:10:00.000Z'); assert.equal(JSON.parse(readFileSync(f, 'utf8')).state, 'paused');
+});
+
+test('the advisor is due once per stuck episode, at most every 3 rounds, and its plan becomes the worker instruction', () => {
+  const due = o => advisorDue({ failedInRow: 3, advisedThisEpisode: false, round: 10, lastAdvisedRound: null, ...o });
+  assert.equal(due({}), true); assert.equal(due({ failedInRow: 2 }), false); assert.equal(due({ advisedThisEpisode: true }), false);
+  assert.equal(due({ lastAdvisedRound: 8 }), false); assert.equal(due({ lastAdvisedRound: 7 }), true);
+  const brief = focusBrief({ focus: 'flows', tried: '- x', rethink: true, failures: 'boom', advisor: 'PLAN: fix the root cause' });
+  assert.match(brief, /advisor's plan[\s\S]*PLAN: fix the root cause/); assert.doesNotMatch(brief, /SMALLER and DIFFERENT/);
+});
+
+test('the advisor writes its plan, and a failure or a timeout leaves no plan', () => {
+  const d = dir(), scenario = { target: 't', title: 'T', purpose: 'p', file: 'f.json' }, base = { scenario, verdict: { grades: {}, to_raise: { flows: 'x' } }, tried: '-', failures: '', folder: d, home: d, root: d, out: join(d, 'advisor.md') };
+  const ok = advise({ ...base, run: (c, a, o) => { assert.equal(c, 'claude'); assert.deepEqual(a.slice(0, 4), ["-p", "--model", "opus", "--tools"]); assert.match(o.input, /flows: x/); return { status: 0, stdout: `1. The change: ${'z'.repeat(100)}` }; } });
+  assert.match(readFileSync(join(d, 'advisor.md'), 'utf8'), /The change/); assert.ok(ok.plan);
+  const bad = advise({ ...base, out: join(d, 'no.md'), run: () => ({ status: null, error: { code: 'ETIMEDOUT' } }) }); assert.equal(bad.plan, null); assert.match(bad.why, /timed out/);
+});
+
+test('a measured step: shift excess, the steps a round declares, and the trace the worker reads', () => {
+  const s = { target: 't', thresholds: { cls: 0.08, settledMs: 1200 } }, step = (cls, ok = true) => ({ say: 'Reopen it', ok, cls, settledMs: 250, firstChangeMs: 100, focusAfter: 'x', shiftSources: cls ? [{ el: 'div[a]', from: { x: 0, y: 690, w: 390, h: 98 }, to: { x: 0, y: 410, w: 390, h: 378 } }, { el: 'p', from: { x: 0, y: 1, w: 5, h: 5 }, to: { x: 0, y: 2, w: 5, h: 5 } }] : [] });
+  const result = { flows: [{ id: 'F14', viewport: '390', name: 'long', steps: [step(0), step(0.167), step(0.04)] }, { id: 'F02', viewport: '390', name: 'o', steps: [step(0.128)] }] };
+  assert.ok(Math.abs(shiftExcess({ cls: 0.08 }, step(0.167)) - 1.0875) < 1e-9); assert.equal(shiftExcess({ cls: 0.08 }, step(0.167, false)), 0);
+  assert.deepEqual(totals(s, result), { shift: 1.69, settle: 0 });
+  assert.deepEqual(worstSteps(s, result, 1), [{ flow: 'F14', viewport: '390', step: 2, excess: 1.09 }]);
+  assert.deepEqual(declared('# Round\nMeasure: F14@390#2, F02@390 and more\n'), [{ flow: 'F14', viewport: '390', step: 2 }, { flow: 'F02', viewport: '390', step: null }]); assert.deepEqual(declared('no line'), []);
+  assert.equal(declaredExcess(s, result, [{ flow: 'F14', viewport: '390', step: 2 }]), 1.09); assert.equal(declaredExcess(s, result, [{ flow: 'F02', viewport: '390', step: null }]), 0.6);
+  assert.equal(topSources(result.flows[0].steps[1].shiftSources)[0].el, 'div[a]');
+  assert.match(traceText(s, result.flows[0], { only: [2] }), /step 2 "Reopen it": layout shift 0.167 \(over\).*\n    shifted: div\[a\]  390x98 at 0,690  ->  390x378 at 0,410/);
+});
+
+test('a target spec reaches the brief, and the items a round claims are read from its changes.md', () => {
+  assert.deepEqual(specItems('# R\nSpec: items 3, 5 and 3\n'), ['3', '5']); assert.deepEqual(specItems('nothing'), []);
+  assert.match(specBlock('1. one'), /Target design spec[\s\S]*order of work[\s\S]*Spec: 3, 5[\s\S]*1\. one/); assert.equal(specBlock(''), '');
+});
+
+test('the finer gain: a listed problem fixed, none new, no grade down is accepted; the judge lists what is open', () => {
+  const keys = ['clarity', 'layout'], g = (a, b) => ({ clarity: a, layout: b });
+  const v = (previous, extra = {}) => ({ grades: g(7, 6.5), previous, new_problems: [], ...extra });
+  assert.deepEqual(fineSignal(v({ 'layout.1': 'fixed', 'layout.2': 'partly', 'clarity.1': 'not fixed' }), g(7, 6.5), keys), { fixed: 1, partly: 1, fresh: 0, open: 2, accept: true });
+  assert.equal(fineSignal(v({ 'layout.1': 'partly' }), g(7, 6.5), keys).accept, false, 'partly is not enough');
+  assert.equal(fineSignal(v({ 'layout.1': 'fixed' }, { new_problems: ['layout: a new thing'] }), g(7, 6.5), keys).accept, false, 'a new problem');
+  assert.equal(fineSignal(v({ 'layout.1': 'fixed' }, { grades: g(7, 6) }), g(7, 6.5), keys).accept, false, 'a grade fell');
+  assert.equal(fineSignal({ grades: g(7, 6.5) }, g(7, 6.5), keys).accept, false, 'no answers, no signal'); assert.equal(fineText(null), '');
+  assert.equal(fineText({ fixed: 1, partly: 2, fresh: 0 }), ' [fixed 1, partly 2, new 0]');
+});

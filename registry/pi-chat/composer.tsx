@@ -275,20 +275,26 @@ export function Composer(props: ComposerProps) {
   // The pair works together: with only one of them, a legacy `recording` row (or nothing) is what shows, so a recording is never left with no way to stop.
   const slots = props.recordingStatus !== undefined && props.recordingStop !== undefined;
   const recording = Boolean(props.recording) || slots;
+  const retainedRecording = useRef(false);
   const setRef = (element: HTMLTextAreaElement | null) => {
     inner.current = element;
     assignRef(props.textareaRef, element);
   };
   useLayoutEffect(() => {
+    const restoreFocus = retainedRecording.current;
+    retainedRecording.current = recording && Boolean(props.keepFieldWhileRecording);
     if (recording) return;
     const element = inner.current;
     if (!element) return;
     const resize = () => {
       element.style.height = 'auto';
-      element.style.height = `${Math.min(element.scrollHeight, MAX_HEIGHT)}px`;
-      element.style.overflowY = element.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden';
+      const lineHeight = typeof getComputedStyle === 'function' ? parseFloat(getComputedStyle(element).lineHeight) : Number.NaN;
+      const limit = props.barActions === 'attach' && lineHeight > 0 ? lineHeight * 6 : MAX_HEIGHT;
+      element.style.height = `${Math.min(element.scrollHeight, limit)}px`;
+      element.style.overflowY = element.scrollHeight > limit ? 'auto' : 'hidden';
     };
     resize();
+    if (restoreFocus) element.focus({ preventScroll: true });
     if (pendingCaret.current !== null) { element.setSelectionRange(pendingCaret.current, pendingCaret.current); element.focus(); pendingCaret.current = null; }
     if (typeof ResizeObserver === 'undefined') return;
     let width = element.clientWidth;
@@ -299,7 +305,7 @@ export function Composer(props: ComposerProps) {
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [text, recording]);
+  }, [text, recording, props.barActions, props.keepFieldWhileRecording]);
 
   const query = slash && items.length ? slashQuery(text, caret) : null;
   const trigger = query === null && mentions ? mentionTrigger(text, caret) : null;
@@ -392,11 +398,11 @@ export function Composer(props: ComposerProps) {
     : <BarAttach disabled={disabled || recording} onAttach={() => fileInput.current?.click()} quiet={props.barActions === 'attach'} />;
   const plus = barActions && canAttach ? <>{attachButton}{plusButton}</> : plusButton;
   // One child slot either way, so a composer without `start` keeps its exact markup (React ids included).
-  const startAndPlus = props.start && !recording ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
+  const startAndPlus = props.start && (!recording || props.barActions === 'attach') ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
   const send = working
-    ? <Button variant="default" size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={(disabled && !props.stopOpen) || stopRequested} onClick={props.onStop} className="shrink-0">
+    ? <Button variant={props.barActions === 'attach' ? 'outline' : 'default'} size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={(disabled && !props.stopOpen) || stopRequested} onClick={() => { props.onStop(); if (props.barActions === 'attach') requestAnimationFrame(() => inner.current?.focus({ preventScroll: true })); }} className="shrink-0">
       {stopRequested ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop data-icon="inline-start" aria-hidden="true" />}</Button>
     : props.whenEmpty && (!hasContent || slots) ? <div data-testid="composer-when-empty" className="flex shrink-0 items-center">{slots ? props.recordingStop : props.whenEmpty}</div>
     : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="shrink-0">
@@ -420,8 +426,7 @@ export function Composer(props: ComposerProps) {
 
   // One shadcn InputGroup: the chips, the text and a row of controls (`card`, also used for the `stacked` and `inline` compatibility
   // values), or one row with the text between the controls (`pill`, chips above it). Its look is the host's; ours is layout only.
-  return <form data-testid="composer" data-layout={layout} data-dragging={dragging || undefined} onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
-    className={cn('relative flex flex-col gap-2', pill && '@container/composer')}>
+  const contents = <>
     {fileEl}
     {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} {...(props.barActions === 'attach' ? { bare: true } : {})} />}
     {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} header={typeof mentions.pickerHeader === 'function' ? mentions.pickerHeader(trigger!.query) : mentions.pickerHeader} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
@@ -430,7 +435,7 @@ export function Composer(props: ComposerProps) {
       <InputGroupAddon>{startAndPlus}</InputGroupAddon>
       <div data-slot="composer-recording" data-testid="composer-recording" className="flex min-w-0 flex-1 items-center gap-2 self-stretch">{props.recordingStatus}
         {/* One field in every state: the message field stays in the DOM while the microphone is open (out of sight and out of reach); the status above is what shows in its place. */}
-        {props.keepFieldWhileRecording && <div inert aria-hidden="true" className="sr-only">{input}</div>}</div>
+        {props.keepFieldWhileRecording && <div hidden inert aria-hidden="true">{input}</div>}</div>
       <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>
     </InputGroup> : <InputGroup>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
@@ -454,5 +459,9 @@ export function Composer(props: ComposerProps) {
       </InputGroupAddon>
     </InputGroup>}
     {cameraOpen && Camera && <Camera onClose={() => setCameraOpen(false)} onCapture={file => { setCameraOpen(false); props.onPickFiles([file]); }} />}
+  </>;
+  return <form data-testid="composer" data-layout={layout} data-dragging={dragging || undefined} onSubmit={event => { event.preventDefault(); if (canSubmit) props.onSend(); }} onDragOver={drag} onDragLeave={drag} onDrop={drop}
+    className={cn('relative flex flex-col gap-2', pill && '@container/composer')}>
+    {props.barActions === 'attach' ? <div data-slot="composer-stack" className="relative flex flex-col gap-2">{contents}</div> : contents}
   </form>;
 }

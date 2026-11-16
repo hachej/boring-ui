@@ -1,7 +1,7 @@
 'use client';
 
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
-import type { ComponentType, ReactNode } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import type { ComponentType } from 'react';
 import { mediaTypeOf } from '@hachej/boring-files/file-types';
 import { downloadFile } from '../viewer-frame/download';
 import { IMAGE_TYPES, ImagePane } from '../viewer-image/image-pane';
@@ -36,12 +36,10 @@ const TEXT_TYPE: Readonly<Record<string, string>> = { 'text/markdown': 'markdown
 /** The file as the kinds see it: its type, and for code its extension as the language. */
 const textArtifact = (name: string, mediaType: string) => ({ type: TEXT_TYPE[mediaType] ?? 'code', language: name.split('.').pop()?.toLowerCase() });
 const views = new WeakMap<LocalTextKind['load'], ComponentType<{ readonly text: string; readonly artifact: { readonly title: string } }>>();
-/** A kind's view as an element, one lazy component per loader, so a kind seen again never re-suspends. */
-function kindElement(load: LocalTextKind['load'], text: string, title: string): ReactNode {
-  let View = views.get(load);
-  if (!View) { View = lazy(load); views.set(load, View); }
-  return <View text={text} artifact={{ title }} />;
-}
+type LoadedKind = { readonly load: LocalTextKind['load'] } & (
+  | { readonly kind: 'ready'; readonly View: NonNullable<ReturnType<typeof views.get>> }
+  | { readonly kind: 'failed'; readonly error: unknown }
+);
 
 /** A read-only browser file, without a resource client or locator. A specific Blob type wins; otherwise the name supplies the type. */
 export function LocalFileViewer({ name, blob, kinds, ...frame }: LocalFileViewerProps) {
@@ -105,9 +103,27 @@ function LocalText({ name, blob, mediaType, text: canRead, kind, subtitle, testI
   </ViewerFrame>;
 }
 
-/** A text kind's view of the file, loaded the first time one opens. */
+/** Load a kind without a second lazy boundary's fallback delay after the file viewer has opened. */
 function KindView({ kind, text, title, testId, loading }: { readonly kind: LocalTextKind; readonly text: string; readonly title: string; readonly testId: string; readonly loading: string }) {
+  const [loaded, setLoaded] = useState<LoadedKind>();
+  const load = kind.load;
+  useEffect(() => {
+    if (views.has(load)) return;
+    let active = true;
+    void load().then(module => {
+      views.set(load, module.default);
+      if (active) setLoaded({ load, kind: 'ready', View: module.default });
+    }, error => { if (active) setLoaded({ load, kind: 'failed', error }); });
+    return () => { active = false; };
+  }, [load]);
+  if (loaded?.load === load && loaded.kind === 'failed') throw loaded.error;
+  const View = loaded?.load === load && loaded.kind === 'ready' ? loaded.View : views.get(load);
+  const waiting = <p role="status" className="m-0 text-sm text-muted-foreground">{loading}</p>;
   return <div data-testid={`${testId}-view`} className="min-h-0 flex-1 overflow-auto p-3">
-    <Suspense fallback={<p role="status" className="m-0 text-sm text-muted-foreground">{loading}</p>}>{kindElement(kind.load, text, title)}</Suspense>
+    <Suspense fallback={waiting}>{View ? <ResolvedKindView View={View} text={text} title={title} /> : waiting}</Suspense>
   </div>;
+}
+
+function ResolvedKindView({ View, text, title }: { readonly View: NonNullable<ReturnType<typeof views.get>>; readonly text: string; readonly title: string }) {
+  return <View text={text} artifact={{ title }} />;
 }

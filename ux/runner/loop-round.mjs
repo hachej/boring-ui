@@ -50,10 +50,10 @@ export function failingTests(tap) {
   return out;
 }
 
-// Work, refuse, check, ONE repair pass; leaves the accepted edits uncommitted (the caller judges, then commits or discards).
-// runWorker({ feedback, tag }) edits files. refuse(changed) -> reasons (the exam touched): no repair, the round is discarded.
-// runChecks(changed) -> [{ name, output }] failures, full output. save(name, text) writes into the round folder.
-export async function runRound({ cwd, runWorker, refuse = () => [], runChecks, save = () => {}, log = () => {} }) {
+// Work, refuse, check, then up to `repairs` repair passes, each given the precise failure of the one before; leaves the accepted edits
+// uncommitted (the caller judges, then commits or discards). runWorker({ feedback, tag }) edits files. refuse(changed) -> reasons (the exam
+// touched, too many files): no repair, the round is discarded. runChecks(changed) -> [{ name, output }]. save(name, text) writes into the round folder.
+export async function runRound({ cwd, runWorker, refuse = () => [], runChecks, save = () => {}, log = () => {}, repairs = 3 }) {
   const start = git(cwd, 'rev-parse', 'HEAD');
   if (changedFiles(cwd).length) discard(cwd, start);
   const fail = reason => { discard(cwd, start); return { status: 'failed', reason, start }; };
@@ -63,18 +63,29 @@ export async function runRound({ cwd, runWorker, refuse = () => [], runChecks, s
   const refused = () => refuse(changed);
   let bad = refused(); if (bad.length) { save('refused.txt', bad.join('\n')); return fail(`refused: ${bad[0]}`); }
   let failures = await runChecks(changed);
-  if (failures.length) {
+  for (let attempt = 1; failures.length; attempt++) {
     const text = failures.map(f => `## ${f.name}\n${f.output}`).join('\n\n');
-    save('failure-1.txt', text); log(`round failed its checks (${failures.map(f => f.name).join(', ')}); one repair attempt:\n${text.slice(-6000)}`);
-    await runWorker({ feedback: text.slice(-12000), tag: '-repair' });
+    save(`failure-${attempt}.txt`, text);
+    if (attempt > repairs) return fail(`${failures[0].name} still failing after ${repairs === 1 ? 'one repair' : `${repairs} repairs`}`);
+    log(`round failed its checks (${failures.map(f => f.name).join(', ')}); repair ${attempt} of ${repairs}:\n${text.slice(-3000)}`);
+    await runWorker({ feedback: text.slice(-12000), tag: attempt === 1 ? '-repair' : `-repair-${attempt}` });
     changed = changedFiles(cwd);
     if (!changed.length) return fail('repair undid every edit');
     bad = refused(); if (bad.length) { save('refused.txt', bad.join('\n')); return fail(`refused after repair: ${bad[0]}`); }
     failures = await runChecks(changed);
-    if (failures.length) { save('failure-2.txt', failures.map(f => `## ${f.name}\n${f.output}`).join('\n\n')); return fail(`${failures[0].name} still failing after one repair`); }
   }
   return { status: 'ready', start, changed };
 }
+
+// The real error of a failed check: warnings, passing "ok" lines, npm's banner and blank lines stripped, so what is left is what failed.
+export const errorText = (out, max = 80) => String(out).split('\n').filter(l => l.trim() && !/^(WARN |ok:|> |verify:repo (passed|emitted)|Scope: |\(full output)/.test(l)).slice(0, max).join('\n');
+// The steps of `npm run check` (a chain of `node scripts/x.mjs`) so each can run alone and name itself; null when the script is not such a chain.
+export function checkSteps(script) {
+  const steps = String(script ?? '').split(/\s*&&\s*/).filter(Boolean);
+  return steps.length && steps.every(s => /^node scripts\/[\w.-]+\.mjs$/.test(s)) ? steps : null;
+}
+// A step whose normal output hides the offenders is run with the flag that lists them.
+export const detailed = step => /check-design\.mjs$/.test(step) ? `${step} --details` : step;
 
 // Wait (bounded) until the 1-minute load average is under `max`; returns how long it waited.
 export async function waitForLoad({ max = 25, timeoutMs = 5 * 60 * 1000, load = () => loadavg()[1], sleep = ms => new Promise(r => setTimeout(r, ms)), step = 15000, log = () => {} } = {}) {

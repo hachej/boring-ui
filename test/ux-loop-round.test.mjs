@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { changedFiles, commitRound, discard, failingTests, forbiddenTouched, incomplete, medianShiftLines, retried, runRound, waitForLoad } from '../ux/runner/loop-round.mjs';
+import { changedFiles, checkSteps, commitRound, detailed, errorText, discard, failingTests, forbiddenTouched, incomplete, medianShiftLines, retried, runRound, waitForLoad } from '../ux/runner/loop-round.mjs';
 
 const git = (cwd, ...a) => execFileSync('git', ['-C', cwd, ...a], { encoding: 'utf8' }).trim();
 function repo() {
@@ -45,10 +45,10 @@ test('a failing check goes back to the worker once, with the full output, in the
   assert.match(saved['failure-1.txt'], /expected 1 got 2/);
 });
 
-test('still failing after the repair: edits discarded, files and start commit back, nothing stashed', async () => {
+test('still failing after the three repairs: edits discarded, files and start commit back, nothing stashed', async () => {
   const cwd = repo(), start = git(cwd, 'rev-parse', 'HEAD'); let workers = 0;
   const rec = await runRound({ cwd, runWorker: async () => { workers++; edit(cwd); git(cwd, 'add', 'registry/new.tsx'); }, runChecks: async () => [{ name: 'npm run check', output: 'boom' }] });
-  assert.equal(rec.status, 'failed'); assert.match(rec.reason, /npm run check still failing/); assert.equal(workers, 2);
+  assert.equal(rec.status, 'failed'); assert.match(rec.reason, /npm run check still failing after 3 repairs/); assert.equal(workers, 4);
   back(cwd, start); assert.equal(readFileSync(join(cwd, 'registry/a.tsx'), 'utf8'), 'one\n'); assert.equal(existsSync(join(cwd, 'registry/new.tsx')), false);
 });
 
@@ -87,4 +87,17 @@ test('layout shift is the median of 3: a shift another capture repeats stays, a 
 
 test('the load wait defaults to 5 minutes', async () => {
   assert.equal(await waitForLoad({ max: 25, load: () => 99, sleep: async () => {}, step: 60000 }), 5 * 60 * 1000);
+});
+
+test('three repairs: each gets the failure of the one before; the third repair can still save the round', async () => {
+  const cwd = repo(), seen = []; let pass = 0;
+  const rec = await runRound({ cwd, runWorker: async ({ feedback, tag }) => { seen.push([tag, feedback]); writeFileSync(join(cwd, 'registry/a.tsx'), `try ${seen.length}\n`); writeFileSync(join(cwd, 'registry/new.tsx'), 'x\n'); }, runChecks: async () => ++pass < 4 ? [{ name: 'npm run check: check-design.mjs', output: `error number ${pass}` }] : [] });
+  assert.equal(rec.status, 'ready'); assert.deepEqual(seen.map(s => s[0]), ['', '-repair', '-repair-2', '-repair-3']); assert.match(seen[2][1], /error number 2/); assert.doesNotMatch(seen[2][1], /error number 1/);
+});
+
+test('the failure a worker gets names the check and keeps its error lines, with warnings, ok lines and the npm banner stripped', () => {
+  const out = ['> boring-ui check', 'verify:repo passed: 15 folders', 'ok: 122 documents', 'WARN large source a.ts: 600 lines', 'FAIL group 7 viewer-chrome: 1 violation(s)', 'FAIL registry/x.tsx:10:2 group 7 raw-colour: #fff', '', 'WARN large test b.mjs'].join('\n');
+  assert.equal(errorText(out), 'FAIL group 7 viewer-chrome: 1 violation(s)\nFAIL registry/x.tsx:10:2 group 7 raw-colour: #fff');
+  assert.deepEqual(checkSteps('node scripts/a.mjs && node scripts/check-design.mjs'), ['node scripts/a.mjs', 'node scripts/check-design.mjs']); assert.equal(checkSteps('node scripts/a.mjs && echo hi'), null);
+  assert.equal(detailed('node scripts/check-design.mjs'), 'node scripts/check-design.mjs --details'); assert.equal(detailed('node scripts/a.mjs'), 'node scripts/a.mjs');
 });

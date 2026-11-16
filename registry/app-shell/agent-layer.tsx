@@ -147,6 +147,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   specs.current = { agent, improve, snap, shown, pmOpen, together, contentComposer, mode, expanded };
   // Another person's choice (the account switched, no remount) can take the tray or the dock away from under the focus: the one field is the stable control to land on.
   const refocusField = useRef(false);
+  const [host] = useState(() => typeof document === 'undefined' ? null : Object.assign(document.createElement('div'), { className: 'flex min-h-0 flex-1 flex-col [&_[data-boring=pi-chat]>header]:hidden' }));
   useLayoutEffect(() => {
     let next: AgentMode = 'tray';
     try { if (globalThis.localStorage?.getItem(modeKey) === 'dock') next = 'dock'; } catch { /* a convenience */ }
@@ -225,7 +226,6 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
 
   // The chats live in one element that is moved into the open drawer or panel; React keeps them mounted (and so their presentation state
   // and uploads) while the layer is closed, on a phone and on a wide screen. Nothing is mounted before the layer is first opened.
-  const [host] = useState(() => typeof document === 'undefined' ? null : Object.assign(document.createElement('div'), { className: 'flex min-h-0 flex-1 flex-col [&_[data-boring=pi-chat]>header]:hidden' }));
   const opened = useRef(false);
   // eslint-disable-next-line react-hooks/refs -- a monotonic "ever opened" latch for this render: no re-render, no setState during render
   if (snap !== 'closed' || contentComposer) opened.current = true;
@@ -292,7 +292,10 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     // The tray takes room from the content column: the row the person cited (focused when they cited it) is kept in view above it.
     const cited = specs.current.contentComposer && specs.current.mode === 'tray' && document.activeElement instanceof HTMLElement && !document.activeElement.closest('[data-testid=composer-dock]') && document.activeElement.closest('[data-testid=agent-content]') ? document.activeElement : null;
     if (cited) requestAnimationFrame(() => requestAnimationFrame(() => (cited.closest('[role=row]') ?? cited).scrollIntoView({ block: 'nearest' })));
-    open('agent', options.at ?? 'half');
+    // A phone quote belongs in the field beside the entry; keep the person's conversation placement.
+    const current = specs.current;
+    const at = options.at ?? (bar && !current.expanded && !options.voice && current.shown === 'agent' && current.snap !== 'closed' ? current.snap : 'half');
+    open('agent', at);
     if (options.voice && selected.voice) {
       setTalkRecording(true);
       // No await or effect: permission belongs to the caller's click or swipe release, even before the chat mounts.
@@ -300,10 +303,10 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     } else {
       focusTimer.current = setTimeout(() => {
         if (specs.current.agent?.controller === selected.controller && specs.current.snap !== 'closed' && specs.current.shown === 'agent') (host?.querySelector<HTMLElement>('[data-spec=agent] [data-testid=composer-input]') ?? composerSlotRef.current?.querySelector<HTMLElement>('[data-testid=composer-input]'))?.focus({ preventScroll: true });
-      }, 520);
+      }, at === 'peek' ? 0 : 520);
     }
     return true;
-  }, [open, voice, host]);
+  }, [bar, open, voice, host]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- a completed or refused capture resets this gesture's presentation once
   useEffect(() => { if (voice.phase === 'idle') setTalkRecording(false); }, [voice.phase]);
   const revealedFailures = useRef(new Set<number>());

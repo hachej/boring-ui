@@ -49,11 +49,20 @@ function PhoneCardSlot() {
   useLayoutEffect(() => {
     const element = node.current;
     if (!element) return;
-    const measure = () => setCardPx(Math.ceil(element.getBoundingClientRect().height));
-    measure();
+    const sheet = element.closest('[data-testid=agent-layer-sheet]');
+    const measure = () => {
+      const footer = sheet?.querySelector<HTMLElement>('[data-testid=composer-dock]');
+      const handle = sheet?.closest('[data-slot=drawer-popup]')?.querySelector<HTMLElement>('[data-slot=drawer-swipe-handle]');
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      setCardPx(Math.max(0, Math.ceil(element.offsetHeight + (footer?.offsetHeight ?? 0) + (handle?.offsetHeight ?? 0) - PEEK_BAR_REM * rem)));
+      if (footer) observer?.observe(footer);
+    };
     const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    measure();
     observer?.observe(element);
-    return () => { observer?.disconnect(); setCardPx(0); };
+    const mutation = new MutationObserver(measure);
+    if (sheet) mutation.observe(sheet, { childList: true, subtree: true });
+    return () => { observer?.disconnect(); mutation.disconnect(); setCardPx(0); };
   }, [setCardPx]);
   return <div ref={place} data-testid="agent-card-slot" className="shrink-0 px-2 empty:hidden" />;
 }
@@ -76,24 +85,48 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const recording = voice.phase !== 'idle';
   // While the person talks the sheet holds still: the viewport height and the keyboard inset are pinned at what they were when the recording
   // began, the composer takes no focus and no keyboard, so nothing moves under the finger on the microphone.
-  const sheet = useRef<HTMLDivElement>(null);
+  const [sheet, setSheet] = useState<HTMLDivElement | null>(null);
+  // The page reserves the folded stack above the tabs, independent of the sheet's snap.
+  useLayoutEffect(() => {
+    const popup = sheet?.closest<HTMLElement>('[data-slot=drawer-popup]');
+    const body = sheet;
+    if (!layer.bar || !popup || !body) return;
+    const root = document.documentElement;
+    const measure = () => {
+      const footer = body.querySelector<HTMLElement>('[data-testid=composer-dock]');
+      const header = body.querySelector<HTMLElement>('[data-testid=agent-layer-header]');
+      body.style.setProperty('--app-shell-field-height', `${footer?.offsetHeight ?? 0}px`);
+      body.style.setProperty('--app-shell-sheet-header-height', `${header?.offsetHeight ?? 0}px`);
+      if (footer) observer.observe(footer);
+      if (header) observer.observe(header);
+      root.style.setProperty('--app-shell-bar-height', `${Math.max(0, parseFloat(layer.peekPoint) - layer.tabbar)}px`);
+    };
+    const observer = new ResizeObserver(measure);
+    measure();
+    observer.observe(body);
+    const position = new MutationObserver(measure);
+    position.observe(popup, { attributes: true, attributeFilter: ['style', 'data-bar-sheet'] });
+    // The persistent chat mounts inside ChatSlot after the sheet's first measurement.
+    position.observe(body, { childList: true, subtree: true });
+    return () => { observer.disconnect(); position.disconnect(); root.style.removeProperty('--app-shell-bar-height'); };
+  }, [layer.bar, layer.peekPoint, layer.tabbar, sheet]);
   const idleViewport = useRef(liveViewport);
   // eslint-disable-next-line react-hooks/refs -- ref cache: the last viewport seen while not recording, pinned during a recording; no setState during render
   if (!recording) idleViewport.current = liveViewport;
   // eslint-disable-next-line react-hooks/refs -- reads the pinned viewport cached above in this same render
   const vv = recording ? idleViewport.current : liveViewport;
-  const [pinnedBottom, setPinnedBottom] = useState<string | undefined>();
   useLayoutEffect(() => {
-    const popup = sheet.current?.closest('[data-slot=drawer-popup]');
-    if (!recording || !sheet.current) return;
-    if (popup) setPinnedBottom(getComputedStyle(popup).bottom);
-    const inputs = [...sheet.current.querySelectorAll<HTMLTextAreaElement>('[data-testid=composer-input]')].map(input => ({ input, mode: input.getAttribute('inputmode'), readOnly: input.readOnly }));
+    const popup = sheet?.closest<HTMLElement>('[data-slot=drawer-popup]');
+    if (!recording || !sheet) return;
+    const previousBottom = popup?.style.bottom ?? '';
+    if (popup) popup.style.bottom = getComputedStyle(popup).bottom;
+    const inputs = [...sheet.querySelectorAll<HTMLTextAreaElement>('[data-testid=composer-input]')].map(input => ({ input, mode: input.getAttribute('inputmode'), readOnly: input.readOnly }));
     for (const { input } of inputs) { input.readOnly = true; input.setAttribute('inputmode', 'none'); }
     return () => {
-      setPinnedBottom(undefined);
+      if (popup) popup.style.bottom = previousBottom;
       for (const { input, mode, readOnly } of inputs) { input.readOnly = readOnly; if (mode === null) input.removeAttribute('inputmode'); else input.setAttribute('inputmode', mode); }
     };
-  }, [recording]);
+  }, [recording, sheet]);
 
   // At half and full the sheet is modal: the page, the trigger included, is inert, so a tap on the trigger lands elsewhere and would count as an
   // outside press (down to peek). It still means what the trigger means: close. A trigger that gets its own press, or one under the sheet, is left alone.
@@ -133,9 +166,10 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
 
   // The sheet stops under the page header it opens over, so the trigger there is not covered: at full the sheet would otherwise reach 1.5rem from the top and sit on it.
   const [measuredClear, setTriggerClear] = useState(0);
-  const triggerClear = open && !peek ? measuredClear : 0;
+  const triggerClear = open && (layer.bar || !peek) ? measuredClear : 0;
   useLayoutEffect(() => {
-    if (!open || peek) return;
+    // Keep the bar's popup height stable across snaps, including while its transcript is folded.
+    if (!open || (peek && !layer.bar)) return;
     // Follows the real geometry while open: a header that grows later (an async leading control) moves the trigger down. The lowest of the triggers in the top half counts.
     // State is set only from the callbacks below (the first call is the observer's initial one), never synchronously in this effect.
     const measure = () => {
@@ -164,20 +198,24 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
       window.removeEventListener('resize', measure); window.visualViewport?.removeEventListener('resize', measure);
       document.removeEventListener('transitionend', measure, true);
     };
-  }, [open, peek, vv?.height]);
+  }, [open, peek, layer.bar, vv?.height]);
 
   // While « Améliorer l'app » shows, the PM panel owns the layer's Back entry (AgentLayerProvider).
   useBackLayer((snap === 'half' || snap === 'full') && layer.showing !== 'improve', layer.close, 'agent');
 
-  // The popup is taller than what shows and slides down by `--drawer-snap-point-offset` (a registered, non-inheriting property, so only the
-  // popup itself can read it): padding the popup by that offset makes its content box exactly the visible part. At peek the tab bar below is left out too.
+  // Base UI's snap offset belongs to the popup. The bar passes its computed value down so the field can counter-translate it,
+  // while the transcript's scroll window shortens under the header. Other composer modes keep their snap padding.
   // The popup is portalled to the body, outside the shell root: it is given the measured tab bar height and the z-values explicitly.
   // `bar` (AC-20): Ouvert on a phone is the half, and the tabs stay in view under it (the popup's part over them is clipped, as at peek).
   const keepTabs = layer.bar && snap === 'half';
-  const keyboardPeek = layer.bar && peek && !recording && liveViewport !== null && window.innerHeight - liveViewport.height - liveViewport.top > 80;
+  const keyboardOpen = liveViewport !== null && window.innerHeight - liveViewport.height - liveViewport.top > 80;
+  // Full covers the tabs, but keeps their space below the field so expanding only grows the transcript upward.
+  const fullInset = keyboardOpen ? 'var(--app-shell-safe-bottom, 0px)' : 'max(var(--app-shell-tabbar, 0px), var(--app-shell-safe-bottom, 0px))';
+  const bottomInset = layer.bar && snap === 'full' ? fullInset : 'var(--app-shell-tabbar, 0px)';
+  const keyboardPeek = layer.bar && peek && !recording && keyboardOpen;
   const style = { '--app-shell-trigger-clear': `${triggerClear}px`, '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-peek-height': layer.bar ? `calc(${PEEK_BAR_REM}rem + ${layer.cardPx}px)` : `${PEEK_REM}rem`, '--app-shell-z-layer': Z.layer,
-    paddingBottom: peek || keepTabs ? 'calc(var(--drawer-snap-point-offset, 0px) + var(--app-shell-tabbar, 0px))' : 'var(--drawer-snap-point-offset, 0px)',
-    ...(pinnedBottom ? { bottom: pinnedBottom } : {}),
+    ...(layer.bar ? { '--app-shell-sheet-offset': 'var(--drawer-snap-point-offset, 0px)' } : {}),
+    paddingBottom: layer.bar ? bottomInset : peek ? `calc(var(--drawer-snap-point-offset, 0px) + ${bottomInset})` : 'var(--drawer-snap-point-offset, 0px)',
     // `bar`, folded, with the keyboard up (K-1): the field is not moved to a full screen; the folded sheet rests on the keyboard at its own height (the field and the card),
     // the page stays visible above it. The drawer's snap arithmetic does not know a keyboard at the peek, so it is set aside while the keyboard shows.
     ...(keyboardPeek ? { '--translate-y': '0px', height: 'auto', paddingBottom: 0, clipPath: 'none' } : {}) } as CSSProperties;
@@ -223,28 +261,33 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
       const next = toSnap(point, layer.peekPoint);
       if (next && (next !== 'peek' || hasPeek)) layer.setSnap(next);
     }}>
-    <DrawerContent data-testid="agent-layer" aria-label={title} data-state={snap} data-peek={peek} data-keep-tabs={keepTabs || undefined} initialFocus={() => closeRef.current ?? false} style={style}
+    <DrawerContent data-testid="agent-layer" aria-label={title} data-state={snap} data-peek={peek} data-bar-sheet={layer.bar && !keyboardPeek || undefined} data-keep-tabs={keepTabs || undefined} initialFocus={() => closeRef.current ?? false} style={style}
       className={cn('app-shell box-border z-(--app-shell-z-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)_-_max(1.5rem,var(--app-shell-trigger-clear,0px)))]',
+        // The field counter-translates the snap offset; tap changes need no layout animation.
+        layer.bar && 'transition-opacity duration-(--duration-fast) motion-reduce:transition-none',
+        // A nested History drawer must not scale or resize the sheet that anchors the one field.
+        layer.bar && '[--stack-step:0] [--peek:0px] [--stack-height:var(--drawer-content-height)]',
         // The peek is the top PEEK_REM of the popup; the part that overlaps the tab bar is clipped away, so the tabs stay visible and tappable.
         'data-[peek=true]:not-data-swiping:[clip-path:inset(0_0_calc(100%_-_var(--app-shell-peek-height))_0)]',
         'data-keep-tabs:not-data-swiping:[clip-path:inset(0_0_calc(var(--drawer-snap-point-offset,0px)_+_var(--app-shell-tabbar,0px))_0)]')}>
       <BaseDrawerParts.Drawer.VirtualKeyboardProvider>
-        <div ref={sheet} data-testid="agent-layer-sheet" {...(layer.bar ? { 'data-one-dock': '' } : {})} onFocusCapture={event => { if (!layer.bar && !recording && (event.target as HTMLElement).matches('[data-testid=composer-input]')) layer.setSnap('full'); }}
+        <div ref={setSheet} data-testid="agent-layer-sheet" {...(layer.bar ? { 'data-one-dock': '' } : {})} onFocusCapture={event => { if (!layer.bar && !recording && (event.target as HTMLElement).matches('[data-testid=composer-input]')) layer.setSnap('full'); }}
           className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden overscroll-contain',
             // The layer's own header carries the title and Close, so the chat's is hidden. At peek: one line of the last reply above the
             // composer, no empty-state overlay, room for Close.
             '[&_[data-boring=pi-chat]>header]:hidden',
             // At peek: ONE compact row (a one-line input, the microphone and Send; the other composer controls wait for half), and the last
             // reply as a single truncated line above it.
-            peek && ['[&_[data-boring=pi-chat]>.relative]:overflow-hidden [&_[data-boring=pi-chat]>.relative>.pointer-events-none]:hidden',
+            peek && !layer.bar && ['[&_[data-boring=pi-chat]>.relative]:overflow-hidden [&_[data-boring=pi-chat]>.relative>.pointer-events-none]:hidden',
               '[&_[data-boring=pi-chat]>footer]:px-2 [&_[data-boring=pi-chat]>footer]:pt-1 [&_[data-boring=pi-chat]>footer]:pb-2',
               '[&_[data-testid=transcript]]:gap-0 [&_[data-testid=transcript]]:p-0 [&_[data-testid=transcript]]:px-3 [&_[data-testid=transcript]>*]:max-h-5 [&_[data-testid=transcript]>*]:truncate [&_[data-testid=transcript]_button]:hidden',
               '[&_[data-testid=composer]_[data-slot=input-group]]:flex-row! [&_[data-testid=composer]_[data-slot=input-group]]:items-center',
               '[&_[data-testid=composer-input]]:min-h-11 [&_[data-testid=composer-input]]:max-h-11 [&_[data-testid=composer-input]]:flex-1 [&_[data-testid=composer-input]]:px-4 [&_[data-testid=composer-input]]:py-2.5',
               voice.phase !== 'starting' && voice.phase !== 'recording' && '[&_[data-testid=composer-controls]]:w-auto [&_[data-testid=composer-controls]]:shrink-0 [&_[data-testid=composer-controls]]:py-0 [&_[data-testid=composer-controls]>span.flex-1]:hidden',
               '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-annotate]]:hidden'],
+            layer.bar && '[&_[data-testid=composer-dock]]:px-2 [&_[data-testid=composer-dock]]:pt-2 [&_[data-testid=composer-dock]]:pb-4',
             peek && layer.bar && ['[&_[data-boring=pi-chat]>.relative]:hidden [&_[data-testid=conversation-content]]:hidden', FOLDED_FIELD])}>
-          {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} />}
+          {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} className={layer.bar ? 'absolute inset-x-0 top-0 z-10 bg-popover' : undefined} />}
           {!peek && <VoiceProblem />}
           {peek && recording && <div aria-hidden="true" data-testid="agent-listening" data-phase={voice.phase} className="sr-only">
             <MicIcon className="size-4 text-destructive" aria-hidden="true" />{voice.phase === 'transcribing' ? <><Loader2Icon className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />{voiceClock(voice.seconds)}</> : `${text.listening} ${voiceClock(voice.seconds)}`}

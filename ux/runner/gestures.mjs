@@ -64,6 +64,7 @@ export async function prepare(h, step) {
     case 'drop': { const name = step.file, sel = css(t); return () => page.evaluate(([sel, name, type, phase]) => { const el = document.querySelector(sel); const data = window.__dt ??= (() => { const d = new DataTransfer(); d.items.add(new File(['x'], name, { type })); return d; })();
       for (const kind of phase === 'enter' ? ['dragenter', 'dragover'] : ['drop']) el.dispatchEvent(new DragEvent(kind, { dataTransfer: data, bubbles: true, cancelable: true })); }, [sel, name, FILES[name] ?? 'application/octet-stream', step.phase === 'enter' ? 'enter' : 'drop']); }
     case 'attach': { const name = step.file; let l; if (t) [l] = await ready(); return async () => { if (l) await (touch ? l.tap() : l.click()); await page.locator('input[type=file]').first().setInputFiles({ name, mimeType: FILES[name] ?? 'application/octet-stream', buffer: Buffer.from('%PDF fictional') }); }; }
+    case 'keyboard': return () => page.evaluate(px => window.__keyboard?.(px), step.px ?? 0);
     case 'wait': return () => page.waitForTimeout(step.ms ?? 300);
     case 'back': return () => page.evaluate(() => history.back());
     case 'reload': return () => page.reload({ waitUntil: 'load' });

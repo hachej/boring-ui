@@ -2,16 +2,23 @@
 
 // The chats and their header: one PiChat per spec in a persistent host element, the slot it moves into, the layer's title row with History and Library.
 import { createPortal } from 'react-dom';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { HTMLAttributes, ReactNode, Ref } from 'react';
-import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, XIcon } from '../_shared/icons';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import type { HTMLAttributes, ReactElement, ReactNode, Ref } from 'react';
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, Maximize2Icon, Minimize2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
+import { InputGroup } from '@/components/ui/input-group';
+import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useMessageScroller } from '@/components/ui/message-scroller';
 import { PiChat } from '../pi-chat/pi-chat';
+import { ReplyActionContext } from '../pi-chat/message';
+import { Composer } from '../pi-chat/composer';
+import type { ComposerProps } from '../pi-chat/composer';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { PendingVoiceBubble } from '../pi-chat-voice/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
 import { ConversationHistory } from '../pi-chat/history';
-import { ChatTextProvider } from '../pi-chat/labels';
+import { ChatTextProvider, useChatText } from '../pi-chat/labels';
 import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
 import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { sentFeedbackContent } from '../feedback/sent-content';
@@ -22,12 +29,18 @@ import type { AppShellLocale, AppShellText } from './text';
 import { HeaderActions } from './header-actions';
 import { chatWordLabels, composerLabels, shellWords, useInternal } from './layer-context';
 import type { AgentSpec, Snap, Which } from './layer-context';
-import { BarMicButton, BarMicStatus, ConversationChevron, FoldedCard, SendProblem, TalkButton, useBarMic } from './agent-bar-parts';
+import { BarMicButton, BarMicCancel, BarMicStatus, ConversationChevron, FoldedCard, SendProblem, TalkButton, useBarMic } from './agent-bar-parts';
+
+/** The bar's icon controls expose the same words on hover and keyboard focus. */
+export function HeaderHint({ label, children }: { readonly label: string; readonly children: ReactElement }) {
+  const { bar } = useInternal();
+  return bar ? <Tooltip><TooltipTrigger render={children} /><TooltipContent>{label}</TooltipContent></Tooltip> : children;
+}
 
 /** The preview header's Library button, when the app gives one. */
 export function LibraryButton({ open, text, testId = 'agent-preview-library' }: { readonly open: (() => void) | undefined; readonly text: AppShellText; readonly testId?: string }) {
   if (!open) return null;
-  return <Button variant="ghost" size="icon" data-testid={testId} aria-label={text.library} title={text.library} onClick={open}><LibraryIcon data-icon="inline-start" aria-hidden="true" /></Button>;
+  return <HeaderHint label={text.library}><Button variant="ghost" size="icon" data-testid={testId} aria-label={text.library} title={text.library} onClick={open}><LibraryIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>;
 }
 
 /** « Historique » in the conversation's header, when the app gives `chatProps.conversations`: the same list PiChat's own header opens
@@ -42,11 +55,77 @@ export function HistoryButton() {
   const text = { ...chatTextFor(layer.locale ?? chat?.locale), labels: composerLabels(layer.locale, layer.agent) };
   const close = () => { setOpen(false); requestAnimationFrame(() => button.current?.focus({ preventScroll: true })); };
   return <>
-    <Button ref={button} variant="ghost" size="icon" data-testid="history-open" aria-label={text.labels.history} title={text.labels.history} aria-haspopup="dialog" aria-expanded={open}
-      onClick={() => setOpen(now => !now)}><HistoryIcon data-icon="inline-start" aria-hidden="true" /></Button>
+    <HeaderHint label={text.labels.history}><Button ref={button} variant="ghost" size="icon" data-testid="history-open" aria-label={text.labels.history} title={text.labels.history} aria-haspopup="dialog" aria-expanded={open}
+      onClick={() => setOpen(now => !now)}><HistoryIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>
     {open && <ChatTextProvider value={text}><ConversationHistory conversations={conversations} onClose={close} /></ChatTextProvider>}
   </>;
 }
+
+/** Hidden viewports must not turn an earlier reading position into a request to follow the latest reply. */
+function BarTranscriptPosition() {
+  const { host, folded } = useInternal();
+  const { scrollToMessage, scrollToEnd } = useMessageScroller();
+  const position = useRef<{ readonly kind: 'latest' } | { readonly kind: 'reading'; readonly top: number } | null>(null);
+  useLayoutEffect(() => {
+    if (folded) return;
+    const viewport = host?.querySelector<HTMLElement>('[data-spec=agent] [data-testid=transcript-scroll]');
+    if (!viewport) return;
+    const saved = position.current;
+    let restored = saved === null;
+    const remember = () => {
+      if (!restored || viewport.clientHeight === 0) return;
+      position.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 1
+        ? { kind: 'latest' } : { kind: 'reading', top: viewport.scrollTop };
+    };
+    const restore = () => {
+      if (restored || !saved || viewport.clientHeight === 0) return;
+      if (saved.kind === 'latest') scrollToEnd({ behavior: 'instant' });
+      else {
+        const first = viewport.querySelector<HTMLElement>('[data-message-id]')?.dataset.messageId;
+        if (!first || !scrollToMessage(first, { behavior: 'instant' })) return;
+        viewport.scrollTop = saved.top;
+      }
+      restored = true;
+      remember();
+    };
+    restore();
+    remember();
+    // The persistent chat host can still be detached when its new tray's layout effects run.
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(restore);
+    observer?.observe(viewport);
+    viewport.addEventListener('scroll', remember, { passive: true });
+    return () => { observer?.disconnect(); viewport.removeEventListener('scroll', remember); };
+  }, [folded, host, scrollToMessage, scrollToEnd]);
+  return null;
+}
+/** The input row stays at the bottom while chips and earlier text lines grow the surrounding surface upward. */
+function PinnedBarComposer(props: ComposerProps) {
+  const { labels } = useChatText();
+  const root = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = root.current;
+    const form = element?.querySelector<HTMLElement>('[data-testid=composer]');
+    const stack = form?.querySelector<HTMLElement>('[data-slot=composer-stack]');
+    if (!element || !form || !stack) return;
+    const measure = () => {
+      element.style.paddingTop = `${Math.max(0, stack.offsetHeight - form.offsetHeight)}px`;
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure);
+    observer?.observe(form);
+    observer?.observe(stack);
+    return () => observer?.disconnect();
+  }, []);
+  const pickFiles: ComposerProps['onPickFiles'] = files => {
+    if (files.length) root.current?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true });
+    props.onPickFiles(files);
+  };
+  return <div ref={root} data-pinned-composer="" className="relative">
+    <Composer {...props} onPickFiles={pickFiles} />
+    <div data-bar-drop-overlay="" aria-hidden="true" className="pointer-events-none absolute inset-1 z-10 hidden items-center justify-center rounded-(--radius-3xl) border-[length:var(--border-width)] border-dashed border-primary bg-card text-sm font-medium text-card-foreground">{labels.attachFiles}</div>
+  </div>;
+}
+
 /** One agent's PiChat. It stays mounted while hidden, so its scroll, focus and drafts survive a swap with the other spec. */
 function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly visible: boolean; readonly role: Which }) {
   const layer = useInternal();
@@ -58,6 +137,8 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const barred = role === 'agent' && layer.bar;
   // The one composer's row (pill, chevron, attach, Dicter, edit last) wherever the field is: under the page, docked, or in the phone's drawer (AC-20).
   const oneRow = role === 'agent' && layer.bar;
+  const readStop = () => spec.controller.getSnapshot().stop;
+  const stop = useSyncExternalStore(spec.controller.subscribe, readStop, readStop);
   const { markRead } = barChat;
   const unfolded = barred && !layer.folded;
   useEffect(() => { if (unfolded) markRead(); }, [unfolded, markRead]);
@@ -74,24 +155,38 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const capturing = layer.voice.phase === 'starting' || layer.voice.phase === 'recording';
   const readOnly = oneRow ? spec.readOnly : undefined;
   const barProps = oneRow ? {
-    ...(readOnly ? { renderComposer: () => <p data-testid="agent-read-only" className="m-0 flex min-h-14 items-center px-4 text-sm text-muted-foreground">{readOnly}</p> } : {}),
-    composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerEditLast: true, composerStart: <ConversationChevron unread={barChat.historyBadge} />,
+    renderComposer: (props: ComposerProps) => {
+      // Stop confirmation can arrive before the run view catches up, as it does for the folded card.
+      const composer = stop === 'confirmed' ? { ...props, working: false } : props;
+      return <><BarTranscriptPosition />{readOnly
+        ? <InputGroup className="h-auto"><p data-testid="agent-read-only" className="m-0 flex min-h-[var(--control-h,2.75rem)] w-full min-w-0 items-center px-2 text-sm wrap-anywhere text-muted-foreground">{readOnly}</p></InputGroup>
+        : spec.chatProps?.renderComposer ? spec.chatProps.renderComposer(composer) : <PinnedBarComposer {...composer} />}</>;
+    },
+    composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerEditLast: true, composerStart: capturing ? <BarMicCancel mic={mic} /> : <ConversationChevron unread={barChat.historyBadge} />,
     // While the agent's question waits, the field says so; a typed message answers it (PiChat's own rule).
-    ...(barChat.question ? { labels: { ...chatWordLabels(spec.words), ...spec.chatProps?.labels, placeholder: words.answerHere } } : {}),
+    labels: {
+      // « / » is only mentioned when the app has slash actions, and only in the two languages the kit has words for; any other app or locale keeps the chat's own default.
+      ...(spec.chatProps?.slash && (locale === 'fr' || locale === 'en' || locale === undefined) ? { emptyDescription: locale === 'fr' ? 'Écrivez votre demande ci-dessous, ou « / » pour choisir une action.' : 'Write your request below, or type “/” to choose an action.' } : {}),
+      ...chatWordLabels(spec.words), ...spec.chatProps?.labels,
+      ...(barChat.question ? { placeholder: words.answerHere } : {}),
+    },
     ...(spec.voice ? { composerWhenEmpty: <BarMicButton mic={mic} label={words.dictate} />,
       ...(capturing ? { composerRecordingSlots: { status: <BarMicStatus mic={mic} />, stop: <BarMicButton mic={mic} label={words.dictate} />, keepField: true } } : {}) } : {}),
   } : {};
   // The app's words for the chat (`agent.words`) under the labels it passes itself; the question's placeholder above keeps its own.
-  const wordLabels = role === 'agent' && !barChat.question ? chatWordLabels(spec.words) : {};
+  const wordLabels = role === 'agent' && !oneRow ? chatWordLabels(spec.words) : {};
   // One annotate toggle: pins on desktop, point mode (which hides the layer while the person taps the app) on touch and compact screens.
   const feedback = useComposerFeedback(spec.feedback);
   const pointing = usePointing(spec.feedback);
   // The pin's mic uses the shell's transcription: this agent's own, else the coach's.
   const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
+  const replyAction = barred ? spec.replyAction : undefined;
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
+    <ReplyActionContext.Provider value={replyAction ? <Button type="button" variant="ghost" size="sm" data-testid="agent-reply-action" onClick={replyAction.onSelect}>{replyAction.label}</Button> : null}>
     <PiChat {...withChatPlugins(chatProps ?? {})} {...barProps} {...(Object.keys(wordLabels).length > 0 ? { labels: { ...wordLabels, ...spec.chatProps?.labels } } : {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
       {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: oneRow ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: capturing && !oneRow ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
+    </ReplyActionContext.Provider>
     {barred && !readOnly && layer.folded && layer.cardSlot && createPortal(<><SendProblem controller={spec.controller} /><FoldedCard bar={barChat} onOpenFile={openFile} /></>, layer.cardSlot)}
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}
     {/* In the flow, inside the visible content box: the popup is transformed (a fixed element would be placed against its off-screen bottom). */}
@@ -137,10 +232,18 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
     <HistoryButton />
     <LibraryButton open={library} text={text} testId="agent-layer-library" />
     {actions.length > 0 && <HeaderActions actions={actions} compact={compactSnap !== undefined} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
-    {compactSnap === 'half' && <Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button>}
-    {compactSnap === 'full' && <Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+    {layer.bar && (compactSnap === 'half' || compactSnap === 'full') && <HeaderHint label={compactSnap === 'full' ? text.collapse : text.expand}>
+      <Button variant="ghost" size="icon" data-testid={compactSnap === 'full' ? 'agent-layer-collapse' : 'agent-layer-expand'}
+        aria-label={compactSnap === 'full' ? text.collapse : text.expand} title={compactSnap === 'full' ? text.collapse : text.expand}
+        onClick={event => { event.currentTarget.focus({ preventScroll: true }); layer.setSnap(compactSnap === 'full' ? 'half' : 'full'); }}>
+        {compactSnap === 'full' ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <Maximize2Icon className="size-4" aria-hidden="true" />}
+      </Button>
+    </HeaderHint>}
+    {!layer.bar && compactSnap === 'half' && <HeaderHint label={text.expand}><Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
+    {!layer.bar && compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {controls}
-    <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
+    {layer.bar && <Separator orientation="vertical" aria-hidden="true" className="mx-1 my-2 w-px self-stretch" />}
+    <Button variant="ghost" size={layer.bar ? 'sm' : 'icon'} ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" />{layer.bar && text.close}</Button>
   </div>;
 }
 

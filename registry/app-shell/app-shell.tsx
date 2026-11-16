@@ -116,10 +116,10 @@ function ShellContext({ name }: { readonly name: string }): null {
 function ScreenContent({ item }: { readonly item: NavItem }): ReactNode { return item.render(); }
 
 /** Every screen stays mounted; the ones not on show are `hidden` and do not register a header or a context. */
-function Screens({ items, activeId, scrolls, slot, centred }: { readonly items: readonly NavItem[]; readonly activeId: string; readonly scrolls: boolean; readonly slot: HTMLElement | null; readonly centred: boolean }) {
-  return <div className="relative min-h-0 flex-1">
+function Screens({ items, activeId, scrolls, slot, centred, bar }: { readonly items: readonly NavItem[]; readonly activeId: string; readonly scrolls: boolean; readonly slot: HTMLElement | null; readonly centred: boolean; readonly bar: boolean }) {
+  return <div data-bar-page={bar || undefined} className={cn('relative min-h-0 flex-1', bar && 'max-md:pb-(--app-shell-bar-height,0px)')}>
     {items.map(item => <ScreenActiveContext.Provider key={item.id} value={item.id === activeId}><ScreenHeaderSlotContext.Provider value={item.id === activeId ? slot : null}>
-      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={cn('h-full pb-[var(--agent-bar-reserve,0px)] scroll-pb-[var(--agent-bar-reserve,0px)]', scrolls ? 'overflow-y-auto overscroll-contain' : 'overflow-hidden')}>{centred ? <div data-testid="screen-centred" className="mx-auto flex h-full w-full max-w-3xl flex-col"><ScreenContent item={item} /></div> : <ScreenContent item={item} />}</div>
+      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={cn('h-full pb-[var(--agent-bar-reserve,0px)] scroll-pb-[var(--agent-bar-reserve,0px)]', scrolls ? 'overflow-y-auto overscroll-contain' : 'overflow-hidden')}>{centred ? <div data-testid="screen-centred" style={bar ? { marginInlineStart: 'clamp(0px, calc((100cqw - var(--container-3xl)) / 2), max(0px, calc(100% - var(--container-xs, 20rem) - var(--spacing) * 12)))', width: 'auto' } : undefined} className="mx-auto flex h-full w-full max-w-3xl flex-col"><ScreenContent item={item} /></div> : <ScreenContent item={item} />}</div>
     </ScreenHeaderSlotContext.Provider></ScreenActiveContext.Provider>)}
   </div>;
 }
@@ -155,7 +155,7 @@ function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title,
       <Layout screen={active.label} navigation={compact && !sheet && !single ? <TabBar items={nav} activeId={active.id} onChange={choose} text={text} /> : undefined}>
         <ShellContext name={active.label} />
         <ScreenHeader fallbackTitle={single ? title : active.label} compact={compact} leadingAvatar={single} trigger={!(single && bar)} avatar={avatar} menu={sheet} screenSidebar={compact && !sheet && active.sidebar ? <ScreenSidebarSheet key={active.id} item={active} text={text} /> : undefined} text={text} slotRef={setSlot} />
-        <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} centred={single} />
+        <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} centred={single} bar={bar} />
         {update && <UpdateNotice update={update} text={text} compact={compact} />}
       </Layout>
       </div>

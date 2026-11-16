@@ -2,7 +2,7 @@
 
 import { useKeyboardInset, useBelowLg, useToastOffset } from '../utils/use-media';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { viewHasEarlier } from '@hachej/boring-ui-kit/native-chat';
@@ -24,7 +24,9 @@ import { displayName } from '@hachej/boring-ui-kit/chat-text';
 import { EmptyState } from './empty-state';
 import type { Suggestion } from './empty-state';
 import { ConversationHistory, TranscriptHistory } from './history';
-import { TranscriptChunk } from './message';
+import { ReplyActionContext, TranscriptChunk } from './message';
+import type { RowContext } from './message';
+import { CopyButton } from './code-block';
 import { markLeads } from './rows';
 import type { Row } from './rows';
 import { MessageQueue, useEditLast } from './queue';
@@ -244,6 +246,21 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const session = useChatSession({ controller, activeController: active, mode, presentation, toolDetails, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, enterSends, onFiles, camera, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => { if (timeline) timeline.afterSend?.(); else scrollToBottom.current(); onSent?.(); }, feedback, sendContext, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
   const { state, derived, rows: nativeRows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
+  const replyAction = useContext(ReplyActionContext);
+  const latestReplyKey = nativeRows.findLast(row => row.type === 'assistant')?.key;
+  const transcriptContext = useMemo<RowContext>(() => replyAction == null ? rowContext : {
+    ...rowContext,
+    replyActions: (reply, host) => {
+      const entryId = reply.entryId;
+      return <div data-testid="reply-actions" data-slot="message-actions" className="mt-1 -ml-2 flex flex-wrap items-center gap-1.5">
+        <CopyButton iconOnly text={reply.text} label={labels.copyResponse} {...(onCopy ? { onCopy } : {})} />
+        {rowContext.onFork && entryId && <Button size="icon-sm" variant="ghost" aria-label={labels.fork} title={labels.forkHint} data-testid="fork-reply"
+          onClick={() => rowContext.onFork?.(entryId)}><icons.fork data-icon="inline-start" aria-hidden="true" /></Button>}
+        {host}
+        {reply.key === latestReplyKey && replyAction}
+      </div>;
+    },
+  }, [replyAction, rowContext, latestReplyKey, labels, icons, onCopy]);
   // New or fork is on its way: nothing may go to this conversation (D-1499).
   const leaving = conversations?.creating === true;
   const editLast = useEditLast({ on: composerEditLast, rows: nativeRows, queued, queueActions, working, stop: composer.onStop, setText: text => controller.setText(text),
@@ -319,7 +336,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
 
   const footer = <footer ref={dock} data-testid="composer-dock" className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-4 md:pt-1.5">
     <div className="mx-auto w-full max-w-[720px] space-y-2">
-      <div {...(session.natural ? {} : { 'aria-live': 'polite' as const })} className="space-y-2 empty:hidden">
+      <div data-slot="composer-notices" {...(session.natural ? {} : { 'aria-live': 'polite' as const })} className="space-y-2 empty:hidden">
         <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} sending={session.sending} />
         <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} conversations={conversations} />
       </div>
@@ -369,7 +386,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
           {!empty && (hidden > 0 || state.history.kind !== 'idle' || (viewHasEarlier(state.view) ?? state.view?.entries.some(entry => entry.head !== undefined))) && <TranscriptHistory history={state.history} connected={!state.disposed && connected} onLoad={transcript.reveal} sentinelRef={transcript.sentinelRef} hidden={hidden} loaded={transcript.loaded} />}
           <div className="mx-auto w-full max-w-[720px] px-4 pt-6 pb-8 md:px-6">
           <MessageScrollerContent aria-label={labels.messages} aria-live="polite" data-testid="transcript">
-            {chunks.map(run => <TranscriptChunk key={run[0]!.key} rows={run} context={rowContext} />)}
+            {chunks.map(run => <TranscriptChunk key={run[0]!.key} rows={run} context={transcriptContext} />)}
             {visible.map(item => item.kind === 'voice' && <MessageScrollerItem key={item.key} messageId={item.key} data-local-voice="" className="[content-visibility:visible]"><VoiceBubbleView pending={item.voice} /></MessageScrollerItem>)}
           </MessageScrollerContent>
           </div>

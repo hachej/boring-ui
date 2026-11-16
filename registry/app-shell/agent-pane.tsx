@@ -37,8 +37,12 @@ const markdownKind: LocalTextKind = {
   load: () => import('../pi-chat-markdown/markdown').then(module => ({ default: ({ text }: { readonly text: string }) => <div data-testid="pane-markdown" className="pi-chat text-sm"><module.Markdown text={text} /></div> })),
 };
 const TEXT_KINDS: readonly LocalTextKind[] = [csvKind, markdownKind];
-// The viewer (image, PDF and their libraries) loads the first time a file opens: a page that only uses the layer keeps none of it up front.
-const LocalFileViewer = lazy(() => import('../viewer-pdf/local-file-viewer').then(module => ({ default: module.LocalFileViewer })));
+let readyFileViewer: typeof import('../viewer-pdf/local-file-viewer').LocalFileViewer | undefined;
+const loadFileViewer = () => import('../viewer-pdf/local-file-viewer').then(module => {
+  readyFileViewer = module.LocalFileViewer;
+  return { default: module.LocalFileViewer };
+});
+const LocalFileViewer = lazy(loadFileViewer);
 
 /** The files cited or attached in the message that names `path` (the latest one): the set previous and next step through. */
 export function citedWith(controller: NativeChatController | undefined, path: string): readonly string[] {
@@ -76,6 +80,12 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
   const focusPlan = useRef<{ readonly to: 'top' } | { readonly to: 'same'; readonly testId: string } | { readonly to: 'element'; readonly element: HTMLElement | null; readonly fallback: 'top' | 'field' } | null>(null);
   const commit = useCallback((next: readonly PaneEntry[], plan: typeof focusPlan.current) => { latest.current = next; focusPlan.current = plan; setStack(next); }, []);
   const files = agent?.files;
+  useEffect(() => {
+    if (!bar || !files) return;
+    // Warm module code together, without reading host files, so opening a CSV does not wait on two successive lazy imports.
+    void loadFileViewer().catch(() => {});
+    void csvKind.load().catch(() => {});
+  }, [bar, files]);
   const opener = () => document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
 
   // Opening the pane leaves the conversation as it is (folded stays folded): the page keeps its place, the one field stays where it was.
@@ -106,12 +116,12 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
     const popped = current.at(-1);
     if (!popped) return 0;
     const next = current.slice(0, -1);
-    commit(next, next.length ? { to: 'element', element: popped.opener, fallback: 'top' } : { to: 'element', element: popped.opener, fallback: 'field' });
+    commit(next, { to: 'element', element: popped.opener, fallback: next.length ? 'top' : 'field' });
     return next.length;
   }, [commit]);
   const close = useCallback(() => {
-    const current = latest.current;
-    if (current.length) commit([], { to: 'element', element: current[0]!.opener, fallback: 'field' });
+    const first = latest.current[0];
+    if (first) commit([], { to: 'element', element: first.opener, fallback: 'field' });
   }, [commit]);
   const step = useCallback((offset: -1 | 1) => {
     const current = latest.current, top = current.at(-1);
@@ -295,7 +305,8 @@ function FileEntry({ entry, frame, read, onShown }: { readonly entry: Extract<Pa
     <p role="status" data-testid={`${id}-status`} className="m-0 p-4 text-sm text-muted-foreground">{blob === null ? text.fileUnavailable : text.fileLoading}</p>
   </ViewerFrame>;
   if (!blob) return waiting;
-  return <Suspense fallback={waiting}><LocalFileViewer key={path} name={path} blob={blob} kinds={TEXT_KINDS} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose} />{id === 'agent-preview' && <RefocusTitle key={path} />}</Suspense>;
+  const Viewer = readyFileViewer ?? LocalFileViewer;
+  return <Suspense fallback={waiting}><Viewer key={path} name={path} blob={blob} kinds={TEXT_KINDS} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose} />{id === 'agent-preview' && <RefocusTitle key={path} />}</Suspense>;
 }
 
 /**
@@ -340,7 +351,7 @@ function useSwipe(onStep: (offset: -1 | 1) => void, enabled: boolean) {
 
 /**
  * The pane: every entry mounted, the top one shown. `column` is the wide Dock, `stacked` over the docked conversation, `screen` the phone: the whole
- * screen above the page and the tabs, under the conversation's drawer, whose peek (the one field) stays over the pane's foot.
+ * screen above the page, leaving the tabs visible under the conversation's drawer, whose peek (the one field) stays over the pane's foot.
  */
 export function PaneStack({ placement, assistant }: { readonly placement: 'column' | 'stacked' | 'screen'; readonly assistant: string }) {
   const layer = useInternal();
@@ -353,12 +364,12 @@ export function PaneStack({ placement, assistant }: { readonly placement: 'colum
   if (!top) return null;
   return <ViewerWindowProvider value={viewer}>
     <aside data-testid="agent-preview" data-placement={placement} data-depth={stack.length} aria-label={`${text.preview} · ${top.title}`} {...swipe}
-      {...(placement === 'screen' ? { style: { paddingBottom: layer.peekPoint } } : {})}
-      className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground', placement === 'screen' ? 'fixed inset-0 z-(--app-shell-z-peek)' : 'relative h-full flex-1')}>
+      {...(placement === 'screen' ? { style: { bottom: layer.tabbar, paddingBottom: `calc(${layer.peekPoint} - ${layer.tabbar}px)` } } : {})}
+      className={cn('flex min-h-0 min-w-0 flex-col bg-background text-foreground [&_.file-tree-row-button]:pointer-coarse:min-h-(--control-min,2.75rem) [&_.file-tree-row-button]:max-md:min-h-(--control-min,2.75rem)', placement === 'screen' ? 'fixed inset-0 z-(--app-shell-z-peek) [&_[data-testid=artifact-csv]]:table-auto' : 'relative h-full flex-1')}>
       <div data-testid="agent-preview-body" className="relative min-h-0 flex-1">
         {stack.map((entry, index) => {
           const shown = index === stack.length - 1;
-          return <div key={entry.id} data-pane-entry={entry.kind} {...(shown ? { 'data-pane-top': '' } : { inert: true, 'aria-hidden': true })} className={cn('absolute inset-0 flex flex-col', !shown && 'invisible')}>
+          return <div key={entry.id} data-pane-entry={entry.kind} {...(shown ? { 'data-pane-top': '' } : { inert: true, 'aria-hidden': true })} className={cn('absolute inset-0 flex-col', shown ? 'flex' : 'hidden')}>
             <EntryView entry={entry} below={stack[index - 1]} top={shown} placement={placement} assistant={assistant} />
           </div>;
         })}

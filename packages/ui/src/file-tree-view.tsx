@@ -572,7 +572,7 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
         },
         onDragEnd: () => { setDragged(undefined); setDropTarget(undefined); },
       } : {})}
-      aria-level={level} aria-selected={selectedPath === entry.path} aria-expanded={folder ? state.expanded.has(entry.path) : undefined}
+      aria-label={name} aria-level={level} aria-selected={selectedPath === entry.path} aria-expanded={folder ? state.expanded.has(entry.path) : undefined}
       tabIndex={focusPath === entry.path ? 0 : -1}
       onFocus={event => { if (event.target === event.currentTarget) setFocused(entry.path); }}
       onKeyDown={event => { if (event.target === event.currentTarget) keyboard(event, entry); }}

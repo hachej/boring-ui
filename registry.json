@@ -2397,15 +2397,71 @@
             "--app-shell-safe-top": "env(safe-area-inset-top)",
             "--app-shell-safe-bottom": "env(safe-area-inset-bottom)",
             "--app-shell-tabbar-min": "calc(3.5rem + env(safe-area-inset-bottom))",
-            "--app-shell-sheet-max": "85dvh"
+            "--app-shell-sheet-max": "85dvh",
+            "--app-shell-composer-max": "45rem",
+            "--app-shell-bar-tray-open": "30dvh",
+            "--app-shell-bar-tray-expanded": "70dvh"
           },
           ":where(.app-shell [data-slot=\"screen-body\"][data-bleed]) :where(li, tr, [role=\"row\"]) > :first-child": {
             "padding-inline-start": "var(--screen-gutter, 1rem)"
           }
         },
         "@layer utilities": {
+          ".app-shell [data-bar-tray]": {
+            "--app-shell-bar-tray-size": "var(--app-shell-bar-tray-open)"
+          },
+          ".app-shell [data-bar-tray=\"expanded\"]": {
+            "--app-shell-bar-tray-size": "var(--app-shell-bar-tray-expanded)"
+          },
+          ".app-shell [data-testid=\"agent-tray\"][data-overlay]": {
+            "transform": "translateY(calc(var(--app-shell-bar-tray-expanded) - var(--app-shell-bar-tray-size)))"
+          },
+          ".app-shell [data-testid=\"agent-tray\"][data-overlay] [data-testid=\"agent-tray-body\"]": {
+            "padding-bottom": "calc(var(--app-shell-bar-tray-expanded) - var(--app-shell-bar-tray-size))"
+          },
+          ".app-shell [data-one-composer] [data-testid=\"agent-tray\"][data-overlay] [data-testid=\"transcript-scroll\"] > div:has(> [data-testid=\"transcript\"])": {
+            "justify-content": "flex-start"
+          },
+          ".app-shell [data-bar-page]::after": {
+            "content": "\"\"",
+            "position": "absolute",
+            "pointer-events": "none",
+            "inset-inline": "0",
+            "bottom": "0",
+            "height": "calc(var(--spacing) * 8)",
+            "background": "linear-gradient(to bottom, transparent, var(--card) 75%)"
+          },
+          "@media (width < 768px)": {
+            ".app-shell [data-bar-page]::after": {
+              "bottom": "var(--app-shell-bar-height, 0px)"
+            },
+            ".app-shell [data-one-dock] [data-role=\"assistant\"] [data-slot=\"message-content\"]": {
+              "gap": "0"
+            },
+            ".app-shell [data-one-dock] [data-role=\"assistant\"] [data-slot=\"message-body\"]": {
+              "gap": "calc(var(--spacing) * 2)"
+            },
+            ".app-shell [data-one-dock] [data-role=\"assistant\"] [data-slot=\"message-actions\"]": {
+              "margin-top": "0"
+            }
+          },
           ".app-shell [data-one-composer] [data-testid=\"composer-dock\"]": {
             "padding": "0"
+          },
+          ".app-shell [data-testid=\"agent-content\"]:has([data-one-composer] [data-bar-drop-overlay]) > [data-testid=\"content-drop-overlay\"]": {
+            "display": "none"
+          },
+          ".app-shell [data-testid=\"agent-content\"]:has(> [data-testid=\"content-drop-overlay\"]) [data-one-composer] [data-bar-drop-overlay]": {
+            "display": "flex"
+          },
+          ".app-shell [data-one-composer][data-folded] [data-slot=\"composer-notices\"]:not(:has(> :not([data-testid=\"preparing\"], [data-testid=\"agent-status\"], [data-testid=\"send-blocked\"], [data-testid=\"send-unknown\"])))": {
+            "display": "none"
+          },
+          ".app-shell[data-peek=\"true\"] [data-one-dock] [data-slot=\"composer-notices\"]:not(:has(> :not([data-testid=\"preparing\"], [data-testid=\"agent-status\"], [data-testid=\"send-blocked\"], [data-testid=\"send-unknown\"])))": {
+            "display": "none"
+          },
+          ".app-shell[data-peek=\"true\"] [data-one-dock] :is([data-testid=\"agent-card\"][data-state=\"working\"], [data-testid=\"agent-send-problem\"])": {
+            "padding-bottom": "0"
           },
           ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"composer-input\"]:placeholder-shown": {
             "white-space": "nowrap",
@@ -2424,6 +2480,14 @@
             "gap": "0.375rem",
             "min-height": "3.5rem"
           },
+          ".app-shell [data-pinned-composer] [data-testid=\"composer\"]": {
+            "height": "calc(max(var(--spacing) * 14, var(--control-h, 2.75rem) + var(--spacing) * 4 + var(--border-width, 1px) * 2) + var(--spacing) * 2)"
+          },
+          ".app-shell [data-pinned-composer] [data-slot=\"composer-stack\"]": {
+            "position": "absolute",
+            "inset-inline": "0",
+            "bottom": "0"
+          },
           ".app-shell [data-one-composer] [data-slot=\"input-group\"], .app-shell [data-one-composer] [data-slot=\"input-group\"]:focus-within": {
             "border-color": "transparent",
             "background-color": "transparent",
@@ -2437,6 +2501,86 @@
           },
           ".app-shell [data-one-dock] [data-slot=\"input-group\"]:focus-within": {
             "border-color": "var(--ring)"
+          },
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"composer-input\"]": {
+            "white-space": "pre-wrap",
+            "overflow-wrap": "anywhere"
+          },
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"composer-file\"]": {
+            "display": "none"
+          },
+          ".app-shell [data-one-composer] [data-testid=\"transcript-scroll\"] > div, .app-shell [data-one-dock] [data-testid=\"transcript-scroll\"] > div": {
+            "padding-top": "calc(var(--spacing) * 3)"
+          },
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"transcript-scroll\"] > div:has(> [data-testid=\"transcript\"])": {
+            "display": "flex",
+            "flex-direction": "column",
+            "justify-content": "flex-end",
+            "min-height": "100%",
+            "padding-block": "calc(var(--spacing) * 3)"
+          },
+          ".app-shell [data-one-composer] [data-testid=\"agent-tray\"][data-expanded] [data-testid=\"transcript-scroll\"] > div:has(> [data-testid=\"transcript\"])": {
+            "justify-content": "flex-start"
+          },
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"transcript\"]": {
+            "flex": "none",
+            "min-height": "0",
+            "gap": "calc(var(--spacing) * 4)"
+          },
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"activity\"]": {
+            "margin-block": "0"
+          },
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"button\"] svg": {
+            "width": "calc(var(--spacing) * 4)",
+            "height": "calc(var(--spacing) * 4)"
+          },
+          "@media (width < 768px), (pointer: coarse)": {
+            ".app-shell [data-testid=\"agent-preview\"] .file-tree-name": {
+              "display": "flex",
+              "align-items": "center",
+              "min-height": "var(--control-min, 2.75rem)",
+              "white-space": "normal"
+            },
+            ".app-shell [data-one-dock] [data-testid=\"composer-input\"]": {
+              "font-size": "var(--text-base, 1rem)"
+            },
+            ".app-shell :is([data-one-composer], [data-one-dock]) [data-testid=\"composer\"] [role=\"listitem\"]": {
+              "min-height": "var(--control-min, 2.75rem)"
+            },
+            ".app-shell [data-pane-entry=\"library\"] [data-boring=\"file-tree\"][data-variant=\"list\"] .file-tree-copy": {
+              "display": "grid",
+              "grid-template-columns": "minmax(0, 1fr)"
+            },
+            ".app-shell [data-pane-entry=\"library\"] [data-boring=\"file-tree\"][data-variant=\"list\"] .file-tree-name:has(+ [data-file-meta])": {
+              "grid-area": "1 / 1",
+              "align-items": "flex-start",
+              "padding-block-end": "1lh"
+            },
+            ".app-shell [data-pane-entry=\"library\"] [data-boring=\"file-tree\"][data-variant=\"list\"] .file-tree-copy > [data-file-meta]": {
+              "grid-area": "1 / 1",
+              "align-self": "end",
+              "pointer-events": "none"
+            }
+          },
+          ".app-shell[data-bar-sheet] [data-testid=\"composer-dock\"]": {
+            "transform": "translateY(calc(0px - var(--app-shell-sheet-offset)))"
+          },
+          ".app-shell[data-bar-sheet] [data-testid=\"agent-card-slot\"]": {
+            "position": "absolute",
+            "inset-inline": "0",
+            "bottom": "var(--app-shell-field-height, 0px)",
+            "transform": "translateY(calc(0px - var(--app-shell-sheet-offset)))",
+            "z-index": "1"
+          },
+          ".app-shell[data-bar-sheet][data-peek=\"true\"] [data-boring=\"pi-chat\"]": {
+            "justify-content": "flex-end"
+          },
+          ".app-shell[data-bar-sheet] [data-testid=\"conversation-content\"] > *": {
+            "height": "calc(100% - var(--app-shell-sheet-offset) - var(--app-shell-sheet-header-height, 0px))",
+            "transform": "translateY(var(--app-shell-sheet-header-height, 0px))"
+          },
+          ".app-shell[data-bar-sheet] [data-testid=\"transcript-scroll\"] > div:has(> [data-testid=\"transcript\"])": {
+            "justify-content": "flex-start"
           }
         }
       },
