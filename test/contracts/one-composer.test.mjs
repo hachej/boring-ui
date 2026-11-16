@@ -1321,7 +1321,7 @@ const viewportOf = () => browser.evaluate('({ w: innerWidth, h: innerHeight })')
 const focusedId = () => browser.evaluate(`document.activeElement?.dataset.testid ?? null`);
 const FULL = '[data-testid=agent-full]';
 
-test('1440: Expand goes to grown, Full covers the nav and the right pane, Esc goes back to grown with focus on the opener, the page behind is inert', { skip, timeout: 180000 }, async () => {
+test('1440: Expand goes to grown, Full covers the nav and the page but the right pane stays beside it, Esc goes back to grown with focus on the opener, what is covered is inert', { skip, timeout: 180000 }, async () => {
   for (const dark of [false, true]) {
     await open(1440);
     if (dark) await browser.evaluate(`document.documentElement.classList.add('dark')`);
@@ -1341,18 +1341,21 @@ test('1440: Expand goes to grown, Full covers the nav and the right pane, Esc go
     await click('[data-testid=agent-tray-full]');
     await browser.until('full', `!!document.querySelector('${FULL}')`);
     await wait(250);
-    const full = await rect(FULL);
-    assert.ok(Math.abs(full.x) <= 1 && Math.abs(full.y) <= 1 && Math.abs(full.w - view.w) <= 1 && Math.abs(full.h - view.h) <= 1, `the full host is the viewport (${JSON.stringify(full)} vs ${JSON.stringify(view)})`);
+    const full = await rect(FULL), pane = await rect('[data-testid=agent-preview]');
+    assert.ok(Math.abs(full.x) <= 1 && Math.abs(full.y) <= 1 && Math.abs(full.h - view.h) <= 1 && Math.abs(full.right - pane.x) <= 1, `the full host is the viewport minus the right pane (${JSON.stringify(full)}, the pane at ${pane.x} of ${view.w})`);
     assert.equal(await browser.evaluate(`document.querySelector('${FULL}').parentElement === document.body`), true, 'portalled to the body');
-    for (const covered of ['[data-slot=sidebar-container]', '[data-testid=agent-preview]']) {
+    const paneHit = await browser.evaluate(`(() => { const r = document.querySelector('[data-testid=agent-preview]').getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + 100); return !!top && document.querySelector('[data-testid=agent-preview]').contains(top); })()`);
+    assert.equal(paneHit, true, 'the right pane stays on top beside the conversation');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-preview]').closest('[inert]') === null`), true, 'the right pane is live');
+    for (const covered of ['[data-slot=sidebar-container]']) {
       const hit = await browser.evaluate(`(() => { const e = document.querySelector(${js(covered)}); if (!e) return 'none'; const r = e.getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + Math.min(r.height / 2, 200)); return top && document.querySelector('${FULL}').contains(top) ? 'covered' : 'exposed'; })()`);
       assert.notEqual(hit, 'exposed', `${covered} is under the full screen`);
     }
     assert.equal(await inside('[data-testid=transcript]', FULL), true, 'the thread is in the full host');
     assert.equal(await inside(FIELD, FULL), true, 'the one composer is in the full host');
     await oneField('full');
-    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=app-shell]').closest('body > *').inert`), true, 'the page behind is inert');
-    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=app-shell]').closest('body > *').getAttribute('aria-hidden')`), 'true');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-boring=dock-main]').inert`), true, 'the page behind the conversation is inert');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-boring=dock-main]').getAttribute('aria-hidden')`), 'true');
     assert.equal(await browser.evaluate(`getComputedStyle(document.body).overflow`), 'hidden', 'the page does not scroll');
     assert.equal(await browser.evaluate(`document.querySelectorAll('${FULL} [data-testid=agent-layer-header] button[aria-label="Fermer"]').length`), 0, 'the header has no Close: the controller chevron is the way back');
     assert.equal(await browser.evaluate(`document.querySelector('${FULL} [data-testid=agent-full-back]').getAttribute('aria-label')`), 'Quitter le plein écran');
@@ -1372,7 +1375,7 @@ test('1440: Expand goes to grown, Full covers the nav and the right pane, Esc go
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-tray]').dataset.expanded`), 'true', 'grown');
     assert.equal(await inside('[data-testid=transcript]', '[data-testid=agent-tray]'), true, 'the thread went back to the tray');
     assert.equal(await focusedId(), 'agent-tray-full', 'focus is on the opener');
-    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=app-shell]').closest('body > *').inert`), false, 'the page is live again');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-boring=dock-main]').inert`), false, 'the page is live again');
     assert.notEqual(await browser.evaluate(`getComputedStyle(document.body).overflow`), 'hidden');
     // The back arrow does the same, Close shuts the conversation.
     await click('[data-testid=agent-tray-full]');
