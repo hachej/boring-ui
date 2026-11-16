@@ -1,0 +1,272 @@
+{
+ "target": "layout:bar-reserve",
+ "title": "The bar never covers the end of a screen",
+ "summary": "The shell keeps the assistant's bar from covering the end of a screen: the last control of a long list, and a screen's own bottom bar, stay above it.",
+ "try": [
+  {
+   "label": "Scroll to the end, tap the last button",
+   "flow": "F01"
+  },
+  {
+   "label": "The same with a reply card above the field",
+   "flow": "F02"
+  }
+ ],
+ "purpose": "AppShell composer=\"bar\": the screen keeps the assistant's bar clear by itself (--agent-bar-reserve, set by the shell from the phone peek, the card above its field, the tab bar and the safe area). A long list scrolled to its end shows its last control above the bar, with no padding written in the screen; a screen's own sticky bottom bar needs nothing more (it sticks inside the screen's padding), and a corner button positioned against the screen uses bottom: var(--agent-bar-reserve).",
+ "fixture": {
+  "entry": "ux/fixtures/layout-bar-reserve.jsx",
+  "query": "tabs=1",
+  "queryBy": {
+   "1280": "tabs=0"
+  },
+  "ready": "[data-testid=composer-input]",
+  "install": "npx shadcn@4.23.0 add app-shell pi-chat agent-bar",
+  "usage": "<AppShell layout=\"screen\" composer=\"bar\" nav={nav} agent={{ controller }} />  // a screen: <ScreenBody>…</ScreenBody>; its own bottom bar: style={{ position: 'sticky', bottom: 'var(--agent-bar-reserve)' }}"
+ },
+ "viewports": [
+  {
+   "name": "390",
+   "width": 390,
+   "height": 844,
+   "touch": true
+  },
+  {
+   "name": "1280",
+   "width": 1280,
+   "height": 800
+  }
+ ],
+ "watch": [
+  [
+   "field",
+   "[data-testid=composer]"
+  ],
+  [
+   "last",
+   "[data-testid=last-control]"
+  ],
+  [
+   "card",
+   "[data-testid=agent-card]"
+  ]
+ ],
+ "thresholds": {
+  "cls": 0.08,
+  "settledMs": 1200,
+  "touchTarget": 44
+ },
+ "notes": "The last control of a screen scrolled to its end sits fully above the assistant's bar, whatever the bar holds (the field alone, a reply card above it) and whatever is under it (a tab bar, nothing). The bar keeps its place; the padding is the shell's, not the screen's. On a wide screen the bar is in the column's flow and the reserve is 0.",
+ "states": [
+  {
+   "id": "01",
+   "name": "end-of-list",
+   "steps": [
+    {
+     "do": "scroll",
+     "target": "screen-orders",
+     "to": 99999,
+     "say": "Scroll to the end of the list",
+     "until": "eval:(() => { const el = document.querySelector('[data-testid=last-control]'), a = el.getBoundingClientRect(), b = (document.querySelector('[data-testid=agent-layer][data-peek=true]') ?? document.querySelector('[data-testid=agent-composer-box]')).getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()"
+    }
+   ]
+  },
+  {
+   "id": "02",
+   "name": "end-with-card",
+   "steps": [
+    {
+     "do": "fixture",
+     "name": "reply",
+     "say": "The assistant answers",
+     "until": "visible:agent-card-reply",
+     "timeout": 3000
+    },
+    {
+     "do": "scroll",
+     "target": "screen-orders",
+     "to": 99999,
+     "say": "Scroll to the end of the list",
+     "until": "eval:(() => { const el = document.querySelector('[data-testid=last-control]'), a = el.getBoundingClientRect(), b = (document.querySelector('[data-testid=agent-layer][data-peek=true]') ?? document.querySelector('[data-testid=agent-composer-box]')).getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()"
+    }
+   ]
+  },
+  {
+   "id": "03",
+   "name": "own-bottom-bar",
+   "query": "sticky=1",
+   "steps": [
+    {
+     "do": "scroll",
+     "target": "screen-orders",
+     "to": 0,
+     "until": "eval:(() => { const el = document.querySelector('[data-testid=sticky-bar]'), a = el.getBoundingClientRect(), b = (document.querySelector('[data-testid=agent-layer][data-peek=true]') ?? document.querySelector('[data-testid=agent-composer-box]')).getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()"
+    }
+   ]
+  },
+  {
+   "id": "04",
+   "name": "corner-button",
+   "query": "fab=1",
+   "steps": [
+    {
+     "do": "scroll",
+     "target": "screen-orders",
+     "to": 0,
+     "until": "eval:(() => { const el = document.querySelector('[data-testid=corner-button]'), a = el.getBoundingClientRect(), b = (document.querySelector('[data-testid=agent-layer][data-peek=true]') ?? document.querySelector('[data-testid=agent-composer-box]')).getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()"
+    }
+   ]
+  },
+  {
+   "id": "05",
+   "name": "keyboard-open",
+   "query": "kb=1",
+   "only": "390",
+   "steps": [
+    {
+     "do": "focus",
+     "target": "composer-input"
+    },
+    {
+     "do": "scroll",
+     "target": "screen-orders",
+     "to": 99999,
+     "say": "Scroll to the end of the list",
+     "until": "eval:(() => { const el = document.querySelector('[data-testid=last-control]'), a = el.getBoundingClientRect(), b = (document.querySelector('[data-testid=agent-layer][data-peek=true]') ?? document.querySelector('[data-testid=agent-composer-box]')).getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()"
+    }
+   ]
+  },
+  {
+   "id": "20",
+   "name": "end-of-list-dark",
+   "query": "dark=1",
+   "steps": [
+    {
+     "do": "scroll",
+     "target": "screen-orders",
+     "to": 99999,
+     "say": "Scroll to the end of the list",
+     "until": "eval:(() => { const el = document.querySelector('[data-testid=last-control]'), a = el.getBoundingClientRect(), b = (document.querySelector('[data-testid=agent-layer][data-peek=true]') ?? document.querySelector('[data-testid=agent-composer-box]')).getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()"
+    }
+   ]
+  },
+  {
+   "id": "21",
+   "name": "end-with-card-dark",
+   "query": "dark=1",
+   "steps": [
+    {
+     "do": "fixture",
+     "name": "reply",
+     "say": "The assistant answers",
+     "until": "visible:agent-card-reply",
+     "timeout": 3000
+    },
+    {
+     "do": "scroll",
+     "target": "screen-orders",
+     "to": 99999,
+     "say": "Scroll to the end of the list",
+     "until": "eval:(() => { const el = document.querySelector('[data-testid=last-control]'), a = el.getBoundingClientRect(), b = (document.querySelector('[data-testid=agent-layer][data-peek=true]') ?? document.querySelector('[data-testid=agent-composer-box]')).getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()"
+    }
+   ]
+  }
+ ],
+ "flows": [
+  {
+   "id": "F01",
+   "name": "Scroll to the end and tap the last control",
+   "steps": [
+    {
+     "do": "scroll",
+     "target": "screen-orders",
+     "to": 99999,
+     "say": "Scroll to the end of the list",
+     "until": "eval:(() => { const el = document.querySelector('[data-testid=last-control]'), a = el.getBoundingClientRect(), b = (document.querySelector('[data-testid=agent-layer][data-peek=true]') ?? document.querySelector('[data-testid=agent-composer-box]')).getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()",
+     "expect": "The last button sits fully above the assistant's bar, nothing covers it.",
+     "motion": true
+    },
+    {
+     "do": "tap",
+     "target": "last-control",
+     "say": "Tap “Send the week’s orders”",
+     "until": "eval:window.__tapped === 1 & text:last-control~Orders sent",
+     "expect": "The button runs: the orders are sent."
+    }
+   ]
+  },
+  {
+   "id": "F02",
+   "name": "A reply card above the field, then the last control",
+   "steps": [
+    {
+     "do": "fixture",
+     "name": "reply",
+     "say": "The assistant answers",
+     "until": "visible:agent-card-reply",
+     "timeout": 3000,
+     "expect": "The reply shows as a card right above the field; the bar grows."
+    },
+    {
+     "do": "scroll",
+     "target": "screen-orders",
+     "to": 99999,
+     "say": "Scroll to the end of the list",
+     "until": "eval:(() => { const el = document.querySelector('[data-testid=last-control]'), a = el.getBoundingClientRect(), b = (document.querySelector('[data-testid=agent-layer][data-peek=true]') ?? document.querySelector('[data-testid=agent-composer-box]')).getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()",
+     "expect": "The screen's end still clears the bar, now taller by the card.",
+     "motion": true
+    },
+    {
+     "do": "tap",
+     "target": "last-control",
+     "say": "Tap the last button",
+     "until": "eval:window.__tapped === 1",
+     "expect": "The button runs."
+    }
+   ]
+  },
+  {
+   "id": "F03",
+   "name": "A screen's own sticky bottom bar stays above the assistant",
+   "query": "sticky=1",
+   "steps": [
+    {
+     "do": "scroll",
+     "target": "screen-orders",
+     "to": 0,
+     "say": "Stay at the top of the list",
+     "until": "eval:(() => { const el = document.querySelector('[data-testid=sticky-bar]'), a = el.getBoundingClientRect(), b = (document.querySelector('[data-testid=agent-layer][data-peek=true]') ?? document.querySelector('[data-testid=agent-composer-box]')).getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()",
+     "expect": "The screen's own bar sticks at the bottom of the screen, above the assistant's bar."
+    },
+    {
+     "do": "tap",
+     "target": "sticky-save",
+     "say": "Tap Save",
+     "until": "eval:window.__saved === 1",
+     "expect": "Save runs."
+    }
+   ]
+  },
+  {
+   "id": "F04",
+   "name": "A corner button placed with the reserve",
+   "query": "fab=1",
+   "steps": [
+    {
+     "do": "scroll",
+     "target": "screen-orders",
+     "to": 0,
+     "say": "Stay at the top of the list",
+     "until": "eval:(() => { const el = document.querySelector('[data-testid=corner-button]'), a = el.getBoundingClientRect(), b = (document.querySelector('[data-testid=agent-layer][data-peek=true]') ?? document.querySelector('[data-testid=agent-composer-box]')).getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()",
+     "expect": "The round button sits above the assistant's bar, in the corner of the screen."
+    },
+    {
+     "do": "tap",
+     "target": "corner-button",
+     "say": "Tap the round button",
+     "until": "eval:window.__helped === 1",
+     "expect": "The button runs."
+    }
+   ]
+  }
+ ]
+}
