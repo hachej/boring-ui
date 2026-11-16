@@ -6,6 +6,9 @@ export interface AppShellText {
   readonly close: string;
   readonly expand: string;
   readonly collapse: string;
+  /** The conversation over the whole viewport (`composer: 'bar'`, wide), and its back arrow. */
+  readonly fullScreen: string;
+  readonly exitFullScreen: string;
   /** The hover rail's pin: keeps the pane open. One name in both states; `aria-pressed` tells which. */
   readonly pin: string;
   /** The pin's tooltip once pinned (its name stays `pin`). */
@@ -82,6 +85,8 @@ const en: AppShellText = {
   close: 'Close',
   expand: 'Expand',
   collapse: 'Collapse',
+  fullScreen: 'Full screen',
+  exitFullScreen: 'Exit full screen',
   pin: 'Pin the pane',
   unpin: 'Unpin the pane',
   back: 'Back to the assistant',
@@ -130,6 +135,8 @@ const fr: AppShellText = {
   close: 'Fermer',
   expand: 'Agrandir',
   collapse: 'Réduire',
+  fullScreen: 'Plein écran',
+  exitFullScreen: 'Quitter le plein écran',
   pin: 'Épingler le volet',
   unpin: 'Désépingler le volet',
   back: 'Retour à l’assistant',

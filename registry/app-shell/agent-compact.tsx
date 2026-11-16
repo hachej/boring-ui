@@ -263,6 +263,8 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
     }}>
     <DrawerContent data-testid="agent-layer" aria-label={title} data-state={snap} data-peek={peek} data-bar-sheet={layer.bar && !keyboardPeek || undefined} data-keep-tabs={keepTabs || undefined} initialFocus={() => closeRef.current ?? false} style={style}
       className={cn('app-shell box-border z-(--app-shell-z-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)_-_max(1.5rem,var(--app-shell-trigger-clear,0px)))]',
+        // Full is the whole viewport: no strip of the page above it (the same `full` size as the wide screen's full-screen conversation).
+        'data-[state=full]:data-[swipe-axis=y]:[--drawer-content-max-height:var(--app-shell-vv-height,100dvh)] data-[state=full]:[padding-top:env(safe-area-inset-top)]',
         // The field counter-translates the snap offset; tap changes need no layout animation.
         layer.bar && 'transition-opacity duration-(--duration-fast) motion-reduce:transition-none',
         // A nested History drawer must not scale or resize the sheet that anchors the one field.
