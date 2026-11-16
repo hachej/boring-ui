@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { sendWebResponse, webRequest } from '@hachej/boring-files/node-http';
-import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
+import { createFolderEnv } from '@hachej/boring-execution/folder';
 import { openNodeConnection } from '@hachej/boring-files/sqlite';
 import { createWorkspaceJournal } from '@hachej/boring-files/journal';
 import { createWorkspaceProvider } from '@hachej/boring-files/workspace';
@@ -26,7 +26,7 @@ export async function startBoard({ port = 0, directory = mkdtempSync('/var/tmp/b
   const workspace = join(directory, 'workspace');
   mkdirSync(join(workspace, 'mockups'), { recursive: true });
   const db = openNodeConnection(join(directory, 'workspace.sqlite'));
-  const files = createWorkspaceProvider({ identity: { providerId: 'workspace', instanceId: 'board', incarnation: 'board', viewId: 'published' }, fs: new NodeExecutionEnv({ cwd: workspace }), journal: createWorkspaceJournal(db) });
+  const files = createWorkspaceProvider({ identity: { providerId: 'workspace', instanceId: 'board', incarnation: 'board', viewId: 'published' }, fs: createFolderEnv({ cwd: workspace }), journal: createWorkspaceJournal(db) });
   const seeded = {};
   for (const name of ['booking.maquette.json', 'confirm.mockup.html', 'booking.board.json']) {
     const path = `mockups/${name}`, text = readFileSync(here(`../../test/fixtures/board/${name}`), 'utf8');

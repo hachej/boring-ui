@@ -1,5 +1,7 @@
 # Unreleased
 
+- **Local disk workspaces walk their folder with no-follow (`@hachej/boring-execution/folder`; additive).** `createFolderEnv({ cwd })` is a Pi execution env whose file operations never follow a link out of the folder (Linux; it fails closed elsewhere). A host that gives `createWorkspaceProvider` a plain `NodeExecutionEnv` for a local folder should pass `createFolderEnv` instead; the six examples and the build-agent-app skill now do.
+
 - **An S3 skill source with a `current.json` manifest (`@hachej/boring-agent/agents`; additive).** `s3SkillSource({ client, region, bucket, prefix })` reads `<prefix>/current.json` and the set it names, validates the whole set (files, hashes, front matter, names, paths) and keeps the last good set when a new one fails; `lastRefreshed()`, `compare(context)`, `reloadSkills(source, live, context)`, and per-conversation `visible(conversationId)` and `refreshOnMigrate(context, conversationId)` on `liveSkills`. The S3 client is injected, so the kit imports no AWS code. Nothing to do for an app that does not use it.
 
 # Migrating to 0.5.1
