@@ -61,8 +61,9 @@ async function render(t, props, { width = 390 } = {}) {
   const container = window.document.createElement('div');
   window.document.body.append(container);
   const root = createRoot(container);
-  await act(async () => root.render(h(AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...props })));
-  return { container, window, unmount: () => act(async () => root.unmount()) };
+  const draw = more => act(async () => root.render(h(AppShell, { layout: 'screen', title: 'Forme', nav, route: { id: 'Jour', onChange() {} }, ...props, ...more })));
+  await draw();
+  return { container, window, rerender: draw, unmount: () => act(async () => root.unmount()) };
 }
 
 test('with no agent, the shell\'s own words render in the locale prop, and the account sheet is titled « Compte »', async t => {
@@ -1340,4 +1341,37 @@ test('D-1900: the feedback banner follows the shell locale', async t => {
     assert.deepEqual(foreign(opened.window.document, locale), [], `the feedback parts show no ${locale === 'fr' ? 'en' : 'fr'} string`);
     await opened.unmount();
   }
+});
+
+test('update: no notice by default or while unavailable; once available a status row in the shell\'s words, no focus taken, Reload runs the handler, a dismiss holds for that version only', async t => {
+  const reloads = [];
+  const { container, window, rerender, unmount } = await render(t, { locale: 'fr', update: { available: false, version: 'v2', onReload: () => reloads.push('v2') } });
+  const { act } = await import('react');
+  const notice = () => container.querySelector('[data-testid=update-notice]');
+  assert.equal(notice(), null, 'nothing while no update is available');
+  await rerender({ update: { available: true, version: 'v2', onReload: () => reloads.push('v2') } });
+  assert.equal(notice()?.querySelector('[role=status]')?.textContent?.startsWith('Une mise à jour est disponible.'), true, 'one status row, in French');
+  assert.equal(container.querySelector('[data-testid=update-reload]')?.textContent, 'Recharger');
+  assert.equal(window.document.activeElement, window.document.body, 'the notice takes no focus');
+  await act(async () => container.querySelector('[data-testid=update-reload]').dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
+  assert.deepEqual(reloads, ['v2'], 'Reload calls the host\'s handler');
+  await act(async () => container.querySelector('[data-testid=update-dismiss]').dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
+  assert.equal(notice(), null, 'dismissed');
+  await rerender({ update: { available: true, version: 'v2' } });
+  assert.equal(notice(), null, 'the same version stays dismissed');
+  await rerender({ update: { available: true, version: 'v3' } });
+  assert.ok(notice(), 'a later version shows the notice again');
+  await unmount();
+});
+
+test('update: without a version a dismiss holds until the update is no longer available', async t => {
+  const { container, window, rerender, unmount } = await render(t, { update: { available: true } });
+  const { act } = await import('react');
+  assert.equal(container.querySelector('[data-testid=update-reload]')?.textContent, 'Reload');
+  await act(async () => container.querySelector('[data-testid=update-dismiss]').dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })));
+  assert.equal(container.querySelector('[data-testid=update-notice]'), null);
+  await rerender({ update: { available: false } });
+  await rerender({ update: { available: true } });
+  assert.ok(container.querySelector('[data-testid=update-notice]'), 'announced again after it went away');
+  await unmount();
 });

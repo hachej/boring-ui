@@ -2517,6 +2517,11 @@
           "target": "components/app-shell/app-shell.tsx"
         },
         {
+          "path": "registry/app-shell/update-notice.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/update-notice.tsx"
+        },
+        {
           "path": "registry/app-shell/list-detail.tsx",
           "type": "registry:component",
           "target": "components/app-shell/list-detail.tsx"
