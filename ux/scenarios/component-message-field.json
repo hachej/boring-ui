@@ -3,6 +3,7 @@
  "title": "The message field",
  "summary": "The message field: text, attachments, the slash list and dictation in one pill.",
  "purpose": "The kit's message field alone: the Composer inside PiChat (composerLayout 'pill', attach button, file chips, slash list, tap-to-record microphone) on a neutral page over a fake controller. The thread above it only shows what was sent. It is the field the bar layout is made of; read-only is the host's own note passed as renderComposer, as AppShell does.",
+ "try": [{"label": "Press Enter to send", "flow": "F05"}],
  "fixture": {
   "entry": "ux/fixtures/component-message-field.jsx",
   "query": "",
@@ -51,6 +52,20 @@
    { "do": "tap", "target": "voice-message-record", "say": "Tap the microphone", "motion": true, "settleMax": 100, "until": "visible:voice-recording-bar", "expect": "The field turns into a recording row with a timer and a cancel button." },
    { "do": "wait", "ms": 700, "say": "Speak a moment", "settleMax": 100 },
    { "do": "tap", "target": "voice-message-record", "say": "Tap again to stop and send", "until": "visible:voice-pending|message-text|voice-bubble", "timeout": 6000, "expect": "The recording ends and the message appears in the thread, transcribed." }
+  ] },
+  { "id": "F05", "name": "Enter sends (the app's choice)", "query": "enter=always", "steps": [
+   { "do": "focus", "target": "composer-input", "say": "Focus the field", "focus": "composer-input", "until": "focus:composer-input" },
+   { "do": "type", "text": "Remind Delmore House about the invoice", "say": "Type a one-line message", "until": "value:composer-input~Delmore" },
+   { "do": "press", "key": "Shift+Enter", "say": "Shift+Enter adds a line", "until": "eval:document.querySelector('[data-testid=composer-input]').value.endsWith('\\n')", "expect": "A second line opens in the field and nothing is sent." },
+   { "do": "type", "text": "Thank you", "say": "Type the second line", "until": "value:composer-input~Thank you" },
+   { "do": "press", "key": "Enter", "say": "Press Enter", "motion": true, "expect": "The message is sent, with Return, even on a phone keyboard.", "until": "value:composer-input~ & text:[data-role=user]~Thank you" },
+   { "do": "wait", "ms": 600, "say": "Wait for the reply", "until": "text:[data-role=assistant]~Delmore House", "timeout": 6000, "expect": "The reply arrives and the field is ready for another message." }
+  ] },
+  { "id": "F06", "name": "Enter adds a line on a phone (default)", "only": "390", "steps": [
+   { "do": "focus", "target": "composer-input", "say": "Focus the field", "focus": "composer-input", "until": "focus:composer-input" },
+   { "do": "type", "text": "Remind Delmore House about the invoice", "say": "Type a message", "until": "value:composer-input~Delmore" },
+   { "do": "press", "key": "Enter", "say": "Press Enter", "expect": "A phone keyboard has no Shift+Enter: Enter adds a line and nothing is sent.", "until": "eval:document.querySelector('[data-testid=composer-input]').value.endsWith('\\n') && window.__ux.sent() === 0" },
+   { "do": "tap", "target": "composer-submit", "say": "Send", "until": "text:[data-role=user]~Delmore", "expect": "The Send button sends it." }
   ] }
  ]
 }
