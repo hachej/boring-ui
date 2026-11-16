@@ -59,6 +59,8 @@ test('an unedited installed block, a manifest-recorded shadcn file and the marke
   t.after(() => rmSync(alone, { recursive: true, force: true }));
   cpSync(join(dir, 'web'), join(alone, 'web'), { recursive: true });
   rmSync(join(alone, 'web/SHADCN-GENERATED.json'));
+  // The block's own source may be clean (it was written to the kit's rules): give the control copy one hit, so that being read shows.
+  writeFileSync(join(alone, 'web/src', BLOCK_FILE), `${readFileSync(join(alone, 'web/src', BLOCK_FILE), 'utf8')}\n${HIT.replace('Hit', 'Control')}`);
   const files = new Set(design(alone).findings.map(finding => finding.file));
   for (const file of [BLOCK_FILE, 'components/ui/card.tsx']) assert.ok(files.has(`web/src/${file}`), `${file} is read when it is not known as a kit part`);
 });
