@@ -430,6 +430,25 @@ test('1440: the controller straddles the top of the bar in every state, rests as
   assert.ok(before.w > 0);
 });
 
+// Julien: docking while a file is open in the right pane left the conversation behind the pane. Docking replaces the pane: the file closes and the column takes its place.
+test('1440: docking with a file open closes the preview, and the docked conversation is visible, on top, with focus in its field', { skip, timeout: 120000 }, async () => {
+  await open(1440, 'demo=1&single=1');
+  await browser.evaluate(`window.__openFile('uploads/discrepancies-january.csv')`);
+  await browser.until('the file is open in the pane', `!!document.querySelector('[data-testid=agent-preview]')`);
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('the tray is open', `!!document.querySelector('[data-testid=agent-tray-dock]')`);
+  await click('[data-testid=agent-tray-dock]');
+  await browser.until('docked', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'open'`);
+  await wait(500);
+  assert.equal(await count('[data-testid=agent-preview]'), 0, 'the preview is closed');
+  const column = await rect('[data-testid=agent-layer]');
+  assert.ok(column && column.w > 200 && column.h > 200, `the docked column has a real rect (${JSON.stringify(column)})`);
+  const top = await browser.evaluate(`(() => { const r = document.querySelector('[data-testid=agent-layer]').getBoundingClientRect(); const e = document.elementFromPoint(r.x + r.width / 2, r.y + 100); return !!e && !!e.closest('[data-testid=agent-layer]'); })()`);
+  assert.equal(top, true, 'the docked conversation is on top at its centre');
+  assert.equal(await browser.evaluate(`!!document.activeElement?.closest('[data-testid=agent-layer]')`), true, 'focus is inside the docked column');
+  assert.equal(await count('[data-testid=agent-layer] [data-testid=composer-input]'), 1, 'one field, in the column');
+});
+
 test('1280: typing grows the field;  a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
   await open(1280);
   await type('Prépare la relance du dossier Cèdre :');
