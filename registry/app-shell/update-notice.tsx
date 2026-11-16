@@ -3,7 +3,7 @@
 // The update notice (`AppShell update`): a newer version of the app is online while the page is open. One kit-drawn status row at the foot of the screen
 // column, in the flow above the phone's tab bar (so it takes room instead of covering the screen's last control), with a Reload action and a dismiss that
 // holds for the version named. It takes no focus. Host concern: Pi has no layout; the host decides when `available` is true (a version poll, a service worker).
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { InfoIcon, XIcon } from '../_shared/icons';
@@ -24,7 +24,8 @@ export const updateShown = (update: AppShellUpdate, dismissed: string | undefine
 export function UpdateNotice({ update, text, lift }: { readonly update: AppShellUpdate; readonly text: AppShellText; readonly lift?: string | undefined }) {
   const [dismissed, setDismissed] = useState<string | undefined>();
   const { available, version, onReload } = update;
-  useEffect(() => { if (!available) setDismissed(undefined); }, [available]);
+  // A dismiss ends with the availability (`available` false): reset while rendering, not in an effect.
+  if (!available && dismissed !== undefined) setDismissed(undefined);
   if (!updateShown(update, dismissed)) return null;
   return <div data-testid="update-notice" data-version={version} data-feedback-ignore="" style={lift ? { marginBottom: lift } : undefined} className="shrink-0 px-[var(--screen-gutter,1rem)] py-2">
     {/* The info look through tokens on the default Alert: a shadcn Alert without the kit's `info` variant draws the same row. */}
