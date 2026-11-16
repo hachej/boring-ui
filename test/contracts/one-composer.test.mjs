@@ -349,8 +349,7 @@ test('1440: the docked conversation has one surface, a pane-height header and it
   })()`);
   assert.equal(seen.header, seen.body, 'the header and the body are on one surface');
   assert.equal(seen.headerHeight, seen.bar, 'the header is as tall as the pane headers');
-  assert.ok(seen.names.every(name => !/close|dock|full/.test(name)), `the header keeps History and the Library: no Close, split or full screen (${seen.names})`);
-  assert.ok(!seen.names.includes('agent-layer-close'), 'Close is the controller\'s chevron, not a header button');
+  assert.deepEqual(seen.names, ['history-open', 'agent-layer-library', 'agent-layer-undock', 'agent-layer-close'], 'the docked header is the title, History, Library, then undock and collapse (no strip on a docked column)');
   assert.equal(seen.divider, false, 'no divider before Close');
   assert.equal(new Set(seen.size).size, 1, `the icon buttons share one size (${seen.size})`);
 });
@@ -379,7 +378,8 @@ test('1440: the controller straddles the top of the bar in every state, rests as
   await browser.until('the bar', `!!document.querySelector('[data-testid=composer-controller]')`);
   const onTop = async step => { const [a, f] = [await strip(), await frameTop()]; assert.ok(Math.abs(a.midY - (f.trayTop !== null && step.includes('tray') ? f.trayTop : f.box)) <= 1.5, `${step}: the strip's middle ${a.midY} is on the frame's top ${f.trayTop ?? f.box}`); return a; };
   let a = await onTop('empty bar');
-  assert.deepEqual(a.actions, ['chevron'], 'at rest the bar offers the chevron');
+  assert.deepEqual(a.actions, ['chevron', 'full'], 'the collapsed bar: the chevron, and full screen opening to its right');
+  assert.equal(a.moreOpacity, '0', 'at rest only the chevron shows');
   const f0 = await frameTop(), group = await rect('[data-testid=composer] [data-slot=input-group]');
   assert.ok(Math.abs(group.y + group.h / 2 - (f0.box + f0.boxHeight / 2)) <= 1, 'the row midline is the outer frame midline');
   assert.ok(Math.abs(a.midX - f0.boxMid) <= 1, 'the strip is in the middle of the bar');
@@ -420,13 +420,13 @@ test('1440: the controller straddles the top of the bar in every state, rests as
   await browser.until('back to the tray', `!document.querySelector('[data-testid=agent-full]') && !!document.querySelector('[data-testid=agent-tray-dock]')`); await wait(500);
   await click('[data-testid=agent-tray-dock]');
   await browser.until('docked', `!!document.querySelector('[data-testid=agent-layer-undock]')`); await wait(500);
-  a = await strip();
-  assert.deepEqual(a.actions, ['chevron', 'undock'], 'docked: collapse and undock');
+  assert.equal(await strip(), null, 'docked: no strip on the bottom composer');
+  assert.deepEqual(await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer-header] button')].filter(e => e.getClientRects().length).map(e => e.dataset.testid)`).then(list => list.filter(id => /undock|close/.test(id))), ['agent-layer-undock', 'agent-layer-close'], 'docked: the column header has undock then collapse');
   await click('[data-testid=agent-layer-undock]');
   await browser.until('back to the tray', `!!document.querySelector('[data-testid=agent-tray]')`);
   await click('[data-testid=agent-tray-reduce]');
   await browser.until('folded again', `!document.querySelector('[data-testid=agent-tray]')`);
-  a = await strip(); assert.deepEqual(a.actions, ['chevron'], 'folded again: the chevron alone');
+  a = await strip(); assert.deepEqual(a.actions, ['chevron', 'full'], 'folded again: the chevron and full screen');
   assert.ok(before.w > 0);
 });
 

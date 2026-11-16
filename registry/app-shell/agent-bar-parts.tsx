@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, FileTextIcon, Loader2Icon, MicIcon, MaximizeIcon, PanelBottomIcon, PanelRightIcon, SquareIcon, XIcon } from '../_shared/icons';
+import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, FileTextIcon, Loader2Icon, MicIcon, MaximizeIcon, PanelRightIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
@@ -144,17 +144,15 @@ function useControllerActions(): readonly ControllerAction[] {
       ...(layer.snap === 'half' ? [more(() => layer.setSnap('full'))] : [])];
   }
   if (layer.trayOpen && layer.size === 'full') return [{ id: 'chevron', testId: 'agent-full-back', label: text.exitFullScreen, icon: down, expanded: true, primary: true, onSelect: () => layer.setSize('grown') }];
-  if (layer.dockOpen) return [
-    { id: 'chevron', testId: 'agent-layer-close', label: text.collapse, icon: down, expanded: true, primary: true, onSelect: () => { layer.close(); focusField(); } },
-    { id: 'undock', testId: 'agent-layer-undock', label: text.undock, icon: <PanelBottomIcon aria-hidden="true" />, on: true, onSelect: () => { layer.setMode('tray'); focusField(); } },
-  ];
+  if (layer.dockOpen) return [];
   if (layer.trayOpen) return [
     { id: 'chevron', testId: 'agent-tray-reduce', label: text.collapse, icon: down, expanded: true, primary: true, onSelect: () => { layer.close(); focusField(); } },
     ...(layer.size === 'open' ? [more(() => layer.setSize('grown'))] : []),
     { id: 'split', testId: 'agent-tray-dock', label: layer.side === 'left' ? text.dockLeft : text.dockRight, icon: <PanelRightIcon aria-hidden="true" />, onSelect: layer.moveToDock },
     full,
   ];
-  return [{ id: 'chevron', testId: 'agent-bar-conversation', label: text.conversation, icon: up, expanded: false, primary: true, onSelect: () => layer.open('agent') }];
+  return [{ id: 'chevron', testId: 'agent-bar-conversation', label: text.conversation, icon: up, expanded: false, primary: true, onSelect: () => layer.open('agent') },
+    { ...full, onSelect: () => { layer.open('agent'); layer.setSize('full'); } }];
 }
 
 /**
@@ -169,6 +167,7 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
   const [box, setBox] = useState<HTMLElement | null>(null);
   const overlay = layer.trayOpen && !layer.anchored;
   const [first, ...rest] = actions;
+  if (!first) return null;
   const button = (action: ControllerAction, dot = false) => <Button key={action.id} type="button" variant="ghost" size="icon-sm" data-testid={action.testId} data-action={action.id} aria-label={action.label} title={action.label}
     {...(action.expanded !== undefined ? { 'aria-expanded': action.expanded } : {})} {...(action.on ? { 'aria-pressed': true } : {})} onClick={action.onSelect}>
     {action.icon}
@@ -177,8 +176,8 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
   // The chevron is the anchor: centred on the frame line and never moved. The other actions open to its right (hover or focus within; always on a touch screen), so the pointer stays on the default.
   const strip = <span data-testid="composer-controller" style={box && overlay ? { top: 'calc(0px - var(--app-shell-bar-tray-size))' } : undefined}
     className="group/ctl absolute top-0 left-1/2 z-30 flex -translate-x-1/2 -translate-y-1/2 items-center text-muted-foreground hover:text-foreground focus-within:text-foreground">
-    <span className="relative inline-flex rounded-(--radius-3xl) bg-card ring-1 ring-border/55">{first && button(first, true)}</span>
-    {rest.length > 0 && <span data-testid="composer-controller-more" className="absolute top-0 left-full flex h-full items-center overflow-hidden rounded-(--radius-3xl) bg-card ring-1 ring-border/55 max-w-0 opacity-0 transition-[max-width,opacity] duration-(--duration-fast) group-hover/ctl:max-w-32 group-hover/ctl:opacity-100 group-has-[:focus-visible]/ctl:max-w-32 group-has-[:focus-visible]/ctl:opacity-100 motion-reduce:transition-none pointer-coarse:max-w-32 pointer-coarse:opacity-100">{rest.map(action => button(action))}</span>}
+    <span className="relative inline-flex rounded-(--radius-3xl) bg-card ring-4 ring-card shadow-[0_0_0_5px_color-mix(in_srgb,var(--border)_70%,transparent)]">{first && button(first, true)}</span>
+    {rest.length > 0 && <span data-testid="composer-controller-more" className="absolute top-0 left-full flex h-full items-center overflow-hidden rounded-(--radius-3xl) bg-card ring-4 ring-card shadow-[0_0_0_5px_color-mix(in_srgb,var(--border)_70%,transparent)] divide-x divide-border/70 max-w-0 opacity-0 transition-[max-width,opacity] duration-(--duration-fast) group-hover/ctl:max-w-32 group-hover/ctl:opacity-100 group-has-[:focus-visible]/ctl:max-w-32 group-has-[:focus-visible]/ctl:opacity-100 motion-reduce:transition-none pointer-coarse:max-w-32 pointer-coarse:opacity-100">{rest.map(action => button(action))}</span>}
   </span>;
   return <>
     <span ref={node => setBox(node?.closest<HTMLElement>('[data-one-composer]') ?? null)} hidden />

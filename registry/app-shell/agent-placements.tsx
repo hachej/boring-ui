@@ -4,7 +4,7 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactElement, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDownIcon, ChevronUpIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, XIcon } from '../_shared/icons';
+import { ChevronDownIcon, ChevronUpIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -78,7 +78,10 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   const act = (run: () => void) => () => { restoreFocusRef.current = true; run(); };
   const control = (id: string, label: string, Icon: ComponentType<{ className?: string }>, run: () => void) =>
     <Button variant="ghost" size="icon" key={id} data-testid={`agent-layer-${id}`} data-dock-control="" aria-label={label} title={label} onClick={act(run)}><Icon data-icon="inline-start" aria-hidden="true" /></Button>;
-  const controls = layer.bar ? null : <>
+  const controls = layer.bar ? <>
+    <Button variant="ghost" size="icon" data-testid="agent-layer-undock" aria-label={text.undock} title={text.undock} aria-pressed onClick={() => { layer.setMode('tray'); requestAnimationFrame(() => layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true })); }}><PanelBottomIcon data-icon="inline-start" aria-hidden="true" /></Button>
+    <Button variant="ghost" size="icon" data-testid="agent-layer-close" aria-label={text.collapse} title={text.collapse} onClick={layer.close}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button>
+  </> : <>
     {!floating && control('float', text.float, PictureInPicture2Icon, () => api.float())}
     {(floating || side === 'right') && control('dock-left', text.dockLeft, PanelLeftIcon, () => { layer.setSide('left'); api.dock(); })}
     {(floating || side === 'left') && control('dock-right', text.dockRight, PanelRightIcon, () => { layer.setSide('right'); api.dock(); })}
