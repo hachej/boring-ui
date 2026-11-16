@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Harness, createRegistry } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
-import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
+import { createFolderEnv } from '@hachej/boring-execution/folder';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { defineAgent } from '@hachej/boring-agent/agents';
@@ -38,7 +38,7 @@ export async function startWorkspaceApp({ directory, port = 0, token = randomUUI
   const person = { scopeId: 'fictional-team', principalId: 'fictional-person', initiatorId: 'fictional-person' };
   const agentAccess = { ...person, principalId: 'fictional-agent' };
   // One workspace: a directory, one provider over it (viewers, `present`, history) and the guard in front of Pi's file tools.
-  const root = join(directory, 'workspace'), env = new NodeExecutionEnv({ cwd: root });
+  const root = join(directory, 'workspace'), env = createFolderEnv({ cwd: root });
   const db = openNodeConnection(join(directory, 'workspace.sqlite'));
   const files = createWorkspaceProvider({ identity: { providerId: 'workspace', instanceId: 'app', incarnation: 'app', viewId: 'published' }, fs: env, journal: createWorkspaceJournal(db) });
   const agent = defineAgent({ id: 'writer', model: { provider: 'openai', modelId: 'gpt-5-mini' }, instructions: 'You write short fictional documents for the person. Be brief.',

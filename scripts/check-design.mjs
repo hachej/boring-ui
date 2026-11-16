@@ -36,6 +36,8 @@ export function checkDesign(root = designRoot, { config = readDesignConfig(root)
   for (const folder of ['registry', 'packages/ui/src', 'packages/ui/styles']) if (existsSync(resolve(root, folder))) walkProject(root, folder, (entry, file) => {
     if (entry.isSymbolicLink()) { errors.push(`Design source symlink: ${file}`); return false; }
     if (entry.isDirectory() || !/\.(?:tsx?|jsx?|mjs|css|json|md)$/.test(file)) return;
+    // Vendored third-party library source (scripts/vendor-offline-lib.mjs), not the kit's own markup or styles.
+    if (file.startsWith('packages/ui/src/offline-libs/')) return;
     files++;
     const text = readFileSync(resolve(root, file), 'utf8');
     // Documentation contains syntax examples, not shipped classes. Still report obsolete style support.

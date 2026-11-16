@@ -1,6 +1,6 @@
 {
  "target": "component:file-preview",
- "title": "The file preview",
+ "title": "File preview",
  "summary": "The file viewer: a note, a CSV as text or a table, and a text file, with a close button.",
  "purpose": "The kit's file viewer, two hosts, one scenario. `bare` (390, 1440): FileViewer of pi-app with the default kinds, alone on a neutral page over a fake in-memory resource client. `pane` (390-pane, 1440-pane): the same files opened in the right pane of AppShell composer=\"bar\" (`agent.files`, LocalFileViewer, the pane's back stack and its previous and next). Invented French files: a Markdown note, a CSV of gaps and a text file.",
  "fixture": {

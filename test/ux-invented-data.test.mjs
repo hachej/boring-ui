@@ -71,9 +71,7 @@ test('a site generated from a synthetic capture holds invented data only', async
   const html = files(out).filter(f => /\.(html|css)$/.test(f));
   assert.ok(html.some(f => f.endsWith(join(name, 'index.html'))));
   const page = readFileSync(join(out, name, 'index.html'), 'utf8');
-  assert.match(page, /Reply|First visible change after 80 ms/);
-  assert.match(page, /Not in the kit yet:<\/span> No swipe yet/);
-  assert.match(page, /npx shadcn@4\.23\.0 add card/);
+  assert.match(page, /id="demo"/, 'a demo page is the top bar over the frame');
   assert.doesNotMatch(page, /verdict|grade|scoreboard/i);
   assert.deepEqual(scan(html), []);
 });

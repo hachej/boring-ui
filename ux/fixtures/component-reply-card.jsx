@@ -56,7 +56,7 @@ function Inline() {
 }
 
 const App = () => <main className="flex min-h-dvh items-center justify-center bg-muted/30 p-4 sm:p-8">
-  {Q === 'inline' ? <Inline /> : <div data-testid="surface" className="flex h-[30rem] w-full max-w-xl flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+  {Q === 'inline' ? <Inline /> : <div data-testid="surface" className="flex h-120 w-full max-w-xl flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
     <PiChat controller={controller} locale="en" header={false} showHistory={false} renderText={markdownText} cards={cards} actions={actions} fileChanges onOpenFile={path => { window.__opened.push(path); }}
       renderComposer={() => null} />
   </div>}

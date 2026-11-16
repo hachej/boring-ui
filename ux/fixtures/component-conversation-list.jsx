@@ -36,9 +36,9 @@ function App() {
   }), [items, active]);
   return <ChatTextProvider value={chatTextFor('en')}>
     <main className="flex min-h-dvh items-center justify-center bg-muted/30 p-4 sm:p-8">
-      <div data-testid="surface" className="relative flex h-[34rem] w-full max-w-xl flex-col rounded-xl border bg-background p-4 shadow-sm">
+      <div data-testid="surface" className="relative flex h-136 w-full max-w-xl flex-col rounded-xl border bg-background p-4 shadow-sm">
         <div className="flex items-center justify-between gap-2"><h1 className="m-0 text-base font-semibold">Assistant · Harbor Studio (fictional)</h1>
-          <Button variant="outline" data-testid="history-open" className="min-h-11" onClick={() => setOpen(true)}>History</Button></div>
+          <Button variant="outline" data-testid="history-open" onClick={() => setOpen(true)}>History</Button></div>
         <p className="mt-4 text-sm text-muted-foreground">Open conversation: <span data-testid="active-title">{items.find(item => item.id === active)?.title ?? 'none'}</span></p>
         {open && <ConversationHistory conversations={conversations} onClose={() => setOpen(false)} />}
       </div>

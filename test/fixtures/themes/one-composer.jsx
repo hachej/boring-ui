@@ -8,7 +8,7 @@ import { SlashPicker } from '../../../registry/pi-chat-slash/slash-menu.tsx';
 import { createScriptedAgent } from '../../../ux/fixtures/scripted-agent.mjs';
 import script from '../../../ux/scenarios/scripts/bar.json';
 import { FileTextIcon, FolderIcon, SparklesIcon } from '../../../registry/_shared/icons';
-import { CONVERSATIONS, DEMO, demoLibrary, fileView, recordView, useDemoConversations } from './one-composer-demo.jsx';
+import { CONVERSATIONS, DEMO, demoLibrary, fileView, recordView, Table, useDemoConversations } from './one-composer-demo.jsx';
 import { demoFiles } from './one-composer-files.js';
 
 // D-2198: the real AppShell with `composer="bar"` (the one composer) in French, over a fake controller with fictional bookkeeping text.
@@ -110,7 +110,7 @@ const actions = {
   },
 };
 window.__library = 0;
-const onOpenFile = path => DEMO ? window.__layer.preview(fileView(path)) : window.__layer.preview({ title: path.split('/').at(-1), content: (DEMO || params.get('page') === 'real') ? <div data-testid="fixture-preview" className="flex flex-col gap-3 p-4 text-sm"><p className="font-medium">{path.split('/').at(-1)}</p><table className="w-full border-collapse text-left"><thead><tr className="border-b text-xs text-muted-foreground"><th className="py-1">Date</th><th>Libellé</th><th className="text-right">Écart</th></tr></thead><tbody><tr className="border-b"><td className="py-2">09/01</td><td>Carte Garage du Port</td><td className="text-right tabular-nums">12,00 €</td></tr><tr><td className="py-2">15/01</td><td>Carte Restaurant Le Cèdre</td><td className="text-right tabular-nums">−12,00 €</td></tr></tbody></table><p className="text-muted-foreground">Deux écarts à justifier avant la clôture.</p></div> : <div data-testid="fixture-preview" className="p-4 text-sm">{T('Aperçu fictif de', 'Fictional preview of')} {path}{T(' : deux écarts de 12,00 €.', ': two discrepancies of $12.00.')}</div> });
+const onOpenFile = path => DEMO ? window.__layer.preview(fileView(path)) : window.__layer.preview({ title: path.split('/').at(-1), content: (DEMO || params.get('page') === 'real') ? <div data-testid="fixture-preview" className="flex flex-col gap-3 p-4 text-sm"><p className="font-medium">{path.split('/').at(-1)}</p><Table head={['Date', 'Libellé', 'Écart']} rows={[['09/01', 'Carte Garage du Port', '12,00 €'], ['15/01', 'Carte Restaurant Le Cèdre', '−12,00 €']]} /><p className="text-muted-foreground">Deux écarts à justifier avant la clôture.</p></div> : <div data-testid="fixture-preview" className="p-4 text-sm">{T('Aperçu fictif de', 'Fictional preview of')} {path}{T(' : deux écarts de 12,00 €.', ': two discrepancies of $12.00.')}</div> });
 window.__openFile = KIT ? path => window.__layer.pane.push({ file: path }) : onOpenFile;
 window.__presented = [];
 const Icon = ({ className }) => <svg className={className} width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="currentColor" /></svg>;
@@ -140,7 +140,7 @@ const openRecord = line => window.__layer.preview(recordView(line, () => quote(l
 const RealPage = () => <div data-testid="page" className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6">
   <Probe />
   <div className="flex flex-wrap items-baseline justify-between gap-2"><div><h1 className="text-lg font-semibold">{T('Rapprochement bancaire', 'Bank reconciliation')}</h1><p className="text-sm text-muted-foreground">{T('Janvier 2026 · Atelier Brun (fictif)', 'January 2026 · Harbor Studio (fictional)')}</p></div>
-    <button type="button" className="h-9 rounded-md border px-3 text-sm">{T('Exporter', 'Export')}</button></div>
+    <Button variant="outline">{T('Exporter', 'Export')}</Button></div>
   <div className="grid grid-cols-3 gap-3">{[[T('Rapprochées', 'Reconciled'), '13 / 16'], [T('Écarts', 'Gaps'), '2'], [T('Solde banque', 'Bank balance'), T('8 412,10 €', '$8,412.10')]].map(([label, value]) => <div key={label} className="rounded-lg border bg-card p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-base font-semibold md:text-xl">{value}</p></div>)}</div>
   <div className="flex gap-2 text-sm">{T(['Toutes', 'Écarts', 'À justifier'], ['All', 'Gaps', 'Needs a receipt']).map((tab, i) => <span key={tab} className={`rounded-full border px-3 py-1 ${i === 0 ? 'bg-foreground text-background' : ''}`}>{tab}</span>)}</div>
   <div className="shrink-0 overflow-hidden rounded-lg border bg-card">{LINES.map(([date, label, amount, status]) => <div key={date + label} role="row" data-testid="page-row" {...(DEMO ? { onClick: () => openRecord([date, label, amount, status]) } : {})} className={`flex items-center gap-3 border-b text-sm last:border-b-0 ${DEMO ? 'cursor-pointer px-3 md:py-1 hover:bg-muted/50' : 'p-3'}`}>
@@ -156,14 +156,14 @@ const nav = [{ id: 'dossier', label: T('Dossier', 'File'), icon: DEMO ? FileText
   // `?tabs=1`: a second screen, so a phone shows its bottom tabs (AC-20).
   ...(params.get('tabs') === '1' ? [{ id: 'pieces', label: T('Pièces', 'Documents'), icon: DEMO ? FolderIcon : Icon, render: () => <Screen /> }] : [])];
 // `?camera=1`: an app that gives the phone camera sheet (`attachments.Camera`).
-const FakeCamera = ({ onClose }) => <div role="dialog" aria-label="Camera" data-testid="fixture-camera"><button type="button" onClick={onClose}>Close</button></div>;
+const FakeCamera = ({ onClose }) => <div role="dialog" aria-label="Camera" data-testid="fixture-camera"><Button type="button" onClick={onClose}>Close</Button></div>;
 const attachments = { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })), ...(params.get('camera') === '1' ? { Camera: FakeCamera } : {}) };
 const slash = { Picker: SlashPicker, commands: [{ name: T('relance', 'reminder'), description: T('Rédiger une relance fictive.', 'Draft a fictional reminder.'), run: api => api.setText(T('Relance du dossier Cèdre', 'Reminder for the Harbor file')) }], skills: [] };
 if (DEMO) slash.commands.push({ name: 'reconcile', description: 'Reconcile the month’s statement.', run: api => api.setText('Reconcile the January statement') }, { name: 'summarize', description: 'Summarize the discrepancies.', run: api => api.setText('Summarize the January discrepancies') });
 const FILES = EN ? ['uploads/statement-january.pdf', 'uploads/discrepancies-january.csv', 'uploads/statement-february.pdf'] : ['uploads/releve-janvier.pdf', 'uploads/ecarts-janvier.csv', 'uploads/releve-fevrier.pdf'];
 // The app's navigator for « Bibliothèque » (an app would pass the kit's FileTreeView here); a pick opens the file in the same pane.
 const library = onPicked => <ul data-testid="fixture-library" className="m-0 flex list-none flex-col gap-1 p-2">{FILES.map(path => <li key={path}>
-  <button type="button" data-testid="fixture-library-file" data-path={path} className="w-full rounded-md p-2 text-left text-sm hover:bg-accent" onClick={() => { window.__library += 1; onOpenFile(path); onPicked(); }}>{path.split('/').at(-1)}</button></li>)}</ul>;
+  <Button type="button" variant="ghost" data-testid="fixture-library-file" data-path={path} className="w-full justify-start" onClick={() => { window.__library += 1; onOpenFile(path); onPicked(); }}>{path.split('/').at(-1)}</Button></li>)}</ul>;
 // K-3, K-4, K-5 (kit 0.4.85): the app's action on the reply card, its words while the agent works, and a whole set of words in « tu ».
 window.__undone = 0;
 const TU = { conversation: 'Ton fil', dictate: 'Dicte', listening: 'Je t’écoute…', releaseToSend: 'Relâche et j’envoie', answerHere: 'Ou réponds ici', sendFailed: 'Ton message n’est pas parti : il est revenu dans le champ.',

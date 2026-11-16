@@ -65,7 +65,7 @@ function App() {
     return () => { gone = true; void owned?.dispose(); void remote?.close(); };
   }, []);
   return <main className="flex min-h-dvh items-center justify-center bg-muted/30 p-4 sm:p-8">
-    <div data-testid="surface" className="flex h-[26rem] w-full max-w-xl flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+    <div data-testid="surface" className="flex h-104 w-full max-w-xl flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
       {controller ? <PiChat controller={controller} locale="en" header={false} showHistory={false} emptyState={<div />} emptyLayout="docked" composerLayout="pill" renderText={markdownText} labels={{ placeholder: 'Write a message' }} /> : <p className="m-4 text-sm text-muted-foreground">Connecting…</p>}
     </div>
   </main>;

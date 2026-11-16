@@ -6,8 +6,7 @@ import { ExecutionError, FileError, err, ok } from '@earendil-works/pi-durable/e
 import type { ExecutionEnv, FileInfo, Result, ShellExecOptions, ShellExecResult } from '@earendil-works/pi-durable/env';
 import { boundedMessage } from './bounded-error.js';
 import { shellCommand } from './fs-readers.js';
-import { createNoFollowFileSystem } from './no-follow-fs.js';
-import type { NoFollowWatchTarget } from './no-follow-fs.js';
+import { createMountedFiles } from './mounted-files.js';
 
 /** What the adapter sends: the host's own `BedrockAgentCoreClient` (it owns region, credentials and retries). */
 export type CodeInterpreterClient = Pick<BedrockAgentCoreClient, 'send'>;
@@ -308,87 +307,21 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
     }
   }
 
-  // ---- Files: interpreter paths mapped onto this host's mount of the same folder, confined to it.
-  // Code in the interpreter writes the same folder, so a check then an open by path would race a swapped symbolic link:
-  // every file operation walks the folder by directory fds instead (D-2087), the watcher included.
-  const namespace = (path: string): string => posix.resolve(env.cwd, path);
-  const toLocal = (path: string): string | undefined => {
-    const absolute = namespace(path);
-    return within(absolute, mountPath) ? posix.join(root, absolute.slice(mountPath.length)) : undefined;
-  };
-  const fromLocal = (path: string, base = root): string => within(path, base) ? posix.join(mountPath, path.slice(base.length)) : mountPath;
-  const outside = (path: string): FileError => new FileError('permission_denied', boundedMessage(`Outside the workspace: ${namespace(path)}`), namespace(path));
-  const files = createNoFollowFileSystem({ root, outside: path => outside(fromLocal(path)) });
-  const mapError = (error: FileError): FileError => new FileError(error.code, boundedMessage(error.message.split(root).join(mountPath)),
-    error.path !== undefined && within(error.path, root) ? fromLocal(error.path) : error.path, error);
-  const mapInfo = (info: FileInfo): FileInfo => ({ ...info, path: fromLocal(info.path) });
-  async function guarded<T>(paths: readonly string[], run: (...locals: string[]) => Promise<Result<T, FileError>>): Promise<Result<T, FileError>> {
-    const locals: string[] = [];
-    for (const path of paths) {
-      const mapped = toLocal(path);
-      if (mapped === undefined) return err(outside(path));
-      locals.push(mapped);
-    }
-    let result: Result<T, FileError>;
-    try { result = await run(...locals); } catch (error) { return err(new FileError('unknown', errorText(error), namespace(paths[0] ?? '.'))); }
-    return result.ok ? result : err(mapError(result.error));
-  }
+  // ---- Files: interpreter paths mapped onto this host's mount of the same folder, confined to it. Code in the interpreter writes
+  // the same folder, so every operation walks it by directory fds, never by a checked path (D-2087); see `mounted-files.ts`.
+  const mounted = createMountedFiles({ root, mountPath, cwd: () => env.cwd });
   const notSupported = (what: string): Result<string, FileError> => err(new FileError('not_supported', `${what} is not available on the shared workspace mount`));
 
   const env: ExecutionEnv = {
     id: options.id,
     cwd,
-    absolutePath: async path => ok(namespace(path)),
-    joinPath: async parts => ok(posix.join(...parts)),
-    readTextFile: (path, context) => guarded([path], file => files.readTextFile(file, context)),
-    readBinaryFile: (path, context) => guarded([path], file => files.readBinaryFile(file, context)),
-    readTextLines: (path, lines, context) => guarded([path], file => files.readTextLines(file, lines, context)),
-    openTextLineReader: (path, context) => guarded([path], file => files.openTextLineReader(file, context)),
-    openBinaryReader: (path, readerOptions, context) => guarded([path], file => files.openBinaryReader(file, readerOptions, context)),
-    // The reader's entries carry host paths; map them into the workspace namespace like `listDir`.
-    openDirReader: async (path, context) => {
-      const opened = await guarded([path], directory => files.openDirReader(directory, context));
-      if (!opened.ok) return opened;
-      const reader = opened.value;
-      return ok({
-        next: async (maxEntries, readContext) => {
-          const page = await reader.next(maxEntries, readContext);
-          return page.ok ? ok({ ...page.value, entries: page.value.entries.map(mapInfo) }) : err(mapError(page.error));
-        },
-        close: readContext => reader.close(readContext),
-      });
-    },
-    // Watched through the same walk (directory fds, never a path), with its paths reported in the workspace's namespace.
-    watch: async (targets, onChange, context) => {
-      const mapped: NoFollowWatchTarget[] = [];
-      for (const target of targets) {
-        const local = toLocal(target.path);
-        if (local === undefined) return err(outside(target.path));
-        mapped.push({ local, recursive: target.recursive === true, hidden: target.exclude?.hidden === true, names: new Set(target.exclude?.names ?? []) });
-      }
-      const watcher = await files.watch(mapped, change => onChange(change.kind === 'paths' ? { kind: 'paths', paths: change.paths.map(path => fromLocal(path)) } : change.kind === 'failed' ? { kind: 'failed', error: mapError(change.error) } : change), context);
-      return watcher.ok ? ok({ mode: watcher.value.mode, stop: stopContext => watcher.value.stop(stopContext) }) : err(mapError(watcher.error));
-    },
-    writeFile: (path, content, context) => guarded([path], file => files.writeFile(file, content, context)),
-    appendFile: (path, content, context) => guarded([path], file => files.appendFile(file, content, context)),
-    truncateFile: (path, size, context) => guarded([path], file => files.truncateFile(file, size, context)),
-    flushFile: (path, context) => guarded([path], file => files.flushFile(file, context)),
-    renameFile: (source, destination, context) => guarded([source, destination], (from, to) => files.renameFile(from!, to!, context)),
-    fileInfo: async (path, context) => { const info = await guarded([path], file => files.fileInfo(file, context)); return info.ok ? ok(mapInfo(info.value)) : info; },
-    listDir: async (path, context) => { const list = await guarded([path], directory => files.listDir(directory, context)); return list.ok ? ok(list.value.map(mapInfo)) : list; },
-    canonicalPath: async (path, context) => {
-      const resolved = await guarded([path], file => files.canonicalPath(file, context));
-      return resolved.ok ? ok(fromLocal(resolved.value)) : resolved;
-    },
-    exists: (path, context) => guarded([path], file => files.exists(file, context)),
-    createDir: (path, directory, context) => guarded([path], file => files.createDir(file, directory, context)),
-    remove: (path, removal, context) => guarded([path], file => files.remove(file, removal, context)),
+    ...mounted.files,
     // A temporary file on this host would not be visible to the interpreter, and one in the folder would show in the workspace.
     createTempDir: async () => notSupported('createTempDir'),
     createTempFile: async () => notSupported('createTempFile'),
     // Releasing a consumer's view never ends the session: only the owner's stop() does. It closes the folder's fd once no
     // operation uses it (a later operation opens it again).
-    cleanup: async () => { await files.close(); },
+    cleanup: async () => { await mounted.close(); },
     exec,
   };
 
@@ -402,7 +335,7 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
       return true;
     },
     stop: async context => {
-      await files.close();
+      await mounted.close();
       if (!start) return;
       stopped = true;
       await Promise.allSettled([starting]); // a start in flight still registers its session

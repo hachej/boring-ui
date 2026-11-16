@@ -63,7 +63,7 @@ Other placements use the same server:
 Copy [references/server.md](references/server.md) to `server.mjs`. In order, it:
 
 1. Creates models: `createModels()` from `@earendil-works/pi-ai/models`, then `models.setProvider(openaiProvider())` (reads `OPENAI_API_KEY`).
-2. Opens one workspace: `NodeExecutionEnv` over a directory, `openNodeConnection` + `createWorkspaceJournal`, then **one** `createWorkspaceProvider({ identity, fs: env, journal })`.
+2. Opens one workspace: `createFolderEnv` (`@hachej/boring-execution/folder`: Pi's `NodeExecutionEnv` with no-follow file access) over a directory, `openNodeConnection` + `createWorkspaceJournal`, then **one** `createWorkspaceProvider({ identity, fs: env, journal })`.
 3. Defines the agent: `defineAgent({ id, model, instructions, tools: [createPresentTool({ workspace })], extensions: [fileTools, createFileGuard({ workspace })] })`. `fileTools` is Pi's own `createReadTool`, `createWriteTool` and `createEditTool` in one `defineExtension`; the guard routes them through the provider.
 4. Opens the Harness: `agent.install(registry)`, `Harness.open(storage, { registry, models, env: () => env }, context)`, `createConversations({ harness, context })`, `harness.resume()`.
 5. Serves the routes, each behind `authenticate`/`resolve`:

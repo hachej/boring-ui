@@ -252,8 +252,8 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
 
 /** The back control: « ← <what is under> », or « ← Assistant » over the docked conversation. */
 function BackButton({ title, text, onBack, testId }: { readonly title: string; readonly text: AppShellText; readonly onBack: () => void; readonly testId: string }) {
-  return <Button variant="ghost" size="sm" data-testid={testId} aria-label={`${text.backTo} ${title}`} title={`${text.backTo} ${title}`} onClick={onBack} className="max-w-48 min-w-0 shrink">
-    <ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /><span className="truncate">{title}</span></Button>;
+  return <Button variant="ghost" size="icon-sm" data-testid={testId} aria-label={`${text.backTo} ${title}`} title={`${text.backTo} ${title}`} onClick={onBack}>
+    <ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>;
 }
 
 /** Previous and next through the top file's set, with its position (« 2 / 5 »): the same buttons as the chat's image viewer. */
@@ -329,7 +329,7 @@ function EntryView({ entry, below, top, placement, assistant }: { readonly entry
     </>;
   }
   return <ViewerFrame title={entry.title} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} {...(library ? { actions: library } : {})} onClose={layer.pane.close}>
-    {entry.kind === 'file' ? null : <div data-testid={entry.kind === 'library' ? `${id}-library-list` : `${id}-content`} className="flex min-h-0 flex-1 flex-col overflow-auto">{entry.content}</div>}
+    {entry.kind === 'file' ? null : <div data-testid={entry.kind === 'library' ? `${id}-library-list` : `${id}-content`} className="flex min-h-0 flex-1 flex-col overflow-auto text-sm [:where(&_*)]:border-border">{entry.content}</div>}
   </ViewerFrame>;
 }
 
