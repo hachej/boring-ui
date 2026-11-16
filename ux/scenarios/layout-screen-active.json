@@ -1,6 +1,7 @@
 {
  "target": "layout:screen-active",
  "title": "Active screen",
+ "site": false,
  "summary": "The shell keeps every screen mounted; useScreenActive() tells each one whether it is the screen on show.",
  "try": [{"label": "Switch screens", "flow": "A1"}],
  "purpose": "AppShell layout=\"screen\" with two screens that each print what useScreenActive() returns: shown on the screen on show (the first one when the address has no hash), hidden on the other, swapped by a nav choice or a deep link.",
