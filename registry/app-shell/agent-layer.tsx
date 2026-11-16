@@ -28,7 +28,7 @@ import { AgentContextProvider } from './agent-context';
 import type { ShellPanel } from './shell-panel';
 import { barReserve } from './bar-reserve';
 import { LayerContext, PEEK_BAR_REM, PEEK_REM, SIDE_KEY, TOGETHER_QUERY, Z, useInternal } from './layer-context';
-import type { AgentComposer, AgentLayerApi, AgentLayerState, AgentMode, AgentPreview, AgentSpec, DockSide, Internal, Snap, Which } from './layer-context';
+import type { AgentComposer, AgentLayerApi, AgentLayerState, AgentMode, AgentPreview, AgentSpec, ConversationSize, DockSide, Internal, Snap, Which } from './layer-context';
 import { Chats } from './agent-chats';
 import { usePane } from './agent-pane';
 export { AgentTrigger } from './agent-trigger';
@@ -105,7 +105,9 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const [columnSlot, setComposerSlot] = useState<HTMLElement | null>(null);
   // The app's own column (`AgentComposerAnchor`) takes the field and the tray from the full-width slot while it is mounted.
   const [anchor, setAnchor] = useState<{ readonly tray: HTMLElement; readonly field: HTMLElement; readonly card: HTMLElement } | null>(null);
-  const composerSlot = anchor?.field ?? columnSlot;
+  // The full screen (wide) brings its own field slot; the one composer is drawn there while it is on show.
+  const [fullField, setFullField] = useState<HTMLElement | null>(null);
+  const composerSlot = fullField ?? anchor?.field ?? columnSlot;
   const [dropZone, setDropZone] = useState<HTMLElement | null>(null);
   const composerSlotRef = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => { composerSlotRef.current = composerSlot; }, [composerSlot]);
@@ -127,7 +129,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   useLayoutEffect(() => { try { const saved = globalThis.localStorage?.getItem(SIDE_KEY); if (saved === 'left' || saved === 'right') setSideState(saved); } catch { /* a convenience */ } }, []);
   const setSide = useCallback((next: DockSide) => { setSideState(next); try { globalThis.localStorage?.setItem(SIDE_KEY, next); } catch { /* a convenience */ } }, []);
   const [mode, setModeState] = useState<AgentMode>('tray');
-  const [grown, setGrown] = useState(false);
+  const [wideSize, setWideSize] = useState<ConversationSize>('open');
   // The tray-or-dock choice is the viewer's, remembered with the side; read after mount for the same reason.
   // Keyed as the left pane's open choice (D-1919): the same helper and identity (app, person) and a key per layout, so two apps on one origin never share it. Reloaded when the identity changes.
   const modeKey = sidebarKey(modeIdentity?.screen ? 'agent-mode-screen' : 'agent-mode', modeIdentity?.app, modeIdentity?.person);
@@ -353,11 +355,14 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const preview = useCallback((next: AgentPreview | null) => { if (next) return verbs.push(next); if (!bar) return false; verbs.close(); return true; }, [verbs, bar]);
   const paneStacked = bar && expanded && stack.length > 0 && dockOpen && shown === 'agent';
   // eslint-disable-next-line react-hooks/set-state-in-effect -- the tray is gone with the content composer (a phone width, a lost agent): the fill state goes with it
-  useEffect(() => { if (!trayOpen && grown) setGrown(false); }, [trayOpen, grown]);
+  useEffect(() => { if (!trayOpen && wideSize !== 'open') setWideSize('open'); }, [trayOpen, wideSize]);
+  // The phone's drawer is this same state: its full snap is `full`, its half is `open`.
+  const size: ConversationSize = compact ? (snap === 'full' ? 'full' : 'open') : wideSize;
+  const setSize = useCallback((next: ConversationSize) => { if (!specs.current.expanded) setSnap(next === 'full' ? 'full' : 'half'); else setWideSize(next); }, [setSnap]);
   const value = useMemo<Internal>(() => ({
-    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, anchored: anchor !== null, setAnchor, setDropZone, onSent, mode, setMode, moveToDock, registerDock, grown, setGrown, trayOpen, dockOpen,
+    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, anchored: anchor !== null, setAnchor, setDropZone, onSent, mode, setMode, moveToDock, registerDock, size, setSize, setFullField, trayOpen, dockOpen,
     bar, folded, cardSlot, setCardSlot, setPhoneCard, cardPx, setCardPx, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, holdSend,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen, bar, folded, cardSlot, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, cardPx]);
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, size, setSize, setFullField, trayOpen, dockOpen, bar, folded, cardSlot, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, cardPx]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   // `--agent-bar-reserve`: what the bar takes from the bottom of a screen (the phone's peek and its card; see `barReserve`). The shell pads the bottom of each screen with it (a sticky bar inside a screen already sticks above that padding); a host element placed against the screen's box uses it as `bottom`.

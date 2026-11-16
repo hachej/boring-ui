@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, FileTextIcon, Loader2Icon, MicIcon, PanelBottomIcon, PanelRightIcon, SquareIcon, XIcon } from '../_shared/icons';
+import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, FileTextIcon, Loader2Icon, MicIcon, MaximizeIcon, PanelBottomIcon, PanelRightIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
@@ -136,20 +136,23 @@ function useControllerActions(): readonly ControllerAction[] {
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const focusField = () => requestAnimationFrame(() => (layer.host?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]'))?.focus({ preventScroll: true }));
   const up = <ChevronUpIcon aria-hidden="true" />, down = <ChevronDownIcon aria-hidden="true" />;
-  const more = (onSelect: () => void): ControllerAction => ({ id: 'more', testId: 'agent-bar-more', label: text.expand, icon: <ChevronsUpIcon aria-hidden="true" />, onSelect });
+  const more = (onSelect: () => void): ControllerAction => ({ id: 'more', testId: 'agent-tray-grow', label: text.expand, icon: <ChevronsUpIcon aria-hidden="true" />, onSelect });
+  const full: ControllerAction = { id: 'full', testId: 'agent-tray-full', label: text.fullScreen, icon: <MaximizeIcon aria-hidden="true" />, onSelect: () => layer.setSize('full') };
   if (!layer.expanded) {
     const open = layer.snap === 'half' || layer.snap === 'full';
     return [{ id: 'chevron', testId: 'agent-bar-conversation', label: open ? text.collapse : text.conversation, icon: open ? down : up, expanded: open, primary: true, onSelect: () => { if (open) { layer.close(); focusField(); } else layer.open('agent'); } },
       ...(layer.snap === 'half' ? [more(() => layer.setSnap('full'))] : [])];
   }
+  if (layer.trayOpen && layer.size === 'full') return [{ id: 'chevron', testId: 'agent-full-back', label: text.exitFullScreen, icon: down, expanded: true, primary: true, onSelect: () => layer.setSize('grown') }];
   if (layer.dockOpen) return [
     { id: 'chevron', testId: 'agent-layer-close', label: text.collapse, icon: down, expanded: true, primary: true, onSelect: () => { layer.close(); focusField(); } },
     { id: 'undock', testId: 'agent-layer-undock', label: text.undock, icon: <PanelBottomIcon aria-hidden="true" />, on: true, onSelect: () => { layer.setMode('tray'); focusField(); } },
   ];
   if (layer.trayOpen) return [
     { id: 'chevron', testId: 'agent-tray-reduce', label: text.collapse, icon: down, expanded: true, primary: true, onSelect: () => { layer.close(); focusField(); } },
-    ...(layer.grown ? [] : [more(() => layer.setGrown(true))]),
+    ...(layer.size === 'open' ? [more(() => layer.setSize('grown'))] : []),
     { id: 'split', testId: 'agent-tray-dock', label: layer.side === 'left' ? text.dockLeft : text.dockRight, icon: <PanelRightIcon aria-hidden="true" />, onSelect: layer.moveToDock },
+    full,
   ];
   return [{ id: 'chevron', testId: 'agent-bar-conversation', label: text.conversation, icon: up, expanded: false, primary: true, onSelect: () => layer.open('agent') }];
 }

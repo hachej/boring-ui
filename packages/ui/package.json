@@ -100,6 +100,10 @@
       "types": "./dist/html-viewer.d.ts",
       "import": "./dist/html-viewer.js"
     },
+    "./offline-libs": {
+      "types": "./dist/offline-libs.d.ts",
+      "import": "./dist/offline-libs.js"
+    },
     "./drawio-viewer": {
       "types": "./dist/drawio-viewer.d.ts",
       "import": "./dist/drawio-viewer.js"

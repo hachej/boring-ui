@@ -3,7 +3,8 @@
 // The wide placements: the dock (docked or floating), the content column with its tray and anchor, the preview column, and the layer root.
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactElement, ReactNode } from 'react';
-import { ChevronDownIcon, ChevronUpIcon, Maximize2Icon, Minimize2Icon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, XIcon } from '../_shared/icons';
+import { createPortal } from 'react-dom';
+import { ChevronDownIcon, ChevronUpIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -18,7 +19,7 @@ import { useBackLayer } from '../utils/back';
 import { DOCK_KEY, FOLDED_FIELD, LayerContext, MIN_MAIN, PM_COLUMN, TRAY_MAX, useInternal } from './layer-context';
 import type { DockSide } from './layer-context';
 import { OneBox, VoiceProblem } from './agent-bar-parts';
-import { ChatSlot, Header, HeaderHint, HistoryButton, LibraryButton, useTitle } from './agent-chats';
+import { ChatSlot, Header, HistoryButton, LibraryButton, useTitle } from './agent-chats';
 import { CompactSheet } from './agent-compact';
 import { PaneDock, PaneStack } from './agent-pane';
 
@@ -109,9 +110,10 @@ function AgentDock({ side }: { readonly side: DockSide }) {
 }
 /** `composer: 'content'`: the page content, then the field's slot at the bottom; a file dropped anywhere on the column goes to that field. */
 export function ContentColumn({ children }: { readonly children: ReactNode }) {
-  const { setComposerSlot, setDropZone, trayOpen, grown, anchored, setCardSlot, bar: barMode, contentComposer, folded } = useInternal();
+  const { setComposerSlot, setDropZone, trayOpen, size, anchored, setCardSlot, bar: barMode, contentComposer, folded } = useInternal();
   // The box only on a wide screen: on a phone the field lives in the drawer.
   const bar = barMode && contentComposer;
+  const grown = size !== 'open';
   // The page keeps one wrapper whether the tray is open or not, so opening it never remounts the screen; Agrandir only hides it.
   return <div ref={setDropZone} data-testid="agent-content" data-bar-tray={bar && trayOpen && !anchored ? (grown ? 'expanded' : 'open') : undefined} className={cn('relative flex min-h-0 min-w-0 flex-1 flex-col', bar && '@container')}>
     <div data-testid="agent-page" className={cn('flex min-h-0 min-w-0 flex-1 flex-col', trayOpen && grown && !anchored && !bar && 'hidden')}>{children}</div>
@@ -160,7 +162,8 @@ export function AgentComposerAnchor({ className }: { readonly className?: string
 function ContentTray() {
   const layer = useInternal();
   const { text, title } = useTitle();
-  const { grown, setGrown } = layer;
+  const { size, setSize } = layer;
+  const grown = size !== 'open';
   const reduce = useCallback(() => {
     layer.close();
     layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true });
@@ -194,17 +197,14 @@ function ContentTray() {
         <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
         <HistoryButton />
         {layer.bar && <LibraryButton open={layer.openLibrary} text={text} testId="agent-layer-library" />}
-        {boxed ? <>
-          <HeaderHint label={grown ? text.collapse : text.expand}><Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={grown ? text.collapse : text.expand} title={grown ? text.collapse : text.expand} aria-pressed={grown}
-            onClick={() => setGrown(!grown)}>{grown ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <Maximize2Icon className="size-4" aria-hidden="true" />}</Button></HeaderHint>
-        </> : <>
+        {boxed ? null : <>
           <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
-            onClick={() => setGrown(!grown)}>{grown ? <ChevronDownIcon className="size-4" aria-hidden="true" /> : <ChevronUpIcon className="size-4" aria-hidden="true" />}</Button>
+            onClick={() => setSize(grown ? 'open' : 'grown')}>{grown ? <ChevronDownIcon className="size-4" aria-hidden="true" /> : <ChevronUpIcon className="size-4" aria-hidden="true" />}</Button>
           <Button variant="ghost" size="icon" data-testid="agent-tray-reduce" aria-label={text.collapse} title={text.collapse} onClick={reduce}><XIcon className="size-4" aria-hidden="true" /></Button>
         </>}
       </div>
       <VoiceProblem />
-      <ChatSlot />
+      <ChatSlot live={size !== 'full'} />
     </div>
     {boxed && !overlay && <Separator />}
   </section>;
@@ -228,6 +228,67 @@ export function AgentDockLayout({ children }: { readonly children: ReactNode }):
   </DockLayout>;
 }
 
+/**
+ * The conversation over the whole viewport, wide screen (`composer: 'bar'`): the chat's persistent host moves here, to a fixed `inset-0` surface on the body,
+ * so it covers the nav and the right pane. One header (back arrow, title, Close). The page behind is inert and does not scroll; Esc and the back arrow
+ * go to `grown`, focus goes back to the control that opened it. The phone is not here: its drawer's full snap is this same `size`.
+ */
+function FullScreen() {
+  const layer = useInternal();
+  const { text, title } = useTitle();
+  const root = useRef<HTMLDivElement>(null);
+  const opener = useRef<HTMLElement | null>(typeof document === 'undefined' ? null : document.activeElement as HTMLElement | null);
+  const { setSize, setFullField } = layer;
+  const back = useCallback(() => setSize('grown'), [setSize]);
+  const backRef = useRef(back);
+  useLayoutEffect(() => { backRef.current = back; });
+  useLayoutEffect(() => {
+    const node = root.current;
+    if (!node) return;
+    const touched: Array<{ el: Element; inert: boolean; hidden: string | null }> = [];
+    for (const el of [...document.body.children]) {
+      if (el === node || el.hasAttribute('data-boring-overlay')) continue;
+      touched.push({ el, inert: (el as HTMLElement).inert, hidden: el.getAttribute('aria-hidden') });
+      (el as HTMLElement).inert = true;
+      el.setAttribute('aria-hidden', 'true');
+    }
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    node.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true });
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+      if (document.querySelector('[role=menu],[role=listbox],[role=dialog]:not([data-testid=agent-full]),[role=alertdialog],[data-boring-overlay]')) return;
+      if (event.target instanceof Element && event.target.closest('[aria-haspopup][aria-expanded=true]')) return;
+      event.preventDefault();
+      backRef.current();
+    };
+    document.addEventListener('keydown', onKey);
+    const returnTo = opener.current;
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = overflow;
+      for (const { el, inert, hidden } of touched) {
+        (el as HTMLElement).inert = inert;
+        if (hidden === null) el.removeAttribute('aria-hidden'); else el.setAttribute('aria-hidden', hidden);
+      }
+      requestAnimationFrame(() => {
+        // Back and Esc land on the opener (the strip's Full control when that is gone).
+        const target = returnTo?.isConnected ? returnTo : document.querySelector<HTMLElement>('[data-testid=agent-tray-full]');
+        target?.focus({ preventScroll: true });
+      });
+    };
+  }, []);
+  return createPortal(
+    <div ref={root} data-testid="agent-full" role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[45] flex flex-col bg-card text-card-foreground">
+      <div className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
+        <Header text={text} title={title} />
+        <VoiceProblem />
+        <ChatSlot />
+        <div data-one-dock="" className="shrink-0"><div ref={setFullField} data-testid="agent-full-composer" /></div>
+      </div>
+    </div>, document.body);
+}
+
 /** The layer itself: the drawer on a phone (the wide dock is `AgentDockLayout`). Placed once by the shell, for point mode on both. */
 export function AgentLayer(): ReactElement | null {
   const layer = useInternal();
@@ -245,6 +306,7 @@ export function AgentLayer(): ReactElement | null {
   // Comment mode shows its banner either way: on a phone (point mode) above the tab bar, outside the layer, while the compact sheet steps
   // aside; on a wide screen at the top, the dock beside the app. The note bubble is here only while pointing (else inside the layer).
   return <>
+    {layer.expanded && layer.trayOpen && layer.size === 'full' && <FullScreen />}
     {!layer.expanded && <CompactSheet pointing={session !== undefined} />}
     {layer.bar && !layer.expanded && layer.stack.length > 0 && <PaneStack placement="screen" assistant={title} />}
     {commenting && <CommentBanner session={commenting} bottomOffset={`${layer.tabbar}px`} className="z-[60]" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}

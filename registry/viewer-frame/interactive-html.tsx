@@ -1,11 +1,15 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode, Ref } from 'react';
+import { declaredLibraries, offlineLibraryHead } from '@hachej/boring-ui-kit/offline-libs';
+import type { OfflineLibraryHead } from '@hachej/boring-ui-kit/offline-libs';
 
 /**
  * Host opt-in for running an HTML document's own scripts. `scriptSources` are the HTTPS origins the page may load libraries, styles and fonts
  * from (for example `https://cdnjs.cloudflare.com`). Everything else is closed: no network requests from the page, no frames, no forms.
- * Pinning library versions is the page's responsibility.
+ * Pinning library versions is the page's responsibility. A page can instead declare a library the kit carries, `<!-- lib: d3 -->` (several
+ * with commas): its source is injected inline before the page's scripts, loaded only for pages that declare one, with no network.
  */
 export interface InteractiveHtml { readonly scriptSources: readonly string[] }
 
@@ -37,8 +41,8 @@ export function interactivePolicy(sources: readonly string[]): string {
  * The document the frame loads: the policy and a no-referrer rule come first, so they apply before any of the page's own markup is parsed.
  * A second doctype or head in the page is ignored by the parser; a meta policy of the page's own can only tighten this one.
  */
-export function interactiveDocument(text: string, sources: readonly string[]): string {
-  return `<!doctype html><meta http-equiv="Content-Security-Policy" content="${interactivePolicy(sources).replaceAll('"', '&quot;')}"><meta name="referrer" content="no-referrer">${text}`;
+export function interactiveDocument(text: string, sources: readonly string[], libraries = ''): string {
+  return `<!doctype html><meta http-equiv="Content-Security-Policy" content="${interactivePolicy(sources).replaceAll('"', '&quot;')}"><meta name="referrer" content="no-referrer">${libraries}${text}`;
 }
 
 /**
@@ -57,9 +61,19 @@ export function InteractiveFrame({ text, sources, reload = 0, title = 'HTML page
   readonly frameRef?: Ref<HTMLIFrameElement> | undefined;
   readonly onLoad?: (() => void) | undefined;
 }) {
+  const names = useMemo(() => declaredLibraries(text), [text]);
+  const [loaded, setLoaded] = useState<{ readonly text: string } & OfflineLibraryHead>();
+  useEffect(() => {
+    if (!names.length) return;
+    let current = true;
+    void offlineLibraryHead(names).then(result => { if (current) setLoaded({ text, ...result }); });
+    return () => { current = false; };
+  }, [names, text]);
+  const ready = names.length === 0 ? { head: '', problems: [] } : loaded?.text === text ? loaded : undefined;
   return <div className="boring-html-run flex min-h-0 flex-1 flex-col" data-testid={`${testId}-run`}>
-    <iframe key={reload} ref={frameRef} onLoad={onLoad} title={title} sandbox="allow-scripts" allow="" referrerPolicy="no-referrer" srcDoc={interactiveDocument(text, sources)}
-      data-testid={`${testId}-run-frame`} className="size-full min-h-0 flex-1" />
+    {ready?.problems.map(problem => <p key={problem} role="alert" className="m-0 px-3 py-2 text-sm text-destructive" data-testid={`${testId}-run-library-error`}>{problem}</p>)}
+    {ready && <iframe key={reload} ref={frameRef} onLoad={onLoad} title={title} sandbox="allow-scripts" allow="" referrerPolicy="no-referrer" srcDoc={interactiveDocument(text, sources, ready.head)}
+      data-testid={`${testId}-run-frame`} className="size-full min-h-0 flex-1" />}
     {children}
   </div>;
 }

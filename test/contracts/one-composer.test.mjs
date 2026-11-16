@@ -1287,3 +1287,106 @@ test('1280 fine pointer: Enter sends by default and with enterSends="always"; Sh
     assert.equal((await browser.evaluate('window.__sent'))[0], 'Première ligne\nSeconde ligne');
   }
 });
+
+// Julien: the expand control has two levels, bigger (the tray, then Expand) and a true full screen over the nav and the right pane, with a way back.
+const viewportOf = () => browser.evaluate('({ w: innerWidth, h: innerHeight })');
+const focusedId = () => browser.evaluate(`document.activeElement?.dataset.testid ?? null`);
+const FULL = '[data-testid=agent-full]';
+
+test('1440: Expand goes to grown, Full covers the nav and the right pane, Esc goes back to grown with focus on the opener, the page behind is inert', { skip, timeout: 180000 }, async () => {
+  for (const dark of [false, true]) {
+    await open(1440);
+    if (dark) await browser.evaluate(`document.documentElement.classList.add('dark')`);
+    const view = await viewportOf();
+    await browser.evaluate(`window.__openFile('uploads/ecarts-janvier.csv')`);
+    await browser.until('the right pane', `!!document.querySelector('[data-testid=agent-preview]')`);
+    await click('[data-testid=agent-bar-conversation]');
+    await browser.until('Ouvert', `!!document.querySelector('[data-testid=agent-tray]')`);
+    assert.equal(await count('[data-testid=agent-tray-full]'), 0, 'no Full before Expand');
+    await click('[data-testid=agent-tray-grow]');
+    await wait(250);
+    assert.equal(await count(FULL), 0, 'Expand is not full screen');
+    assert.equal(await count('[data-testid=agent-tray-full]'), 1, 'Expand offers Full');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-tray-full]').getAttribute('aria-label')`), 'Plein écran');
+    await browser.evaluate(`document.querySelector('[data-testid=agent-tray-full]').focus()`);
+    await browser.screenshot(`full-1440-${dark ? 'dark' : 'light'}-before.png`);
+    await click('[data-testid=agent-tray-full]');
+    await browser.until('full', `!!document.querySelector('${FULL}')`);
+    await wait(250);
+    const full = await rect(FULL);
+    assert.ok(Math.abs(full.x) <= 1 && Math.abs(full.y) <= 1 && Math.abs(full.w - view.w) <= 1 && Math.abs(full.h - view.h) <= 1, `the full host is the viewport (${JSON.stringify(full)} vs ${JSON.stringify(view)})`);
+    assert.equal(await browser.evaluate(`document.querySelector('${FULL}').parentElement === document.body`), true, 'portalled to the body');
+    for (const covered of ['[data-slot=sidebar-container]', '[data-testid=agent-preview]']) {
+      const hit = await browser.evaluate(`(() => { const e = document.querySelector(${js(covered)}); if (!e) return 'none'; const r = e.getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + Math.min(r.height / 2, 200)); return top && document.querySelector('${FULL}').contains(top) ? 'covered' : 'exposed'; })()`);
+      assert.notEqual(hit, 'exposed', `${covered} is under the full screen`);
+    }
+    assert.equal(await inside('[data-testid=transcript]', FULL), true, 'the thread is in the full host');
+    assert.equal(await inside(FIELD, FULL), true, 'the one composer is in the full host');
+    await oneField('full');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=app-shell]').closest('body > *').inert`), true, 'the page behind is inert');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=app-shell]').closest('body > *').getAttribute('aria-hidden')`), 'true');
+    assert.equal(await browser.evaluate(`getComputedStyle(document.body).overflow`), 'hidden', 'the page does not scroll');
+    assert.equal(await browser.evaluate(`document.querySelectorAll('${FULL} [aria-label="Fermer"]').length`), 1, 'one Close, an icon');
+    assert.equal(await browser.evaluate(`document.querySelector('${FULL} [data-testid=agent-layer-back]').getAttribute('aria-label')`), 'Quitter le plein écran');
+    assert.equal(await browser.evaluate(`document.querySelector('${FULL} [aria-label="Fermer"]').textContent.trim()`), '', 'Close is an X only');
+    await browser.screenshot(`full-1440-${dark ? 'dark' : 'light'}-after.png`);
+    // The composer inside keeps working.
+    const sent = (await browser.evaluate('window.__sent')).length;
+    await type('Dans le plein écran');
+    await click('[data-testid=composer-submit]');
+    await browser.until('sent from full', `window.__sent.length === ${sent + 1}`);
+    await browser.until('answer in the full thread', `document.querySelector('${FULL} [data-testid=transcript]')?.textContent.includes('Dans le plein écran') && document.querySelector('${FULL} [data-testid=transcript]').textContent.includes('Réponse fictive')`);
+    // Esc goes back to grown, not closed.
+    await browser.press('Escape');
+    await browser.until('back to grown', `!document.querySelector('${FULL}')`);
+    await wait(300);
+    assert.equal(await count('[data-testid=agent-tray]'), 1, 'the tray is still there');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-tray]').dataset.expanded`), 'true', 'grown');
+    assert.equal(await inside('[data-testid=transcript]', '[data-testid=agent-tray]'), true, 'the thread went back to the tray');
+    assert.equal(await focusedId(), 'agent-tray-full', 'focus is on the opener');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=app-shell]').closest('body > *').inert`), false, 'the page is live again');
+    assert.notEqual(await browser.evaluate(`getComputedStyle(document.body).overflow`), 'hidden');
+    // The back arrow does the same, Close shuts the conversation.
+    await click('[data-testid=agent-tray-full]');
+    await browser.until('full again', `!!document.querySelector('${FULL}')`);
+    await click(`${FULL} [data-testid=agent-layer-back]`);
+    await browser.until('grown again', `!document.querySelector('${FULL}')`);
+    await click('[data-testid=agent-tray-full]');
+    await browser.until('full a third time', `!!document.querySelector('${FULL}')`);
+    await click(`${FULL} [aria-label="Fermer"]`);
+    await browser.until('closed', `!document.querySelector('${FULL}') && !document.querySelector('[data-testid=agent-tray]')`);
+    assert.equal(await focusedId(), 'composer-input', 'Close returns to the field');
+    await oneField('closed');
+  }
+});
+
+test('1440: Esc in full keeps its menus: an open menu keeps the key', { skip, timeout: 120000 }, async () => {
+  await open(1440);
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('Ouvert', `!!document.querySelector('[data-testid=agent-tray]')`);
+  await click('[data-testid=agent-tray-grow]');
+  await click('[data-testid=agent-tray-full]');
+  await browser.until('full', `!!document.querySelector('${FULL}')`);
+  await browser.evaluate(`(() => { const menu = document.createElement('div'); menu.setAttribute('role', 'menu'); menu.id = 'fake-menu'; document.body.append(menu); })()`);
+  await browser.press('Escape');
+  await wait(300);
+  assert.equal(await count(FULL), 1, 'an open menu keeps Esc');
+});
+
+test('390: the phone\'s full snap is the same state: it covers the tab bar, one composer, Close and Collapse go back', { skip, timeout: 120000 }, async () => {
+  await open(390);
+  await browser.evaluate(`window.__layer.open('agent', 'half')`);
+  await browser.until('the drawer', `!!document.querySelector('[data-testid=composer-input]')`);
+  await click('[data-testid=agent-layer-expand]');
+  await wait(600);
+  await browser.screenshot('full-390-full-snap.png');
+  const view = await viewportOf();
+  const sheet = await rect('[data-testid=agent-layer]');
+  assert.ok(sheet.y <= 1 && sheet.bottom >= view.h - 1, `the full snap covers the viewport (${JSON.stringify(sheet)})`);
+  assert.equal(await count('[data-testid=agent-full]'), 0, 'no second full-screen host on a phone');
+  await oneField('phone full');
+  await click('[data-testid=agent-layer-collapse]');
+  await wait(500);
+  const half = await rect('[data-testid=agent-layer]');
+  assert.ok(half.h < sheet.h, 'collapse goes back to half');
+});
