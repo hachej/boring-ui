@@ -9,6 +9,7 @@
   { "match": "^failed tool$", "steps": [{ "tool": "read", "path": "samples/missing-file.csv", "error": "File not found (fictional)", "ms": 900 }, { "text": "That file does not exist, so I stopped.", "stream": true }] },
   { "match": "^error$", "steps": [{ "tool": "read", "path": "samples/reconcile.py", "progress": "3 of 8 lines", "ms": 700 }, { "fail": "Provider unavailable (fictional)" }] },
   { "match": "^files$", "steps": [{ "think": true, "ms": 500 }, { "present": "samples/booking.diagram.json", "ms": 1500 }, { "text": "Opened on the right: @samples/booking.diagram.json.\nAlso see @samples/oakfield-garden.excalidraw.json, @samples/bakery-morning.drawio.xml and @samples/entries.records.json.", "stream": true }] },
+  { "match": "^approval$", "steps": [{ "approve": { "tool": "delete_file", "arguments": { "path": "samples/old-draft.md" }, "summary": "Delete the old draft?" }, "then": [{ "text": "Decision received.", "stream": true }] }] },
   { "match": "^typing$", "steps": [{ "think": true, "ms": 4000 }, { "text": "That took a moment.", "stream": true }] }
  ]
 }

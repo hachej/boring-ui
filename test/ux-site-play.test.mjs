@@ -43,6 +43,10 @@ test('the Play menu plays a response into the design system page, and the demo h
   assert.ok(items.includes('Markdown answer') && items.includes('Question card: choices') && items.includes('Error') && items.at(-1) === 'Reset the conversation', `the menu lists the page's flows (${items})`);
   await page.selectOption('#play', { label: 'Markdown answer' });
   await demo.getByText('A Markdown answer').first().waitFor({ timeout: 40000 });
+  await page.selectOption('#play', { label: 'Approval card' });
+  await demo.locator('[data-testid=approval-card]').first().waitFor({ timeout: 40000 });
+  await page.selectOption('#play', { label: 'Reply card with an action' });
+  await demo.locator('[data-testid=agent-card-action]').waitFor({ timeout: 40000 });
   await page.selectOption('#play', { label: 'Reset the conversation' });
   await demo.locator('[data-testid=composer-input]').waitFor();
   assert.equal(await demo.getByText('A Markdown answer').count(), 0, 'Reset starts a fresh conversation');
