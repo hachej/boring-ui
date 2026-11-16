@@ -1,6 +1,6 @@
 {
  "target": "layout:bar",
- "title": "App shell with the one composer",
+ "title": "Assistant bar",
  "summary": "The app shell with one message bar at the bottom: a folded reply card, the opened conversation, a docked column, files, library and dictation.",
  "try": [{"label": "Send a message", "steps": [{"do": "type", "target": "composer-input", "text": "Reconcile the January statement"}, {"do": "tap", "target": "composer-submit", "until": "text:agent-card-reply~Nothing else", "timeout": 14000}]}, {"label": "Open a file from the reply", "flow": "F01"}, {"label": "Open the library", "flow": "F02"}, {"label": "Open an entry of the page", "flow": "F03"}, {"label": "Answer a question", "flow": "F09"}, {"label": "Use the / actions", "flow": "F08"}],
  "purpose": "AppShell composer=\"bar\": one message field at the bottom of a page, a folded reply card, the opened conversation, a docked column, file preview, library, dictation and the phone layout.",

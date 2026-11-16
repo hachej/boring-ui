@@ -92,14 +92,14 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     style={floating ? pos ?? { right: 16, bottom: 16 } : undefined}
     className={cn('app-shell relative flex min-h-0 flex-col',
       floating ? 'fixed isolate z-(--app-shell-z-layer) h-[min(36rem,calc(100dvh-2rem))] w-[min(24rem,calc(100vw-2rem))]'
-        : 'h-full min-w-0 flex-1 bg-background text-foreground')}>
+        : 'h-full min-w-0 flex-1 bg-card text-foreground')}>
     {floating && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
     {!floating && <Separator orientation="vertical" className={cn('absolute inset-y-0', side === 'right' ? 'left-0' : 'right-0')} />}
     {/* The pane over the docked conversation brings its own bar (« ← Assistant », the title, Fermer): the layer's title row steps aside. */}
     {/* The pane over the docked conversation lies on top of it, down to the field: nothing under it moves, so back finds the thread as it was.
         Its own bar (« ← Assistant », the title, Fermer) is the column's title row then; the layer's keeps its place, unseen. */}
-    <Header text={text} title={title} controls={controls} className={cn('pt-2', floating && 'cursor-move touch-none select-none', layer.paneStacked && 'invisible')} {...(layer.paneStacked ? { inert: true } : {})} {...drag} />
-    {layer.paneStacked && <div className="absolute inset-x-0 top-0 z-10 flex flex-col bg-background" style={{ bottom: fieldHeight }}><PaneStack placement="stacked" assistant={title} /></div>}
+    <Header text={text} title={title} controls={controls} className={cn(floating && 'cursor-move touch-none select-none', layer.paneStacked && 'invisible')} {...(layer.paneStacked ? { inert: true } : {})} {...drag} />
+    {layer.paneStacked && <div className="absolute inset-x-0 top-0 z-10 flex flex-col bg-card" style={{ bottom: fieldHeight }}><PaneStack placement="stacked" assistant={title} /></div>}
     {/* `bar`: the docked field is the bottom one, frame and all (`.app-shell [data-one-dock]`): one composer wherever it sits (Julien). */}
     <div {...(layer.bar ? { 'data-one-dock': '' } : {})} className={cn('flex min-h-0 flex-col overflow-hidden', 'flex-1', layer.paneStacked && cn('[&_[data-testid=conversation-content]]:invisible', FOLDED_FIELD))}><VoiceProblem /><ChatSlot live={open} /></div>
   </div>;
@@ -197,8 +197,8 @@ function ContentTray() {
     {overlay && <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 h-(--app-shell-bar-tray-expanded) rounded-t-(--radius-3xl) bg-card" />}
     {boxed ? null : <Separator className="absolute inset-x-0 top-0" />}
     <div data-testid="agent-tray-body" className={cn('mx-auto flex min-h-0 w-full max-w-[720px] flex-col', overlay ? 'relative h-(--app-shell-bar-tray-expanded) shrink-0' : 'flex-1')}>
-      <div data-testid="agent-tray-header" className="flex shrink-0 items-center gap-1 pt-1">
-        <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm font-semibold">{title}</h2>
+      <div data-testid="agent-tray-header" className="flex h-13 shrink-0 items-center gap-1.5">
+        <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
         <HistoryButton />
         {layer.bar && <LibraryButton open={layer.openLibrary} text={text} testId="agent-layer-library" />}
         <HeaderHint label={dockLabel}><Button variant="ghost" size="icon" data-testid="agent-tray-dock" aria-label={dockLabel} title={dockLabel}
@@ -206,7 +206,6 @@ function ContentTray() {
         {boxed ? <>
           <HeaderHint label={grown ? text.collapse : text.expand}><Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={grown ? text.collapse : text.expand} title={grown ? text.collapse : text.expand} aria-pressed={grown}
             onClick={() => setGrown(!grown)}>{grown ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <Maximize2Icon className="size-4" aria-hidden="true" />}</Button></HeaderHint>
-          <Separator orientation="vertical" aria-hidden="true" className="mx-1 my-2 w-px self-stretch" />
           <Button variant="ghost" size="icon" data-testid="agent-tray-reduce" aria-label={text.close} title={text.close} onClick={reduce}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
         </> : <>
           <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}

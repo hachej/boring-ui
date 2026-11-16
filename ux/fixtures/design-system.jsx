@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { AppShell } from '../../registry/app-shell/app-shell.tsx';
 import { ScreenBody } from '../../registry/app-shell/screen-body.tsx';
 import { FileTextIcon, FolderIcon } from '../../registry/_shared/icons';
+import { UpdateNotice } from '../../registry/app-shell/update-notice.tsx';
+import { appShellText } from '../../registry/app-shell/text.ts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -47,7 +49,8 @@ function Page() {
       <Label><Checkbox defaultChecked />Checkbox</Label><Label><Switch defaultChecked />Switch</Label><Progress value={60} />
     </Section>
     <Section id="status" title="Status and notices"><Row><Badge>Default</Badge><Badge variant="success">Reconciled</Badge><Badge variant="warning">Gap</Badge><Badge variant="info">Info</Badge><Badge variant="destructive">Failed</Badge></Row>
-      <Alert><AlertTitle>A notice</AlertTitle><AlertDescription>One status row, in the kit's words.</AlertDescription></Alert></Section>
+      <Alert><AlertTitle>A notice</AlertTitle><AlertDescription>One status row, in the kit's words.</AlertDescription></Alert>
+      <UpdateNotice update={{ available: true, version: 'v2', onReload() {} }} text={appShellText('en')} compact={false} /></Section>
     <Section id="lists" title="Rows, table, card">
       <ItemGroup className="gap-1">{['First row', 'Second row'].map(name => <Item key={name} variant="outline" size="sm"><ItemContent><ItemTitle>{name}</ItemTitle><ItemDescription>A description</ItemDescription></ItemContent></Item>)}</ItemGroup>
       <Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader><TableBody><TableRow><TableCell>Jan 02</TableCell><TableCell className="text-right tabular-nums">$12.00</TableCell></TableRow></TableBody></Table>

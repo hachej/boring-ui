@@ -9,7 +9,7 @@ import { site } from '../ux/runner/site.mjs';
 test('every demo page is a top bar over a frame, the home is the design system, and the menu lists the pages', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'ux-home-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const from = join(dir, 'cap'), out = join(dir, 'site'), names = ['component-design-system', 'layout-bar', 'component-reply-card'];
+  const from = join(dir, 'cap'), out = join(dir, 'site'), names = ['component-design-system', 'layout-bar', 'component-reply-card', 'layout-update-notice'];
   mkdirSync(join(from, '_pages'), { recursive: true });
   const scenarios = names.map(name => {
     const [level, id] = [name.split('-')[0], name.split('-').slice(1).join('-')], target = `${level}:${id}`;
@@ -17,7 +17,7 @@ test('every demo page is a top bar over a frame, the home is the design system, 
     writeFileSync(join(from, '_pages', `${name}.html`), '<!doctype html><head><title>Demo</title></head><body>app</body>');
     writeFileSync(join(from, name, 'result.json'), JSON.stringify({ target, states: [], stateFailures: [], errors: [], flows: [] }));
     writeFileSync(join(from, name, 'target.json'), JSON.stringify({ target, title: id, purpose: 'A page.', level, kitVersion: '0.0.0', commit: 'abc1234', capturedAt: '2026-01-01T00:00:00Z' }));
-    return { target, title: id, purpose: 'A page.', fixture: { entry: 'x.jsx', query: '', ready: 'body' }, viewports: [{ name: '390', width: 390, height: 844, touch: true }, { name: '1280', width: 1280, height: 800 }], states: [], flows: [] };
+    return { target, title: id, purpose: 'A page.', fixture: { entry: 'x.jsx', query: '', ready: 'body' }, viewports: [{ name: '390', width: 390, height: 844, touch: true }, { name: '1280', width: 1280, height: 800 }], states: [], flows: [], ...(name === 'layout-update-notice' ? { site: false } : {}) };
   });
   await site({ from, out, scenarios });
   const home = readFileSync(join(out, 'index.html'), 'utf8');
@@ -29,6 +29,7 @@ test('every demo page is a top bar over a frame, the home is the design system, 
   assert.match(home, /<optgroup label="Start"><option value="component-design-system\/index\.html" selected>/);
   assert.match(home, /<optgroup label="Layouts"><option value="layout-bar\/index\.html"/);
   assert.match(home, /<optgroup label="Components"><option value="component-reply-card\/index\.html"/);
+  assert.doesNotMatch(home, /update-notice/, 'a scenario with site: false is not on the site');
   const page = readFileSync(join(out, 'layout-bar', 'index.html'), 'utf8');
   assert.match(page, /"base":""/, 'a page loads its own demo');
   assert.match(page, /<option value="\.\.\/layout-bar\/index\.html" selected>/);

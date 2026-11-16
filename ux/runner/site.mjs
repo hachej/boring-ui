@@ -26,7 +26,7 @@ function copyTarget(from, out, name, hasDemo) {
 }
 
 export async function site({ from, out, scenarios = [] }) {
-  const targets = readdirSync(from, { withFileTypes: true }).filter(d => d.isDirectory() && existsSync(join(from, d.name, 'target.json')) && existsSync(join(from, d.name, 'result.json'))).map(d => d.name).sort();
+  const targets = readdirSync(from, { withFileTypes: true }).filter(d => d.isDirectory() && existsSync(join(from, d.name, 'target.json')) && existsSync(join(from, d.name, 'result.json'))).map(d => d.name).filter(name => scenarios.find(s => slug(s.target) === name)?.site !== false).sort();
   if (!targets.length) throw new Error(`no captured target in ${from} (run: node ux/runner/cli.mjs capture --out ${from})`);
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });

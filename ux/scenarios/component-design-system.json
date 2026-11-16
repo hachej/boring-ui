@@ -1,7 +1,7 @@
 {
  "target": "component:design-system",
  "title": "Design system",
- "summary": "The kit's defaults, light and dark: colours, type, radius and shadow, buttons, form controls, status, rows, tables, cards, tabs, a dialog, the empty state, and the default layout.",
+ "summary": "The kit's defaults, light and dark: colours, type, radius and shadow, buttons, form controls, status, the update notice, rows, tables, cards, tabs, a dialog, the empty state, and the default layout.",
  "purpose": "Every default kit part and token in one page, with no app styling, as the app view of the default AppShell layout, full screen. Built from kit parts and theme tokens only.",
  "fixture": {
   "entry": "ux/fixtures/design-system.jsx",

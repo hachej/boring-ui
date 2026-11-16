@@ -323,6 +323,30 @@ test('1440: the bar is centred on the main view and inside it, with the pane clo
   await centred('pane closed again');
 });
 
+// Julien: "looks bad, why such bad header?". The docked conversation's header was on the page surface over a card body: one surface, one header height with the panes.
+test('1440: the docked conversation has one surface, a pane-height header and its Close last in the icon row', { skip, timeout: 120000 }, async () => {
+  await open(1440, 'demo=1&single=1');
+  await click('[data-testid=page-row]');
+  await browser.until('the entry is open', `!!document.querySelector('[data-testid=agent-preview-bar]')`);
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('the tray is open', `!!document.querySelector('[data-testid=agent-tray-dock]')`);
+  await click('[data-testid=agent-tray-dock]');
+  await browser.until('the conversation is docked', `!!document.querySelector('[data-testid=agent-layer-header]') && !!document.querySelector('[data-testid=agent-layer] [data-boring=pi-chat]')`);
+  await wait(400);
+  const seen = await browser.evaluate(`(() => {
+    const surface = element => { for (let e = element; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') return c; } return 'none'; };
+    const header = document.querySelector('[data-testid=agent-layer-header]'), body = document.querySelector('[data-testid=agent-layer] [data-boring=pi-chat]');
+    const row = [...header.querySelectorAll('button')].filter(e => e.getClientRects().length), last = row.at(-1);
+    return { header: surface(header), body: surface(body), headerHeight: header.getBoundingClientRect().height, bar: document.querySelector('[data-testid=agent-preview-bar]').getBoundingClientRect().height,
+      lastName: last.getAttribute('data-testid'), divider: !!header.querySelector('[data-slot=separator]'), size: row.map(e => Math.round(e.getBoundingClientRect().height)) };
+  })()`);
+  assert.equal(seen.header, seen.body, 'the header and the body are on one surface');
+  assert.equal(seen.headerHeight, seen.bar, 'the header is as tall as the pane headers');
+  assert.equal(seen.lastName, 'agent-layer-close', 'Close is last in the icon row');
+  assert.equal(seen.divider, false, 'no divider before Close');
+  assert.equal(new Set(seen.size).size, 1, `the icon buttons share one size (${seen.size})`);
+});
+
 test('1280: typing grows the field;  a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
   await open(1280);
   await type('Prépare la relance du dossier Cèdre :');

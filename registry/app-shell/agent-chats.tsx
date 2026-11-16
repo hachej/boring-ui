@@ -226,9 +226,9 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
   const back = layer.showing === 'improve' && layer.agent;
   const actions = layer.showing === 'improve' ? [] : layer.agent?.headerActions ?? [];
   const library = layer.bar && layer.showing === 'agent' ? layer.openLibrary : undefined;
-  return <div data-testid="agent-layer-header" {...rest} className={cn('flex shrink-0 items-center gap-1 px-2 pb-1', className)}>
+  return <div data-testid="agent-layer-header" {...rest} className={cn('flex h-13 shrink-0 items-center gap-1.5 px-2 md:px-3', className)}>
     {back && <Button variant="ghost" size="icon" data-testid="agent-layer-back" aria-label={text.back} title={text.back} onClick={layer.showAgent}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
-    <h2 data-testid="agent-layer-title" className="m-0 min-w-0 flex-1 truncate px-1 text-sm font-semibold">{title}</h2>
+    <h2 data-testid="agent-layer-title" className="m-0 min-w-0 flex-1 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
     <HistoryButton />
     <LibraryButton open={library} text={text} testId="agent-layer-library" />
     {actions.length > 0 && <HeaderActions actions={actions} compact={compactSnap !== undefined} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
@@ -242,7 +242,6 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
     {!layer.bar && compactSnap === 'half' && <HeaderHint label={text.expand}><Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {!layer.bar && compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {controls}
-    {layer.bar && <Separator orientation="vertical" aria-hidden="true" className="mx-1 my-2 w-px self-stretch" />}
     <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
   </div>;
 }
