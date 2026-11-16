@@ -36,6 +36,8 @@ export interface AgentBarChatOptions {
   readonly labels?: Partial<AgentBarChatWords>;
   /** The words for a running tool, as the chat's `labels.toolActivity` (default: the kit's French ones, « Lecture releve.pdf »). */
   readonly toolLabels?: Pick<ChatLabels, 'toolActivity'> | undefined;
+  /** `PiChat toolDetails="none"`: the running tool's line has no command, path or progress, only its verb. */
+  readonly plainTools?: boolean | undefined;
   /**
    * The app's own words for the working status, per phase (kit 0.4.85). Called while the agent works with the phase: `tool` is the name of the tool that runs
    * (absent while the agent is thinking), `stage` the controller's own status when it has one, `text` the default words. Return the words to show, or
@@ -92,7 +94,7 @@ const ASK = 'ask_user';
 const base = (hint: string) => hint.split('/').filter(Boolean).at(-1) ?? hint;
 
 export function useAgentBarChat(controller: ChatController, options: AgentBarChatOptions = {}): AgentBarChat {
-  const { actions, labels, toolLabels, workingWords } = options;
+  const { actions, labels, toolLabels, plainTools, workingWords } = options;
   const text = { ...words, ...labels };
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const derived = useMemo(() => derive(state.view, { mode: 'expert', presentation: 'natural', renderEntry: undefined, renderTool: undefined, groupTool: undefined }), [state.view]);
@@ -156,7 +158,7 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
   const slot = running ? (Array.isArray(record(state.view?.docs['pi.live'])?.['tools']) ? record(state.view?.docs['pi.live'])!['tools'] as unknown[] : []).map(record).find(item => item?.['callId'] === running.id) : undefined;
   const progress = record(slot?.['details'])?.['progress'];
   const stage = typeof derived.stageStatus === 'string' ? derived.stageStatus : undefined;
-  const standard = running ? `${liveLabel(running, toolLabels ?? frenchChatLabels)}${typeof progress === 'string' && progress.trim() ? ` · ${progress.trim()}` : ''}` : stage ?? text.working;
+  const standard = running ? `${liveLabel(running, toolLabels ?? frenchChatLabels, plainTools === true)}${!plainTools && typeof progress === 'string' && progress.trim() ? ` · ${progress.trim()}` : ''}` : stage ?? text.working;
   const doing = workingWords?.({ ...(running ? { tool: running.name } : {}), ...(stage ? { stage } : {}), text: standard })?.trim() || standard;
 
   // The reply of the run that just ended: kept until read. History found at mount is not a new reply (`finished` needs work seen here).

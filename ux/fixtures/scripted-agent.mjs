@@ -2,6 +2,7 @@
 //   { "fallback": "one plain sentence", "turns": [ { "match": "regex on what the person typed", "steps": [ ... ] } ] }
 // A step is one of:
 //   { "tool": "read", "path": "uploads/x.pdf", "progress": "12 of 40 lines", "ms": 800 }   the agent works: the tool's words show, then it finishes
+//   { "tool": "bash", "arguments": { "command": "..." }, "error": "raw error text" }         the same, with its own arguments, and the tool fails with that text
 //   { "think": true, "ms": 600 }                                                             the agent works with no tool running
 //   { "text": "the answer, \n for lines, @path cites a file", "stream": true }               the answer; streamed word by word when `stream`
 //   { "fail": "detail" }                                                                     the turn ends in an error (an assistant message with stopReason "error", `detail` is its errorMessage)
@@ -27,10 +28,10 @@ export function createScriptedAgent({ script, pace = 1, entries, show }) {
       if (cancelled(token)) return list;
       if (step.tool) {
         const call = `c${++id}`;
-        const asked = entry(assistant([{ type: 'toolCall', id: call, name: step.tool, arguments: { path: step.path } }], 'toolUse'));
+        const asked = entry(assistant([{ type: 'toolCall', id: call, name: step.tool, arguments: step.arguments ?? { path: step.path } }], 'toolUse'));
         show([...list, asked], live([{ callId: call, taskId: 8, status: 'running', details: { progress: step.progress } }]));
         await sleep(step.ms ?? 800);
-        const result = { id: ++counter, kind: 'message', byTaskId: 8, model: [{ role: 'toolResult', toolCallId: call, toolName: step.tool, content: [{ type: 'text', text: step.result ?? 'done' }], isError: false, timestamp: 3 }] };
+        const result = { id: ++counter, kind: 'message', byTaskId: 8, model: [{ role: 'toolResult', toolCallId: call, toolName: step.tool, content: [{ type: 'text', text: step.error ?? step.result ?? 'done' }], isError: step.error !== undefined, timestamp: 3 }] };
         list = [...list, asked, result]; show(list, live());
       } else if (step.think) { show(list, live()); await sleep(step.ms ?? 600);
       } else if (step.text !== undefined) {
@@ -72,7 +73,8 @@ export function createScriptedAgent({ script, pace = 1, entries, show }) {
       if (pendingAsk) { pendingAsk(text); return; }
       const token = ++run;
       const turn = script.turns.find(t => new RegExp(t.match, 'i').test(text));
-      await play(turn ? turn.steps : [{ think: true, ms: 500 }, { text: script.fallback, stream: true }], entries(), token);
+      const list = await play(turn ? turn.steps : [{ think: true, ms: 500 }, { text: script.fallback, stream: true }], entries(), token);
+      if (!cancelled(token)) show(list, {});
     },
     // The page acknowledged the file the agent presented (or refused it).
     presented() { pendingPresent?.(); },

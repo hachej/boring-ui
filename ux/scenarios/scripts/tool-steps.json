@@ -1,0 +1,22 @@
+{
+  "fallback": "I can look up an invoice or a payment. Try \u201cFind the Brown & Sons invoice\u201d.",
+  "turns": [
+    {
+      "match": "invoice|brown|find|look",
+      "steps": [
+        {
+          "think": true,
+          "ms": 500
+        },
+        {
+          "tool": "bash",
+          "arguments": {
+            "command": "grep -r invoice-0121 /srv/ledger_fictional/ --include=*.csv"
+          },
+          "error": "Traceback (most recent call last): File ledger_fictional.py, line 41, KeyError: 'invoice-0121'",
+          "ms": 900
+        }
+      ]
+    }
+  ]
+}

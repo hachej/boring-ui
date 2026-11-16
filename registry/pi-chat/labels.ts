@@ -277,6 +277,8 @@ export const defaultChatLabels = {
   toolRunning: 'Running',
   toolCompleted: 'Completed',
   toolFailedStatus: 'Failed',
+  /** With `toolDetails="none"`, the plain sentence under a failed step's line (a string, or a function of the tool id), in place of the tool's own error text. */
+  toolFailedSummary: 'This did not work out.' as string | ((tool: string) => string),
   toolUnfinished: 'No result',
   arguments: 'Arguments',
   result: 'Result',
@@ -348,6 +350,8 @@ export const defaultChatLabels = {
   runCommand: (name: string, execute: boolean) => `${execute ? 'Run' : 'Insert'} /${name} command`,
   taskStatus: 'Task status',
   activityFailed: (count: number, tools: string) => `${count > 1 ? `${count} steps failed` : 'Step failed'}: ${tools}`,
+  /** With `toolDetails="none"`, the header of an activity with failed steps: no tool names. */
+  activityFailedPlain: (count: number) => count > 1 ? `${count} steps did not work out` : 'A step did not work out',
   activityUsed: (summary: string, stopped: boolean) => `${stopped ? 'Stopped · ' : 'Used '}${summary}`,
   activityThought: 'Thought it through',
   activityMany: (steps: number) => `Worked through ${steps} steps`,
