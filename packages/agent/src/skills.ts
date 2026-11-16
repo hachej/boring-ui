@@ -246,6 +246,10 @@ export interface LiveSkills {
    * version; `name` is refused. Resolves `false` when the pointer could not be used (the conversations keep their version).
    */
   readonly refresh: (context: Context, name?: string, conversationId?: ConversationId) => Promise<boolean>;
+  /** A versioned source: the version conversation `conversationId` sees now, or undefined when it has not read the skills yet. */
+  readonly visible: (conversationId: ConversationId) => string | undefined;
+  /** A versioned source: call when a conversation migrates or resumes; it moves to the newest good version. Resolves false when it stays. */
+  readonly refreshOnMigrate: (context: Context, conversationId: ConversationId) => Promise<boolean>;
 }
 
 interface Loaded { readonly known: ReadonlyMap<string, Skill>; readonly errors: readonly SkillError[] }
@@ -386,6 +390,7 @@ function versionsOf(versions: SkillVersions, sourceFs: SkillFileSystem | undefin
       const names = [...pointed.state.known.keys()];
       return `Skills reloaded: version ${pointed.version} (${names.length ? names.join(', ') : 'no skills'}).`;
     },
+    visible: (conversationId: ConversationId) => pins.get(conversationId),
     refresh: async (context: Context, name?: string, conversationId?: ConversationId): Promise<boolean> => {
       if (name !== undefined) throw new TypeError('A versioned skill source moves whole versions: refresh takes no skill name');
       return (await move(context, conversationId)).error === undefined;
@@ -566,7 +571,11 @@ export function liveSkills(source: SkillSource, options: LiveSkillsOptions): Liv
   if (options.companionFiles && !source.fs) throw new TypeError('Skills extension: companionFiles need a SkillSource with fs');
   if (source.versions && options.onPublish) throw new TypeError('Skills extension: onPublish does not apply to a versioned source');
   const live = source.versions ? versionsOf(source.versions, source.fs, options) : copyOf(source, options);
-  return { extension: skillsExtension(live, options, options.companionFiles ? source.fs : undefined), refresh: live.refresh };
+  const visible = (conversationId: ConversationId) => 'visible' in live ? live.visible(conversationId) : undefined;
+  return {
+    extension: skillsExtension(live, options, options.companionFiles ? source.fs : undefined), refresh: live.refresh, visible,
+    refreshOnMigrate: (context, conversationId) => live.refresh(context, undefined, conversationId),
+  };
 }
 
 export const isSkillArray = (skills: readonly Skill[] | SkillSource): skills is readonly Skill[] => Array.isArray(skills);
