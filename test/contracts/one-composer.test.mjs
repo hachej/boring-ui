@@ -1280,6 +1280,7 @@ test('1440: Expand goes to grown, Full covers the nav and the right pane, Esc go
     await browser.until('full a third time', `!!document.querySelector('${FULL}')`);
     await click(`${FULL} [aria-label="Fermer"]`);
     await browser.until('closed', `!document.querySelector('${FULL}') && !document.querySelector('[data-testid=agent-tray]')`);
+    await browser.until('focus is back on the field', `document.activeElement?.dataset.testid === 'composer-input'`);
     assert.equal(await focusedId(), 'composer-input', 'Close returns to the field');
     await oneField('closed');
   }
