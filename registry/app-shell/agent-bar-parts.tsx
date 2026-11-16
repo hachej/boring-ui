@@ -161,7 +161,7 @@ function ControllerCell({ action, extra, round, dot, ...rest }: { readonly actio
   return <button type="button" {...rest} data-testid={action.testId} data-action={action.id} aria-label={action.label} onClick={action.onSelect}
     {...(action.expanded !== undefined ? { 'aria-expanded': action.expanded } : {})} {...(action.on ? { 'aria-pressed': true } : {})}
     className={cn('relative inline-flex h-4 shrink-0 items-center justify-center text-muted-foreground transition-colors duration-(--duration-fast) pointer-fine:hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground aria-pressed:text-foreground motion-reduce:transition-none max-md:h-11 pointer-coarse:h-11',
-      'before:absolute before:-inset-y-3.5 before:inset-x-0 before:content-[""] [&_svg]:size-[11px]',
+      'md:before:absolute md:before:-inset-y-3.5 md:before:inset-x-0 md:before:content-[""] [&_svg]:size-[11px]',
       extra ? 'w-0 overflow-hidden opacity-0 group-hover/ctl:w-7 group-hover/ctl:opacity-100 group-has-[:focus-visible]/ctl:w-7 group-has-[:focus-visible]/ctl:opacity-100 max-md:w-11 max-md:opacity-100 pointer-coarse:w-11 pointer-coarse:opacity-100' : 'w-8 rounded-l-full max-md:w-11 pointer-coarse:w-11', round && 'rounded-r-full')}>
     {action.icon}
     {dot && <span role="img" aria-label={dot.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-0 right-1 size-1.5 rounded-(--radius-3xl) bg-primary" />}
