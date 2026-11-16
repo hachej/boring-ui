@@ -40,7 +40,7 @@ const EXPECTED = {
   'design-overlay-has-title': ['overlay.tsx', 'error'],
 };
 // The rules with no file of their own in the fixture app: the length limits (a temp app below) and the theme rules (test/fixtures/design-theme).
-const ELSEWHERE = ['line-length', 'component-length', 'file-length', 'design-theme-core-only', 'design-theme-roles-both-modes', 'design-theme-local-derived', 'design-exceptions-shrink'];
+const ELSEWHERE = ['line-length', 'component-length', 'file-length', 'design-theme-core-only', 'design-theme-roles-both-modes', 'design-theme-local-derived', 'design-exceptions-shrink', 'kit-part-edited'];
 
 const report = json(fixture);
 

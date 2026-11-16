@@ -103,6 +103,12 @@ The verifier runs it. A hit not in `design.exceptions.json` fails. A hit you
 fix must leave the file (`design-exceptions-shrink` fires on a stale count).
 Fix the code, never the list.
 
+The check does not read what the kit installed: an unedited block copy, a shadcn
+file recorded in `SHADCN-GENERATED.json` and the generated blocks CSS file are
+skipped. Never edit one to pass the check: it is one `kit-part-edited` hit for
+the file. Put the change in a prop or a theme token, or restore the file with
+`boring-ui-blocks update`.
+
 | Rule | Fix |
 |---|---|
 | `raw-element` | Use the kit component it names |
@@ -130,7 +136,8 @@ Fix the code, never the list.
 | `design-theme-core-only` | Set only core roles above `=== EXCEPTIONS ===`; every pin has a reason in `DESIGN.md` |
 | `design-theme-roles-both-modes` | Every kit colour role set in `:root` is also set in `.dark`, and the reverse |
 | `design-theme-local-derived` | Delete the app's `theme.derived.css`; import the kit's |
-| `design-exceptions-shrink` | A frozen hit was fixed: remove it from `design.exceptions.json` |
+| `design-exceptions-shrink` | A frozen hit was fixed, or the file is a kit part now skipped: remove the entries it names from `design.exceptions.json` |
+| `kit-part-edited` | A copy of a kit block, a shadcn file or the blocks CSS file was changed by hand: undo it; the change goes through a prop or a theme token, or `boring-ui-blocks update` restores it |
 
 ## Look at it
 
