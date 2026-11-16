@@ -300,6 +300,29 @@ test('1280: the close buttons are an X without a word, and a pushed pane is on t
   assert.equal(same[0], same[1], 'the pane is on the card surface');
 });
 
+// Julien: with the right pane open the bar stays centred on the whole viewport. It belongs to the main view, the area left of the pane.
+test('1440: the bar is centred on the main view and inside it, with the pane closed, open and after a resize', { skip, timeout: 120000 }, async () => {
+  const centred = async step => {
+    const [box, main] = [await rect('[data-testid=agent-composer-box]'), await rect('[data-testid=agent-content]')];
+    assert.ok(Math.abs((box.x + box.w / 2) - (main.x + main.w / 2)) <= 1, `${step}: the bar's midline ${box.x + box.w / 2} is the main view's ${main.x + main.w / 2}`);
+    assert.ok(box.x >= main.x - 1 && box.right <= main.right + 1, `${step}: the bar is inside the main view (${box.x}-${box.right} in ${main.x}-${main.right})`);
+  };
+  await open(1440, 'demo=1&single=1');
+  await centred('pane closed');
+  await click('[data-testid=page-row]');
+  await browser.until('the entry is open', `!!document.querySelector('[data-testid=fixture-record]')`);
+  await wait(300);
+  const pane = await rect('[data-testid=agent-preview]');
+  assert.ok(pane && pane.x > 400, 'the pane is a column beside the main view');
+  await centred('pane open');
+  await browser.send('Emulation.setDeviceMetricsOverride', { width: 1180, height: 800, deviceScaleFactor: 1, mobile: false });
+  await wait(400);
+  await centred('pane open, narrower window');
+  await click('[data-testid=agent-preview-close]');
+  await wait(300);
+  await centred('pane closed again');
+});
+
 test('1280: typing grows the field;  a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
   await open(1280);
   await type('Prépare la relance du dossier Cèdre :');

@@ -6,7 +6,7 @@ The pages are written for a visitor: no harness explanation on them, one footer 
 
 The workflow is `.github/workflows/ux-showcase.yml`.
 
-The home page is the design system and it is the app, not a frame: a scenario with `"fullscreen": true` (`component:design-system`) is written as the page itself, with no site chrome, no frame and no Phone/Desktop toggle. The kit's AppShell fills the screen with the design system (tokens and default parts, light and dark) as its app view, an empty app view as its second screen, and the site's pages as links in its sidebar. It is built from kit parts only, so `scripts/check-showcase-design.mjs` (part of `npm run check`) holds it to the kit's design rules. The playable demos that need a frame and a width toggle (the bank demo `layout:bar`, the component pages with flows) stay as they are.
+The site is one top bar over the app: a page menu (Start: the design system; Layouts; Components), the one Phone and Desktop switch (remembered for the whole site) and the theme switch, with the page's live demo in a frame filling the rest (a centred 390 px frame on Phone, the full width on Desktop). There is no site navigation and no title block on a demo page. The home is the design system (`component:design-system`): the kit's AppShell at its defaults with the tokens and default parts as its app view, built from kit parts only, so `scripts/check-showcase-design.mjs` (part of `npm run check`) holds it to the kit's design rules. A target without a demo keeps the documentation page (usage, status, flows).
 
 ## Enable it once
 

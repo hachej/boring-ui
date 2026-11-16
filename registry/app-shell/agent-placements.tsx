@@ -118,7 +118,7 @@ export function ContentColumn({ children }: { readonly children: ReactNode }) {
   // The box only on a wide screen: on a phone the field lives in the drawer.
   const bar = barMode && contentComposer;
   // The page keeps one wrapper whether the tray is open or not, so opening it never remounts the screen; Agrandir only hides it.
-  return <div ref={setDropZone} data-testid="agent-content" data-bar-tray={bar && trayOpen && !anchored ? (grown ? 'expanded' : 'open') : undefined} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+  return <div ref={setDropZone} data-testid="agent-content" data-bar-tray={bar && trayOpen && !anchored ? (grown ? 'expanded' : 'open') : undefined} className={cn('relative flex min-h-0 min-w-0 flex-1 flex-col', bar && '@container')}>
     <div data-testid="agent-page" className={cn('flex min-h-0 min-w-0 flex-1 flex-col', trayOpen && grown && !anchored && !bar && 'hidden')}>{children}</div>
     {bar ? <OneBox>
       {trayOpen && !anchored && <ContentTray />}
