@@ -78,6 +78,12 @@ export function BarMicButton({ mic, label }: { readonly mic: BarMic; readonly la
   const layer = useInternal();
   const labels = composerLabels(layer.locale, layer.agent);
   const { ref, ...gesture } = mic.hold;
+  const stop = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    if (layer.voice.phase !== 'recording') return;
+    const control = mic.mode === 'listening' ? stop.current : mic.mode === 'holding' ? ref.current : null;
+    control?.focus({ preventScroll: true });
+  }, [mic.mode, layer.voice.phase, ref]);
   // The kit hook guards touchstart only on the node it first saw; the microphone remounts after ■, so bind the node it has now.
   useEffect(() => {
     const node = ref.current;
@@ -85,7 +91,7 @@ export function BarMicButton({ mic, label }: { readonly mic: BarMic; readonly la
     node?.addEventListener('touchstart', keep, { passive: false });
     return () => node?.removeEventListener('touchstart', keep);
   });
-  if (mic.mode === 'listening') return <Button key="stop" type="button" size="icon" data-testid="agent-talk-stop" aria-label={labels.voiceStop} title={labels.voiceStop} onClick={mic.finish} disabled={layer.voice.phase === 'starting'} className="shrink-0"><SquareIcon data-icon="inline-start" aria-hidden="true" /></Button>;
+  if (mic.mode === 'listening') return <Button key="stop" ref={stop} type="button" size="icon" data-testid="agent-talk-stop" aria-label={labels.voiceStop} title={labels.voiceStop} onClick={mic.finish} disabled={layer.voice.phase === 'starting'} className="shrink-0"><SquareIcon data-icon="inline-start" aria-hidden="true" /></Button>;
   const busy = layer.voice.phase === 'transcribing';
   return <Button key="mic" ref={ref} type="button" size="icon" data-testid="agent-talk" data-state={mic.mode === 'holding' ? 'holding' : layer.voice.phase} aria-label={label} title={label}
     disabled={busy || (layer.voice.phase === 'idle' && layer.voice.canStart === false)} className="shrink-0 touch-none select-none" {...gesture}>

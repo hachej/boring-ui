@@ -269,11 +269,14 @@ export function Composer(props: ComposerProps) {
   // The pair works together: with only one of them, a legacy `recording` row (or nothing) is what shows, so a recording is never left with no way to stop.
   const slots = props.recordingStatus !== undefined && props.recordingStop !== undefined;
   const recording = Boolean(props.recording) || slots;
+  const retainedRecording = useRef(false);
   const setRef = (element: HTMLTextAreaElement | null) => {
     inner.current = element;
     assignRef(props.textareaRef, element);
   };
   useLayoutEffect(() => {
+    const restoreFocus = retainedRecording.current;
+    retainedRecording.current = recording && Boolean(props.keepFieldWhileRecording);
     if (recording) return;
     const element = inner.current;
     if (!element) return;
@@ -285,6 +288,7 @@ export function Composer(props: ComposerProps) {
       element.style.overflowY = element.scrollHeight > limit ? 'auto' : 'hidden';
     };
     resize();
+    if (restoreFocus) element.focus({ preventScroll: true });
     if (pendingCaret.current !== null) { element.setSelectionRange(pendingCaret.current, pendingCaret.current); element.focus(); pendingCaret.current = null; }
     if (typeof ResizeObserver === 'undefined') return;
     let width = element.clientWidth;
@@ -295,7 +299,7 @@ export function Composer(props: ComposerProps) {
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [text, recording, props.barActions]);
+  }, [text, recording, props.barActions, props.keepFieldWhileRecording]);
 
   const query = slash && items.length ? slashQuery(text, caret) : null;
   const trigger = query === null && mentions ? mentionTrigger(text, caret) : null;
@@ -425,7 +429,7 @@ export function Composer(props: ComposerProps) {
       <InputGroupAddon>{startAndPlus}</InputGroupAddon>
       <div data-slot="composer-recording" data-testid="composer-recording" className="flex min-w-0 flex-1 items-center gap-2 self-stretch">{props.recordingStatus}
         {/* One field in every state: the message field stays in the DOM while the microphone is open (out of sight and out of reach); the status above is what shows in its place. */}
-        {props.keepFieldWhileRecording && <div inert aria-hidden="true" className="sr-only">{input}</div>}</div>
+        {props.keepFieldWhileRecording && <div hidden inert aria-hidden="true">{input}</div>}</div>
       <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>
     </InputGroup> : <InputGroup>
       {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
