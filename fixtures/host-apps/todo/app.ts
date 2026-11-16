@@ -2,11 +2,11 @@
 import { defineApp } from "@hachej/boring-agent/host";
 import { agents } from "./agents.ts";
 import fr from "./words.ts";
-import de from "./words.de.ts";
+import en from "./words.en.ts";
 import { TodoApi, TodoModel, TodosLive } from "./models/Todos.model.ts";
 
 export default defineApp({
-  name: "todo", languages: { base: "fr", words: { fr, de }, region: "CH" },
+  name: "todo", languages: { base: "fr", words: { fr, en }, region: "CH" },
   models: [TodoModel], handlers: TodosLive, api: TodoApi,
   expose: { page: ["AddTodo", "CompleteTodo", "Todos.get"], mcp: ["Todos.get"], assistant: ["AddTodo", "CompleteTodo", "Todos.get"] },
   views: [{ id: "todos", component: "./web/TodosView.tsx" }],

@@ -22,5 +22,5 @@ Preconditions: `npm run build`; Domain, effect and alchemy installed (root dev d
 
 - `./host` imports only Domain, effect and type-only pi; `cloudflare:*`, `node:*` and `alchemy` are forbidden in `src/host/` and `src/host.ts` (`ARCHITECTURE.json` `pathRules`).
 - `defineApp` cannot see agent names; `checkAgents(def, agents)` runs at mount.
-- Words are checked only for the base language: another language falls back to the base's text at run time, so the contract does not require its tables to be complete.
-- Domain, effect and alchemy are optional peers: an app that does not use the host installs none of them.
+- Every declared language is checked against the base's keys (the title, each view's name, each refusal): a table that is not an object or lacks one is refused at `defineApp` (AP-23).
+- Domain, effect and alchemy are not declared as peers of `@hachej/boring-agent`: npm walks the optional peers of Domain (react, ws) and refuses a plain install next to pi 1.5.2 (ERESOLVE). An app that imports `./host` installs the three itself, at the versions of this repository's root dev dependencies; an app that does not installs none of them. `npm run test:host-consumer` does both real installs.

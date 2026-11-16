@@ -195,10 +195,7 @@
     "@hachej/boring-files": "^0.5.1",
     "@hachej/boring-ui-kit": "^0.5.1",
     "@earendil-works/pi-schema": "~1.5.2",
-    "xlsx": "^0.20.3",
-    "@alchemy.run/domain": "2.0.0-beta.87",
-    "alchemy": "2.0.0-beta.87",
-    "effect": "4.1.4"
+    "xlsx": "^0.20.3"
   },
   "peerDependenciesMeta": {
     "@hachej/boring-files": {
@@ -208,15 +205,6 @@
       "optional": true
     },
     "xlsx": {
-      "optional": true
-    },
-    "@alchemy.run/domain": {
-      "optional": true
-    },
-    "alchemy": {
-      "optional": true
-    },
-    "effect": {
       "optional": true
     }
   },

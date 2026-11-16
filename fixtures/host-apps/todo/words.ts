@@ -1,4 +1,4 @@
-// Every word the host reads in French, the base language. words.de.ts has the same keys.
+// Every word the host reads in French, the base language. words.en.ts has the same keys.
 const words = {
   app: { title: "Tâches" },
   views: { todos: "Tâches" },

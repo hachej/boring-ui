@@ -9,7 +9,7 @@ export type Operation = string;
 export type Need = 'files';
 
 /** The languages the kit speaks. It grows by a kit release only. */
-export const KIT_LANGUAGES = ['en', 'fr', 'de'] as const;
+export const KIT_LANGUAGES = ['en', 'fr'] as const;
 export type KitLanguage = (typeof KIT_LANGUAGES)[number];
 
 /** The keys the host reads in every words file. The rest of a words file is the app's own. */
@@ -121,17 +121,27 @@ export const defineApp = <const A extends AppDefinition>(app: A): A => {
   if (!languages || typeof languages !== 'object') return fail('languages: required, with a base language and its words');
   if (!(KIT_LANGUAGES as readonly string[]).includes(languages.base)) fail(`languages.base: ${languages.base} is not a kit language`);
   for (const l of Object.keys(languages.words ?? {})) if (!(KIT_LANGUAGES as readonly string[]).includes(l)) fail(`languages.words: ${l} is not a kit language`);
+  if (!Array.isArray(app.views)) fail('views: required, a list with at least one view');
+  if (!app.expose || typeof app.expose !== 'object' || !Array.isArray(app.expose.page)) fail('expose: required, with a page list');
   const base = languages.words?.[languages.base];
   if (!base) fail(`languages.words: no words for the base language ${languages.base}`);
   if (!text(base?.app?.title)) fail(`languages.words.${languages.base}.app.title: missing`);
   if (app.views.length === 0 || new Set(app.views.map((v) => v.id)).size !== app.views.length) fail('views: at least one, each id once');
   for (const v of app.views) if (!text(base?.views?.[v.id])) fail(`views.${v.id}: no languages.words.${languages.base}.views.${v.id}`);
+  for (const [l, table] of Object.entries(languages.words)) {
+    if (l === languages.base) continue;
+    const at = `languages.words.${l}`;
+    if (!table || typeof table !== 'object') fail(`${at}: not a words table`);
+    if (!text(table.app?.title)) fail(`${at}.app.title: missing`);
+    for (const id of Object.keys(base?.views ?? {})) if (!text(table.views?.[id])) fail(`${at}.views.${id}: missing, the base language has it`);
+    for (const tag of Object.keys(base?.refusals ?? {})) if (!text(table.refusals?.[tag])) fail(`${at}.refusals.${tag}: missing, the base language has it`);
+  }
   if (app.expose.page.length === 0) fail('expose.page is empty: a person has no button');
   for (const n of app.needs ?? []) if (!NEEDS.includes(n)) fail(`needs: unknown capability ${n}`);
   if (app.units && !app.expose.page.includes(app.units.view)) fail(`units.view ${app.units.view} is not in expose.page`);
   for (const w of app.wakes ?? []) {
     if (!app.agents) fail(`wakes ${w.agent}: the app has no agents`);
-    if (!app.expose[w.agent]?.length) fail(`wakes ${w.agent}: a reader needs its own expose list (its one narrow write)`);
+    if (!Object.hasOwn(app.expose, w.agent) || !app.expose[w.agent]?.length) fail(`wakes ${w.agent}: a reader needs its own expose list (its one narrow write)`);
   }
   return app;
 };
@@ -139,10 +149,11 @@ export const defineApp = <const A extends AppDefinition>(app: A): A => {
 /** The host calls this at mount with the record `agents(kit)` returned. */
 export const checkAgents = (app: AppDefinition, agents: Record<string, DefinedAgent>): void => {
   const fail = (why: string): never => { throw new Error(`checkAgents(${app.name}): ${why}`); };
-  if (!agents.assistant) fail('agents: no agent named assistant');
+  const has = (name: string) => Object.hasOwn(agents, name);
+  if (!has('assistant')) fail('agents: no agent named assistant');
   for (const [key, a] of Object.entries(agents)) if (a.id !== key) fail(`agents.${key}: key differs from the agent's id ${a.id}`);
   for (const audience of Object.keys(app.expose)) {
-    if (audience !== 'page' && audience !== 'mcp' && !agents[audience]) fail(`expose.${audience}: not page, mcp or an agent's name`);
+    if (audience !== 'page' && audience !== 'mcp' && !has(audience)) fail(`expose.${audience}: not page, mcp or an agent's name`);
   }
-  for (const w of app.wakes ?? []) if (!agents[w.agent]) fail(`wakes ${w.agent}: not an agent's name`);
+  for (const w of app.wakes ?? []) if (!has(w.agent)) fail(`wakes ${w.agent}: not an agent's name`);
 };

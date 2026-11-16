@@ -137,3 +137,9 @@ Languages (conductor's addition, `multi-language-2026-11-16/REPO-CHANGES.md` sec
 Choices made alone: `handlers` is typed `Layer<never, any, any>` because `Layer.empty` (the sample app's) is not assignable to `Layer<any, any, any>`; `needs` is `readonly "files"[]` and the runtime list is `["files"]`; `Seed.operations` is optional; `test-host-consumer.mjs` writes the two archives' lock entries itself (integrity of the tarball), because `npm install --package-lock-only` over the subset lockfile also resolved Domain's optional peers (vite, puppeteer-core) and failed on `ws`; no flag was used. `package.json` gained `test:host-consumer`.
 
 Full `npm test`: 3346 tests, 3111 pass, 1 fail, rest skipped by the suite. The failure, `public chat-react voice hooks execute in an isolated DOM realm`, passes alone (`node --test test/packages/ui-chat-react-voice.test.mjs`: 1 pass); it ran 3.1 s inside the full run, so I call it load flake, not proven. `npm run verify` and hosted checks not run by me.
+
+### Round 2 (16 November 2026, after the tester's "fix first")
+
+- The agent package no longer declares `@alchemy.run/domain`, `effect` or `alchemy` as peers: a plain `npm install` of the packed package next to pi 1.5.2 failed with ERESOLVE because npm walks Domain's optional peers (react 19.3.1, ws 8.23.0) against chord's exact pins. An app that imports `/host` installs the three itself. `npm run test:host-consumer` now does a real plain install of the tarballs, with and without them.
+- `defineApp` checks every declared language against the base's keys; a missing `views` or `expose` is refused naming the app; `checkAgents` uses own-property lookups; `KIT_LANGUAGES` is `en`, `fr`; fixture view text is English (todo's second language is `en`, not `de`).
+- `main` merged into the branch (conflict in `MIGRATING.md` only, both texts kept).

@@ -25,7 +25,7 @@ const kit = { person: 'camille', model: { provider: 'faux', modelId: 'faux' }, t
 test('defineApp returns each fixture definition as the same object', () => {
   assert.equal(defineApp(notes), notes);
   assert.equal(defineApp(todo), todo);
-  assert.deepEqual([...KIT_LANGUAGES], ['en', 'fr', 'de']);
+  assert.deepEqual([...KIT_LANGUAGES], ['en', 'fr']);
 });
 
 const faults = {
@@ -38,10 +38,16 @@ const faults = {
   'two views with one id': { ...ok, views: [{ id: 'v', component: './a.tsx' }, { id: 'v', component: './b.tsx' }] },
   'needs mail': { ...ok, needs: ['mail'] },
   'no languages': { ...ok, languages: undefined },
-  'base language not in the words': { ...ok, languages: { base: 'de', words: { fr: words } } },
+  'base language not in the words': { ...ok, languages: { base: 'en', words: { fr: words } } },
   'base language the kit does not speak': { ...ok, languages: { base: 'xx', words: { xx: words } } },
   'words in a language the kit does not speak': { ...ok, languages: { base: 'fr', words: { fr: words, xx: words } } },
   'a view with no name in the base words': { ...ok, views: [{ id: 'other', component: './o.tsx' }] },
+  'a language that is a string': { ...ok, languages: { base: 'fr', words: { fr: words, en: 'oops' } } },
+  'a language with no title': { ...ok, languages: { base: 'fr', words: { fr: words, en: { ...words, app: {} } } } },
+  'a language missing a view name': { ...ok, languages: { base: 'fr', words: { fr: words, en: { ...words, views: {} } } } },
+  'a language missing a refusal': { ...ok, languages: { base: 'fr', words: { fr: { ...words, refusals: { NotYours: 'Non' } }, en: words } } },
+  'no views': { ...ok, views: undefined },
+  'no expose': { ...ok, expose: undefined },
   'no title in the base words': { ...ok, languages: { base: 'fr', words: { fr: { ...words, app: {} } } } },
 };
 
@@ -63,6 +69,8 @@ test('checkAgents refuses what only the agents record shows', () => {
     'no assistant': [ok, { helper: a('helper') }],
     'expose key that is no audience nor agent': [{ ...ok, expose: { page: ['A'], ghost: ['A'] } }, { assistant: a('assistant') }],
     'wake of an unknown agent': [{ ...ok, wakes: [{ ...reader, agent: 'reader' }] }, { assistant: a('assistant') }],
+    'expose key constructor': [{ ...ok, expose: { page: ['A'], constructor: ['A'] } }, { assistant: a('assistant') }],
+    'expose key toString': [{ ...ok, expose: { page: ['A'], toString: ['A'] } }, { assistant: a('assistant') }],
     'record key differs from the agent id': [ok, { assistant: a('assistant'), other: a('another') }],
   };
   let missed = 0;
