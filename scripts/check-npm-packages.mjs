@@ -95,6 +95,13 @@ export function checkShippedRegistry(manifest, paths, { items = [], read } = {})
   for (const name of shipped) {
     const json = read(`r/${name}.json`);
     pins(json, name);
+    // The kit's primitives (shadcn/ui/) install into the app's ui alias: no target, and no import left that only the kit's own tree resolves (`cn`, a relative path).
+    for (const file of name === 'registry' ? [] : json.files ?? []) {
+      if (!file.path?.startsWith('shadcn/ui/')) continue;
+      if (file.target) errors.push(`Primitive ${name} has a target (${file.target}): it installs in the app's ui alias, not a fixed folder`);
+      const unresolved = /\bfrom\s*["'](cn|\.{1,2}\/[^"']*)["']/.exec(file.content ?? '')?.[1];
+      if (unresolved) errors.push(`Primitive ${name} imports "${unresolved}", which an app cannot resolve (scripts/ui-primitives.mjs rewrites it at build)`);
+    }
     if (name === 'registry') for (const entry of json.items ?? []) dependencies(`registry index ${entry.name}`, entry);
     else dependencies(name, json);
   }

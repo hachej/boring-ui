@@ -16,6 +16,8 @@ const StoreContext = createContext<Store | null>(null);
  * register its context (here) or its header (`useScreenHeader`). True outside a shell.
  */
 export const ScreenActiveContext = createContext(true);
+/** Whether the calling screen is the one on show: `false` on a screen the shell has hidden, `true` on the one on show and outside a shell. */
+export function useScreenActive(): boolean { return useContext(ScreenActiveContext); }
 /** The mounted provider's store, for `readAgentContext` (the transport option has no React context to read). */
 let current: Store | null = null;
 

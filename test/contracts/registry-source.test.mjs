@@ -11,6 +11,7 @@ import { buildRegistry } from '../../scripts/build-registry.mjs';
 import { APP_SETUP, checkRegistryBlocks, SHADCN_BUILTINS } from '../../scripts/check-registry-blocks.mjs';
 import { viewersCss } from '../../registry/viewer-frame/build-css.mjs';
 import { feedbackCss } from '../../scripts/build-feedback-css.mjs';
+import { UI_FOLDER, installable, isUiItem } from '../../scripts/ui-primitives.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 // Items written in Tailwind, installed into their own folder, rather than recipes over a headless @hachej/boring-ui-kit controller.
@@ -85,7 +86,8 @@ test('standard pinned CLI rebuilds the committed source registry artifact exactl
       const committed = JSON.parse(readFileSync(join(root, 'public/r', item.name + '.json'), 'utf8'));
       assert.deepEqual(built, registryItemSchema.parse(committed), 'Generated item is stale or differs from the real CLI');
       assert.equal(readFileSync(join(directory, item.name + '.json'), 'utf8'), readFileSync(join(root, 'public/r', item.name + '.json'), 'utf8'), 'public/r is stale: run npm run registry:build');
-      for (const file of built.files ?? []) assert.equal(file.content, readFileSync(join(root, file.path), 'utf8'));
+      // The kit's primitives are published with two unresolvable imports rewritten (scripts/ui-primitives.mjs); every other file is its source.
+      for (const file of built.files ?? []) assert.equal(file.content, file.path.startsWith(`${UI_FOLDER}/`) ? installable(readFileSync(join(root, file.path), 'utf8')) : readFileSync(join(root, file.path), 'utf8'));
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
@@ -124,6 +126,12 @@ test('registry dependency pins and scoped styles preserve the declared source di
     }
     // No item installs the theme: blocks use the app's shadcn tokens, and an app without them adds the theme once (registry/README.md).
     assert.ok(!closureOf(item.name).has('theme'), `${item.name} depends on @boring-ui/theme`);
+    if (isUiItem(item.name)) { // The kit's own primitives: derived from shadcn/ui/ and pinned like the root tooling (test/packages/ui-primitives.test.mjs holds the rest).
+      assert.equal(item.cssVars, undefined); assert.equal(item.css, undefined);
+      for (const file of item.files) { assert.ok(file.path.startsWith(`${UI_FOLDER}/`), file.path); assert.equal(file.target, undefined, 'a primitive installs in the app\'s ui alias'); }
+      for (const dependency of item.registryDependencies ?? []) assert.ok(manifest.items.some(other => '@boring-ui/' + other.name === dependency), 'No implicit unpinned child items: ' + dependency);
+      continue;
+    }
     const declared = new Set();
     for (const dependency of item.dependencies ?? []) {
       const split = dependency.lastIndexOf('@'), name = dependency.slice(0, split), spec = dependency.slice(split + 1);
@@ -272,6 +280,7 @@ test('the block check rejects an import cycle in a registry block or a package s
   try {
     cpSync(join(root, 'registry.json'), join(directory, 'registry.json'));
     cpSync(join(root, 'registry'), join(directory, 'registry'), { recursive: true });
+    cpSync(join(root, 'shadcn'), join(directory, 'shadcn'), { recursive: true });
     for (const name of readdirSync(join(root, 'packages'))) cpSync(join(root, 'packages', name, 'src'), join(directory, 'packages', name, 'src'), { recursive: true });
     assert.deepEqual(checkRegistryBlocks(directory).errors, []);
     // The cycle the owner found: the row model (a leaf lib) taking its queued-message type from the queue component.
@@ -295,6 +304,7 @@ test('the block check refuses any shadcn component or the theme in registryDepen
   try {
     cpSync(join(root, 'registry.json'), join(directory, 'registry.json'));
     cpSync(join(root, 'registry'), join(directory, 'registry'), { recursive: true });
+    cpSync(join(root, 'shadcn'), join(directory, 'shadcn'), { recursive: true });
     for (const name of readdirSync(join(root, 'packages'))) cpSync(join(root, 'packages', name, 'src'), join(directory, 'packages', name, 'src'), { recursive: true });
     assert.deepEqual(checkRegistryBlocks(directory).errors, [], 'the committed app-shell item passes');
     const manifestPath = join(directory, 'registry.json');
@@ -320,6 +330,7 @@ test('the block check keeps the reply cards out of the core chat: no card module
   try {
     cpSync(join(root, 'registry.json'), join(directory, 'registry.json'));
     cpSync(join(root, 'registry'), join(directory, 'registry'), { recursive: true });
+    cpSync(join(root, 'shadcn'), join(directory, 'shadcn'), { recursive: true });
     for (const name of readdirSync(join(root, 'packages'))) cpSync(join(root, 'packages', name, 'src'), join(directory, 'packages', name, 'src'), { recursive: true });
     assert.deepEqual(checkRegistryBlocks(directory).errors, [], 'the committed core chat passes');
     const manifestPath = join(directory, 'registry.json');
@@ -339,6 +350,7 @@ test('the block check keeps the core chat small: only its core npm packages and 
   try {
     cpSync(join(root, 'registry.json'), join(directory, 'registry.json'));
     cpSync(join(root, 'registry'), join(directory, 'registry'), { recursive: true });
+    cpSync(join(root, 'shadcn'), join(directory, 'shadcn'), { recursive: true });
     for (const name of readdirSync(join(root, 'packages'))) cpSync(join(root, 'packages', name, 'src'), join(directory, 'packages', name, 'src'), { recursive: true });
     assert.deepEqual(checkRegistryBlocks(directory).errors, [], 'the committed core chat passes');
     const manifestPath = join(directory, 'registry.json');
@@ -358,6 +370,7 @@ test('the block check keeps viewers lazy: the agent page and the kind modules ne
   try {
     cpSync(join(root, 'registry.json'), join(directory, 'registry.json'));
     cpSync(join(root, 'registry'), join(directory, 'registry'), { recursive: true });
+    cpSync(join(root, 'shadcn'), join(directory, 'shadcn'), { recursive: true });
     for (const name of readdirSync(join(root, 'packages'))) cpSync(join(root, 'packages', name, 'src'), join(directory, 'packages', name, 'src'), { recursive: true });
     assert.deepEqual(checkRegistryBlocks(directory).errors, [], 'the committed agent page and kinds pass');
     const prepend = (path, line) => writeFileSync(join(directory, path), line + '\n' + readFileSync(join(directory, path), 'utf8'));

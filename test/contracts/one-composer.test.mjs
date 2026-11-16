@@ -239,6 +239,24 @@ test('1280, folded: the card on the field says what the tool does, asks both que
   await oneField('reply read');
 });
 
+test('folded, 1280 and 390: a failed turn is one sentence on the card, in the app\'s words when it gives replyError, and the next turn clears it', { skip, timeout: 120000 }, async () => {
+  for (const [width, query] of [[1280, ''], [390, 'tabs=1'], [1280, 'replyError=1']]) {
+    await open(width, query);
+    await browser.evaluate(`window.__run('failed')`);
+    await browser.until('failed card', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'failed'`);
+    const sentence = await text('[data-testid=agent-card-failed]');
+    assert.equal(sentence, query === 'replyError=1' ? 'Le relevé n’a pas pu être lu (fictif).' : 'La réponse a échoué', `one plain sentence at ${width} (${query || 'default'})`);
+    assert.equal(await count('[data-testid=agent-card] [data-testid=agent-card-status]'), 0, 'no « Terminé » for a failed turn');
+    assert.equal(await count('[data-testid=agent-bar-unread]'), 0, 'a failure is not an unread reply');
+    assert.equal(await count('[data-testid=agent-tray]') + (await browser.evaluate(`document.querySelector('[data-testid=agent-layer]')?.dataset.state`) === 'half' ? 1 : 0), 0, 'the conversation stays folded');
+    assert.equal(await browser.evaluate(`(r => r.bottom <= innerHeight && r.height > 0)(document.querySelector('[data-testid=agent-card-failed]').getBoundingClientRect())`), true, 'on screen');
+    await browser.screenshot(`one-composer-${width}-light-collapsed-failed${query === 'replyError=1' ? '-own-words' : ''}.png`);
+    await browser.evaluate(`window.__run('think')`);
+    await browser.until('the next turn', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'working' || !document.querySelector('[data-testid=agent-card-failed]')`);
+    assert.equal(await count('[data-testid=agent-card-failed]'), 0, 'the sentence goes when the next turn starts');
+  }
+});
+
 test('1280: typing keeps the buttons on the last line; a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
   await open(1280);
   await type('Prépare la relance du dossier Cèdre :');
@@ -970,4 +988,103 @@ test('1280, pane review: preview keeps one identity, an update of the top never 
   await browser.evaluate(`(() => { const list = document.createElement('div'); list.setAttribute('role', 'listbox'); document.body.append(list); document.activeElement.blur(); })()`);
   await browser.press('Escape');
   await browser.until('the dock closes by Escape although a listbox sits on the page', `document.querySelector('[data-testid=agent-layer]')?.dataset.state !== 'open'`);
+});
+
+// `chatProps.enterSends` (kit 0.5): the shell's one composer keeps Enter = a new line on a touch device unless the app asks `'always'`.
+// The composer is the same PiChat in the bar's pill row (peek, Ouvert) and in the content composer's card; the touch case needs a real `(pointer: coarse)`.
+const imeEnter = init => browser.evaluate(`(() => { const e = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...${js(init)} }); document.querySelector('[data-testid=composer-input]').dispatchEvent(e); return e.defaultPrevented; })()`);
+const fieldText = () => browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`);
+const sentCount = () => browser.evaluate('window.__sent.length');
+const pointerCoarse = () => browser.evaluate(`matchMedia('(pointer: coarse)').matches`);
+const withTouch = async run => {
+  await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  try { await run(); } finally { await browser.send('Emulation.setTouchEmulationEnabled', { enabled: false }); }
+};
+
+test('390 touch, default: Enter adds a line and only Send sends, in the pill row', { skip, timeout: 120000 }, async () => {
+  await open(390, 'tabs=1');
+  await withTouch(async () => {
+    assert.equal(await pointerCoarse(), true, 'the page reports a touch device');
+    await type('Première ligne');
+    await browser.press('Enter');
+    await wait(250);
+    assert.equal(await sentCount(), 0, 'Enter sent nothing');
+    assert.equal(await fieldText(), 'Première ligne\n', 'Enter added a line');
+    await click('[data-testid=composer-submit]');
+    await browser.until('Send sent it', `window.__sent.length === 1`);
+  });
+});
+
+test('390 touch, enterSends="always": Enter sends from the pill row at rest and open; Shift+Enter adds a line; an IME Enter never sends', { skip, timeout: 120000 }, async () => {
+  await open(390, 'tabs=1&enter=always');
+  await withTouch(async () => {
+    assert.equal(await pointerCoarse(), true, 'the page reports a touch device');
+    assert.equal(await dockState(), 'peek', 'the phone drawer at rest');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer]').dataset.layout`), 'pill');
+    await type('Première ligne');
+    await browser.press('Enter', { shift: true });
+    await browser.send('Input.insertText', { text: 'Seconde ligne' });
+    await wait(250);
+    assert.equal(await sentCount(), 0, 'Shift+Enter sent nothing');
+    assert.equal(await fieldText(), 'Première ligne\nSeconde ligne', 'Shift+Enter added a line');
+    assert.equal(await imeEnter({ isComposing: true }), false, 'a composing Enter is left to the input method');
+    assert.equal(await imeEnter({ keyCode: 229 }), false, 'a keyCode 229 Enter is left to the input method');
+    assert.equal(await sentCount(), 0, 'an IME Enter sent nothing');
+    await browser.press('Enter');
+    await browser.until('Enter sent it', `window.__sent.length === 1`);
+    assert.deepEqual(await browser.evaluate('window.__sent'), ['Première ligne\nSeconde ligne']);
+    assert.equal(await fieldText(), '', 'the field is empty after the send');
+    // The same field in the open drawer (half).
+    await click('[data-testid=agent-bar-conversation]');
+    await browser.until('Ouvert: half', `document.querySelector('[data-testid=agent-layer]')?.dataset.state === 'half'`);
+    await wait(700);
+    await oneField('phone, Ouvert');
+    await type('Dans le tiroir ouvert');
+    await browser.press('Enter');
+    await browser.until('Enter sent it in the open drawer', `window.__sent.length === 2`);
+    assert.equal((await browser.evaluate('window.__sent'))[1], 'Dans le tiroir ouvert');
+  });
+});
+
+test('390 touch, enterSends="always" in the content composer (the two-row card): Enter sends, and without the option it adds a line', { skip, timeout: 120000 }, async () => {
+  await open(390, 'composer=content&enter=always');
+  await withTouch(async () => {
+    assert.equal(await pointerCoarse(), true);
+    await browser.evaluate(`window.__layer.open('agent', 'half')`);
+    await browser.until('the drawer\'s field', `!!document.querySelector('[data-testid=composer-input]')`);
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer]').dataset.layout`), 'card');
+    await type('Un message court');
+    await browser.press('Enter');
+    await browser.until('Enter sent it', `window.__sent.length === 1`);
+    assert.equal((await browser.evaluate('window.__sent'))[0], 'Un message court');
+  });
+  await open(390, 'composer=content');
+  await withTouch(async () => {
+    await browser.evaluate(`window.__layer.open('agent', 'half')`);
+    await browser.until('the drawer\'s field', `!!document.querySelector('[data-testid=composer-input]')`);
+    await type('Un message court');
+    await browser.press('Enter');
+    await wait(250);
+    assert.equal(await sentCount(), 0, 'default: Enter did not send on a touch device');
+    assert.equal(await fieldText(), 'Un message court\n');
+  });
+});
+
+test('1280 fine pointer: Enter sends by default and with enterSends="always"; Shift+Enter adds a line either way', { skip, timeout: 120000 }, async () => {
+  for (const query of ['', 'enter=always']) {
+    await open(1280, query);
+    assert.equal(await pointerCoarse(), false, 'a fine pointer');
+    await type('Première ligne');
+    await browser.press('Enter', { shift: true });
+    await browser.send('Input.insertText', { text: 'Seconde ligne' });
+    await wait(250);
+    assert.equal(await sentCount(), 0, `${query || 'default'}: Shift+Enter sent nothing`);
+    assert.equal(await fieldText(), 'Première ligne\nSeconde ligne');
+    assert.equal(await imeEnter({ isComposing: true }), false);
+    assert.equal(await imeEnter({ keyCode: 229 }), false);
+    assert.equal(await sentCount(), 0, `${query || 'default'}: an IME Enter sent nothing`);
+    await browser.press('Enter');
+    await browser.until(`${query || 'default'}: Enter sent it`, `window.__sent.length === 1`);
+    assert.equal((await browser.evaluate('window.__sent'))[0], 'Première ligne\nSeconde ligne');
+  }
 });
