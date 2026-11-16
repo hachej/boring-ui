@@ -153,7 +153,9 @@ const Screen = (DEMO || params.get('page') === 'real') ? RealPage : Page;
 const nav = [{ id: 'dossier', label: T('Dossier', 'File'), icon: DEMO ? FileTextIcon : Icon, render: () => <Screen /> },
   // `?tabs=1`: a second screen, so a phone shows its bottom tabs (AC-20).
   ...(params.get('tabs') === '1' ? [{ id: 'pieces', label: T('Pièces', 'Documents'), icon: DEMO ? FolderIcon : Icon, render: () => <Screen /> }] : [])];
-const attachments = { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })) };
+// `?camera=1`: an app that gives the phone camera sheet (`attachments.Camera`).
+const FakeCamera = ({ onClose }) => <div role="dialog" aria-label="Camera" data-testid="fixture-camera"><button type="button" onClick={onClose}>Close</button></div>;
+const attachments = { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })), ...(params.get('camera') === '1' ? { Camera: FakeCamera } : {}) };
 const slash = { Picker: SlashPicker, commands: [{ name: T('relance', 'reminder'), description: T('Rédiger une relance fictive.', 'Draft a fictional reminder.'), run: api => api.setText(T('Relance du dossier Cèdre', 'Reminder for the Harbor file')) }], skills: [] };
 if (DEMO) slash.commands.push({ name: 'reconcile', description: 'Reconcile the month’s statement.', run: api => api.setText('Reconcile the January statement') }, { name: 'summarize', description: 'Summarize the discrepancies.', run: api => api.setText('Summarize the January discrepancies') });
 const FILES = EN ? ['uploads/statement-january.pdf', 'uploads/discrepancies-january.csv', 'uploads/statement-february.pdf'] : ['uploads/releve-janvier.pdf', 'uploads/ecarts-janvier.csv', 'uploads/releve-fevrier.pdf'];

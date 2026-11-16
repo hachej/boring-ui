@@ -132,7 +132,7 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
   const open = layer.expanded ? layer.trayOpen || layer.dockOpen : layer.snap === 'half' || layer.snap === 'full';
   return <span className="relative inline-flex shrink-0">
     <Button type="button" variant="secondary" size="icon" data-testid="agent-bar-conversation" aria-label={text.conversation} title={text.conversation} aria-expanded={open}
-      onClick={() => { if (open) { layer.close(); requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true })); } else layer.open('agent'); }}>{open ? <ChevronDownIcon data-icon="inline-start" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>
+      onClick={() => { if (open) { layer.close(); requestAnimationFrame(() => (layer.host?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]'))?.focus({ preventScroll: true })); } else layer.open('agent'); }}>{open ? <ChevronDownIcon data-icon="inline-start" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button>
     {unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-(--radius-3xl) bg-primary" />}
   </span>;
 }

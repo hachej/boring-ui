@@ -340,7 +340,7 @@ export function Composer(props: ComposerProps) {
     // Never send while an input method editor is composing (Enter confirms the candidate).
     // A phone keyboard has no Shift+Enter: on a touch device Enter inserts a newline and the Send button sends.
     const touch = globalThis.matchMedia?.('(pointer: coarse)').matches === true;
-    if (event.key === 'Enter' && (!touch || props.barActions === 'attach') && !event.shiftKey && !composing.current && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+    if (event.key === 'Enter' && !touch && !event.shiftKey && !composing.current && !event.nativeEvent.isComposing && event.keyCode !== 229) {
       event.preventDefault();
       if (canSubmit) props.onSend();
     }
@@ -372,7 +372,7 @@ export function Composer(props: ComposerProps) {
     <AttachmentChips items={attachments} words={labels} onRemove={props.onRemoveAttachment} />
   </>;
   const pill = layout === 'pill';
-  const textareaEl = <InputGroupTextarea ref={setRef} data-testid="composer-input" aria-label={labels.messageInput} rows={1} value={text} disabled={disabled} {...(props.barActions === 'attach' ? { enterKeyHint: 'send' } : {})}
+  const textareaEl = <InputGroupTextarea ref={setRef} data-testid="composer-input" aria-label={labels.messageInput} rows={1} value={text} disabled={disabled}
       placeholder={props.placeholderContent ? '' : props.placeholder ?? (working ? labels.placeholderWorking : labels.placeholder)}
       {...(slash || mentions ? { role: 'combobox', 'aria-expanded': menuOpen, 'aria-haspopup': 'listbox', 'aria-autocomplete': 'list' } as const : {})}
       onChange={onChange} onKeyDown={onKeyDown} onPaste={onPaste} onKeyUp={event => trackCaret(event.currentTarget)} onClick={event => trackCaret(event.currentTarget)}
@@ -384,7 +384,7 @@ export function Composer(props: ComposerProps) {
   const input = props.renderInput?.({ text, onText, onCaret: setCaret, onSend: () => { if (canSubmit && !menuOpen) props.onSend(); } }) ?? props.input ?? (props.placeholderContent || marked ? <div data-slot="composer-field" className="relative flex min-h-16 w-full min-w-0 flex-1">{marked}{textareaEl}{!text && props.placeholderContent && <span aria-hidden="true" data-slot="composer-placeholder" className="pointer-events-none absolute inset-x-3 top-2 text-xs text-muted-foreground">{props.placeholderContent}</span>}</div> : textareaEl);
   const barActions = props.barActions === true || props.barActions === 'attach';
   // With `barActions`, attach and commands are bar buttons; the "+" stays only when Take a photo is left in it.
-  const plusHasItems = props.barActions === 'attach' ? false : barActions ? canPhoto : canAttach || items.length > 0;
+  const plusHasItems = barActions ? canPhoto : canAttach || items.length > 0;
   const plusButton = plusHasItems && <PlusActions disabled={disabled || recording} textarea={inner} onAttach={!barActions && canAttach ? () => fileInput.current?.click() : undefined} onTakePhoto={canPhoto ? () => setCameraOpen(true) : undefined} onCommands={!barActions && items.length > 0 ? openCommands : undefined} />;
   // Off: the "+" alone, as before (same element position). On: the bar buttons first.
   const openFiles = props.barActions === 'attach' ? (props.files ?? []).filter(file => file.open) : [];

@@ -971,3 +971,38 @@ test('1280, pane review: preview keeps one identity, an update of the top never 
   await browser.press('Escape');
   await browser.until('the dock closes by Escape although a listbox sits on the page', `document.querySelector('[data-testid=agent-layer]')?.dataset.state !== 'open'`);
 });
+
+// Defaults every app gets from the bar, held through the interface: a phone keeps its camera, its multi-line Enter, and the app's own colours.
+test('390 touch, camera: an app that gives the camera sheet reaches Take a photo from the bar\'s « + » menu', { skip, timeout: 120000 }, async () => {
+  await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  try {
+  await open(390, 'camera=1');
+  await browser.until('the plus', `!!document.querySelector('[data-testid=composer-plus]')`);
+  await click('[data-testid=composer-plus]');
+  await browser.until('the menu', `!!document.querySelector('[data-testid=composer-take-photo]')`);
+  await click('[data-testid=composer-take-photo]');
+  await browser.until('the camera sheet', `!!document.querySelector('[data-testid=fixture-camera]')`);
+  } finally { await browser.send('Emulation.setTouchEmulationEnabled', { enabled: false }); }
+});
+
+test('390 touch: Enter in the field inserts a new line and sends nothing', { skip, timeout: 120000 }, async () => {
+  await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  try {
+  await open(390);
+  assert.equal(await browser.evaluate(`matchMedia('(pointer: coarse)').matches`), true, 'the phone emulation reports a touch pointer');
+  await type('première ligne');
+  await browser.press('Enter');
+  await type('seconde ligne');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer-input]').value`), 'première ligne\nseconde ligne');
+  assert.equal(await browser.evaluate(`(window.__sent ?? []).length`), 0, 'Enter sent nothing');
+  } finally { await browser.send('Emulation.setTouchEmulationEnabled', { enabled: false }); }
+});
+
+test('1280: the send button takes the app\'s primary colour pairing, not the shell\'s own accent', { skip, timeout: 120000 }, async () => {
+  await open(1280);
+  await type('Bonjour');
+  const colours = await browser.evaluate(`(() => { const probe = document.createElement('button'); probe.className = 'bg-primary text-primary-foreground'; document.body.append(probe);
+    const want = getComputedStyle(probe), send = getComputedStyle(document.querySelector('[data-testid=composer-submit]'));
+    const out = { want: [want.backgroundColor, want.color], got: [send.backgroundColor, send.color] }; probe.remove(); return out; })()`);
+  assert.deepEqual(colours.got, colours.want);
+});
