@@ -231,7 +231,7 @@ export function AgentDockLayout({ children }: { readonly children: ReactNode }):
   const { title } = useTitle();
   const dock = layer.expanded && (layer.agent || layer.improve) ? <AgentDock side={layer.side} /> : null;
   // The PM column sits inside the main content: while it is open beside the dock, the dock leaves the screen its least width beside it.
-  return <DockLayout storageKey={DOCK_KEY} persist="local" minMain={MIN_MAIN + (layer.besidePanel ? PM_COLUMN : 0)} className={layer.bar ? '@container/agent-layout' : undefined}>
+  return <DockLayout storageKey={DOCK_KEY} persist="local" minMain={MIN_MAIN + (layer.besidePanel ? PM_COLUMN : 0)} {...(layer.bar ? { className: '@container/agent-layout' } : {})}>
     {layer.side === 'left' && dock}
     <DockMain>{layer.contentColumn ? <ContentColumn>{children}</ContentColumn> : children}</DockMain>
     {layer.bar && layer.expanded && layer.stack.length > 0 && !layer.paneStacked && <PaneDock assistant={title} />}

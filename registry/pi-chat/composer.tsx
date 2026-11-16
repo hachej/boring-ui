@@ -282,8 +282,8 @@ export function Composer(props: ComposerProps) {
     if (!element) return;
     const resize = () => {
       element.style.height = 'auto';
-      const lineHeight = parseFloat(getComputedStyle(element).lineHeight);
-      const limit = props.barActions === 'attach' ? lineHeight * 6 : MAX_HEIGHT;
+      const lineHeight = typeof getComputedStyle === 'function' ? parseFloat(getComputedStyle(element).lineHeight) : Number.NaN;
+      const limit = props.barActions === 'attach' && lineHeight > 0 ? lineHeight * 6 : MAX_HEIGHT;
       element.style.height = `${Math.min(element.scrollHeight, limit)}px`;
       element.style.overflowY = element.scrollHeight > limit ? 'auto' : 'hidden';
     };
