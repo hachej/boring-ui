@@ -1,0 +1,148 @@
+import type * as Layer from 'effect/Layer';
+import type { ToolRegistration } from '@earendil-works/pi-durable';
+import type { DefinedAgent, SkillSource } from '../agents.js';
+import type { Role } from './identity.js';
+
+/** An operation as Alchemy Domain's `expose` spells it: a command name (`AddNote`) or a read (`Notes.get`). */
+export type Operation = string;
+/** A host capability, by name. Only `files` is built. */
+export type Need = 'files';
+
+/** The languages the kit speaks. It grows by a kit release only. */
+export const KIT_LANGUAGES = ['en', 'fr', 'de'] as const;
+export type KitLanguage = (typeof KIT_LANGUAGES)[number];
+
+/** The keys the host reads in every words file. The rest of a words file is the app's own. */
+export interface AppWords {
+  readonly app: { readonly title: string };
+  /** One name per view id, shown in the navigation. */
+  readonly views: Readonly<Record<string, string>>;
+  /** One sentence per rejection tag of the models. */
+  readonly refusals: Readonly<Record<string, string>>;
+}
+
+export interface Languages<W extends AppWords = AppWords> {
+  /** The language the base words are written in. A key missing in another table shows the base's text, never the key. */
+  readonly base: KitLanguage;
+  /** One table per language the app speaks, the base included. */
+  readonly words: Partial<Record<KitLanguage, W>>;
+  /** The region for formats when a person's tag has none (`de` becomes `de-CH`). */
+  readonly region?: string;
+}
+
+/** What the host formats for a person, on `Intl`; the runtime supplies the implementation. */
+export interface Format {
+  readonly locale: string;
+  date(at: Date | string, style?: 'short' | 'medium' | 'long'): string;
+  time(at: Date | string): string;
+  number(n: number, digits?: number): string;
+  money(amount: number, currency: string): string;
+  list(items: readonly string[]): string;
+  plural<T>(n: number, forms: { one: T; other: T; zero?: T; two?: T; few?: T; many?: T }): T;
+  compare(a: string, b: string): number;
+}
+
+/** What a view's React module gets from the host. A view imports nothing from the host. */
+export interface ViewProps<W extends AppWords = AppWords> {
+  person: { id: string; email: string };
+  /** The person's language tag, such as `de-CH`. */
+  language: string;
+  words: W;
+  format: Format;
+  /** A refusal in the person's language: `refusals.<Tag>`, never the tag. */
+  say(error: unknown): string;
+  call(op: Operation, input?: object): Promise<unknown>;
+  /** `after` is what `call` returned: the read then waits until that write is in the view. */
+  read(view: string, after?: unknown): Promise<any>;
+}
+
+export interface View {
+  id: string;
+  /** Path of a module whose default export is a React component of `ViewProps`. */
+  component: string;
+  nav?: never;
+  rightPane?: never;
+}
+
+/** The host's hand to the agents factory: this person's tools for one audience, skills, ask and files tools, the model route. */
+export interface AgentKit {
+  person: string;
+  model: { provider: string; modelId: string };
+  tools(audience: string): ToolRegistration[];
+  skills(agent: string): SkillSource;
+  ask: ToolRegistration;
+  files: ToolRegistration[];
+}
+
+/** An event of the model wakes a reader agent: `policy` is the model's own Domain Policy, the host supplies its handler. */
+export interface Wake<E = any> {
+  policy: { toLayer: (...a: any[]) => Layer.Layer<any, any, any> };
+  agent: string;
+  key(event: E): string;
+  message(event: E): string;
+}
+
+export interface Seed {
+  /** `language` is a BCP 47 tag. */
+  people: { name: string; email: string; language?: string }[];
+  operations?: { as: string; op: Operation; input: object }[];
+}
+
+export interface AppDefinition<W extends AppWords = AppWords> {
+  name: string;
+  languages: Languages<W>;
+  models: readonly { layer: (handlers: Layer.Layer<any, any, any>) => Layer.Layer<any, any, any> }[];
+  handlers: Layer.Layer<never, any, any>;
+  api: unknown;
+  /** One explicit list per audience: `page`, `mcp`, and the name of each agent that gets tools. */
+  expose: { page: readonly Operation[]; mcp?: readonly Operation[]; [audience: string]: readonly Operation[] | undefined };
+  views: readonly View[];
+  /** boring-agent's own `defineAgent`, called with this person's kit. One of them is named `assistant`. */
+  agents?: (kit: AgentKit) => Record<string, DefinedAgent>;
+  /** A folder `<agent>/<skill>/SKILL.md`, read when the page and the Worker are built. */
+  skills?: string;
+  wakes?: readonly Wake[];
+  seed?: Seed;
+  needs?: readonly Need[];
+  /** A shared unit: the view the door reads as the person, and where its members live. An app with none has personal sessions only. */
+  units?: { view: Operation; members(state: unknown): ReadonlyArray<{ userId: string; role: Role }> };
+  title?: never;
+  model?: never;
+}
+
+const NEEDS: readonly string[] = ['files'];
+const text = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+
+/** Refuses a malformed definition at definition time. It cannot see agent names: `checkAgents` does at mount. */
+export const defineApp = <const A extends AppDefinition>(app: A): A => {
+  const fail = (why: string): never => { throw new Error(`defineApp(${app.name}): ${why}`); };
+  if (typeof app.name !== 'string' || !/^[a-z][a-z0-9-]{1,20}$/.test(app.name)) fail('name: lowercase letters, digits, hyphens');
+  const { languages } = app;
+  if (!languages || typeof languages !== 'object') return fail('languages: required, with a base language and its words');
+  if (!(KIT_LANGUAGES as readonly string[]).includes(languages.base)) fail(`languages.base: ${languages.base} is not a kit language`);
+  for (const l of Object.keys(languages.words ?? {})) if (!(KIT_LANGUAGES as readonly string[]).includes(l)) fail(`languages.words: ${l} is not a kit language`);
+  const base = languages.words?.[languages.base];
+  if (!base) fail(`languages.words: no words for the base language ${languages.base}`);
+  if (!text(base?.app?.title)) fail(`languages.words.${languages.base}.app.title: missing`);
+  if (app.views.length === 0 || new Set(app.views.map((v) => v.id)).size !== app.views.length) fail('views: at least one, each id once');
+  for (const v of app.views) if (!text(base?.views?.[v.id])) fail(`views.${v.id}: no languages.words.${languages.base}.views.${v.id}`);
+  if (app.expose.page.length === 0) fail('expose.page is empty: a person has no button');
+  for (const n of app.needs ?? []) if (!NEEDS.includes(n)) fail(`needs: unknown capability ${n}`);
+  if (app.units && !app.expose.page.includes(app.units.view)) fail(`units.view ${app.units.view} is not in expose.page`);
+  for (const w of app.wakes ?? []) {
+    if (!app.agents) fail(`wakes ${w.agent}: the app has no agents`);
+    if (!app.expose[w.agent]?.length) fail(`wakes ${w.agent}: a reader needs its own expose list (its one narrow write)`);
+  }
+  return app;
+};
+
+/** The host calls this at mount with the record `agents(kit)` returned. */
+export const checkAgents = (app: AppDefinition, agents: Record<string, DefinedAgent>): void => {
+  const fail = (why: string): never => { throw new Error(`checkAgents(${app.name}): ${why}`); };
+  if (!agents.assistant) fail('agents: no agent named assistant');
+  for (const [key, a] of Object.entries(agents)) if (a.id !== key) fail(`agents.${key}: key differs from the agent's id ${a.id}`);
+  for (const audience of Object.keys(app.expose)) {
+    if (audience !== 'page' && audience !== 'mcp' && !agents[audience]) fail(`expose.${audience}: not page, mcp or an agent's name`);
+  }
+  for (const w of app.wakes ?? []) if (!agents[w.agent]) fail(`wakes ${w.agent}: not an agent's name`);
+};

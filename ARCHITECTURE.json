@@ -169,6 +169,28 @@
           "forbiddenRelative": [
             "src/"
           ]
+        },
+        {
+          "prefix": "src/host/",
+          "forbidden": [
+            "cloudflare:*",
+            "@alchemy.run/cloudflare*",
+            "alchemy",
+            "alchemy/*",
+            "node:*",
+            "@hachej/boring-ui-kit*"
+          ]
+        },
+        {
+          "prefix": "src/host.ts",
+          "forbidden": [
+            "cloudflare:*",
+            "@alchemy.run/cloudflare*",
+            "alchemy",
+            "alchemy/*",
+            "node:*",
+            "@hachej/boring-ui-kit*"
+          ]
         }
       ]
     },
