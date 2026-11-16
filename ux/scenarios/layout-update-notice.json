@@ -1,6 +1,7 @@
 {
  "target": "layout:update-notice",
- "title": "App shell with the update notice",
+ "title": "Update notice",
+ "site": false,
  "summary": "A newer version of the app is online while the page is open: one status row, a Reload action, a dismiss that holds for that version.",
  "try": [{"label": "A newer version comes online", "flow": "F01"}, {"label": "Reload", "flow": "F02"}, {"label": "Dismiss, then another version", "flow": "F03"}, {"label": "Reach the last control of a long screen", "flow": "F04"}],
  "purpose": "AppShell update={{ available, version, onReload }}: the kit's own notice at the foot of the screen column (above the phone's tab bar), in the shell's words (English or French), never covering the last control of a long screen, dismissed for the version it names.",

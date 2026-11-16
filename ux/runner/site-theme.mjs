@@ -27,6 +27,7 @@ p{margin:.5em 0}a{color:inherit;text-underline-offset:3px}
 .content{min-width:0}
 .bar{display:flex;align-items:center;gap:10px;padding:10px 24px;border-bottom:1px solid var(--border)}
 .bar .brand-sm,.bar .menu{display:none}.grow{flex:1}
+.app{display:flex;flex-direction:column;height:100vh}.app .bar{padding:8px 16px}select.icon-btn{max-width:50vw}.app .stage[data-full]{flex:1;min-height:0;border:0;border-radius:0}
 .icon-btn,.seg button,.chip,.copy,.try button{font:inherit;font-size:.88rem;color:var(--foreground);background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:7px 12px;min-height:38px;cursor:pointer}
 .icon-btn:hover,.chip:hover,.copy:hover,.try button:hover:not(:disabled){background:var(--muted)}
 .try button:disabled{opacity:.5;cursor:default}

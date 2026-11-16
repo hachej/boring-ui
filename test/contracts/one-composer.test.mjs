@@ -264,6 +264,10 @@ for (const [width, query] of [[1280, ''], [390, 'tabs=1']]) test(`${width}: the 
   await open(width, query);
   await browser.until('the field', `!!document.querySelector('[data-testid=composer-input]')`);
   for (const offset of await offsets()) assert.ok(offset < 0.6, `empty: ${offset}px off the midline`);
+  await type('create a new file tt..md');
+  await wait(150);
+  for (const offset of await offsets()) assert.ok(offset < 1, `typed, with Send: ${offset}px off the midline`);
+  await browser.evaluate(`(() => { const e = document.querySelector('[data-testid=composer-input]'); e.select(); document.execCommand('delete'); })()`);
   await type('one');
   for (const line of ['two', 'three']) { await browser.press('Enter', { shift: true }); await browser.send('Input.insertText', { text: line }); }
   await wait(150);
@@ -279,6 +283,68 @@ test('1280: content pushed on the pane takes the kit text size and the border to
     const s = getComputedStyle(box), pane = getComputedStyle(document.querySelector('[data-testid=fixture-record]').parentElement); return { border: s.borderTopColor, text: s.color, size: pane.fontSize, token: getComputedStyle(document.documentElement).getPropertyValue('--border') }; })()`);
   assert.notEqual(style.border, style.text, 'a bare border is the theme border, not the text colour');
   assert.equal(style.size, '14px', 'the pane body is the kit text-sm');
+});
+
+// Julien: "rm close", "library is still off". Closing is an X with the name in aria-label (no visible word) and the pane sits on the card surface the bar's dock uses.
+test('1280: the close buttons are an X without a word, and a pushed pane is on the card surface', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'demo=1&single=1');
+  await click('[data-testid=page-row]');
+  await browser.until('the entry is open', `!!document.querySelector('[data-testid=fixture-record]')`);
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('the conversation is open', `!!document.querySelector('[data-testid=agent-tray-reduce], [data-testid=agent-layer-close]')`);
+  const words = await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-tray-reduce], [data-testid=agent-layer-close], [data-testid=agent-preview-close]')].map(e => [e.textContent.trim(), e.getAttribute('aria-label')])`);
+  assert.ok(words.length > 0, 'a close button is shown');
+  for (const [visible, name] of words) { assert.equal(visible, '', 'no visible word on a close button'); assert.ok(name, 'the name stays in aria-label'); }
+  const same = await browser.evaluate(`(() => { const probe = document.createElement('div'); probe.style.backgroundColor = 'var(--card)'; document.body.appendChild(probe); const card = getComputedStyle(probe).backgroundColor; probe.remove();
+    return [getComputedStyle(document.querySelector('[data-testid=agent-preview-frame]')).backgroundColor, card]; })()`);
+  assert.equal(same[0], same[1], 'the pane is on the card surface');
+});
+
+// Julien: with the right pane open the bar stays centred on the whole viewport. It belongs to the main view, the area left of the pane.
+test('1440: the bar is centred on the main view and inside it, with the pane closed, open and after a resize', { skip, timeout: 120000 }, async () => {
+  const centred = async step => {
+    const [box, main] = [await rect('[data-testid=agent-composer-box]'), await rect('[data-testid=agent-content]')];
+    assert.ok(Math.abs((box.x + box.w / 2) - (main.x + main.w / 2)) <= 1, `${step}: the bar's midline ${box.x + box.w / 2} is the main view's ${main.x + main.w / 2}`);
+    assert.ok(box.x >= main.x - 1 && box.right <= main.right + 1, `${step}: the bar is inside the main view (${box.x}-${box.right} in ${main.x}-${main.right})`);
+  };
+  await open(1440, 'demo=1&single=1');
+  await centred('pane closed');
+  await click('[data-testid=page-row]');
+  await browser.until('the entry is open', `!!document.querySelector('[data-testid=fixture-record]')`);
+  await wait(300);
+  const pane = await rect('[data-testid=agent-preview]');
+  assert.ok(pane && pane.x > 400, 'the pane is a column beside the main view');
+  await centred('pane open');
+  await browser.send('Emulation.setDeviceMetricsOverride', { width: 1180, height: 800, deviceScaleFactor: 1, mobile: false });
+  await wait(400);
+  await centred('pane open, narrower window');
+  await click('[data-testid=agent-preview-close]');
+  await wait(300);
+  await centred('pane closed again');
+});
+
+// Julien: "looks bad, why such bad header?". The docked conversation's header was on the page surface over a card body: one surface, one header height with the panes.
+test('1440: the docked conversation has one surface, a pane-height header and its Close last in the icon row', { skip, timeout: 120000 }, async () => {
+  await open(1440, 'demo=1&single=1');
+  await click('[data-testid=page-row]');
+  await browser.until('the entry is open', `!!document.querySelector('[data-testid=agent-preview-bar]')`);
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('the tray is open', `!!document.querySelector('[data-testid=agent-tray-dock]')`);
+  await click('[data-testid=agent-tray-dock]');
+  await browser.until('the conversation is docked', `!!document.querySelector('[data-testid=agent-layer-header]') && !!document.querySelector('[data-testid=agent-layer] [data-boring=pi-chat]')`);
+  await wait(400);
+  const seen = await browser.evaluate(`(() => {
+    const surface = element => { for (let e = element; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') return c; } return 'none'; };
+    const header = document.querySelector('[data-testid=agent-layer-header]'), body = document.querySelector('[data-testid=agent-layer] [data-boring=pi-chat]');
+    const row = [...header.querySelectorAll('button')].filter(e => e.getClientRects().length), last = row.at(-1);
+    return { header: surface(header), body: surface(body), headerHeight: header.getBoundingClientRect().height, bar: document.querySelector('[data-testid=agent-preview-bar]').getBoundingClientRect().height,
+      lastName: last.getAttribute('data-testid'), divider: !!header.querySelector('[data-slot=separator]'), size: row.map(e => Math.round(e.getBoundingClientRect().height)) };
+  })()`);
+  assert.equal(seen.header, seen.body, 'the header and the body are on one surface');
+  assert.equal(seen.headerHeight, seen.bar, 'the header is as tall as the pane headers');
+  assert.equal(seen.lastName, 'agent-layer-close', 'Close is last in the icon row');
+  assert.equal(seen.divider, false, 'no divider before Close');
+  assert.equal(new Set(seen.size).size, 1, `the icon buttons share one size (${seen.size})`);
 });
 
 test('1280: typing grows the field;  a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
@@ -364,15 +430,15 @@ test('1280: a file opened while docked stacks on the conversation in the same co
   // The pane's back stack (bar-parity): the file's own bar is the column's one title row, « ← Assistant »; each entry's back returns to the one under it.
   const shownCount = selector => browser.evaluate(`[...document.querySelectorAll(${JSON.stringify(selector)})].filter(e => e.checkVisibility({ visibilityProperty: true })).length`);
   assert.equal(await shownCount('[data-testid=agent-layer] [data-testid=agent-preview-back]'), 1, 'one header: « ← Assistant » is in the file\'s bar');
-  assert.equal(await text('[data-testid=agent-preview-back]'), 'Assistant');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-preview-back]').getAttribute('aria-label')`), 'Retour à Assistant');
   assert.equal(await shownCount('[data-testid=agent-layer-title]'), 0, 'no second title row above the file');
   await click('[data-testid=agent-layer] [data-testid=agent-preview-library]');
   await browser.until('library over the docked chat', `!!document.querySelector('[data-testid=agent-layer] [data-pane-top] [data-testid=fixture-library]')`);
   assert.equal(await text('[data-testid=agent-layer] [data-testid=agent-preview-title]'), 'Bibliothèque', 'the library takes the column');
-  assert.equal(await text('[data-testid=agent-preview-back]'), 'ecarts-janvier.csv', '« ← ecarts-janvier.csv »: the file waits under the library');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-preview-back]').getAttribute('aria-label')`), 'Retour à ecarts-janvier.csv', '« ← ecarts-janvier.csv »: the file waits under the library');
   await browser.evaluate(`document.querySelector('[data-testid=agent-layer] [data-testid=fixture-library-file][data-path="uploads/releve-janvier.pdf"]').click()`);
   await browser.until('picked file over the docked chat', `(document.querySelector('[data-testid=agent-layer] [data-testid=agent-preview-title]')?.textContent ?? '').includes('releve-janvier.pdf')`);
-  assert.equal(await text('[data-testid=agent-preview-back]'), 'Bibliothèque', '« ← Bibliothèque »');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-preview-back]').getAttribute('aria-label')`), 'Retour à Bibliothèque', '« ← » names the library');
   await browser.screenshot('one-composer-1280-light-preview-docked.png');
   for (const under of ['Bibliothèque', 'ecarts-janvier.csv']) {
     await click('[data-testid=agent-preview-back]');

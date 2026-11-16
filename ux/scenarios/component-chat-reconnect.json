@@ -1,6 +1,6 @@
 {
  "target": "component:chat-reconnect",
- "title": "Chat after a connection drop",
+ "title": "Chat reconnect",
  "summary": "The chat keeps working when its connection drops and comes back: the same composer sends again.",
  "purpose": "PiChat over the real chat controller and the real remote client, with a fictional host that can drop its stream, restart, or lose a message it had confirmed. Shows that after the connection returns the message that was waiting is settled (sent again once, never twice), the typed text is kept, and the next message goes out from the same composer.",
  "fixture": {

@@ -14,6 +14,7 @@
     try { frame?.contentDocument.documentElement.classList.toggle('dark', next === 'dark'); } catch { /* not loaded */ }
   };
   $('#theme')?.addEventListener('click', () => setTheme(theme === 'dark' ? 'light' : 'dark'));
+  $('#pages')?.addEventListener('change', e => { location.href = e.target.value; });
   $('#menu')?.addEventListener('click', () => { const open = document.body.classList.toggle('nav-open'); $('#menu').setAttribute('aria-expanded', String(open)); });
   $$('.side a').forEach(a => a.addEventListener('click', () => document.body.classList.remove('nav-open')));
   $$('[data-copy]').forEach(b => b.addEventListener('click', async () => {
@@ -26,11 +27,13 @@
 
   function demo(D) {
     frame = $('#demo'); const stage = $('#stage'), status = $('#try-status');
-    let vp = Math.max(0, D.views.findIndex(v => (innerWidth < 760 ? v.phone : !v.phone))), extra = '';
+    const saved = (() => { try { return localStorage.getItem('ux-view'); } catch { return null; } })();
+    let vp = Math.max(0, D.views.findIndex(v => (saved ? (saved === 'phone') === v.phone : innerWidth < 760 ? v.phone : !v.phone))), extra = '';
     const size = () => {
       const v = D.views[vp], width = stage.clientWidth;
       frame.style.width = (v.phone ? Math.min(v.w, width) : width) + 'px';
       const top = stage.getBoundingClientRect().top + scrollY;
+      if (stage.hasAttribute('data-full')) { frame.style.height = stage.clientHeight + 'px'; return; }
       frame.style.height = Math.max(v.phone ? 480 : 520, Math.min(v.h, innerHeight - top - 12)) + 'px';
     };
     const mark = () => {
@@ -44,7 +47,7 @@
       frame.addEventListener('load', () => done(), { once: true });
       frame.contentWindow.location.replace(url);
     });
-    $$('[data-vp]').forEach(b => b.addEventListener('click', () => { vp = +b.dataset.vp; void load(); }));
+    $$('[data-vp]').forEach(b => b.addEventListener('click', () => { vp = +b.dataset.vp; try { localStorage.setItem('ux-view', D.views[vp].phone ? 'phone' : 'desktop'); } catch { /* private mode */ } void load(); }));
     $$('[data-variant]').forEach(b => b.addEventListener('click', () => { const q = D.variants[+b.dataset.variant].query; extra = extra === q ? '' : q; void load(); }));
     $$('[data-try]').forEach(b => b.addEventListener('click', async () => {
       const item = D.tries[+b.dataset.try];

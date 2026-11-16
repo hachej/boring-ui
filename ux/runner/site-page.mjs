@@ -54,11 +54,17 @@ function variants(scenario) {
   return out;
 }
 
-function demoBlock(scenario, base) {
+// The data the page script reads: the screens, "things to try" and start states of one demo.
+function demoData(scenario, base) {
   const views = scenario.viewports.map(vp => ({ phone: !!vp.touch, name: vp.name, label: vp.touch ? 'Phone' : 'Desktop', w: vp.width, h: vp.height,
     query: ['demo=1', scenario.fixture.query, pick(scenario.fixture.queryBy, vp.name), 'pace=real'].filter(Boolean).join('&') }));
   const list = tries(scenario), start = variants(scenario);
   const data = JSON.stringify({ base, ready: scenario.fixture.ready, views, tries: list, variants: start }).replace(/</g, '\\u003c');
+  return { views, list, start, data };
+}
+
+function demoBlock(scenario, base) {
+  const { views, list, start, data } = demoData(scenario, base);
   return `${list.length ? `<p class="small muted try-label">Things to try <span id="try-status" role="status"></span></p><div class="try">${list.map((t, i) => `<button type="button" data-try="${i}">${esc(t.label)}</button>`).join('')}</div>` : ''}
 <div class="toolbar">${views.length > 1 ? `<div class="seg" role="group" aria-label="Screen">${views.map((v, i) => `<button type="button" data-vp="${i}" aria-pressed="false">${v.label}</button>`).join('')}</div>` : ''}
 ${start.length ? `<div class="chips" role="group" aria-label="Start state"><span class="small muted">Start state</span>${start.map((v, i) => `<button type="button" class="chip" data-variant="${i}" aria-pressed="false">${esc(v.label)}</button>`).join('')}</div>` : ''}</div>
@@ -97,5 +103,11 @@ export function targetBody({ meta, scenario, result, home, demoBase = '', lead }
   const fixture = scenario?.fixture ?? {};
   return `${home ? '' : `<span class="badge">${meta.level === 'layout' ? 'Layout' : 'Component'}</span>`}<h1>${esc(home ?? meta.title)}</h1><p class="lead">${esc(lead ?? scenario?.summary ?? firstSentence(meta.purpose))}</p>
 ${scenario ? demoBlock(scenario, demoBase) : ''}${home ? '' : `${usage(fixture)}${status(scenario, result)}${flows(result, scenario)}`}`;
+}
+// A `fullscreen` scenario: the demo fills the page under the site's top bar, which carries the one Phone and Desktop switch. No headings, no usage, no status.
+export function frameBody(scenario, base) {
+  const { views, data } = demoData(scenario, base);
+  return { switcher: `<div class="seg" role="group" aria-label="Screen">${views.map((v, i) => `<button type="button" data-vp="${i}" aria-pressed="false">${v.label}</button>`).join('')}</div>`,
+    stage: `<div class="stage" id="stage" data-full><iframe id="demo" title="Live demo"></iframe></div><script type="application/json" id="page-data">${data}</script>` };
 }
 export { esc };

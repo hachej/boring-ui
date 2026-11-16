@@ -5,8 +5,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { root } from './build.mjs';
 import { slug } from './scenario.mjs';
-import { page } from './site-chrome.mjs';
-import { summary, targetBody } from './site-page.mjs';
+import { framePage, page } from './site-chrome.mjs';
+import { frameBody, summary, targetBody } from './site-page.mjs';
 import { siteCss } from './site-theme.mjs';
 
 const json = file => JSON.parse(readFileSync(file, 'utf8'));
@@ -26,7 +26,7 @@ function copyTarget(from, out, name, hasDemo) {
 }
 
 export async function site({ from, out, scenarios = [] }) {
-  const targets = readdirSync(from, { withFileTypes: true }).filter(d => d.isDirectory() && existsSync(join(from, d.name, 'target.json')) && existsSync(join(from, d.name, 'result.json'))).map(d => d.name).sort();
+  const targets = readdirSync(from, { withFileTypes: true }).filter(d => d.isDirectory() && existsSync(join(from, d.name, 'target.json')) && existsSync(join(from, d.name, 'result.json'))).map(d => d.name).filter(name => scenarios.find(s => slug(s.target) === name)?.site !== false).sort();
   if (!targets.length) throw new Error(`no captured target in ${from} (run: node ux/runner/cli.mjs capture --out ${from})`);
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
@@ -41,10 +41,12 @@ export async function site({ from, out, scenarios = [] }) {
     cards.push({ name, meta, result, scenario: hasDemo ? scenario : undefined, kitVersion: meta.kitVersion, sum: summary(scenario, result) });
   }
   const nav = cards.map(c => ({ name: c.name, meta: { ...c.meta, kitVersion: c.kitVersion } }));
+  // A page with a demo is the top bar and the app in a frame; a target without one keeps the documentation page.
+  const frame = (c, depth) => framePage({ title: depth ? `${c.meta.title} · Boring UI` : 'Boring UI', description: c.meta.purpose, depth, cards: nav, current: c.name, body: frameBody(c.scenario, depth ? '' : `${c.name}/`) });
   for (const c of cards) {
-    writeFileSync(join(out, c.name, 'index.html'), page({ title: `${c.meta.title} · Boring UI`, description: c.meta.purpose, depth: 1, cards: nav, current: c.name, body: targetBody(c) }));
+    writeFileSync(join(out, c.name, 'index.html'), c.scenario ? frame(c, 1) : page({ title: `${c.meta.title} · Boring UI`, description: c.meta.purpose, depth: 1, cards: nav, current: c.name, body: targetBody(c) }));
   }
-  const main = cards.find(c => c.scenario && c.name === 'layout-bar') ?? cards.find(c => c.scenario && c.meta.level === 'layout') ?? cards.find(c => c.scenario) ?? cards[0];
-  writeFileSync(join(out, 'index.html'), page({ title: 'Boring UI', description: about(), depth: 0, cards: nav, current: '', body: targetBody({ ...main, home: 'Boring UI', lead: about(), demoBase: `${main.name}/` }) }));
+  const main = cards.find(c => c.scenario && c.name === 'component-design-system') ?? cards.find(c => c.scenario && c.name === 'layout-bar') ?? cards.find(c => c.scenario && c.meta.level === 'layout') ?? cards.find(c => c.scenario) ?? cards[0];
+  writeFileSync(join(out, 'index.html'), main.scenario ? frame(main, 0) : page({ title: 'Boring UI', description: about(), depth: 0, cards: nav, current: '', body: targetBody({ ...main, home: 'Boring UI', lead: about(), demoBase: `${main.name}/` }) }));
   console.log(`site: ${cards.length} target${cards.length === 1 ? '' : 's'} -> ${out}`);
 }
