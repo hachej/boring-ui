@@ -7,7 +7,8 @@ import { voiceMessagePlugin } from '../../registry/pi-chat-voice/voice-message.t
 // Component scenario `component:message-field`: the kit's message field (the Composer inside PiChat, layout 'pill') alone on a neutral page,
 // over a fake controller. Nothing here is a model: the reply to a send is a fixed sentence after a short wait.
 // Query: dark=1 (dark theme), pace=instant|real (the wait before the reply), readonly=1 (the host's read-only note instead of the field),
-// working=1 (starts with a run in progress), text=... (a draft already typed). `window.__ux`: failNext, setText, sent.
+// working=1 (starts with a run in progress), text=... (a draft already typed), enter=always (`enterSends="always"`: Enter sends on a phone too).
+// `window.__ux`: failNext, setText, sent.
 const params = new URLSearchParams(location.search);
 if (params.get('dark') === '1') document.documentElement.classList.add('dark');
 const FAST = params.get('pace') === 'instant';
@@ -63,6 +64,7 @@ const App = () => <main className="flex min-h-dvh items-center justify-center bg
   <div data-testid="surface" className="flex h-[26rem] w-full max-w-xl flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
     <PiChat controller={controller} locale="en" header={false} showHistory={false} emptyState={<div />} emptyLayout="docked" composerLayout="pill" composerBarActions="attach" composerFileChips renderText={markdownText}
       labels={{ placeholder: 'Write, or type /' }} slash={slash} attachments={attachments} voiceMessage={{ transcribe: async () => 'Reminder to Delmore House for the January invoice.', ...voiceMessagePlugin }} voiceReplacesSend
+      {...(params.get('enter') === 'always' ? { enterSends: 'always' } : {})}
       {...(params.get('readonly') === '1' ? { renderComposer: () => readOnly } : {})} />
   </div>
 </main>;

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "ui-progress",
+  "title": "UI progress",
+  "description": "The kit's own compact progress primitive (shadcn/ui/progress.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+  "dependencies": [
+    "@base-ui/react@1.9.0"
+  ],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+  ],
+  "files": [
+    {
+      "path": "shadcn/ui/progress.tsx",
+      "content": "import { Progress as ProgressPrimitive } from \"@base-ui/react/progress\"\nimport { cn } from \"@/components/utils/utils\"\n\nfunction Progress({\n  className,\n  children,\n  value,\n  ...props\n}: ProgressPrimitive.Root.Props) {\n  return (\n    <ProgressPrimitive.Root\n      value={value}\n      data-slot=\"progress\"\n      className={cn(\"flex flex-wrap gap-3\", className)}\n      {...props}\n    >\n      {children}\n      <ProgressTrack>\n        <ProgressIndicator />\n      </ProgressTrack>\n    </ProgressPrimitive.Root>\n  )\n}\n\nfunction ProgressTrack({ className, ...props }: ProgressPrimitive.Track.Props) {\n  return (\n    <ProgressPrimitive.Track\n      className={cn(\n        \"relative flex h-1.5 w-full items-center overflow-x-hidden rounded-full bg-muted\",\n        className\n      )}\n      data-slot=\"progress-track\"\n      {...props}\n    />\n  )\n}\n\nfunction ProgressIndicator({\n  className,\n  ...props\n}: ProgressPrimitive.Indicator.Props) {\n  return (\n    <ProgressPrimitive.Indicator\n      data-slot=\"progress-indicator\"\n      className={cn(\"h-full bg-primary transition-all\", className)}\n      {...props}\n    />\n  )\n}\n\nfunction ProgressLabel({ className, ...props }: ProgressPrimitive.Label.Props) {\n  return (\n    <ProgressPrimitive.Label\n      className={cn(\"text-sm font-medium\", className)}\n      data-slot=\"progress-label\"\n      {...props}\n    />\n  )\n}\n\nfunction ProgressValue({ className, ...props }: ProgressPrimitive.Value.Props) {\n  return (\n    <ProgressPrimitive.Value\n      className={cn(\n        \"ml-auto text-sm text-muted-foreground tabular-nums\",\n        className\n      )}\n      data-slot=\"progress-value\"\n      {...props}\n    />\n  )\n}\n\nexport {\n  Progress,\n  ProgressTrack,\n  ProgressIndicator,\n  ProgressLabel,\n  ProgressValue,\n}\n",
+      "type": "registry:ui"
+    }
+  ],
+  "type": "registry:ui"
+}

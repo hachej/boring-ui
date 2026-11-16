@@ -16,6 +16,10 @@
 // 6. No import cycle in registry blocks or package sources (packages/*/src), type-only and lazy imports included: copied-in
 //    code with a cycle breaks some bundlers, HMR and tree-shaking. Shared types and helpers live in the module that owns them
 //    (a leaf lib never imports a component), and a module that needs them imports them in one direction.
+// 8. The kit's own primitives (shadcn/ui/) ship as items `ui-<name>` plus the aggregate `ui` (scripts/ui-primitives.mjs): registry.json holds exactly
+//    what that derivation gives (every file of shadcn/ui/ in exactly one item, its npm packages and the kit items its imports reach declared),
+//    every name of SHADCN_BUILTINS has its item, and registry/README.md quotes the one-line install. They are not blocks: their files live in
+//    shadcn/ui/ with no target (the shadcn CLI writes them to the app's ui alias), so rules 1, 4 and 5 are for the other items.
 // 7. pi-chat is the core chat; each composer feature and each reply card is its own optional item that plugs in through the chat's
 //    props (D-257). The core depends on no `pi-chat-*` item nor on pi-artifacts, declares none of their npm packages, imports none of
 //    the feature-only modules in CORE_EXCLUDED and ships none of the card modules in CORE_EXCLUDED_FILES (question, approval,
@@ -29,6 +33,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gitIgnored, walkProject } from './project-files.mjs';
+import { UI_ALL, UI_FOLDER, isUiItem, uiItems } from './ui-primitives.mjs';
 
 const source = /\.(?:tsx?|jsx?|mjs)$/;
 /** The source registryDependencies use the `@boring-ui/<item>` shorthand; scripts/build-registry.mjs writes them as absolute release URLs. */
@@ -43,6 +48,8 @@ export const SHADCN_BUILTINS = Object.freeze(['alert', 'attachment', 'avatar', '
 export const SHADCN_HOOKS = Object.freeze(['use-mobile']);
 /** The app's one-time shadcn setup, quoted verbatim in registry/README.md. */
 export const APP_SETUP = `npx shadcn@4.23.0 add ${SHADCN_BUILTINS.join(' ')}`;
+/** The kit's own primitives in one command, quoted in registry/README.md ("Bundled primitive defaults"). */
+export const UI_SETUP = `npx boring-ui-blocks add <registry>/${UI_ALL}.json`;
 /** npm packages (or package subpaths) only the optional composer feature items use: Markdown and voice capture. */
 export const CORE_EXCLUDED = Object.freeze(['marked', 'entities', '@hachej/boring-ui-kit/voice-capture']);
 /** The optional items the core chat must not depend on besides the `pi-chat-*` ones. */
@@ -108,6 +115,21 @@ export const cycleFolders = (root) => ['registry', ...readdirSync(resolve(root, 
 
 const isShim = (root, path, base) => /^(?:\/\/[^\n]*\n)*export \* from '\.\.\/[\w-]+\/[\w-]+';\s*$/.test(readFileSync(resolve(root, path), 'utf8')) && base.endsWith('.tsx');
 
+/** The primitive items of registry.json against the derivation from shadcn/ui/: same items, same fields, a primitive for each name the blocks import. */
+export function checkUiItems(root, registryItems) {
+  const errors = [];
+  const actual = new Map(registryItems.filter((item) => isUiItem(item.name)).map((item) => [item.name, item]));
+  const derived = new Map(uiItems(root).map((item) => [item.name, item]));
+  for (const [name, item] of derived) {
+    if (!actual.has(name)) errors.push(`BORING-BLOCKS ${name}: ${UI_FOLDER}/ has ${item.files[0]?.path ?? 'its files'} but registry.json has no item ${name}; run node scripts/ui-primitives.mjs --write`);
+    else if (JSON.stringify(actual.get(name)) !== JSON.stringify(item)) errors.push(`BORING-BLOCKS ${name}: differs from what ${UI_FOLDER}/ derives (files, type, npm packages or registryDependencies); run node scripts/ui-primitives.mjs --write`);
+  }
+  for (const name of actual.keys()) if (!derived.has(name)) errors.push(`BORING-BLOCKS ${name}: no file of ${UI_FOLDER}/ for this item; remove it or run node scripts/ui-primitives.mjs --write`);
+  for (const name of SHADCN_BUILTINS) if (!derived.has(`ui-${name}`)) errors.push(`BORING-BLOCKS SHADCN_BUILTINS: ${name} has no primitive item ui-${name} in ${UI_FOLDER}/`);
+  if (!readFileSync(resolve(root, 'registry/README.md'), 'utf8').includes(UI_SETUP)) errors.push(`BORING-BLOCKS registry/README.md: quote the kit primitives' one-line install exactly: ${UI_SETUP}`);
+  return errors;
+}
+
 export function checkRegistryBlocks(root) {
   const errors = [];
   const manifest = JSON.parse(readFileSync(resolve(root, 'registry.json'), 'utf8'));
@@ -124,6 +146,7 @@ export function checkRegistryBlocks(root) {
       if (!dependency.startsWith(namespace) || !items.has(local(dependency))) errors.push(`BORING-BLOCKS ${item.name}: registryDependencies name only ${namespace}<item of this registry>; shadcn components come from the app's ui alias (found ${dependency})`);
       else if (local(dependency) === 'theme') errors.push(`BORING-BLOCKS ${item.name}: depends on ${dependency}; blocks use the app's shadcn tokens, and an app without them installs the theme once`);
     }
+    if (isUiItem(item.name)) continue;
     for (const file of item.files ?? []) {
       const base = posix.basename(file.path);
       const where = `BORING-BLOCKS ${file.path}`;
@@ -168,6 +191,7 @@ export function checkRegistryBlocks(root) {
     }
     for (const file of own) if (!existsSync(resolve(root, file))) errors.push(`BORING-BLOCKS ${item.name}: listed file ${file} does not exist`);
   }
+  errors.push(...checkUiItems(root, manifest.items));
   for (const name of SHADCN_BUILTINS) if (!used.has(name)) errors.push(`BORING-BLOCKS SHADCN_BUILTINS: no block imports @/components/ui/${name}; drop it from the list and from the app setup command`);
   if (!readFileSync(resolve(root, 'registry/README.md'), 'utf8').includes(APP_SETUP)) errors.push(`BORING-BLOCKS registry/README.md: quote the app's shadcn setup exactly: ${APP_SETUP}`);
   const core = items.get('pi-chat');

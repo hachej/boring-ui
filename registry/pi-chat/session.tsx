@@ -73,6 +73,8 @@ export interface ChatFeatureProps {
   readonly onOpenImage?: (image: ImageContent) => void;
   readonly onCopy?: (text: string) => Promise<void>;
   readonly onComposerKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  /** What Enter does in the message field (`Composer enterSends`). `'keyboard'` (default): a physical keyboard sends, a touch device adds a line. `'always'`: Enter sends everywhere; Shift+Enter adds a line. */
+  readonly enterSends?: ComposerProps['enterSends'];
   readonly fileAccept?: string;
   /** Optional pills at the left of the composer's controls row. */
   readonly composerChips?: ComposerProps['chips'];
@@ -156,7 +158,7 @@ export function useCursorInOpened(textarea: { readonly current: HTMLTextAreaElem
 
 /** Presentation adapter; all session state and controller protocols live in the kit. */
 export function useChatSession(options: ChatSessionOptions) {
-  const { controller, activeController, mode, presentation, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, onFiles, fileAccept,
+  const { controller, activeController, mode, presentation, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, enterSends, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, sendContext, onOpenFile, fileChanges, composerChips, composerHeader, composerHasContent, onPickFiles, pasteToFile } = options;
   const { labels } = useChatText();
   const textarea = useRef<HTMLTextAreaElement | null>(null);
@@ -195,7 +197,7 @@ export function useChatSession(options: ChatSessionOptions) {
   const camera = attachments ? attachments.Camera : options.camera;
   /** Everything `Composer` needs from the session; a surface adds its layout and slots. */
   const composer = {
-    text: state.draft.text, onText: (text: string) => controller.setText(text), onKeyDown: onComposerKeyDown, textareaRef: textarea,
+    text: state.draft.text, onText: (text: string) => controller.setText(text), onKeyDown: onComposerKeyDown, enterSends, textareaRef: textarea,
     attachments: state.draft.attachments.map(item => ({ id: item.id, name: item.name, mimeType: item.content.mimeType, data: item.content.data })),
     onRemoveAttachment: (id: string) => controller.setAttachments(controller.getSnapshot().draft.attachments.filter(item => item.id !== id)),
     // A typed message answers the waiting question, so the primary button sends it.

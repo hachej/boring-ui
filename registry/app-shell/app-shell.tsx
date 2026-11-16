@@ -4,10 +4,11 @@
 // the shadcn sidebar (icon rail plus NavUser). Layout B (`workspace`): the same, with a screen made of a `ListDetail`; the sidebar starts
 // as the icon rail below 1280px, and from 1280px when the screen has no `sidebar` content (D-1909); the person's choice is kept. Layout C (`chat`): the one nav item renders the app's `AgentWorkspace`,
 // untouched, below the same sidebar, account menu and header; there is no shell agent (the page is the chat). The shell imports nothing from pi-app: a layout C app installs the `pi-app` item itself. One header per screen
-// (`useScreenHeader`). The AgentLayer is mounted once, here.
+// (`useScreenHeader`). The AgentLayer is mounted once, here. Each screen's box keeps `--agent-bar-reserve` free at its bottom (the phone's bar over the page).
 // Host concern: Pi has no layout; the screen on show travels as the agent's context (useAgentContext -> createPromptContext).
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { afterStacksBack } from '../utils/back';
+import { cn } from '../utils/utils';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { AccountAvatar, AccountChoices } from './account';
@@ -110,7 +111,7 @@ function ScreenContent({ item }: { readonly item: NavItem }): ReactNode { return
 function Screens({ items, activeId, scrolls, slot, centred }: { readonly items: readonly NavItem[]; readonly activeId: string; readonly scrolls: boolean; readonly slot: HTMLElement | null; readonly centred: boolean }) {
   return <div className="relative min-h-0 flex-1">
     {items.map(item => <ScreenActiveContext.Provider key={item.id} value={item.id === activeId}><ScreenHeaderSlotContext.Provider value={item.id === activeId ? slot : null}>
-      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={scrolls ? 'h-full overflow-y-auto overscroll-contain' : 'h-full overflow-hidden'}>{centred ? <div data-testid="screen-centred" className="mx-auto flex h-full w-full max-w-3xl flex-col"><ScreenContent item={item} /></div> : <ScreenContent item={item} />}</div>
+      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={cn('h-full pb-[var(--agent-bar-reserve,0px)] scroll-pb-[var(--agent-bar-reserve,0px)]', scrolls ? 'overflow-y-auto overscroll-contain' : 'overflow-hidden')}>{centred ? <div data-testid="screen-centred" className="mx-auto flex h-full w-full max-w-3xl flex-col"><ScreenContent item={item} /></div> : <ScreenContent item={item} />}</div>
     </ScreenHeaderSlotContext.Provider></ScreenActiveContext.Provider>)}
   </div>;
 }

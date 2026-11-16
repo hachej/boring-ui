@@ -1,12 +1,14 @@
 // Builds public/r from registry.json with the pinned shadcn CLI, then makes every item's `@boring-ui/<item>` registryDependencies an
 // absolute, versioned URL of this release: https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r/<item>.json. A consumer
 // therefore needs no `registries` line. release-version.mjs rewrites those URLs on a version bump, and check-npm-packages.mjs
-// accepts only the current version.
+// accepts only the current version. The files of the kit's primitives (shadcn/ui/) are published with the two imports an app cannot
+// resolve rewritten (`installable` in ui-primitives.mjs); no other byte changes.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCaptured } from './run-captured.mjs';
+import { UI_FOLDER, installable } from './ui-primitives.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const namespace = '@boring-ui/';
@@ -31,11 +33,17 @@ export function releaseDependencies(item, version) {
   return item;
 }
 
+/** Makes the content of an item's primitive files installable in an app (see ui-primitives.mjs); the other files are untouched. */
+export function releaseFiles(item) {
+  for (const file of item.files ?? []) if (file.content !== undefined && file.path.startsWith(`${UI_FOLDER}/`)) file.content = installable(file.content);
+  return item;
+}
+
 /** Finishes every JSON file of `directory` for the release. Files keep a trailing newline, as committed. */
 export function finishRegistry(directory, version) {
   for (const file of readdirSync(directory).filter(name => name.endsWith('.json'))) {
     const path = join(directory, file);
-    writeFileSync(path, JSON.stringify(releaseDependencies(JSON.parse(readFileSync(path, 'utf8')), version), null, 2) + '\n');
+    writeFileSync(path, JSON.stringify(releaseFiles(releaseDependencies(JSON.parse(readFileSync(path, 'utf8')), version)), null, 2) + '\n');
   }
 }
 

@@ -1,0 +1,105 @@
+{
+ "target": "layout:screen-active",
+ "title": "Which screen is on show",
+ "summary": "The shell keeps every screen mounted; useScreenActive() tells each one whether it is the screen on show.",
+ "try": [{"label": "Switch screens", "flow": "A1"}],
+ "purpose": "AppShell layout=\"screen\" with two screens that each print what useScreenActive() returns: shown on the screen on show (the first one when the address has no hash), hidden on the other, swapped by a nav choice or a deep link.",
+ "fixture": {
+  "entry": "ux/fixtures/layout-screen-active.jsx",
+  "ready": "[data-testid=screen-balance]:not([hidden]) [data-testid=state-balance], [data-testid=screen-journal]:not([hidden]) [data-testid=state-journal]",
+  "install": "npx shadcn@4.23.0 add app-shell",
+  "usage": "const active = useScreenActive(); // inside a NavItem's screen: true on the screen on show, false while the shell keeps it hidden"
+ },
+ "viewports": [
+  {
+   "name": "390",
+   "width": 390,
+   "height": 844,
+   "touch": true
+  },
+  {
+   "name": "1280",
+   "width": 1280,
+   "height": 800
+  }
+ ],
+ "watch": [
+  [
+   "word",
+   "[data-testid=state-balance], [data-testid=state-journal]"
+  ]
+ ],
+ "thresholds": {
+  "cls": 0.02,
+  "settledMs": 1200,
+  "touchTarget": 44
+ },
+ "notes": "Both screens stay mounted: the hidden one is not on the page, yet its word reads \"hidden\" and the list on the screen on show names both. No hash in the address on the first state: the first screen is shown.",
+ "states": [
+  {
+   "id": "01",
+   "name": "no-hash",
+   "steps": []
+  },
+  {
+   "id": "02",
+   "name": "second-screen",
+   "steps": [
+    {
+     "do": "tap",
+     "target": {"390": "tab-journal", "1280": "nav-journal"},
+     "say": "Open the Journal"
+    }
+   ]
+  },
+  {
+   "id": "03",
+   "name": "deep-link",
+   "query": "at=journal",
+   "steps": []
+  }
+ ],
+ "flows": [
+  {
+   "id": "A1",
+   "name": "A nav choice swaps shown and hidden",
+   "steps": [
+    {
+     "do": "wait",
+     "ms": 150,
+     "say": "Open the app with no hash in the address",
+     "until": "eval:document.querySelector('[data-testid=state-balance]').textContent === 'shown' & eval:document.querySelector('[data-testid=state-journal]').textContent === 'hidden' & text:seen-journal~hidden",
+     "expect": "The first screen says shown, the other hidden, with nothing in the address."
+    },
+    {
+     "do": "tap",
+     "target": {"390": "tab-journal", "1280": "nav-journal"},
+     "say": "Tap the Journal",
+     "until": "eval:document.querySelector('[data-testid=state-journal]').textContent === 'shown' & eval:document.querySelector('[data-testid=state-balance]').textContent === 'hidden' & text:seen-balance~hidden",
+     "expect": "The Journal says shown and the Balance, still mounted, says hidden."
+    },
+    {
+     "do": "tap",
+     "target": {"390": "tab-balance", "1280": "nav-balance"},
+     "say": "Tap the Balance",
+     "until": "eval:document.querySelector('[data-testid=state-balance]').textContent === 'shown' & eval:document.querySelector('[data-testid=state-journal]').textContent === 'hidden' & text:seen-journal~hidden",
+     "expect": "Back: the Balance shown, the Journal hidden."
+    }
+   ]
+  },
+  {
+   "id": "A2",
+   "name": "A deep link opens on the second screen",
+   "query": "at=journal",
+   "steps": [
+    {
+     "do": "wait",
+     "ms": 150,
+     "say": "Open the app on #journal",
+     "until": "eval:document.querySelector('[data-testid=state-journal]').textContent === 'shown' & eval:document.querySelector('[data-testid=state-balance]').textContent === 'hidden' & text:seen-balance~hidden",
+     "expect": "The Journal is shown from the first paint and the Balance is hidden."
+    }
+   ]
+  }
+ ]
+}
