@@ -87,6 +87,16 @@ class WatchRefused extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
 
+/** A call the host answered with an error status (the connection itself worked). */
+class RemoteCallFailed extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
+/** The host answered that it has no submission with this request ID (it was lost, or never arrived). */
+class UnknownSubmission extends Error {
+  constructor() { super('Submission is unknown to the remote host'); }
+}
+
 /** The host refused a submitted input before it reached the conversation (status 402, `submission-refused`); `message` is the host's words. */
 export class SubmissionRefused extends Error {
   readonly code = 'submission-refused';
@@ -172,7 +182,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
       const refused = await response.json().catch(() => ({})) as { reason?: unknown; message?: unknown };
       if (refused.reason === 'submission-refused') throw new SubmissionRefused(typeof refused.message === 'string' && refused.message ? refused.message : 'The host refused this message');
     }
-    if (!response.ok) throw new Error(`Remote chat ${op} failed: ${await reason(response)}`);
+    if (!response.ok) throw new RemoteCallFailed(`Remote chat ${op} failed: ${await reason(response)}`, response.status);
     return await response.json() as T;
   }
   const post = <T>(op: string, value: unknown) => call<T>(op, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value) });
@@ -343,7 +353,9 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
     reconnecting = next;
     for (const listener of [...linkListeners]) { try { listener(); } catch { /* a viewer's listener never breaks the link */ } }
   };
-  const link: ChatLink = { reconnecting: () => reconnecting, subscribe: listener => { linkListeners.add(listener); return () => { linkListeners.delete(listener); }; } };
+  /** Set by the supervised watch: reopens a lost stream now, skipping the backoff wait. */
+  let reopenNow: (() => void) | undefined;
+  const link: ChatLink = { reconnecting: () => reconnecting, subscribe: listener => { linkListeners.add(listener); return () => { linkListeners.delete(listener); }; }, reconnectNow: () => reopenNow?.() };
 
   /**
    * Wrap a watch so its stream can be lost and reopened, and (with `pauseWhenHidden`) released while the page is hidden. The
@@ -403,6 +415,7 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
       last = live.value; current = undefined; await live.stop();
     }
     function onVisibility() { if (hidden()) void pause(); else { cancelRetry(); void open(); } }
+    reopenNow = () => { if (!current && !opening && retry !== undefined) { cancelRetry(); void open(); } };
     page?.addEventListener('visibilitychange', onVisibility);
     return {
       get value() { return current?.value ?? last; },
@@ -432,10 +445,21 @@ export async function createRemoteChat(options: RemoteChatOptions): Promise<Remo
       const context = options.requestContext?.();
       const { submissionId } = await post<{ submissionId: SubmissionRecord['id'] }>('submit', { requestId, content: draft.content, whenBusy: draft.whenBusy, ...(context === undefined ? {} : { context }) });
       requests.set(submissionId, requestId);
-      const status = async () => { const record = await lookup(requestId); if (!record) throw new Error('Submission is unknown to the remote host'); return record; };
+      const status = async () => { const record = await lookup(requestId); if (!record) throw new UnknownSubmission(); return record; };
+      // The host being away (no connection, a 5xx or a throttle) is not an answer: the wait asks again when it is back, until aborted.
+      const away = (error: unknown) => !(error instanceof UnknownSubmission) && (!(error instanceof RemoteCallFailed) || error.status >= 500 || error.status === 408 || error.status === 429);
       return {
         id: submissionId, status,
-        wait: async context => { for (;;) { if (context.abortSignal?.aborted) throw context.abortSignal.reason; const record = await awaitWithContext(status(), context); if (record.status === 'done' || record.status === 'unanswered') return record as SettledSubmissionRecord; await awaitWithContext(new Promise(resolve => setTimeout(resolve, pollMs)), context); } },
+        wait: async context => {
+          for (;;) {
+            if (context.abortSignal?.aborted) throw context.abortSignal.reason;
+            try {
+              const record = await awaitWithContext(status(), context);
+              if (record.status === 'done' || record.status === 'unanswered') return record as SettledSubmissionRecord;
+            } catch (error) { if (context.abortSignal?.aborted || !away(error)) throw error; }
+            await awaitWithContext(new Promise(resolve => setTimeout(resolve, pollMs)), context);
+          }
+        },
         abort: () => withdraw(submissionId, requestId),
       };
     },

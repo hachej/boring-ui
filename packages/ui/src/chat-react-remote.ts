@@ -69,6 +69,7 @@ function pendingConversation(pending: PendingRemote, selection: string): { reado
   };
   const link: ChatLink = {
     reconnecting: () => pending.current?.link.reconnecting() ?? false,
+    reconnectNow: () => pending.current?.link.reconnectNow?.(),
     subscribe: listener => {
       let off: (() => void) | undefined, gone = false;
       void pending.remote.then(remote => { if (!gone) off = remote.link.subscribe(listener); }, () => {});
