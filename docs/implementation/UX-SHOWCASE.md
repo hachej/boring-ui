@@ -17,7 +17,7 @@ Until step 1 is done the deploy step fails and nothing is published.
 
 ## When it runs
 
-- On every **published release** (`release: published`), and
+- On every **published release** (`release: published`, for a release made by hand), and after every npm release: the "Publish npm release" workflow creates its GitHub release with the workflow token, which does not start `release: published` triggers, so its last step starts this workflow by dispatch, and
 - by hand: Actions > UX showcase > Run workflow, or `gh workflow run ux-showcase.yml` (add `-f enforce=true` to turn the gate on for that run).
 
 It never runs on push or pull request. A newer run cancels an older one (concurrency group `ux-showcase`).
