@@ -329,7 +329,7 @@ function EntryView({ entry, below, top, placement, assistant }: { readonly entry
     </>;
   }
   return <ViewerFrame title={entry.title} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} {...(library ? { actions: library } : {})} onClose={layer.pane.close}>
-    {entry.kind === 'file' ? null : <div data-testid={entry.kind === 'library' ? `${id}-library-list` : `${id}-content`} className="flex min-h-0 flex-1 flex-col overflow-auto">{entry.content}</div>}
+    {entry.kind === 'file' ? null : <div data-testid={entry.kind === 'library' ? `${id}-library-list` : `${id}-content`} className="flex min-h-0 flex-1 flex-col overflow-auto text-sm [:where(&_*)]:border-border">{entry.content}</div>}
   </ViewerFrame>;
 }
 

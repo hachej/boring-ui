@@ -270,6 +270,17 @@ for (const [width, query] of [[1280, ''], [390, 'tabs=1']]) test(`${width}: the 
   for (const offset of await offsets()) assert.ok(offset < 0.6, `three lines: ${offset}px off the midline`);
 });
 
+// Julien: "style need propagated to the entry right pane". Content an app pushes on the pane gets the kit's type scale and border colour once, in the pane.
+test('1280: content pushed on the pane takes the kit text size and the border token, not currentColor', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'demo=1&single=1');
+  await click('[data-testid=page-row]');
+  await browser.until('the entry is open', `!!document.querySelector('[data-testid=fixture-record]')`);
+  const style = await browser.evaluate(`(() => { const box = document.createElement('div'); box.className = 'border'; box.textContent = 'x'; document.querySelector('[data-testid=fixture-record]').appendChild(box);
+    const s = getComputedStyle(box), pane = getComputedStyle(document.querySelector('[data-testid=fixture-record]').parentElement); return { border: s.borderTopColor, text: s.color, size: pane.fontSize, token: getComputedStyle(document.documentElement).getPropertyValue('--border') }; })()`);
+  assert.notEqual(style.border, style.text, 'a bare border is the theme border, not the text colour');
+  assert.equal(style.size, '14px', 'the pane body is the kit text-sm');
+});
+
 test('1280: typing grows the field;  a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
   await open(1280);
   await type('Prépare la relance du dossier Cèdre :');
