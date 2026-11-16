@@ -7,7 +7,6 @@ import type { HTMLAttributes, ReactElement, ReactNode, Ref } from 'react';
 import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, Maximize2Icon, Minimize2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { InputGroup } from '@/components/ui/input-group';
-import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useMessageScroller } from '@/components/ui/message-scroller';
 import { PiChat } from '../pi-chat/pi-chat';
