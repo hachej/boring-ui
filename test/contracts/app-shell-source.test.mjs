@@ -532,6 +532,39 @@ test('useAgentContext: a screen that is not on show does not register its contex
   await act(async () => root.unmount());
 });
 
+test('useScreenActive: public from the shell, false on the hidden screen and true on the one on show, with no hash, after a nav change and outside a shell; the context stays internal', async t => {
+  const window = dom(t);
+  const shell = await bundle('index.ts');
+  assert.equal(typeof shell.useScreenActive, 'function', 'the shell exports useScreenActive');
+  assert.equal('ScreenActiveContext' in shell, false, 'the context stays internal');
+  const { AppShell, useScreenActive } = shell;
+  const { createElement: h, act, useState } = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  window.innerWidth = 390;
+  window.matchMedia = query => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} });
+  assert.equal(window.location.hash, '', 'a deep link with no hash');
+  const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 60)); });
+  const Probe = ({ id }) => h('i', { 'data-testid': `active-${id}` }, String(useScreenActive()));
+  const App = () => {
+    const [id, setId] = useState(() => window.location.hash.slice(1));
+    const nav = ['jour', 'progres'].map(name => ({ id: name, label: name, icon: () => null, render: () => h(Probe, { id: name }) }));
+    return h(AppShell, { layout: 'screen', title: 'Suivi', nav, route: { id, onChange: setId } });
+  };
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const root = createRoot(container);
+  const read = id => container.querySelector(`[data-testid=active-${id}]`)?.textContent;
+  await act(async () => root.render(h(App)));
+  await settle();
+  assert.deepEqual([read('jour'), read('progres')], ['true', 'false'], 'no hash: the first screen is on show, the other is mounted and hidden');
+  await act(async () => { container.querySelector('[data-testid=tab-progres]').click(); });
+  await settle();
+  assert.deepEqual([read('jour'), read('progres')], ['false', 'true'], 'after a nav change the two swap');
+  await act(async () => root.render(h(Probe, { id: 'alone' })));
+  assert.equal(read('alone'), 'true', 'outside a shell the screen is on show');
+  await act(async () => root.unmount());
+});
+
 test('useExclusiveSheet: opening a sheet closes every other open sheet', async t => {
   const window = dom(t);
   const { useExclusiveSheet } = await bundle('use-exclusive-sheet.ts');

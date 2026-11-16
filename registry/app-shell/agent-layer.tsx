@@ -26,6 +26,7 @@ import { closeShellLayer, registerAgentLayerCloser } from './shell-layer';
 import type { AppShellLocale } from './text';
 import { AgentContextProvider } from './agent-context';
 import type { ShellPanel } from './shell-panel';
+import { barReserve } from './bar-reserve';
 import { LayerContext, PEEK_BAR_REM, PEEK_REM, SIDE_KEY, TOGETHER_QUERY, Z, useInternal } from './layer-context';
 import type { AgentComposer, AgentLayerApi, AgentLayerState, AgentMode, AgentPreview, AgentSpec, DockSide, Internal, Snap, Which } from './layer-context';
 import { Chats } from './agent-chats';
@@ -356,7 +357,9 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, moveToDock, registerDock, grown, trayOpen, dockOpen, bar, folded, cardSlot, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, cardPx]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
-  const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point } as CSSProperties;
+  // `--agent-bar-reserve`: what the bar takes from the bottom of a screen (the phone's peek and its card; see `barReserve`). The shell pads the bottom of each screen with it (a sticky bar inside a screen already sticks above that padding); a host element placed against the screen's box uses it as `bottom`.
+  const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point,
+    '--agent-bar-reserve': barReserve({ phoneBar: bar && compact, snap, peekPx: parseFloat(peekPoint), tabbarPx: tabbar }) } as CSSProperties;
   const page = <div data-app-shell="" className="contents" style={scale}>
     <div ref={probe} aria-hidden="true" className="pointer-events-none invisible fixed top-0 left-0 w-0" style={{ height: 'var(--app-shell-tabbar, 0px)' }} />
     {children}

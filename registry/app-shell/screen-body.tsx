@@ -2,6 +2,7 @@
 // `data-density="compact"`, fallback 1rem), the same value the shell's header title starts on, so title and body share one left edge. Block padding is the gutter too.
 // A list, table or `ListDetail` that draws its own rows passes `bleed`: no inline padding (rows and dividers run edge to edge), and the first cell of each
 // `li`, `tr` or `[role=row]` gets `padding-inline-start: var(--screen-gutter, 1rem)` from the app-shell item's css (zero specificity: a row's own padding wins), so its text still sits on the gutter.
+// A screen needs no bottom padding for the assistant's bar: the shell pads each screen box with `--agent-bar-reserve` (`bar-reserve.ts`), so the last control scrolls above it.
 // Host concern: Pi has no layout.
 import type { ComponentProps } from 'react';
 
