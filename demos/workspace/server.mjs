@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Harness, createRegistry } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
-import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
+import { createFolderEnv } from '@hachej/boring-execution/folder';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { createConversations } from '@hachej/boring-agent/conversations';
@@ -38,7 +38,7 @@ export async function startWorkspaceDemo({ directory = mkdtempSync(join(tmpdir()
   const models = scripted ? await scriptedModels() : createModels();
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
   const root = join(directory, 'workspace');
-  const env = new NodeExecutionEnv({ cwd: root });
+  const env = createFolderEnv({ cwd: root });
   const db = openNodeConnection(join(directory, 'library.sqlite'));
   const files = createWorkspaceProvider({ identity: { providerId: 'workspace', instanceId: 'ap', incarnation: 'ap', viewId: 'published' }, fs: env, journal: createWorkspaceJournal(db) });
   await seedLibrary(files, person);

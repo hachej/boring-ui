@@ -13,6 +13,8 @@ import type { StruggleOptions } from './struggle.js';
 import type { Skill, SkillSource } from './skills.js';
 
 export type { SelfEvolutionError, SelfEvolutionReport } from './self-evolving.js';
+export { s3SkillSource, reloadSkills } from './s3-skills.js';
+export type { AdminReload, S3Location, S3Refresh, S3SkillClient, S3SkillSource, S3SkillSourceOptions, SkillComparison, SkillManifest } from './s3-skills.js';
 export { directorySkillSource, fileSkillSource, liveSkills, parseSkill, skillInFolder, staticSkills } from './skills.js';
 export type { LiveSkills, LiveSkillsOptions, Skill, SkillError, SkillFileSystem, SkillListing, SkillSource, SkillsOptions, SkillVersions } from './skills.js';
 export { jsonSchemaTool } from './json-schema-tool.js';

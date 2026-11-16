@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { Harness, createRegistry, defineTool } from '@earendil-works/pi-durable';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
-import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
+import { createFolderEnv } from '@hachej/boring-execution/folder';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { defineAgent } from '@hachej/boring-agent/agents';
@@ -92,7 +92,7 @@ export async function startAppShell({ directory, port = 0, token = randomUUID(),
   const models = scripted ? (await (await import('../../lab/studio/scripted-model.mjs')).createScriptedModels({ sources: script })).models : createModels();
   if (!scripted) models.setProvider((await import('@earendil-works/pi-ai/providers/openai')).openaiProvider());
   const person = { scopeId: 'fictional-team', principalId: 'fictional-person', initiatorId: 'fictional-person' };
-  const env = new NodeExecutionEnv({ cwd: join(directory, 'workspace') });
+  const env = createFolderEnv({ cwd: join(directory, 'workspace') });
   // The workspace of `?app=pm` (layout C): the same composition as examples/workspace-app, so AgentWorkspace runs unchanged.
   const root = join(directory, 'workspace'), agentAccess = { ...person, principalId: 'fictional-agent' };
   const db = openNodeConnection(join(directory, 'workspace.sqlite'));
