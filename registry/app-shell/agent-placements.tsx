@@ -246,18 +246,17 @@ function FullScreen() {
   const root = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLElement | null>(typeof document === 'undefined' ? null : document.activeElement as HTMLElement | null);
   const { setSize, setFullField } = layer;
-  // The right pane stays visible: the conversation fills what is left of it (the whole viewport with no pane).
-  const [right, setRight] = useState(0);
-  const paneOpen = layer.stack.length > 0;
+  // The conversation fills the main area, the rect the bar is centred on: the left navigation and the right pane stay beside it, visible and live.
+  const [frame, setFrame] = useState<{ readonly left: number; readonly right: number; readonly top: number; readonly bottom: number }>({ left: 0, right: 0, top: 0, bottom: 0 });
   useLayoutEffect(() => {
-    const pane = document.querySelector<HTMLElement>('[data-testid=agent-preview]');
-    const measure = () => setRight(pane ? Math.max(0, window.innerWidth - pane.getBoundingClientRect().left) : 0);
+    const main = document.querySelector<HTMLElement>('[data-boring=dock-main]');
+    const measure = () => { if (!main) return; const r = main.getBoundingClientRect(); setFrame({ left: r.left, right: window.innerWidth - r.right, top: r.top, bottom: window.innerHeight - r.bottom }); };
     measure();
-    const observer = pane && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : undefined;
-    if (pane) observer?.observe(pane);
+    const observer = main && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : undefined;
+    if (main) observer?.observe(main);
     window.addEventListener('resize', measure);
     return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
-  }, [paneOpen]);
+  }, []);
   const back = useCallback(() => setSize('grown'), [setSize]);
   const backRef = useRef(back);
   useLayoutEffect(() => { backRef.current = back; });
@@ -265,8 +264,8 @@ function FullScreen() {
     const node = root.current;
     if (!node) return;
     const touched: Array<{ el: Element; inert: boolean; hidden: string | null }> = [];
-    // Only what the conversation covers goes inert: the navigation and the page. The right pane (a file, the library) stays beside it and live.
-    for (const el of document.querySelectorAll('[data-boring=dock-main], [data-slot=sidebar-container], [data-slot=sidebar-gap]')) {
+    // Only what the conversation covers goes inert: the main area's page. The left navigation and the right pane stay beside it and live.
+    for (const el of document.querySelectorAll('[data-boring=dock-main]')) {
       touched.push({ el, inert: (el as HTMLElement).inert, hidden: el.getAttribute('aria-hidden') });
       (el as HTMLElement).inert = true;
       el.setAttribute('aria-hidden', 'true');
@@ -298,7 +297,7 @@ function FullScreen() {
     };
   }, []);
   return createPortal(
-    <div ref={root} data-testid="agent-full" role="dialog" aria-modal="true" aria-label={title} style={{ right }} className="fixed top-0 bottom-0 left-0 z-[45] flex flex-col bg-card text-card-foreground">
+    <div ref={root} data-testid="agent-full" role="dialog" aria-modal="true" aria-label={title} style={frame} className="fixed z-[45] flex flex-col bg-card text-card-foreground">
       <div className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
         <Header text={text} title={title} />
         <VoiceProblem />

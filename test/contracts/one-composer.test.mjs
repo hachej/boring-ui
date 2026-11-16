@@ -1322,7 +1322,7 @@ const viewportOf = () => browser.evaluate('({ w: innerWidth, h: innerHeight })')
 const focusedId = () => browser.evaluate(`document.activeElement?.dataset.testid ?? null`);
 const FULL = '[data-testid=agent-full]';
 
-test('1440: Expand goes to grown, Full covers the nav and the page but the right pane stays beside it, Esc goes back to grown with focus on the opener, what is covered is inert', { skip, timeout: 180000 }, async () => {
+test('1440: Expand goes to grown, Full fills the main area while the left nav and the right pane stay beside it, Esc goes back to grown with focus on the opener, what is covered is inert', { skip, timeout: 180000 }, async () => {
   for (const dark of [false, true]) {
     await open(1440);
     if (dark) await browser.evaluate(`document.documentElement.classList.add('dark')`);
@@ -1342,13 +1342,15 @@ test('1440: Expand goes to grown, Full covers the nav and the page but the right
     await click('[data-testid=agent-tray-full]');
     await browser.until('full', `!!document.querySelector('${FULL}')`);
     await wait(250);
-    const full = await rect(FULL), pane = await rect('[data-testid=agent-preview]');
-    assert.ok(Math.abs(full.x) <= 1 && Math.abs(full.y) <= 1 && Math.abs(full.h - view.h) <= 1 && Math.abs(full.right - pane.x) <= 1, `the full host is the viewport minus the right pane (${JSON.stringify(full)}, the pane at ${pane.x} of ${view.w})`);
+    const full = await rect(FULL), main = await rect('[data-boring=dock-main]');
+    assert.ok(Math.abs(full.x - main.x) <= 1 && Math.abs(full.y - main.y) <= 1 && Math.abs(full.w - main.w) <= 1 && Math.abs(full.h - main.h) <= 1, `the full host is the main area (${JSON.stringify(full)} vs ${JSON.stringify(main)})`);
     assert.equal(await browser.evaluate(`document.querySelector('${FULL}').parentElement === document.body`), true, 'portalled to the body');
     const paneHit = await browser.evaluate(`(() => { const r = document.querySelector('[data-testid=agent-preview]').getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + 100); return !!top && document.querySelector('[data-testid=agent-preview]').contains(top); })()`);
     assert.equal(paneHit, true, 'the right pane stays on top beside the conversation');
+    const navHit = await browser.evaluate(`(() => { const e = document.querySelector('[data-slot=sidebar-container]'); if (!e) return 'none'; const r = e.getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + Math.min(r.height / 2, 200)); return !!top && e.contains(top) && !top.closest('[inert]') ? 'live' : 'blocked'; })()`);
+    assert.ok(['live', 'none'].includes(navHit), 'the left navigation stays visible and live');
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-preview]').closest('[inert]') === null`), true, 'the right pane is live');
-    for (const covered of ['[data-slot=sidebar-container]']) {
+    for (const covered of ['[data-boring=dock-main] [data-testid=agent-page]']) {
       const hit = await browser.evaluate(`(() => { const e = document.querySelector(${js(covered)}); if (!e) return 'none'; const r = e.getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + Math.min(r.height / 2, 200)); return top && document.querySelector('${FULL}').contains(top) ? 'covered' : 'exposed'; })()`);
       assert.notEqual(hit, 'exposed', `${covered} is under the full screen`);
     }
