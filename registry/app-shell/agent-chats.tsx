@@ -114,7 +114,11 @@ function PinnedBarComposer(props: ComposerProps) {
     observer?.observe(stack);
     return () => observer?.disconnect();
   }, []);
-  return <div ref={root} data-pinned-composer=""><Composer {...props} /></div>;
+  const pickFiles: ComposerProps['onPickFiles'] = files => {
+    if (files.length) root.current?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true });
+    props.onPickFiles(files);
+  };
+  return <div ref={root} data-pinned-composer=""><Composer {...props} onPickFiles={pickFiles} /></div>;
 }
 
 /** One agent's PiChat. It stays mounted while hidden, so its scroll, focus and drafts survive a swap with the other spec. */
@@ -219,8 +223,15 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
     <HistoryButton />
     <LibraryButton open={library} text={text} testId="agent-layer-library" />
     {actions.length > 0 && <HeaderActions actions={actions} compact={compactSnap !== undefined} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
-    {compactSnap === 'half' && <HeaderHint label={text.expand}><Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}>{layer.bar ? <Maximize2Icon className="size-4" aria-hidden="true" /> : <ChevronUpIcon data-icon="inline-start" aria-hidden="true" />}</Button></HeaderHint>}
-    {compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}>{layer.bar ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <ChevronDownIcon data-icon="inline-start" aria-hidden="true" />}</Button></HeaderHint>}
+    {layer.bar && (compactSnap === 'half' || compactSnap === 'full') && <HeaderHint label={compactSnap === 'full' ? text.collapse : text.expand}>
+      <Button variant="ghost" size="icon" data-testid={compactSnap === 'full' ? 'agent-layer-collapse' : 'agent-layer-expand'}
+        aria-label={compactSnap === 'full' ? text.collapse : text.expand} title={compactSnap === 'full' ? text.collapse : text.expand}
+        onClick={event => { event.currentTarget.focus({ preventScroll: true }); layer.setSnap(compactSnap === 'full' ? 'half' : 'full'); }}>
+        {compactSnap === 'full' ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <Maximize2Icon className="size-4" aria-hidden="true" />}
+      </Button>
+    </HeaderHint>}
+    {!layer.bar && compactSnap === 'half' && <HeaderHint label={text.expand}><Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
+    {!layer.bar && compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {controls}
     {layer.bar && <Separator orientation="vertical" aria-hidden="true" className="mx-1 my-2 w-px self-stretch" />}
     <Button variant="ghost" size={layer.bar ? 'sm' : 'icon'} ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" />{layer.bar && text.close}</Button>
