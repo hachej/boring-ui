@@ -21,7 +21,8 @@ import { checkSteps, commitRound, detailed, discard, errorText, failingTests, fo
 import { loadAll, slug } from './scenario.mjs';
 import { advise } from './advisor.mjs';
 import { probeFlow } from './probe.mjs';
-import { declared, declaredExcess, run as flowRun, totals, traceText, worstSteps } from './trace.mjs';
+import { remeasure } from './remeasure.mjs';
+import { declared, declaredExcess, run as flowRun, thresholds, totals, traceText, worstSteps } from './trace.mjs';
 import { fineSignal, fineText, specBlock, specItems, advisorDue, triedRecent, allNine, addTried, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from './loop-state.mjs';
 
 const args = process.argv.slice(2), opt = n => { const i = args.indexOf(`--${n}`); return i < 0 ? undefined : args[i + 1]; };
@@ -128,7 +129,9 @@ async function loopChecks(n, changed, ctx) {
 }
 // The flow guard: a step that completed in the last good round and no longer does fails the round; so does a new console error.
 async function flowGuard(n, prevResult) {
-  const { result } = await capture(scenario, roundDir(n));
+  const { out, result } = await capture(scenario, roundDir(n)), alone = join(roundDir(n), '_alone');
+  await remeasure(result, prevResult, thresholds(scenario), async (id, vp) => (await probeFlow(scenario, id, vp, alone, { real: true })).run, { log }); // a settle time that spiked under load is measured again alone
+  rmSync(alone, { recursive: true, force: true }); writeFileSync(join(out, 'result.json'), JSON.stringify(result, null, 1));
   const fails = [], was = new Map((prevResult?.flows ?? []).flatMap(f => f.steps.map((s, i) => [`${f.id}@${f.viewport}#${i}`, s.ok])));
   for (const f of result.flows) f.steps.forEach((s, i) => { if (!s.ok && !s.gap && was.get(`${f.id}@${f.viewport}#${i}`)) fails.push(`flow step no longer completes: ${f.id}@${f.viewport} step ${i + 1} "${s.say}"`); });
   const before = new Set(prevResult?.errors ?? []); for (const e of result.errors) if (!before.has(e)) fails.push(`new console error: ${e}`);
