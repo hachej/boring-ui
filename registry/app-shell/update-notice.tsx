@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { InfoIcon, XIcon } from '../_shared/icons';
+import { useInternal } from './layer-context';
 import type { AppShellText } from './text';
 
 export interface AppShellUpdate {
@@ -21,7 +22,11 @@ export interface AppShellUpdate {
 /** Whether the notice shows: available, and not dismissed for this version (`dismissed` is the version last dismissed, `''` when it had none). */
 export const updateShown = (update: AppShellUpdate, dismissed: string | undefined): boolean => update.available && dismissed !== (update.version ?? '');
 
-export function UpdateNotice({ update, text, lift }: { readonly update: AppShellUpdate; readonly text: AppShellText; readonly lift?: string | undefined }) {
+export function UpdateNotice({ update, text, compact }: { readonly update: AppShellUpdate; readonly text: AppShellText; readonly compact: boolean }) {
+  // Read here, not in the shell: only a shell with a notice follows the layer's snaps (a shell that reads the layer re-renders its screens with it).
+  const layer = useInternal();
+  // A phone's peek (the one composer's field, or a parked drawer) sits over the foot of the screen, above the tabs: the notice rises above it.
+  const lift = compact && layer.snap === 'peek' ? `calc(${layer.peekPoint} - ${layer.tabbar}px)` : undefined;
   const [dismissed, setDismissed] = useState<string | undefined>();
   const { available, version, onReload } = update;
   // A dismiss ends with the availability (`available` false): reset while rendering, not in an effect.
