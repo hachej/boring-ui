@@ -20,9 +20,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 
-// Component scenario `component:design-system`, the site's home, full screen: the page IS the app. The kit's AppShell at its defaults (navigation, header, the
+// Component scenario `component:design-system`, the site's home, in the site's frame. The kit's AppShell at its defaults (navigation, header, the
 // assistant's bar, the right pane, the phone's tab bar) with the design system as its app view, and an empty app view as its second screen. Kit parts and tokens only.
-// The site injects `window.__pages` (its other pages, as links in the sidebar). Query: `dark=1`; the theme otherwise follows the site's switch.
+// Query: `dark=1`; the theme otherwise follows the site's switch.
 const stored = (() => { try { return localStorage.getItem('ux-theme'); } catch { return null; } })();
 const initial = new URLSearchParams(location.search).get('dark') === '1' || stored === 'dark' || (!stored && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
 const applyTheme = value => { document.documentElement.classList.toggle('dark', value === 'dark'); try { localStorage.setItem('ux-theme', value); } catch { /* private mode */ } };
@@ -72,10 +72,8 @@ const controller = {
   setAttachments: attachments => change({ draft: { ...snapshot.draft, attachments, version: snapshot.draft.version + 1 } }),
   send: async () => undefined, connect: async () => {}, stop: async () => {}, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {},
 };
-const pages = window.__pages ?? [];
-const links = () => <nav aria-label="Pages" className="flex flex-col gap-1 p-2">{pages.map(page => <Button key={page.href} variant="ghost" href={page.href} className="justify-start">{page.title}</Button>)}</nav>;
 const nav = [
-  { id: 'design', label: 'Design system', icon: FileTextIcon, render: () => <ScreenBody><Page /></ScreenBody>, ...(pages.length ? { sidebar: links, sidebarLabel: 'Pages' } : {}) },
+  { id: 'design', label: 'Design system', icon: FileTextIcon, render: () => <ScreenBody><Page /></ScreenBody> },
   { id: 'empty', label: 'Empty app view', icon: FolderIcon, render: () => <ScreenBody><Placeholder /></ScreenBody> },
 ];
 const agent = { controller, label: 'Assistant', library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en' } };
