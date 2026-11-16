@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import type { ReactNode } from 'react';
 import type { ImageContent, ToolResultMessage, UserMessage } from '@earendil-works/pi-ai';
@@ -80,7 +80,7 @@ export interface RowContext {
   readonly answer: ((questionId: string, answer: string) => Promise<AnswerOutcome>) | undefined;
   readonly artifacts: { readonly open: ChatArtifactsConfig['open']; readonly isOpen?: ChatArtifactsConfig['isOpen'] | undefined; readonly kinds?: ChatArtifactsConfig['kinds']; readonly Card: NonNullable<ChatArtifactsConfig['Card']> } | undefined;
   /** Replaces the default copy button under a settled reply (the ambient window adds feedback and the time); `host` holds the host's message actions. */
-  readonly replyActions?: ((reply: { readonly key: string; readonly text: string; readonly timestamp?: number | undefined }, host: ReactNode) => ReactNode) | undefined;
+  readonly replyActions?: ((reply: ReplyRef, host: ReactNode) => ReactNode) | undefined;
   /** The host's actions for a settled reply (`messageActions`). */
   readonly messageActions?: ((reply: ReplyRef) => readonly BlockAction[]) | undefined;
   readonly historicalMessageActions?: boolean | undefined;
@@ -96,6 +96,9 @@ export interface RowContext {
   /** `PiChat composerEditLast` on touch: a long press on the person's own message offers « Reprendre » and « Revenir ici » (`useEditLast`). */
   readonly ownMessage?: OwnMessageActions | undefined;
 }
+
+/** Internal composition slot for the shell's latest-reply action; PiChat's public props stay unchanged. */
+export const ReplyActionContext = createContext<ReactNode>(null);
 
 function AnsweredByLine({ answered }: { readonly answered: AnsweredBy }) {
   const { labels } = useChatText();
@@ -524,7 +527,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
         {row.stopReason === 'error' && <Notice tone="error" testid="response-error" icon={<AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{context.replyError?.(replyRef(row)) ?? row.errorMessage ?? labels.responseFailed}</Notice>}
         {row.stopReason === 'aborted' && <Notice tone="muted" testid="interrupted" icon={<CircleSlashIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}>{labels.interrupted}</Notice>}
         {unread != null && unread !== false && <div data-testid="reply-unread" className="flex flex-col items-start">{unread}</div>}
-        {nativeActions && row.text && context.replyActions?.({ key: row.key, text: row.text, timestamp: row.timestamp }, host)}
+        {nativeActions && row.text && context.replyActions?.(replyRef(row), host)}
         {nativeActions && row.text && !context.replyActions && <div data-slot="message-actions" className="mt-1 -ml-2 flex opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 motion-reduce:transition-none">
           <CopyButton iconOnly text={row.text} label={labels.copyResponse} {...(context.onCopy ? { onCopy: context.onCopy } : {})} />
           {context.onFork && row.entryId && <Button size="icon-sm" variant="ghost" aria-label={labels.fork} title={labels.forkHint} data-testid="fork-reply"
