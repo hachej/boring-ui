@@ -27,7 +27,6 @@ import { useSidebarOpen } from './sidebar-open';
 import type { NavItem } from './nav';
 import { AppSheet } from './app-sheet';
 import { appShellText } from './text';
-import { useInternal } from './layer-context';
 import { UpdateNotice } from './update-notice';
 import type { AppShellUpdate } from './update-notice';
 import { ScreenHeaderSlotContext } from '../utils/screen-header-slot';
@@ -129,9 +128,6 @@ function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title,
   const improve = panel && panel.menu !== false ? panel.label ?? text.improve : undefined;
   const Layout = panel?.Layout ?? NoPanelLayout;
   const compact = useIsCompact();
-  const layer = useInternal();
-  // A phone's peek (the one composer's field, or a parked drawer) sits over the foot of the screen, above the tabs: the notice rises above it.
-  const lift = compact && layer.snap === 'peek' ? `calc(${layer.peekPoint} - ${layer.tabbar}px)` : undefined;
   const sheet = compact && compactNav === 'sheet' && !single;
   const [accountOpen, setAccountOpen] = useState(false);
   // The header's slot for the screen on show (an embedded AgentWorkspace puts its bar's controls there).
@@ -160,7 +156,7 @@ function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title,
         <ShellContext name={active.label} />
         <ScreenHeader fallbackTitle={single ? title : active.label} compact={compact} leadingAvatar={single} trigger={!(single && bar)} avatar={avatar} menu={sheet} screenSidebar={compact && !sheet && active.sidebar ? <ScreenSidebarSheet key={active.id} item={active} text={text} /> : undefined} text={text} slotRef={setSlot} />
         <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} centred={single} bar={bar} />
-        {update && <UpdateNotice update={update} text={text} lift={lift} />}
+        {update && <UpdateNotice update={update} text={text} compact={compact} />}
       </Layout>
       </div>
     </AgentDockLayout>

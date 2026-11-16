@@ -60,8 +60,7 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     # 30, not 20 (D-1937): the suite takes 15-19 min on main and a slow runner crossed 20 (run 42577021357, 20m25s) and cancelled a green release. Splitting the suite is the follow-up.
-    # 60 on 16 November 2026: the suite with the bar's tests ran 27-31 min on hosted runners and was cancelled at 30 (runs 43840716850, 43841017801) with no test failing.
-    timeout-minutes: 60
+    timeout-minutes: 30
     # The browser contract tests (compact-primitives, touch-target-dense) read CHROMIUM; with CI set they fail instead of skipping when it is missing.
     env:
       CHROMIUM: ${{ github.workspace }}/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
