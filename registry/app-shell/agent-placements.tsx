@@ -245,7 +245,9 @@ function FullScreen() {
   const { text, title } = useTitle();
   const root = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLElement | null>(typeof document === 'undefined' ? null : document.activeElement as HTMLElement | null);
-  const { setSize, setFullField } = layer;
+  const { setSize, setFullField, close } = layer;
+  const closing = useRef(false);
+  const closeAll = useCallback(() => { closing.current = true; close(); }, [close]);
   // The conversation fills the main area, the rect the bar is centred on: the left navigation and the right pane stay beside it, visible and live.
   const [frame, setFrame] = useState<{ readonly left: number; readonly right: number; readonly top: number; readonly bottom: number }>({ left: 0, right: 0, top: 0, bottom: 0 });
   useLayoutEffect(() => {
@@ -291,15 +293,15 @@ function FullScreen() {
       }
       requestAnimationFrame(() => {
         // Back and Esc land on the opener (the strip's Full control when that is gone).
-        const target = returnTo?.isConnected ? returnTo : document.querySelector<HTMLElement>('[data-testid=agent-tray-full]');
+        const target = closing.current ? document.querySelector<HTMLElement>('[data-testid=composer-input]') : returnTo?.isConnected ? returnTo : document.querySelector<HTMLElement>('[data-testid=agent-tray-full]');
         target?.focus({ preventScroll: true });
       });
     };
   }, []);
   return createPortal(
-    <div ref={root} data-testid="agent-full" role="dialog" aria-modal="true" aria-label={title} style={frame} className="fixed z-[45] flex flex-col bg-card text-card-foreground">
+    <div ref={root} data-testid="agent-full" role="dialog" aria-modal="true" aria-label={title} style={frame} className="app-shell fixed z-[45] flex flex-col bg-card text-card-foreground">
       <div className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
-        <Header text={text} title={title} />
+        <Header text={text} title={title} controls={<HeaderHint label={text.close}><Button variant="ghost" size="icon" data-testid="agent-full-close" aria-label={text.close} onClick={closeAll}><XIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>} />
         <VoiceProblem />
         <ChatSlot />
         <div data-one-dock="" className="shrink-0"><div ref={setFullField} data-testid="agent-full-composer" /></div>

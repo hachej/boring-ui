@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, FileTextIcon, Loader2Icon, MicIcon, MaximizeIcon, PanelRightIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
@@ -155,6 +156,18 @@ function useControllerActions(): readonly ControllerAction[] {
     { ...full, onSelect: () => { layer.open('agent'); layer.setSize('full'); } }];
 }
 
+/** One cell of the controller notch: a plain 16 px high button (no chip, no circle: a hover fill only) whose 44 px hit area is its invisible ::before. `extra` cells start closed (0 wide). */
+function ControllerCell({ action, extra, round, dot, ...rest }: { readonly action: ControllerAction; readonly extra: boolean; readonly round: boolean; readonly dot: { readonly label: string } | undefined } & Record<string, unknown>) {
+  return <button type="button" {...rest} data-testid={action.testId} data-action={action.id} aria-label={action.label} onClick={action.onSelect}
+    {...(action.expanded !== undefined ? { 'aria-expanded': action.expanded } : {})} {...(action.on ? { 'aria-pressed': true } : {})}
+    className={cn('relative inline-flex h-4 shrink-0 items-center justify-center text-muted-foreground transition-colors duration-(--duration-fast) hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground aria-pressed:text-foreground motion-reduce:transition-none',
+      'before:absolute before:-inset-y-3.5 before:inset-x-0 before:content-[""] [&_svg]:size-[11px]',
+      extra ? 'w-0 overflow-hidden opacity-0 group-hover/ctl:w-7 group-hover/ctl:opacity-100 group-has-[:focus-visible]/ctl:w-7 group-has-[:focus-visible]/ctl:opacity-100 pointer-coarse:w-7 pointer-coarse:opacity-100' : 'w-8 rounded-l-full', round && 'rounded-r-full')}>
+    {action.icon}
+    {dot && <span role="img" aria-label={dot.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-0 right-1 size-1.5 rounded-(--radius-3xl) bg-primary" />}
+  </button>;
+}
+
 /**
  * `composer: 'bar'`: ONE controller for the conversation's layout, a strip centred on the top border of the container (half above, half below). At rest only the
  * chevron shows (expand or collapse); the other actions of the state (split, undock) open on hover and on focus within, and stay shown on a touch screen. A dot on the
@@ -168,16 +181,18 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
   const overlay = layer.trayOpen && !layer.anchored;
   const [first, ...rest] = actions;
   if (!first) return null;
-  const button = (action: ControllerAction, dot = false) => <Button key={action.id} type="button" variant="ghost" size="icon-sm" data-testid={action.testId} data-action={action.id} aria-label={action.label} title={action.label}
-    {...(action.expanded !== undefined ? { 'aria-expanded': action.expanded } : {})} {...(action.on ? { 'aria-pressed': true } : {})} onClick={action.onSelect}>
-    {action.icon}
-    {dot && unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-0 right-0 size-1.5 rounded-(--radius-3xl) bg-primary" />}
-  </Button>;
-  // The chevron is the anchor: centred on the frame line and never moved. The other actions open to its right (hover or focus within; always on a touch screen), so the pointer stays on the default.
+  // One small notch (mockup 6): cells of 32 and 28 by 16 px with 11 px icons, no chip or circle behind an icon (a hover fill only), 1 px hairlines between cells. The 44 px
+  // hit area is the ::before of each cell, never visible. The chevron is the anchor (the strip's left edge is half a cell from the middle): the other cells open to its right,
+  // inside the same container, which widens (hover or focus within; always on a touch screen).
+  const cell = (action: ControllerAction, extra: boolean, last: boolean) => <Tooltip key={action.id}>
+    <TooltipTrigger render={<ControllerCell action={action} extra={extra} round={extra ? last : rest.length === 0} dot={action.primary ? unread : undefined} />} />
+    <TooltipContent side="top">{action.label}</TooltipContent></Tooltip>;
   const strip = <span data-testid="composer-controller" style={box && overlay ? { top: 'calc(0px - var(--app-shell-bar-tray-size))' } : undefined}
-    className="group/ctl absolute top-0 left-1/2 z-30 flex -translate-x-1/2 -translate-y-1/2 items-center text-muted-foreground hover:text-foreground focus-within:text-foreground">
-    <span className="relative inline-flex rounded-(--radius-3xl) bg-card ring-4 ring-card shadow-[0_0_0_5px_color-mix(in_srgb,var(--border)_70%,transparent)]">{first && button(first, true)}</span>
-    {rest.length > 0 && <span data-testid="composer-controller-more" className="absolute top-0 left-full flex h-full items-center overflow-hidden rounded-(--radius-3xl) bg-card ring-4 ring-card shadow-[0_0_0_5px_color-mix(in_srgb,var(--border)_70%,transparent)] divide-x divide-border/70 max-w-0 opacity-0 transition-[max-width,opacity] duration-(--duration-fast) group-hover/ctl:max-w-32 group-hover/ctl:opacity-100 group-has-[:focus-visible]/ctl:max-w-32 group-has-[:focus-visible]/ctl:opacity-100 motion-reduce:transition-none pointer-coarse:max-w-32 pointer-coarse:opacity-100">{rest.map(action => button(action))}</span>}
+    className="group/ctl absolute top-0 left-1/2 z-30 -translate-x-4 -translate-y-1/2">
+    <span className="flex h-4 items-center rounded-full bg-card ring-4 ring-card shadow-[0_0_0_5px_color-mix(in_srgb,var(--border)_70%,transparent)]">
+      {cell(first, false, false)}
+      {rest.map((action, i) => cell(action, true, i === rest.length - 1))}
+    </span>
   </span>;
   return <>
     <span ref={node => setBox(node?.closest<HTMLElement>('[data-one-composer]') ?? null)} hidden />

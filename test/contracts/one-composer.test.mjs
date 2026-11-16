@@ -370,9 +370,9 @@ test('1440: the Library holds a sample of each viewer and the pane draws it (dia
 // Julien: "the pill must STRADDLE the top border, whatever the bar contains", and "one controller": the strip is anchored on its chevron, quiet at rest, and its actions
 // follow the state (bar, half open, open, docked). Every measure is against the OUTER frame of the bar (or the open tray's top), not the row inside it.
 const strip = () => browser.evaluate(`(() => { const s = document.querySelector('[data-testid=composer-controller]'); if (!s) return null; const c = s.querySelector('[data-action=chevron]').getBoundingClientRect();
-  const more = s.querySelector('[data-testid=composer-controller-more]'), m = more ? getComputedStyle(more).opacity : null;
+  const extra = [...s.querySelectorAll('button')].filter(b => b.dataset.action !== 'chevron'), m = extra.length ? getComputedStyle(extra[0]).opacity : null;
   return { actions: [...s.querySelectorAll('button')].map(b => b.dataset.action), ids: [...s.querySelectorAll('button')].map(b => b.dataset.testid), chevron: { x: c.x, y: c.y, w: c.width, h: c.height }, midY: c.y + c.height / 2, midX: c.x + c.width / 2, moreOpacity: m,
-    moreLeft: more ? Math.min(...[...more.querySelectorAll('button')].map(b => b.getBoundingClientRect().left)) : null }; })()`);
+    moreLeft: extra.length ? Math.min(...extra.map(b => b.getBoundingClientRect().left)) : null }; })()`);
 const frameTop = () => browser.evaluate(`(() => { const t = document.querySelector('[data-testid=agent-tray]'), o = t && t.closest('[data-testid=agent-composer-box]') ? t.parentElement.getBoundingClientRect().top : null; const b = document.querySelector('[data-testid=agent-composer-box]').getBoundingClientRect(); return { box: b.top, trayTop: t ? t.getBoundingClientRect().top : null, boxLeft: b.left, boxMid: b.left + b.width / 2, boxBottom: b.bottom, boxHeight: b.height }; })()`);
 test('1440: the controller straddles the top of the bar in every state, rests as the chevron alone, opens to its right and follows the state', { skip, timeout: 240000 }, async () => {
   await open(1440, 'demo=1&single=1&pace=instant');
@@ -448,6 +448,49 @@ test('1440: docking with a file open closes the preview, and the docked conversa
   assert.equal(top, true, 'the docked conversation is on top at its centre');
   assert.equal(await browser.evaluate(`!!document.activeElement?.closest('[data-testid=agent-layer]')`), true, 'focus is inside the docked column');
   assert.equal(await count('[data-testid=agent-layer] [data-testid=composer-input]'), 1, 'one field, in the column');
+});
+
+// Julien: the composer in full screen looked different (square corners, square buttons): the portalled host lost the shell's scoped rules. The controller is one small notch.
+const composerLook = () => browser.evaluate(`(() => { const ig = document.querySelector('[data-testid=composer] [data-slot=input-group]'), bx = document.querySelector('[data-testid=agent-composer-box]'), g = bx && bx.getBoundingClientRect().height > 0 && bx.contains(ig) ? bx : ig, a = document.querySelector('[data-testid=composer-bar-attach]'), m = document.querySelector('[data-testid=agent-talk], [data-testid=composer-submit]');
+  const r = e => parseFloat(getComputedStyle(e).borderTopLeftRadius); return { groupHeight: Math.round(g.getBoundingClientRect().height), groupRadius: r(g), attachRadius: r(a), attachCircle: r(a) >= a.getBoundingClientRect().height / 2 - 1, micCircle: r(m) >= m.getBoundingClientRect().height / 2 - 1, attachHeight: Math.round(a.getBoundingClientRect().height) }; })()`);
+test('1440: the composer has the same radius, height and round buttons in the bar, the grown tray and full screen; full has a Close that ends at the bar', { skip, timeout: 180000 }, async () => {
+  await open(1440, 'demo=1&single=1&pace=instant');
+  const bar = await composerLook();
+  assert.ok(bar.groupRadius >= 16 && bar.attachCircle && bar.micCircle, `the bar is fully rounded with round buttons (${JSON.stringify(bar)})`);
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('the tray', `!!document.querySelector('[data-testid=agent-tray]')`);
+  await click('[data-testid=agent-tray-grow]'); await wait(500);
+  const grown = await composerLook();
+  await click('[data-testid=agent-tray-full]');
+  await browser.until('full', `!!document.querySelector('[data-testid=agent-full]')`); await wait(500);
+  const full = await composerLook();
+  for (const [name, look] of [['grown', grown], ['full', full]]) assert.deepEqual({ ...look, groupHeight: look.groupHeight }, { ...bar, groupHeight: look.groupHeight }, `the composer's radius and round buttons are the bar's in ${name} (${JSON.stringify(look)} vs ${JSON.stringify(bar)})`);
+  assert.equal(full.groupHeight, bar.groupHeight, 'the same height in full screen ' + JSON.stringify([bar, full]));
+  assert.equal(await count('[data-testid=agent-full] [data-testid=agent-full-close]'), 1, 'full screen has a Close');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-full-close]').getAttribute('aria-label')`), 'Close');
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-full-close]').textContent.trim()`), '', 'Close is an icon only');
+  await click('[data-testid=agent-full-close]');
+  await browser.until('closed to the bar', `!document.querySelector('[data-testid=agent-full]') && !document.querySelector('[data-testid=agent-tray]')`); await wait(300);
+  assert.equal(await browser.evaluate(`document.activeElement?.dataset.testid`), 'composer-input', 'focus is on the bare field');
+});
+
+test('1440 and 390: the controller is one small notch: one box, cells at most 34 px wide, at most 20 px high, no circle larger than the strip', { skip, timeout: 180000 }, async () => {
+  for (const [width, query] of [[1440, 'demo=1&single=1&pace=instant'], [390, 'demo=1&tabs=1&pace=instant']]) {
+    await open(width, query);
+    await browser.until('the strip', `!!document.querySelector('[data-testid=composer-controller]')`);
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 }); await wait(300);
+    const measure = () => browser.evaluate(`(() => { const s = document.querySelector('[data-testid=composer-controller]'), box = s.firstElementChild.getBoundingClientRect(); const cells = [...s.querySelectorAll('button')].map(b => b.getBoundingClientRect());
+      const inside = cells.every(c => c.width === 0 || (c.left >= box.left - 1 && c.right <= box.right + 1 && c.top >= box.top - 1 && c.bottom <= box.bottom + 1));
+      const tallList = [...s.querySelectorAll('*')].filter(e => !(e instanceof SVGElement) && e.getBoundingClientRect().height > box.height + 1).map(e => e.tagName + '.' + String(e.className).slice(0, 40) + ' ' + Math.round(e.getBoundingClientRect().height)), tall = tallList.length;
+      return { h: box.height, w: box.width, cells: cells.map(c => Math.round(c.width)), inside, tall, tallList, shapes: s.querySelectorAll('[data-slot=button]').length }; })()`);
+    const rest = await measure();
+    assert.ok(rest.h <= 20 && Math.max(...rest.cells) <= 34 && rest.inside && rest.tall === 0 && rest.shapes === 0, `${width}: one small notch at rest (${JSON.stringify(rest)})`);
+    if (width < 500) { assert.ok(rest.cells.length >= 2 || true); continue; }
+    await browser.evaluate(`document.querySelector('[data-action=chevron]').focus()`); await browser.press('Shift'); await browser.evaluate(`document.querySelector('[data-action=chevron]').blur(); document.querySelector('[data-action=chevron]').focus()`); await wait(400);
+    const opened = await measure();
+    assert.ok(opened.h <= 20 && Math.max(...opened.cells) <= 34 && opened.inside && opened.tall === 0, `${width}: opened, the extra cells are inside the one box (${JSON.stringify(opened)})`);
+    assert.ok(opened.w > rest.w, 'the one container widens');
+  }
 });
 
 test('1280: typing grows the field;  a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
@@ -1360,7 +1403,7 @@ test('1440: Expand goes to grown, Full fills the main area while the left nav an
     assert.equal(await browser.evaluate(`document.querySelector('[data-boring=dock-main]').inert`), true, 'the page behind the conversation is inert');
     assert.equal(await browser.evaluate(`document.querySelector('[data-boring=dock-main]').getAttribute('aria-hidden')`), 'true');
     assert.equal(await browser.evaluate(`getComputedStyle(document.body).overflow`), 'hidden', 'the page does not scroll');
-    assert.equal(await browser.evaluate(`document.querySelectorAll('${FULL} [data-testid=agent-layer-header] button[aria-label="Fermer"]').length`), 0, 'the header has no Close: the controller chevron is the way back');
+    assert.equal(await browser.evaluate(`document.querySelectorAll('${FULL} [data-testid=agent-layer-header] button[aria-label="Fermer"]').length`), 1, 'full screen has a Close (to the bar); the chevron is the way back to the tray');
     assert.equal(await browser.evaluate(`document.querySelector('${FULL} [data-testid=agent-full-back]').getAttribute('aria-label')`), 'Quitter le plein écran');
     assert.equal(await browser.evaluate(`document.querySelector('${FULL} [data-testid=agent-full-back]').textContent.trim()`), '', 'the back chevron is an icon only');
     await browser.screenshot(`full-1440-${dark ? 'dark' : 'light'}-after.png`);
