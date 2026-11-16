@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client';
 import { AppShell } from '../../registry/app-shell/app-shell.tsx';
 import { ScreenBody } from '../../registry/app-shell/screen-body.tsx';
 import { FileTextIcon, FolderIcon } from '../../registry/_shared/icons';
+import { FileTreeView } from '../../registry/file-tree/file-tree.tsx';
+import { useAgentLayer } from '../../registry/app-shell/agent-layer.tsx';
+import { DEMO_KINDS, demoTree } from '../../test/fixtures/themes/one-composer-demo.jsx';
+import { demoFiles } from '../../test/fixtures/themes/one-composer-files.js';
 import { UpdateNotice } from '../../registry/app-shell/update-notice.tsx';
 import { appShellText } from '../../registry/app-shell/text.ts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -35,6 +39,7 @@ const Section = ({ id, title, children }) => <section data-testid={`ds-${id}`} c
 const Row = ({ children }) => <div className="flex flex-wrap items-center gap-2">{children}</div>;
 
 function Page() {
+  const layer = useAgentLayer();
   return <div className="mx-auto flex max-w-3xl flex-col gap-8 text-sm">
     <p className="m-0 text-muted-foreground">The kit's defaults, light and dark: switch the theme in the account menu. Fictional content.</p>
     <Section id="colours" title="Colours"><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{COLOURS.map(([name, bg]) => <div key={name} className="flex flex-col gap-1"><div className={`h-10 rounded-md border ${bg}`} /><span className="text-xs">{name}</span></div>)}</div></Section>
@@ -56,6 +61,7 @@ function Page() {
       <Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader><TableBody><TableRow><TableCell>Jan 02</TableCell><TableCell className="text-right tabular-nums">$12.00</TableCell></TableRow></TableBody></Table>
       <Card><CardHeader><CardTitle>A card</CardTitle><CardDescription>Flat, one border.</CardDescription></CardHeader><CardContent>Content</CardContent></Card>
     </Section>
+    <Section id="files" title="File tree: every viewer"><div className="rounded-lg border"><FileTreeView controller={demoTree()} variant="plain" locale="en" upload={false} history={false} refresh={false} onOpen={path => layer.pane.push({ file: path })} /></div></Section>
     <Section id="navigation" title="Tabs, dialog, empty, loading">
       <Tabs defaultValue="a"><TabsList><TabsTrigger value="a">All</TabsTrigger><TabsTrigger value="b">Gaps</TabsTrigger></TabsList><TabsContent value="a">Everything</TabsContent><TabsContent value="b">Only gaps</TabsContent></Tabs>
       <Dialog><DialogTrigger render={<Button variant="outline" className="self-start">Open a dialog</Button>} /><DialogContent><DialogHeader><DialogTitle>A dialog</DialogTitle><DialogDescription>Kit defaults.</DialogDescription></DialogHeader></DialogContent></Dialog>
@@ -79,7 +85,7 @@ const nav = [
   { id: 'design', label: 'Design system', icon: FileTextIcon, render: () => <ScreenBody><Page /></ScreenBody> },
   { id: 'empty', label: 'Empty app view', icon: FolderIcon, render: () => <ScreenBody><Placeholder /></ScreenBody> },
 ];
-const agent = { controller, label: 'Assistant', library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en' } };
+const agent = { controller, label: 'Assistant', files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en' } };
 function App() {
   const [route, setRoute] = useState('design'), [theme, setTheme] = useState(initial);
   return <AppShell layout="screen" locale="en" title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" agent={agent}

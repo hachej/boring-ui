@@ -16,14 +16,14 @@ import { Dock } from '../dock/dock';
 import { ViewerFrame, ViewerWindowProvider } from '../viewer-frame/viewer-frame';
 import { frenchViewerLabels } from '../viewer-frame/viewer-labels-fr';
 import type { LocalTextKind } from '../viewer-pdf/local-file-viewer';
-import { csvKind } from '../viewer-code/code-kinds';
+import { csvKind, svgKind } from '../viewer-code/code-kinds';
 import { StepButtons, stepIndex, stepOffset } from '../pi-chat/image-viewer';
 import { useBackLayer } from '../utils/back';
 import { cn } from '../utils/utils';
 import type { PresentedArtifact } from '../pi-artifacts/artifact';
 import type { AppShellLocale, AppShellText } from './text';
 import { shellWords, useInternal } from './layer-context';
-import type { AgentPane, AgentSpec, PaneEntry, PaneItem, PanePresent } from './layer-context';
+import type { AgentPane, AgentSpec, FileKind, PaneEntry, PaneItem, PanePresent } from './layer-context';
 
 const MAX_DEPTH = 12;
 type FileReader = NonNullable<AgentSpec['files']>['read'];
@@ -36,7 +36,10 @@ const markdownKind: LocalTextKind = {
   match: (_target, artifact) => artifact.type === 'markdown',
   load: () => import('../pi-chat-markdown/markdown').then(module => ({ default: ({ text }: { readonly text: string }) => <div data-testid="pane-markdown" className="pi-chat text-sm"><module.Markdown text={text} /></div> })),
 };
-const TEXT_KINDS: readonly LocalTextKind[] = [csvKind, markdownKind];
+const TEXT_KINDS: readonly LocalTextKind[] = [csvKind, svgKind, markdownKind];
+/** The host's artifact kinds as text kinds of the file viewer, ahead of the pane's own (a `.diagram.json` is JSON text, a `.mockup.html` HTML text). */
+const withKinds = (kinds: readonly FileKind[] | undefined): readonly LocalTextKind[] => [
+  ...(kinds ?? []).map(kind => ({ match: (target: { readonly resource: { readonly path: string } }) => kind.match(target), load: async () => ({ default: ({ text }: { readonly text: string }) => <>{kind.renderer({ text })}</> }) })), ...TEXT_KINDS];
 let readyFileViewer: typeof import('../viewer-pdf/local-file-viewer').LocalFileViewer | undefined;
 const loadFileViewer = () => import('../viewer-pdf/local-file-viewer').then(module => {
   readyFileViewer = module.LocalFileViewer;
@@ -283,8 +286,9 @@ function RefocusTitle() {
 }
 
 /** A file entry: its bytes read through `agent.files`, shown by `LocalFileViewer`; once shown, a presented revision is acknowledged. */
-function FileEntry({ entry, frame, read, onShown }: { readonly entry: Extract<PaneEntry, { kind: 'file' }>; readonly frame: { readonly id: string; readonly headerStart: ReactNode; readonly controls: ReactNode; readonly onClose: () => void; readonly text: AppShellText };
-  readonly read: FileReader; readonly onShown: PanePresent['shown'] | undefined }) {
+function FileEntry({ entry, frame, read, onShown, fileKinds }: { readonly entry: Extract<PaneEntry, { kind: 'file' }>; readonly frame: { readonly id: string; readonly headerStart: ReactNode; readonly controls: ReactNode; readonly onClose: () => void; readonly text: AppShellText };
+  readonly read: FileReader; readonly onShown: PanePresent['shown'] | undefined; readonly fileKinds: readonly FileKind[] | undefined }) {
+  const kinds = useMemo(() => withKinds(fileKinds), [fileKinds]);
   const [loaded, setLoaded] = useState<{ readonly path: string; readonly blob: Blob | null; readonly revision?: string | undefined }>();
   useEffect(() => {
     let live = true;
@@ -306,7 +310,7 @@ function FileEntry({ entry, frame, read, onShown }: { readonly entry: Extract<Pa
   </ViewerFrame>;
   if (!blob) return waiting;
   const Viewer = readyFileViewer ?? LocalFileViewer;
-  return <Suspense fallback={waiting}><Viewer key={path} name={path} blob={blob} kinds={TEXT_KINDS} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose} />{id === 'agent-preview' && <RefocusTitle key={path} />}</Suspense>;
+  return <Suspense fallback={waiting}><Viewer key={path} name={path} blob={blob} kinds={kinds} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} controls={controls} onClose={onClose} />{id === 'agent-preview' && <RefocusTitle key={path} />}</Suspense>;
 }
 
 /**
@@ -324,7 +328,7 @@ function EntryView({ entry, below, top, placement, assistant }: { readonly entry
     // A phone folds a frame's controls into its « … » menu: there previous and next sit under the file instead.
     const steps = <FileSteps entry={entry} text={text} onStep={layer.step} />;
     return <>
-      <div className="flex min-h-0 flex-1 flex-col"><FileEntry entry={entry} read={layer.agent.files.read} onShown={layer.presented?.shown} frame={{ id, headerStart, controls: placement === 'screen' ? undefined : steps, onClose: layer.pane.close, text }} /></div>
+      <div className="flex min-h-0 flex-1 flex-col"><FileEntry entry={entry} read={layer.agent.files.read} onShown={layer.presented?.shown} fileKinds={layer.agent.fileKinds} frame={{ id, headerStart, controls: placement === 'screen' ? undefined : steps, onClose: layer.pane.close, text }} /></div>
       {placement === 'screen' && entry.files.length > 1 && <div className="flex shrink-0 justify-center px-2 py-1">{steps}</div>}
     </>;
   }

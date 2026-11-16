@@ -45,6 +45,8 @@ export interface AgentSpec {
    * Resolve `{ blob, revision }` to let the pane acknowledge a `present` of that revision once its viewer shows it.
    */
   readonly files?: { readonly read: (path: string) => Promise<Blob | { readonly blob: Blob; readonly revision: string }> } | undefined;
+  /** With `files`: the artifact kinds that draw a file in the pane (a diagram, a drawing, a mock-up, records, a maquette): the kinds of `pi-app-kinds`, tried before the pane's own CSV, Markdown and SVG. */
+  readonly fileKinds?: readonly FileKind[] | undefined;
   /** `composer: 'bar'` (AC-13): the person may only read (a role without writing, an assistant switched off). The box stays in place with this
    * one line, the reason, instead of the field; nothing in it can be focused. Absent: the field as usual. */
   readonly readOnly?: string | undefined;
@@ -275,3 +277,9 @@ export function useInternal(): Internal {
 export const shellWords = (locale: AppShellLocale | undefined, agent: AgentSpec | undefined): AppShellText => agent?.words ? { ...appShellText(locale), ...agent.words } as AppShellText : appShellText(locale);
 /** Folded (`composer: 'bar'`): the card on the field says what the agent does, so the chat's own status line, its files list and its send notice (the box's one line says it, AC-12) step aside. */
 export const FOLDED_FIELD = '[&_[data-testid=preparing]]:hidden [&_[data-testid=composer-dock]_p[data-testid=agent-status]]:hidden [&_[data-testid=conversation-files]]:hidden [&_[data-testid=send-blocked]]:hidden [&_[data-testid=send-unknown]]:hidden';
+
+/** An artifact kind as the pane's file viewer uses it: structurally the `match` and `renderer` of a diagram, drawing, mock-up, records or maquette kind. */
+export interface FileKind {
+  readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;
+  readonly renderer: (props: { readonly text: string }) => ReactNode;
+}

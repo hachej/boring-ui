@@ -1,4 +1,9 @@
 import { fictionalPdf } from '../fictional-pdf.mjs';
+import diagram from '../diagram/booking.diagram.json';
+import maquette from '../board/booking.maquette.json';
+import excalidraw from '../drawing/oakfield-garden.excalidraw';
+import drawio from '../drawing/bakery-morning.drawio';
+import mockup from '../booking.mockup.html';
 
 // The demo's files (`?demo=1`), made in memory on first read, all invented English bookkeeping content: what `agent.files.read` hands the pane's
 // viewer. One of each kind the kit shows: PDFs of one and two pages, a CSV table, Markdown notes, a PNG receipt, a JSON export, a plain text and a
@@ -58,6 +63,18 @@ const MAKERS = {
   'exports/entries-january.json': () => text(JSON.stringify({ journal: 'Bank', month: '2026-01', lines: [{ date: 'Jan 09', label: 'Card Harbor Garage', amount: -96.5 }, { date: 'Jan 15', label: 'Card The Cedar Diner', amount: -58.2 }] }, null, 2), 'application/json'),
   'exports/reminder-delmore.txt': () => text('Hello,\n\nInvoice 0112 from Delmore House ($1,368.00 incl. tax) is still open.\nCould you confirm the payment date?\n\nKind regards,\nHarbor Studio\n', 'text/plain'),
   'videos/studio-tour.webm': visit,
+  // One sample for each kind the pane draws (the repo's invented fixtures): the kit's own Markdown, CSV, SVG, PDF, image and video above, then the artifact kinds of `DEMO_KINDS`.
+  'samples/harbor-logo.svg': () => text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60" width="240" height="120"><rect width="120" height="60" rx="8" fill="#e0f2fe"/><path d="M10 40 Q30 10 60 40 T110 40" fill="none" stroke="#0c4a6e" stroke-width="4"/><text x="60" y="55" font-size="9" text-anchor="middle" fill="#0c4a6e">Harbor Studio (fictional)</text></svg>', 'image/svg+xml'),
+  'samples/booking.diagram.json': () => text(JSON.stringify(diagram), 'application/json'),
+  'samples/oakfield-garden.excalidraw.json': () => text(excalidraw, 'application/json'),
+  'samples/bakery-morning.drawio.xml': () => text(drawio, 'application/xml'),
+  'samples/booking.mockup.html': () => text(mockup, 'text/html'),
+  'samples/booking.maquette.json': () => text(JSON.stringify(maquette), 'application/json'),
+  'samples/entries.records.json': () => text(JSON.stringify({ kind: 'records@1', columns: [{ key: 'date', label: 'Date', type: 'date' }, { key: 'label', label: 'Label', type: 'text' }, { key: 'amount', label: 'Amount', type: 'number' }],
+    rows: [{ id: 'e1', values: { date: '2026-01-09', label: 'Card Harbor Garage', amount: -96.5 } }, { id: 'e2', values: { date: '2026-01-15', label: 'Card The Cedar Diner', amount: -58.2 } }] }), 'application/json'),
+  'samples/reconcile.ts': () => text('export const gap = (statement: number, books: number): number => Math.round((statement - books) * 100) / 100;\n', 'text/plain'),
+  'samples/reconcile.py': () => text('def gap(statement, books):\n    return round(statement - books, 2)\n', 'text/plain'),
+  'samples/close-month.sh': () => text('#!/bin/sh\n# Invented closing steps (fictional).\necho "Justify the January gaps"\n', 'text/plain'),
 };
 export const DEMO_FILES = Object.keys(MAKERS);
 /** The attachments of the line detail opened from the page (the Jan 9 gap): a receipt PDF, a note and the photo of the ticket. */

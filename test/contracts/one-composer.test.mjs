@@ -38,7 +38,7 @@ before(async () => {
     });
     builder.onResolve({ filter: /^@hachej\/boring-feedback\/ui$/ }, () => ({ path: join(root, 'packages/feedback/src/ui/index.ts') }));
   } };
-  const bundle = await build({ entryPoints: [join(root, 'test/fixtures/themes/one-composer.jsx')], bundle: true, write: false, metafile: true, format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty' }, plugins: [kit], logLevel: 'silent' });
+  const bundle = await build({ entryPoints: [join(root, 'test/fixtures/themes/one-composer.jsx')], bundle: true, write: false, metafile: true, format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty', '.excalidraw': 'text', '.drawio': 'text', '.html': 'text' }, plugins: [kit], logLevel: 'silent' });
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
   const vars = item('theme').cssVars;
@@ -345,6 +345,18 @@ test('1440: the docked conversation has one surface, a pane-height header and it
   assert.equal(seen.lastName, 'agent-layer-close', 'Close is last in the icon row');
   assert.equal(seen.divider, false, 'no divider before Close');
   assert.equal(new Set(seen.size).size, 1, `the icon buttons share one size (${seen.size})`);
+});
+
+// Julien: a sample of every viewer in the Library. The pane draws each artifact kind of `agent.fileKinds` instead of its raw JSON, XML or HTML text.
+test('1440: the Library holds a sample of each viewer and the pane draws it (diagram, Excalidraw, draw.io, mock-up, maquette, records, SVG)', { skip, timeout: 180000 }, async () => {
+  await open(1440, 'demo=1&single=1');
+  for (const [path, drawn] of [['samples/booking.diagram.json', '[data-testid*=diagram]'], ['samples/oakfield-garden.excalidraw.json', '[data-testid*=drawing]'], ['samples/bakery-morning.drawio.xml', '[data-testid*=drawing]'],
+    ['samples/booking.mockup.html', 'iframe'], ['samples/booking.maquette.json', '[data-testid*=maquette]'], ['samples/entries.records.json', '[data-testid*=records]'], ['samples/harbor-logo.svg', 'img']]) {
+    await browser.evaluate(`window.__layer.pane.push({ file: ${js(path)} })`);
+    await browser.until(`${path} is drawn`, `!!document.querySelector('[data-pane-top] ${drawn}') && document.querySelector('[data-pane-top] [data-testid=agent-preview-title]')?.textContent === ${js(path.split('/').at(-1))}`);
+    const literal = await browser.evaluate(`/^\\s*[{<]/.test(document.querySelector('[data-pane-top] [data-testid=agent-preview-body]')?.innerText ?? '')`);
+    assert.equal(literal, false, `${path} is drawn by its viewer, not shown as its raw text`);
+  }
 });
 
 test('1280: typing grows the field;  a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {

@@ -16,6 +16,7 @@ Scenarios as data (`ux/scenarios/*.json`), one per layout or component, that a r
 - `ux-demo-pane-family` the demo's entry pane and library are one family: the entry is built from kit parts (Button, Checkbox, Label, Item rows, Table) and the library is the compact `variant="plain"` tree under the pane's own header, so there is one title and one row height (36 px, 44 px on touch). `test/fixtures/themes/one-composer-demo.jsx`.
 - `ux-showcase-design-check` the showcase fixtures (`test/fixtures/themes/one-composer*.jsx`, `ux/fixtures/*.jsx`) are held to `boring-ui-blocks design`: no raw form control or table, no arbitrary size, no hand-written touch size. Run `node scripts/check-showcase-design.mjs` (part of `npm run check`). `scripts/check-showcase-design.mjs`, `test/showcase-design.test.mjs`.
 - `ux-design-system-home` the showcase is ONE top bar over the app: a page menu (Start: the design system; Layouts; Components), one Phone and Desktop switch (remembered for the whole site) and the theme switch, then the page's demo in a frame filling the rest (Phone is a centred 390 px frame, Desktop the full width). No site navigation, no title block. The home is the design system: the kit's AppShell at its defaults with the colours, type scale, radius, shadow, buttons, form controls, status, rows, table, card, tabs, dialog and empty state as its app view, and an empty app view as its second screen. A scenario with `"site": false` is checked in CI but not published as a page (the update notice is a part of the design system page instead); a target without a demo keeps the documentation page. `ux/fixtures/design-system.jsx`, `ux/scenarios/component-design-system.json`, `ux/runner/site.mjs`, `ux/runner/site-chrome.mjs`.
+- `ux-demo-samples` the demo's Library and the design system page's file tree hold a `samples` folder, one invented file per kind the pane draws: SVG, diagram, Excalidraw, draw.io, mock-up, maquette, records, and TS, Python and shell as text, beside the PDF, CSV, Markdown, image, JSON, text and video. Made in memory from the repo's invented fixtures. `test/fixtures/themes/one-composer-files.js`, `one-composer-demo.jsx`.
 
 ## How to get to it (user POV)
 
@@ -37,6 +38,7 @@ Preconditions: `npm ci && npm run build`, `CHROMIUM` set to a Chromium binary, `
 - `ux-demo-pane-family`: in `layout:bar-pane` open an entry, then the library from its header. Both show one title, and rows are one height (36 px desktop, 44 px phone).
 - `ux-showcase-design-check`: add a raw `<button>` to `ux/fixtures/component-reply-card.jsx` and run `node scripts/check-showcase-design.mjs`; it exits 1 and names the line.
 - `ux-design-system-home`: build the site (`ux:site`), open its home at 390 and 1440, light and dark: one bar (page menu, Phone/Desktop, theme) over the framed app; pick a layout in the menu, switch to Phone and reload another page: the choice is kept. `node --test test/ux-site-home.test.mjs` checks the bar and the menu.
+- `ux-demo-samples`: open the Library (or the design system page's file tree), folder `samples`: one file per viewer opens in the right viewer in the pane.
 
 ## Gotchas
 
