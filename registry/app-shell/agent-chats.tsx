@@ -17,7 +17,7 @@ import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { PendingVoiceBubble } from '../pi-chat-voice/voice-message';
 import { chatTextFor } from '../pi-chat/locale';
 import { ConversationHistory } from '../pi-chat/history';
-import { ChatTextProvider } from '../pi-chat/labels';
+import { ChatTextProvider, useChatText } from '../pi-chat/labels';
 import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
 import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { sentFeedbackContent } from '../feedback/sent-content';
@@ -99,6 +99,7 @@ function BarTranscriptPosition() {
 }
 /** The input row stays at the bottom while chips and earlier text lines grow the surrounding surface upward. */
 function PinnedBarComposer(props: ComposerProps) {
+  const { labels } = useChatText();
   const root = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const element = root.current;
@@ -118,7 +119,10 @@ function PinnedBarComposer(props: ComposerProps) {
     if (files.length) root.current?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true });
     props.onPickFiles(files);
   };
-  return <div ref={root} data-pinned-composer=""><Composer {...props} onPickFiles={pickFiles} /></div>;
+  return <div ref={root} data-pinned-composer="" className="relative">
+    <Composer {...props} onPickFiles={pickFiles} />
+    <div data-bar-drop-overlay="" aria-hidden="true" className="pointer-events-none absolute inset-1 z-10 hidden items-center justify-center rounded-(--radius-3xl) border-[length:var(--border-width)] border-dashed border-primary bg-card text-sm font-medium text-card-foreground">{labels.attachFiles}</div>
+  </div>;
 }
 
 /** One agent's PiChat. It stays mounted while hidden, so its scroll, focus and drafts survive a swap with the other spec. */

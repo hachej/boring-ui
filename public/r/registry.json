@@ -2443,6 +2443,12 @@
           ".app-shell [data-one-composer] [data-testid=\"composer-dock\"]": {
             "padding": "0"
           },
+          ".app-shell [data-testid=\"agent-content\"]:has([data-one-composer] [data-bar-drop-overlay]) > [data-testid=\"content-drop-overlay\"]": {
+            "display": "none"
+          },
+          ".app-shell [data-testid=\"agent-content\"]:has(> [data-testid=\"content-drop-overlay\"]) [data-one-composer] [data-bar-drop-overlay]": {
+            "display": "flex"
+          },
           ".app-shell [data-one-composer][data-folded] [data-slot=\"composer-notices\"]:not(:has(> :not([data-testid=\"preparing\"], [data-testid=\"agent-status\"], [data-testid=\"send-blocked\"], [data-testid=\"send-unknown\"])))": {
             "display": "none"
           },
