@@ -169,7 +169,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
-      actions: write
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -203,7 +202,20 @@ jobs:
             channel=(--prerelease --latest=false)
           fi
           gh release create "$tag" --target "$RELEASE_COMMIT" --title "$tag" "${channel[@]}" "${notes[@]}"
-      # A release created with the workflow token does not start the `release: published` trigger of other workflows,
-      # but starting a workflow by dispatch is allowed. This keeps the public showcase site current after every release.
-      - name: Rebuild the public showcase site
+
+  # A release created with the workflow token does not start the `release: published` trigger of other workflows,
+  # but starting a workflow by dispatch is allowed. Its own job, so the release job gains no extra permission.
+  showcase:
+    name: Rebuild the public showcase site
+    needs: github-release
+    if: always() && needs.github-release.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Start the UX showcase
         run: gh workflow run ux-showcase.yml --ref main || echo "::warning::Could not start the UX showcase; run it by hand."
