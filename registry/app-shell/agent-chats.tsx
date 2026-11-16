@@ -220,13 +220,14 @@ export function Chats({ showing }: { readonly showing: Which }) {
 }
 
 /** Title row: « ← » when the improve view has an agent to go back to, the title, then Expand or Collapse (compact only), the dock controls (expanded only) and Close. */
-export function Header({ text, title, compactSnap, closeRef, controls, className, ...rest }: { readonly text: AppShellText; readonly title: string; readonly compactSnap?: Snap; readonly closeRef?: Ref<HTMLButtonElement>; readonly controls?: ReactNode } & Omit<HTMLAttributes<HTMLDivElement>, 'title'>) {
+export function Header({ text, title, compactSnap, closeRef, controls, onBack, onClose, className, ...rest }: { readonly text: AppShellText; readonly title: string; readonly compactSnap?: Snap; readonly closeRef?: Ref<HTMLButtonElement>; readonly controls?: ReactNode; readonly onBack?: { readonly label: string; readonly run: () => void }; readonly onClose?: () => void } & Omit<HTMLAttributes<HTMLDivElement>, 'title'>) {
   const layer = useInternal();
   const back = layer.showing === 'improve' && layer.agent;
   const actions = layer.showing === 'improve' ? [] : layer.agent?.headerActions ?? [];
   const library = layer.bar && layer.showing === 'agent' ? layer.openLibrary : undefined;
   return <div data-testid="agent-layer-header" {...rest} className={cn('flex h-13 shrink-0 items-center gap-1.5 px-2 md:px-3', className)}>
-    {back && <Button variant="ghost" size="icon" data-testid="agent-layer-back" aria-label={text.back} title={text.back} onClick={layer.showAgent}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+    {onBack && <Button variant="ghost" size="icon" data-testid="agent-layer-back" aria-label={onBack.label} title={onBack.label} onClick={onBack.run}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+    {back && !onBack && <Button variant="ghost" size="icon" data-testid="agent-layer-back" aria-label={text.back} title={text.back} onClick={layer.showAgent}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
     <h2 data-testid="agent-layer-title" className="m-0 min-w-0 flex-1 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
     <HistoryButton />
     <LibraryButton open={library} text={text} testId="agent-layer-library" />
@@ -241,7 +242,7 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
     {!layer.bar && compactSnap === 'half' && <HeaderHint label={text.expand}><Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {!layer.bar && compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {controls}
-    <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
+    <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={onClose ?? layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
   </div>;
 }
 

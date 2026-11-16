@@ -207,9 +207,11 @@ export interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly moveToDock: () => void;
   /** The dock panel reports its api so the tray can dock it. */
   readonly registerDock: (api: DockApi | null) => void;
-  /** The tray is filling the main column (Agrandir). */
-  readonly grown: boolean;
-  readonly setGrown: (grown: boolean) => void;
+  /** How much of the screen the conversation takes: `open` (the tray, the phone's half), `grown` (Agrandir: the tray fills the main column) and `full` (the whole viewport over the nav and the right pane; the phone's full snap is this same state). */
+  readonly size: ConversationSize;
+  readonly setSize: (size: ConversationSize) => void;
+  /** Where the one composer is drawn while the conversation is full screen (set by that surface, null otherwise). */
+  readonly setFullField: (element: HTMLElement | null) => void;
   /** The thread is on show in the tray above the field. */
   readonly trayOpen: boolean;
   /** The thread is on show in the dock (the dock's own `open`). */
@@ -246,6 +248,8 @@ export interface PanePresent {
   readonly shown: (shown: { readonly path: string; readonly revision: string; readonly hidden?: true }) => void;
 }
 
+/** One state for "how big is the conversation": the wide tray's three sizes, and on a phone the drawer's half (`open`) and full (`full`). */
+export type ConversationSize = 'open' | 'grown' | 'full';
 export type DockSide = 'left' | 'right';
 /** Where a thread sent from the content composer opens on a wide screen: `tray` above the field, or `dock` beside the app. */
 export type AgentMode = 'tray' | 'dock';
