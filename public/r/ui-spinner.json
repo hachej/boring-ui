@@ -1,0 +1,19 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "ui-spinner",
+  "title": "UI spinner",
+  "description": "The kit's own compact spinner primitive (shadcn/ui/spinner.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
+  "dependencies": [],
+  "registryDependencies": [
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/_shared.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.0/r/utils.json"
+  ],
+  "files": [
+    {
+      "path": "shadcn/ui/spinner.tsx",
+      "content": "import { cn } from \"@/components/utils/utils\"\nimport { Loader2Icon } from \"@/components/_shared/icons\"\n\nfunction Spinner({ className, ...props }: React.ComponentProps<\"svg\">) {\n  return (\n    <Loader2Icon data-slot=\"spinner\" role=\"status\" aria-label=\"Loading\" className={cn(\"size-4 animate-spin\", className)} {...props} />\n  )\n}\n\nexport { Spinner }\n",
+      "type": "registry:ui"
+    }
+  ],
+  "type": "registry:ui"
+}

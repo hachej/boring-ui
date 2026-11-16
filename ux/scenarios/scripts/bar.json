@@ -1,6 +1,9 @@
 {
   "fallback": "This is a demo: the assistant is scripted and only understands a few requests. Try “Reconcile the January statement” or “Prepare the closing”.",
   "turns": [
+    { "match": "march report", "steps": [
+      { "tool": "read", "path": "uploads/report-march.pdf", "progress": "3 of 8 pages", "ms": 700 },
+      { "fail": "Provider unavailable (fictional)" } ] },
     { "match": "show|display|present", "steps": [
       { "think": true, "ms": 500 },
       { "present": "uploads/discrepancies-january.csv", "ms": 1500 },
