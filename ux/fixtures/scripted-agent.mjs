@@ -5,12 +5,13 @@
 //   { "tool": "bash", "arguments": { "command": "..." }, "error": "raw error text" }         the same, with its own arguments, and the tool fails with that text
 //   { "think": true, "ms": 600 }                                                             the agent works with no tool running
 //   { "text": "the answer, \n for lines, @path cites a file", "stream": true }               the answer; streamed word by word when `stream`
+//   { "fail": "detail" }                                                                     the turn ends in an error (an assistant message with stopReason "error", `detail` is its errorMessage)
 //   { "ask": { "question": "...", "questions": [ { "question": "...", "options": ["a", "b"] } ] }, "then": [ steps ] }   a question; `then` plays after the answer
 //   { "present": "uploads/x.csv", "ms": 1500 }                                              the agent shows a file (the `present` tool): the call waits for the page's
 //                                                                                           acknowledgement (`presented()`), at most `ms`, then its result carries the file
 // Pace: `pace` is 1 for the live demo and the videos (steps wait their `ms`, text streams); 0.15 for check mode (steps last a fifth of their time, at least 200 ms, no streaming).
 // A message that matches no turn gets `fallback`: never an error, never a blank.
-const assistant = (content, stopReason) => ({ role: 'assistant', content, api: 'scripted', provider: 'scripted', model: 'scripted', usage: {}, stopReason, timestamp: 2 });
+const assistant = (content, stopReason, errorMessage) => ({ role: 'assistant', content, api: 'scripted', provider: 'scripted', model: 'scripted', usage: {}, stopReason, timestamp: 2, ...(errorMessage ? { errorMessage } : {}) });
 let counter = 1000;
 const entry = (model, byTaskId = 7) => ({ id: ++counter, kind: 'message', byTaskId, model: [model] });
 const wait = ms => new Promise(done => setTimeout(done, ms));
@@ -50,6 +51,9 @@ export function createScriptedAgent({ script, pace = 1, entries, show }) {
         const artifact = { schema: 'boring.artifact', version: 1, title: name, type: name.endsWith('.md') ? 'markdown' : 'code', mediaType, target: { resource: { providerId: 'demo', path }, view: { kind: 'published' } }, revision: 'r1' };
         const result = { id: ++counter, kind: 'message', byTaskId: 8, model: [{ role: 'toolResult', toolCallId: call, toolName: 'present', content: [{ type: 'text', text: JSON.stringify({ artifact }) }], isError: false, timestamp: 3 }] };
         list = [...list, asked, result]; show(list, live());
+      } else if (step.fail !== undefined) {
+        list = [...list, entry(assistant([], 'error', typeof step.fail === 'string' ? step.fail : 'The model could not answer'))]; show(list, {});
+        return list;
       } else if (step.ask) {
         const asked = entry(assistant([{ type: 'toolCall', id: `q${++id}`, name: 'ask_user', arguments: step.ask }], 'toolUse'));
         list = [...list, asked]; show(list, live());

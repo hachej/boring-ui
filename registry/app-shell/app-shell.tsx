@@ -4,10 +4,11 @@
 // the shadcn sidebar (icon rail plus NavUser). Layout B (`workspace`): the same, with a screen made of a `ListDetail`; the sidebar starts
 // as the icon rail below 1280px, and from 1280px when the screen has no `sidebar` content (D-1909); the person's choice is kept. Layout C (`chat`): the one nav item renders the app's `AgentWorkspace`,
 // untouched, below the same sidebar, account menu and header; there is no shell agent (the page is the chat). The shell imports nothing from pi-app: a layout C app installs the `pi-app` item itself. One header per screen
-// (`useScreenHeader`). The AgentLayer is mounted once, here.
+// (`useScreenHeader`). The AgentLayer is mounted once, here. Each screen's box keeps `--agent-bar-reserve` free at its bottom (the phone's bar over the page).
 // Host concern: Pi has no layout; the screen on show travels as the agent's context (useAgentContext -> createPromptContext).
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { afterStacksBack } from '../utils/back';
+import { cn } from '../utils/utils';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { AccountAvatar, AccountChoices } from './account';
@@ -26,6 +27,9 @@ import { useSidebarOpen } from './sidebar-open';
 import type { NavItem } from './nav';
 import { AppSheet } from './app-sheet';
 import { appShellText } from './text';
+import { useInternal } from './layer-context';
+import { UpdateNotice } from './update-notice';
+import type { AppShellUpdate } from './update-notice';
 import { ScreenHeaderSlotContext } from '../utils/screen-header-slot';
 import type { AppShellLocale, AppShellText } from './text';
 
@@ -74,6 +78,12 @@ export interface AppShellProps {
    * or an app whose title is renamed or translated, keep (or do not share) their widths. Pass it with `resizable`; without it (or with an empty one) the key uses `title`.
    */
   readonly appId?: string;
+  /**
+   * A newer version of the app is online while the page is open. `{ available: true }` shows the kit's own notice (a status row above the phone's tab bar, at the foot of the
+   * screen column on a wide screen: it takes room, so it never covers the screen's last control) with the shell's words, Reload and a dismiss. `onReload` replaces `location.reload()`.
+   * A dismiss holds for `version` only. Default: no notice.
+   */
+  readonly update?: AppShellUpdate;
 }
 
 /** The shells that ask for the blur now, and what `<html data-overlay-blur>` held before the first of them (the app's own HTML may set it). */
@@ -110,15 +120,18 @@ function ScreenContent({ item }: { readonly item: NavItem }): ReactNode { return
 function Screens({ items, activeId, scrolls, slot, centred }: { readonly items: readonly NavItem[]; readonly activeId: string; readonly scrolls: boolean; readonly slot: HTMLElement | null; readonly centred: boolean }) {
   return <div className="relative min-h-0 flex-1">
     {items.map(item => <ScreenActiveContext.Provider key={item.id} value={item.id === activeId}><ScreenHeaderSlotContext.Provider value={item.id === activeId ? slot : null}>
-      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={scrolls ? 'h-full overflow-y-auto overscroll-contain' : 'h-full overflow-hidden'}>{centred ? <div data-testid="screen-centred" className="mx-auto flex h-full w-full max-w-3xl flex-col"><ScreenContent item={item} /></div> : <ScreenContent item={item} />}</div>
+      <div hidden={item.id !== activeId} data-testid={`screen-${item.id}`} className={cn('h-full pb-[var(--agent-bar-reserve,0px)] scroll-pb-[var(--agent-bar-reserve,0px)]', scrolls ? 'overflow-y-auto overscroll-contain' : 'overflow-hidden')}>{centred ? <div data-testid="screen-centred" className="mx-auto flex h-full w-full max-w-3xl flex-col"><ScreenContent item={item} /></div> : <ScreenContent item={item} />}</div>
     </ScreenHeaderSlotContext.Provider></ScreenActiveContext.Provider>)}
   </div>;
 }
 
-function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title, nav, agent, panel, account, route, text }: { readonly single: boolean; readonly bar: boolean; readonly resizable: AppShellProps['resizable']; readonly appId: string | undefined; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
+function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title, nav, agent, panel, account, route, text, update }: { readonly update: AppShellUpdate | undefined; readonly single: boolean; readonly bar: boolean; readonly resizable: AppShellProps['resizable']; readonly appId: string | undefined; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
   const improve = panel && panel.menu !== false ? panel.label ?? text.improve : undefined;
   const Layout = panel?.Layout ?? NoPanelLayout;
   const compact = useIsCompact();
+  const layer = useInternal();
+  // A phone's peek (the one composer's field, or a parked drawer) sits over the foot of the screen, above the tabs: the notice rises above it.
+  const lift = compact && layer.snap === 'peek' ? `calc(${layer.peekPoint} - ${layer.tabbar}px)` : undefined;
   const sheet = compact && compactNav === 'sheet' && !single;
   const [accountOpen, setAccountOpen] = useState(false);
   // The header's slot for the screen on show (an embedded AgentWorkspace puts its bar's controls there).
@@ -147,6 +160,7 @@ function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title,
         <ShellContext name={active.label} />
         <ScreenHeader fallbackTitle={single ? title : active.label} compact={compact} leadingAvatar={single} trigger={!(single && bar)} avatar={avatar} menu={sheet} screenSidebar={compact && !sheet && active.sidebar ? <ScreenSidebarSheet key={active.id} item={active} text={text} /> : undefined} text={text} slotRef={setSlot} />
         <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} centred={single} />
+        {update && <UpdateNotice update={update} text={text} lift={lift} />}
       </Layout>
       </div>
     </AgentDockLayout>
@@ -164,6 +178,6 @@ export function AppShell(props: AppShellProps) {
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;
   return <AgentLayerProvider agent={agent} composer={props.composer} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title} modeIdentity={{ app: props.appId || title, person: account?.email, screen: layout === 'screen' }}>
-    <HeaderProvider><Shell single={props.sidebar === false} bar={props.composer === 'bar'} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} /></HeaderProvider>
+    <HeaderProvider><Shell single={props.sidebar === false} bar={props.composer === 'bar'} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} update={props.update} /></HeaderProvider>
   </AgentLayerProvider>;
 }

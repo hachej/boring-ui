@@ -62,7 +62,7 @@ Phosphor (`@phosphor-icons/react`), never Lucide.
 | Toasts above the chat composer | Automatic (pi-chat sets it); `--toast-offset-bottom` in the theme overrides | `toast-offset` (D-1801) |
 | Screen margin | Automatic: `--screen-gutter` (1rem, 0.75rem compact) is the one left edge the header title and `ScreenBody` share. Never pad a screen root yourself (`p-4`, `px-3`) | `shell-screen-gutter` (D-2030) |
 | Control height | Automatic: `--control-h` is 44px on touch, 36px with a fine pointer. Never set a height on a control | `control-height` (D-1741), `touch-floor` (D-1770) |
-| A link-style action in a row | `Button size="inline"` (text height, 44px touch area; inside a table cell it underlines only on hover and focus) | `pattern-button-inline` (D-1767, D-1814) |
+| A link-style action in a row | `Button size="inline"` (text height, 44px touch area; inside a table cell it underlines only on hover and focus) | `pattern-button-inline` (D-1767, D-1814), `pattern-button-inline-reach` (a row of them that wraps declares `--inline-gap-x` and `--inline-gap-y`) |
 | Underline tabs | `TabsList variant="line"` | shadcn stock |
 | Pasted code or raw data | `Textarea variant="code"` | `pkg-ui-textarea-code` (D-1782) |
 
@@ -103,6 +103,12 @@ The verifier runs it. A hit not in `design.exceptions.json` fails. A hit you
 fix must leave the file (`design-exceptions-shrink` fires on a stale count).
 Fix the code, never the list.
 
+The check does not read what the kit installed: an unedited block copy, a shadcn
+file recorded in `SHADCN-GENERATED.json` and the generated blocks CSS file are
+skipped. Never edit one to pass the check: it is one `kit-part-edited` hit for
+the file. Put the change in a prop or a theme token, or restore the file with
+`boring-ui-blocks update`.
+
 | Rule | Fix |
 |---|---|
 | `raw-element` | Use the kit component it names |
@@ -130,7 +136,8 @@ Fix the code, never the list.
 | `design-theme-core-only` | Set only core roles above `=== EXCEPTIONS ===`; every pin has a reason in `DESIGN.md` |
 | `design-theme-roles-both-modes` | Every kit colour role set in `:root` is also set in `.dark`, and the reverse |
 | `design-theme-local-derived` | Delete the app's `theme.derived.css`; import the kit's |
-| `design-exceptions-shrink` | A frozen hit was fixed: remove it from `design.exceptions.json` |
+| `design-exceptions-shrink` | A frozen hit was fixed, or the file is a kit part now skipped: remove the entries it names from `design.exceptions.json` |
+| `kit-part-edited` | A copy of a kit block, a shadcn file or the blocks CSS file was changed by hand: undo it; the change goes through a prop or a theme token, or `boring-ui-blocks update` restores it |
 
 ## Look at it
 

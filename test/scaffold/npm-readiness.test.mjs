@@ -122,6 +122,11 @@ test('UI archive ships the shadcn registry under r/ and nothing else may', () =>
   assert.deepEqual(checkShippedRegistry(ui, packed, withDependency(release('0.2.2', 'missing'))), [
     `Registry dependency not shipped in r/: button -> ${release('0.2.2', 'missing')}`,
   ], 'an item URL must name a shipped item');
+  // A shipped primitive (shadcn/ui/) installs in the app's ui alias: no fixed target, no import only the kit's own tree resolves.
+  const primitive = file => ({ items: ['theme', 'button'], read: path => path.endsWith('button.json') ? { files: [{ path: 'shadcn/ui/button.tsx', ...file }] } : read(path) });
+  assert.deepEqual(checkShippedRegistry(ui, packed, primitive({ content: 'import { cn } from "@/components/utils/utils"\n' })), []);
+  assert.deepEqual(checkShippedRegistry(ui, packed, primitive({ content: 'import { cn } from "cn"\n' })), ['Primitive button imports "cn", which an app cannot resolve (scripts/ui-primitives.mjs rewrites it at build)']);
+  assert.deepEqual(checkShippedRegistry(ui, packed, primitive({ content: 'export {}\n', target: 'components/ui/button.tsx' })), ["Primitive button has a target (components/ui/button.tsx): it installs in the app's ui alias, not a fixed folder"]);
   // shadcn components come from the app's ui alias, never as an item dependency: every bare name is refused.
   assert.deepEqual(checkShippedRegistry(ui, packed, withDependency('drawer')), ['Registry dependency not shipped in r/: button -> drawer'], 'a shadcn component is the app setup, not an item dependency');
   assert.deepEqual(checkShippedRegistry(ui, packed, withDependency('carousel')), ['Registry dependency not shipped in r/: button -> carousel'], 'any other bare name is refused');

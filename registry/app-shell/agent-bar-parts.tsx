@@ -3,7 +3,7 @@
 // `composer: 'bar'`'s own pieces: the microphone's tap or hold, the conversation's chevron, the folded card on the field, its send problem, the box.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, Loader2Icon, MicIcon, SquareIcon, XIcon } from '../_shared/icons';
+import { AlertCircleIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, Loader2Icon, MicIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
@@ -13,6 +13,7 @@ import { useHoldToRecord } from '../pi-chat-voice/use-hold-to-record';
 import { voiceClock } from '../pi-chat/config';
 import { VoiceMessageButton } from '../pi-chat-voice/voice-message';
 import { cn } from '../utils/utils';
+import { foldedCardKind } from '../agent-bar/folded-card';
 import type { AgentBarChat } from '../agent-bar/use-agent-bar-chat';
 import { composerLabels, shellWords, useInternal } from './layer-context';
 
@@ -129,7 +130,8 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
 /**
  * `composer: 'bar'`, folded: one card joined to the top of the field, at its width. While the agent works its header is what the running tool does;
  * a question shows its choices (a form, each question in turn); a reply that came while folded shows « ✓ Terminé · <what it used> », three lines
- * and the files it cites. Nothing floats over the page: the card is in the column's flow, above the field.
+ * and the files it cites. A turn that failed shows one sentence, `chatProps.replyError` or the chat's `labels.responseFailed` (the thread's own notice is out
+ * of sight while folded), until the next turn starts. Nothing floats over the page: the card is in the column's flow, above the field.
  */
 /** A reply's text as a person reads it: a mention (`@uploads/ecarts.csv`) shows as the file's name. */
 const readable = (text: string) => text.replace(MENTION_TOKEN, (_match, before: string, quoted: string | undefined, bare: string | undefined) => {
@@ -161,24 +163,29 @@ export function SendProblem({ controller }: { readonly controller: NativeChatCon
 export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly onOpenFile: ((path: string, files: readonly string[]) => void) | undefined }) {
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  const { question, status, reply } = bar;
+  const { question, status, reply, failed } = bar;
   const action = layer.agent?.replyAction;
-  if (!question && status?.state !== 'working' && !reply) return null;
-  const header = question ? undefined : status?.state === 'working'
+  const kind = foldedCardKind({ question: Boolean(question), working: status?.state === 'working', failed: Boolean(failed), reply: Boolean(reply) });
+  if (!kind) return null;
+  const chat = layer.agent?.chatProps;
+  const header = kind === 'working' && status
     ? <><span className="text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{status.text}</span></>
-    : reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-(--radius-3xl) bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
+    : kind === 'reply' && reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-(--radius-3xl) bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
       <span data-testid="agent-card-status" className="min-w-0 flex-1 truncate">{[text.done, reply.used.join(', ')].filter(Boolean).join(' · ')}</span></> : undefined;
   return <>
-    <section data-testid="agent-card" data-state={question ? 'question' : status?.state === 'working' ? 'working' : 'reply'} aria-label={text.assistant}
+    <section data-testid="agent-card" data-state={kind} aria-label={text.assistant}
       className="flex flex-col gap-2 px-3 pt-2.5 pb-3 text-sm text-card-foreground">
+      {kind === 'failed' && failed && <p role="alert" className="m-0 flex min-w-0 items-start gap-2 text-sm text-destructive">
+        <AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        <span data-testid="agent-card-failed" className="min-w-0 flex-1 line-clamp-3">{chat?.replyError?.(failed) ?? chat?.labels?.responseFailed ?? composerLabels(layer.locale, layer.agent).responseFailed}</span></p>}
       {header && <p role="status" className="m-0 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">{header}</p>}
-      {question && <div data-testid="agent-question" aria-label={question.title} className="flex flex-col gap-2">
+      {kind === 'question' && question && <div data-testid="agent-question" aria-label={question.title} className="flex flex-col gap-2">
         {question.step && <p data-testid="agent-question-step" className="m-0 text-xs text-muted-foreground">{question.step}</p>}
         {question.answered && <p data-testid="agent-question-answered" className="m-0 flex items-center gap-1.5 text-xs text-muted-foreground"><CheckIcon className="size-3.5 shrink-0" aria-hidden="true" />{question.answered}</p>}
         <p className="m-0 text-base font-semibold">{question.title}</p>
         <div className="flex flex-wrap gap-2">{question.choices.map(choice => <Button key={choice} type="button" variant="outline" data-choice="" onClick={() => question.onAnswer({ text: choice, source: 'choice' })}>{choice}</Button>)}</div>
       </div>}
-      {!question && status?.state !== 'working' && reply && <>
+      {kind === 'reply' && reply && <>
         {/* A tap on the reply opens the conversation, as the chevron does (the chevron stays the way for a keyboard). */}
         <p data-testid="agent-card-reply" onClick={() => layer.open('agent')} className="m-0 line-clamp-3 cursor-pointer whitespace-pre-line">{readable(reply.text)}</p>
         {(reply.files.length > 0 || action) && <div role="list" data-testid="agent-card-files" className="flex flex-wrap items-center gap-1.5">

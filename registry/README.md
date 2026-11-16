@@ -17,6 +17,7 @@ The `markdown-editor` and `html-viewer` items copy thin React wrappers and scope
 | `provider-setup` | copied source in `components/provider-setup/` | none: props and callbacks only |
 | `theme` | the shadcn tokens (light, dark) and their `@theme inline` bindings, merged into the host's CSS | none |
 | `utils`, `button` | `cn`/`copyText`/`useDraggable` and the host-action adapters in `components/button/actions.tsx`; controls come from the app's shadcn components (its `ui` alias) | none |
+| `ui`, `ui-<name>` | the kit's own shadcn primitives (`shadcn/ui/`), each in the app's `ui` alias; see [the kit's primitives](#the-kits-own-primitives-ui) | none |
 
 ## What the app needs first
 
@@ -28,6 +29,8 @@ Blocks are written against an app that already has shadcn set up. They import it
    ```sh
    npx shadcn@4.23.0 add alert attachment avatar badge bubble button card checkbox collapsible dialog drawer dropdown-menu empty input input-group item label message message-scroller native-select popover progress scroll-area separator sheet sidebar spinner switch table textarea toggle toggle-group tooltip trace
    ```
+
+   The kit ships the same components itself (every name of that list has an item `ui-<name>`): `npx boring-ui-blocks add <registry>/ui.json` installs the kit's own compact versions instead of shadcn's, at this kit release and without the `npx shadcn@4.23.0 add` above ([below](#the-kits-own-primitives-ui)).
 
    Installing all of them once is simplest; an app that adds only some blocks can add only the components those blocks import (`grep -rho "@/components/ui/[a-z-]*" components/<block>`). Blocks never restyle them: they pass layout classes only, so the app's own shadcn theme decides how every control looks.
 3. **The shadcn tokens** (`background`, `foreground`, `muted`, `primary`, `border`, `ring`, `destructive`, `sidebar-*` and the rest), which `shadcn init` writes into the app's CSS. A host deliberately adopting the kit's default tokens runs `npx shadcn@4.23.0 add <registry>/theme.json` (light and dark). This overwrites matching host tokens, including tokens already written by `init`; review `add <registry>/theme.json --dry-run --diff` first. Do not add the theme automatically to branded apps. No block installs `theme`: blocks keep their own few variables scoped in their item `css`. The one shared exception is the fileless `touch-floor` item (the global 44px touch floor, D-1770): `theme` and the blocks with floored controls list it, so it reaches every app that installs one, with or without the theme.
@@ -83,6 +86,23 @@ Drive `node --test test/contracts/default-icons.test.mjs`: source/registry closu
 - Generic Table is fixed-layout, 12px, with wrapping cells/headers and quiet semantic dividers instead of an internal horizontal scroll container. It does not clip long text. Explicit caller min-widths, nowrap descendants or wide embedded controls can still overflow and must be reviewed. This is **not** the schema-aware stacked DataTable projection required below ~520px; that remains a separate unit.
 
 Drive `CHROMIUM=/path/to/chromium node --test test/contracts/compact-primitives.test.mjs`. It bundles actual shared primitive sources (including nested UI-alias imports, never the older example components), checks enabled status/description/destructive Button contrast and chat-body typography, measures 1440/390 light/dark geometry and table internals at 360/520/720px, drives native Button/Select/Tabs and keyboard focus, and records PNGs plus hashed sources. Set `COMPACT_EVIDENCE` to a fresh ignored directory; optional `COMPACT_FONT_DIR` supplies `sans.woff2` and `mono.woff2`, loaded under the exact registry-declared Geist/Geist Mono family names. `COMPACT_BASELINE_DIR` allows comparison with a captured pre-change source directory. `COMPACT_TOOLCHAIN_DIR` optionally resolves the existing pinned esbuild/Tailwind tooling read-only from a separate node_modules tree. Neither the fixture nor this primitive unit proves a newly published Factory bundle, full app typography, loaded host fonts, Phosphor identity, schema-aware stacking or Astra acceptance. Review captures must wait for finite theme transitions before measuring; immediate dark toggles can show transient light row/outline colours despite correct inherited roles.
+
+### The kit's own primitives (`ui`)
+
+`shadcn/ui/` also ships in the npm package, so an app scaffolded from the package alone (no kit checkout) gets the compact primitives the blocks were designed against. Each file of `shadcn/ui/` is one registry item, `ui-<name>` (`ui-button`, `ui-input`, `ui-label`, `ui-field`, `ui-card`, `ui-alert`, `ui-empty`, `ui-sheet`, `ui-sidebar`, `ui-table`, ... and the hook `ui-use-mobile`), and `ui` lists them all. `scripts/ui-primitives.mjs` derives the items from the sources (`node scripts/ui-primitives.mjs --write` rewrites them in `registry.json`) and `scripts/check-registry-blocks.mjs` fails when `registry.json` differs, when a name of `SHADCN_BUILTINS` has no item, or when this section loses the install line.
+
+```sh
+npx boring-ui-blocks add <registry>/ui.json              # all of them
+npx boring-ui-blocks add <registry>/ui-button.json <registry>/ui-input.json <registry>/ui-label.json <registry>/ui-field.json   # some
+```
+
+`<registry>` is `https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@<version>/r` (the kit release the app installed), or the package's own `node_modules/@hachej/boring-ui-kit/r` folder for a script that installs offline.
+
+- **Where they land.** Files carry no `target`, so the shadcn CLI writes them where it writes its own components: the app's `ui` alias (`components/ui/<name>.tsx` for the default `@/components/ui`; `use-mobile.ts` in the `hooks` alias). Blocks keep importing `@/components/ui/<name>` and find them there.
+- **`cn` and icons.** The sources import `cn` as `"cn"` and icons as `../../registry/_shared/icons`, which Factory's bundle resolves by alias and an app cannot. `scripts/build-registry.mjs` rewrites exactly those two import strings in the published content (`installable` in `scripts/ui-primitives.mjs`; the sources keep their text, so the bundle is unchanged): `"cn"` becomes `@/components/utils/utils` (the `utils` item, the `cn` the blocks already use) and the icon map becomes `@/components/_shared/icons` (the `_shared` item). An item lists `@boring-ui/utils`, `@boring-ui/_shared` and the primitives it imports (`@/components/ui/<name>` becomes `@boring-ui/ui-<name>`) in `registryDependencies`, and its npm packages (`@base-ui/react`, `class-variance-authority`, `react`, plus `sonner` and `next-themes` for `ui-sonner`, `@shadcn/react` for `ui-message-scroller`) in `dependencies`; the CLI installs them.
+- **Offline.** A script installs an item from the package's `r/<name>.json` without the network: read the item, install each `registryDependencies` entry first (the file name of its URL is the item name), then write each file's `content` to its `target`, or, without one, to the `ui` alias (the `hooks` alias for `registry:hook`). The content is final: its imports use the app's aliases already.
+- **Generated, not blocks.** `boring-ui-blocks manifest` and `add` record these files in `SHADCN-GENERATED.json` like any shadcn file under the `ui` alias, and `check` reports a hand edit as `ui edited`. `check` does not list them under `blocks` (an app's own shadcn `button.tsx` is not an edited kit block), and `update` reinstalls blocks only: refresh primitives with `boring-ui-blocks add <registry>/ui.json --overwrite` after a kit bump.
+- **Not a restyle of the blocks.** Installing them changes which primitives the app has; the blocks still borrow whatever the `ui` alias holds (BORING-UI-1). Mixing is fine, but the app owns a file it already had: `add` keeps an existing file that differs and lists it.
 
 ## Blocks: what to install
 
@@ -240,15 +260,17 @@ An app enforces every kit rule with this one command and copies no script; there
 Apps also run their own `lint` (oxlint with the app template's rules) over the blocks they install, except `app-shell`, `pi-chat`, `button` and `utils`. Every other block must pass those rules: `npm run check` runs `scripts/check-block-lint.mjs` with the same config (`scripts/app-oxlint.json`, kept in step with boring-factory's `templates/app/.oxlintrc.json`) over `registry/`, and fails on any error.
 
 ```sh
-npx boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--baseline]   # an app's one design check; no components.json needed (features/packages.md, pkg-blocks-design)
+npx boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--manifest <path>] [--baseline]   # an app's one design check; no components.json needed (features/packages.md, pkg-blocks-design)
 npx boring-ui-blocks check [--design <dir>...] [--manifest <path>] [--cwd <app web dir>] [--json]
-npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--cwd <dir>]
-npx boring-ui-blocks add <shadcn add arguments...> [--overwrite] [--manifest <path>] [--cwd <dir>]
+npx boring-ui-blocks update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--css <file>] [--cwd <dir>]
+npx boring-ui-blocks add <shadcn add arguments...> [--overwrite] [--manifest <path>] [--css <file>] [--cwd <dir>]
 npx boring-ui-blocks manifest [--manifest <path>] [--cwd <dir>]
 npx boring-ui-blocks help
 ```
 
 `design`: every rule is an error (frozen by design-master after a false-positive read); there is no warn tier, only the `level` field in `--json`. An app with existing hits lists them in `design.exceptions.json` in the scanned directory (or the file named by `--exceptions`), `{"<rule>": {"<file relative to the directory>": <count>}}`. A rule's hits in a file up to the count are `excepted: true` and do not fail; a hit beyond it, or in an unlisted file, fails. The list only shrinks: a count above the real count, or a listed rule or file with no hits, is `design-exceptions-shrink` ("N hits left, lower the list to N"). `--baseline` prints the list for the current hits and writes nothing; the Factory gate, not the kit, refuses a PR that grows a list. `design-theme-local-derived` is one hit per app that has its own `theme.derived.css`: delete it and import the kit's (`app.css`, then `@hachej/boring-ui-kit/theme.derived.css`, then `./theme.core.css`).
+
+**Kit parts are not the app's code.** `design` does not read what the kit installed, as `check --design` does not: (1) a file at a registry item's target under the `components` alias whose content equals the item (the `check` test: the CLI drops the leading comment and `'use client'`, line endings may change); (2) a file under the `ui` alias that `SHADCN-GENERATED.json` records with a matching sha256 (`--manifest <path>` names another manifest); (3) the generated blocks CSS file. The paths come from the nearest `components.json` at or above `<dir>` (four levels), else `<dir>/components`; the registry items from the nearest `node_modules/@hachej/boring-ui-kit` at or above it, else the package the command runs from. A kit part that differs is one finding, `kit-part-edited` (an error, line 1), and its own findings are not listed: a change goes through a prop or a theme token, or `update` restores the file. A file the manifest does not record, and any file that matches no registry target, is the app's and is read. The blocks CSS file is a file whose first line is `/* generated by boring-ui-blocks: do not edit */`, then one section per item headed by a comment with the item's name. `add --css <file>` and `update --css <file>` (relative to the app) rewrite it for the installed blocks, and an installer that copies the items itself calls `writeBlocksCss(file, items)` (exported by `bin/boring-ui-blocks.mjs`, with `blocksCss` and `GENERATED_CSS_MARK`) so the bytes are the kit's. `design` skips such a file only while its content equals what the sections it names generate: a hand edit, or a file from another kit version, is `kit-part-edited`. The shadcn CLI itself merges a block's CSS into the app's Tailwind CSS file, which `--css` does not prevent: an app that wants the check to skip the blocks' CSS keeps it in the marked file, not in its own stylesheet. An exceptions list written before this still names kit files: each such file fails once with `design-exceptions-shrink` ("`<file>` is a kit part ... delete its N entries (rules)"); delete those entries, or replace the list with `design <dir> --baseline`.
 
 `help` (or `--help`) prints the usage and which items to add (`pi-app` for everything, `pi-chat` plus its optional items, the viewer items) and exits 0.
 
@@ -313,6 +335,17 @@ A sent message that mentions an upload (`@uploads/<path>`, what `attachments` sa
 `pasteToFile` (default `{ minChars: 2000, minLines: 40 }`, more than either) turns a long paste into an upload through `attachments`: the file is `Pasted text <time>.md` (or `.txt`, or the French name), shown as a pending card in the composer. Its restore button (also on a failed upload) abandons the upload and puts the pasted text back where it was pasted, inserting it without deleting what was typed since; a paste over a selection removes the selection at once. Ctrl+Z does the same only while the message text is still what it was right after the paste. When the upload finishes its mention is in the composer, and Send references it like any attachment. Without `attachments` a paste stays inline. The host's `accept` still applies to the saved file, so a host whose picker refuses `.md` and `.txt` refuses pasted text too.
 
 `fileChanges` on `PiChat` or `AmbientChat` opts into the same file-card renderer for successful native `write` and `edit` calls with a `path`. One card per path appears below the reply, outside collapsed activity, labelled Created for `write` or Edited for `edit`. A write followed by edits stays Created. Failed, pending and unrelated calls show no file card. Clicking uses `onOpenFile`, falling back to `mentions.open`; without either, the card is not clickable. This is a view of native tool results, not publication evidence or a pinned revision. It is off by default because a host's tools named `write` or `edit` need not operate on workspace files. The workspace demo enables it.
+
+## Enter and Send in `pi-chat` (`enterSends`)
+
+`enterSends` (on `PiChat`, `AmbientChat`, `Composer`, and in `AgentSpec.chatProps` of the app shell) says what Enter does in the message field.
+
+| Value | Physical keyboard | Touch device (`(pointer: coarse)`) |
+| --- | --- | --- |
+| `'keyboard'` (default, nothing changes for an existing app) | Enter sends, Shift+Enter adds a line | Enter adds a line (a phone keyboard has no Shift+Enter); the Send button sends |
+| `'always'` | Enter sends, Shift+Enter adds a line | Enter sends, Shift+Enter adds a line |
+
+In both values an input method that is composing a candidate (`isComposing`, `keyCode` 229) never sends, an empty field never sends, and `onComposerKeyDown` runs first and can stop the key with `preventDefault()`. Use `'always'` for a one-line message to an assistant, typed by a person who expects Return to send; keep the default where messages are long and a phone's Return is a new line. The option needs no edit of the installed block, so `boring-ui-blocks check` stays green. The `AgentBar` field is its own input and always sends on Enter. Test: `CHROMIUM=... node --test test/contracts/one-composer.test.mjs --test-name-pattern "touch|fine pointer"`.
 
 ## Voice messages in `pi-chat`
 
@@ -676,6 +709,8 @@ Fictional consumer: `examples/app-shell/?talkAbout=1&send=message#jour`; `node e
 
 On phones, the peek strip is the persistent resting state when an `agent` is set: swipe-down, outside tap and Escape step down to peek, and there is no full close from peek (owner ruling 2026-10-14). Apps with only `improve` have no peek.
 
+**Bar reserve (`--agent-bar-reserve`).** With `composer="bar"` the assistant's bar is the peek drawer on a phone and covers the lowest part of the screen. The shell reserves that space itself: it sets the CSS variable `--agent-bar-reserve` (a length) on the layer's wrapper, inside the `AppShell`, and pads the bottom of every screen it renders with it, so the last control of a screen scrolls above the bar with no per-screen padding and no `max-md:pb-*`. The value is the peek's height (the bar's 6rem plus the card above the field, which follows the card as it grows, and the tab bar excluded: it sits under the screen) with `env(safe-area-inset-bottom)` added when there is no tab bar; it is `0px` at half and full (the sheet covers the page on purpose), with the layer closed, on a wide screen (the bar is in the column's flow) and without `composer="bar"`. A sticky bottom bar inside a screen (a save bar) needs nothing more: `position: sticky; bottom: 0` already sticks above the screen's padding, and adding the variable would count it twice. An element placed against the screen's box (a corner button, `position: absolute` inside the screen) uses `bottom: calc(var(--agent-bar-reserve) + 1rem)`. A host that polled the drawer's height and added a spacer drops both the poll and the spacer. It reads state the layer already holds (no timer); `barReserve` in `registry/app-shell/bar-reserve.ts` is the pure rule.
+
 Host actions: `headerActions` on the `agent` or `improve` spec are icon buttons in the layer's title row, typed as the screen header's `ScreenHeaderAction` (`{ id, label, icon, showLabel?, href?, target?, rel?, onSelect }`). `href` renders a link (`onSelect` still runs on click; `target` and `rel` only when given). Two are shown, the rest in « … » (a sheet on a phone, a menu on a wide screen). They sit before the dock controls on a wide screen, and before Expand and Close on a phone at half and full (none at peek). Test ids: `agent-layer-action-<id>`, `agent-layer-more`.
 
 The screen layout (`AppShell`) takes an optional `locale` (`'en' | 'fr'`) for its own words (« Se déconnecter », « Plus », « Navigation »); `locale` wins over the agent's `chatProps.locale` and the panel's; without it, `chatProps.locale`, then the panel's, then English. The compact tab bar is `role="tablist"` (labelled « Navigation ») with `role="tab"` items (`data-testid="tab-<id>"`); the current one has `aria-selected="true"`, and « Plus » is one more tab when there are more than four screens. Tests locate tabs by these roles. The account sheet is titled « Compte » (the person's name is shown once, in the person block).
@@ -689,6 +724,8 @@ The screen layout (`AppShell`) takes an optional `locale` (`'en' | 'fr'`) for it
 `AppShell compactNav="sheet"` (default `"tabs"`, the bottom tab bar) drops the tab bar on a phone: the header's leading button (the sidebar trigger) opens the sidebar as the shadcn sheet with the nav items, the active screen's `NavItem.sidebar` content and the account in its footer; choosing a screen or the assistant closes it. A stacked detail's `←` still takes the leading place. The phone is the same `AppSidebar` the wide screen has, so nothing remounts on resize.
 
 **Where the sidebar toggle lives (D-1734, approved by the designer).** The toggle sits inside the sidebar, in its header, only where the rail exists: from md up, at the top of the left bar (next to the title, alone as an icon when folded), never in the screen header; Ctrl+B folds it too. On a phone there is no rail while the sidebar is closed (it is an off-canvas sheet), so a toggle inside it could never open it: the opener stays in the screen header, at the leading place, and the open sheet carries the same control as its close. Hosts select it by `[data-slot="sidebar-trigger"]`, not by its place.
+
+`AppShell update` (`{ available: boolean; version?: string; onReload?: () => void }`, default none) is the one place for « a newer version of the app is online ». The host decides when `available` is true (a version poll, a service worker) and the kit draws the notice: one `role="status"` row (an info Alert, the shell's words in English or French, a Reload button and a dismiss) in the flow at the foot of the screen column, above the phone's tab bar and above the peek of the one composer or a parked drawer, so it takes room and never covers the last control of a screen. Reload runs `onReload`, default `location.reload()`. A dismiss holds for `version` (another version shows the notice again; without a `version` the dismiss holds until `available` turns false). The notice takes no focus. A host that drew its own « Une mise à jour est disponible » strip inside each screen deletes it and passes `update`.
 
 `AppShell overlayBlur` (default `false`, D-1799) keeps only the dim behind dialogs, alert dialogs, sheets and drawers: the blur costs frames on slow phones, so the kit no longer blurs. `overlayBlur` (true) brings it back. The overlays are the app's shadcn components, portalled outside `.app-shell`, and an item's CSS never reaches outside its root, so the shell marks `<html data-overlay-blur="on">` while mounted and the four overlay slots carry the one rule themselves, `in-data-[overlay-blur=on]:backdrop-blur-[var(--overlay-blur,4px)]` (`--overlay-blur` retunes the radius in the theme). An app that copied its overlays before D-1799 keeps its old blur class until it re-syncs `dialog`, `alert-dialog`, `sheet` and `drawer`.
 
@@ -727,8 +764,35 @@ const launch = parseAgentLink('?agent=coach&input=voice');
 
 The app owns its manifest, shortcut icons, and install flow. Real iPhone and Android home-screen launches require consumer testing; the browser journey checks URL consumption, focus, Back, reload, and the idle microphone.
 
+### Which screen is on show (`useScreenActive`)
+
+The shell keeps every screen mounted and hides the ones not on show, so a screen cannot tell from its own mounting whether anyone sees it. `useScreenActive(): boolean`, exported by `app-shell/index.ts`, answers it: `true` in the screen on show, `false` in a screen the shell has hidden, `true` outside a shell (a screen rendered alone, in a test or a story). It follows the shell's own choice (`route.id`, or the first item when the route names none), so it is right on a deep link without a hash, where reading `location.hash` yourself is not. Use it to run a live read (a poll, a timer, a subscription) only on the screen on show:
+
+```tsx
+import { useScreenActive } from '@/components/app-shell';
+
+function Balance() {
+  const active = useScreenActive();
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(refresh, 5000);
+    refresh();
+    return () => clearInterval(timer);
+  }, [active]);
+  // ...
+}
+```
+
+`useScreenHeader`, `ListDetail` and `useAgentContext` already read it: a hidden screen registers no header or context. The context behind it is internal to the shell; only the hook is public.
+
+### A failed answer, with the conversation folded (`composer="bar"`)
+
+With the one composer the conversation is folded at rest (the phone's peek, the wide bar's field), so the thread's own error notice is out of sight. When the assistant's last turn failed (an assistant message with `stopReason: 'error'`, or a run that ended without an answer), the folded card shows one sentence with an alert icon: `agent.chatProps.replyError(reply)` when the app gives it (the same hook and `ReplyRef` the thread's notice uses), else `chatProps.labels.responseFailed`, else the locale's « La réponse a échoué » / "The response failed". It never shows the raw error detail. There is no retry button on this card: the controller's `retrySameRequest` retries an unconfirmed send (the card above keeps its « Réessayer » for that), not a failed turn. The sentence goes when the person sends again (the card shows the work of the new turn) or the assistant answers; a question or work in progress always shows before it. A successful turn is drawn as before. `useAgentBarChat` returns it as `failed` (a `ReplyRef`); `foldedCardKind` (`agent-bar/folded-card.ts`) is the pure rule for what the card shows: question, working, failed, reply.
+
 ### Changes
 
+- `useScreenActive()` is public (`app-shell/index.ts`). Nothing changes for an existing consumer.
+- `composer="bar"`: a failed assistant turn now shows on the folded card (phone peek and wide bar) as one sentence (`replyError` or `labels.responseFailed`) until the next turn; `useAgentBarChat` returns `failed`; the `agent-bar` item gains `folded-card.ts`. A successful turn is unchanged.
 - `AppShell` gained the optional `locale` prop, and the account sheet's title is the generic « Compte » instead of the person's name. Hosts that relied on the name as the sheet title will see « Compte » there.
 
 ## Default kinds (`pi-app-kinds`)

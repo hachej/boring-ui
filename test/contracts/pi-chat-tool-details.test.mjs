@@ -87,7 +87,8 @@ test('PiChat toolDetails="none" keeps a failed step closed and plain, and the de
   window.happyDOM.setURL('https://fictional.invalid/?chatMode=developer');
   await act(async () => ui.render(null));
   await render({ toolDetails: 'none' });
-  assert.equal(all('tool-details').length, 2, 'developer switch: every step shows its details');
+  // The failed step is open with its details; the step that worked has its disclosure but stays closed (closed content is not mounted).
+  assert.equal(all('tool-details').length, 1, 'developer switch: the failed step shows its details');
   assert.match(container.textContent, /grep -r invoice-0121/);
   assert.match(container.textContent, /KeyError/);
   window.happyDOM.setURL('https://fictional.invalid/?chatMode=expert');

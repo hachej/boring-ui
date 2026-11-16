@@ -236,7 +236,7 @@ type SessionProps = Omit<AmbientChatProps, 'labels' | 'icons'> & { readonly labe
 
 function AmbientSession({ controller, embedded = false, labels, icons, avatar, headerActions, headerTools, messageActions, variant = 'contrast', mode = 'expert', presentation, toolDetails, voiceReplay, targetLabel, actions,
   windowState, onWindowState, store, storageKey = 'boring.ambient.position', storage = 'session', tools, belowComposer, composerChips, composerLayout = 'card', renderComposer, sendContext, onOpenFull, onFeedback, notifications, autoDismissMs, maxToasts, systemNotifications = false,
-  renderConnectionError, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
+  renderConnectionError, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, enterSends, fileAccept = 'image/*', slash, mentions, attachments, onOpenFile, fileChanges, pasteToFile, model, effort, replyFooter, artifacts: hostArtifacts, artifactPanel, artifactTarget, conversations, onDock, feedback: composerFeedback, className,
   activeController }: SessionProps) {
   const { title } = labels;
   useChatPlacement(controller, embedded ? 'docked' : 'floating');
@@ -304,7 +304,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     ...(hostArtifacts?.kinds ? { kinds: hostArtifacts.kinds } : {}),
     recognise: hostArtifacts?.recognise ?? artifactCards.recognise, Card: hostArtifacts?.Card ?? artifactCards.Card,
   }, [inWindow, hostArtifacts, openArtifact, isArtifactOpen, onShown, onFailed, detect]);
-  const session = useChatSession({ controller, activeController, mode, presentation, toolDetails, voiceReplay, targetLabel, actions, renderEntry, hideLine, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, fileAccept,
+  const session = useChatSession({ controller, activeController, mode, presentation, toolDetails, voiceReplay, targetLabel, actions, renderEntry, hideLine, historicalMessageActions, unread: replyUnread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, enterSends, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => scrollToBottom.current(), rowExtras, feedback: composerFeedback, sendContext, onOpenFile, fileChanges, pasteToFile, composerChips });
   const { state, derived, rows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   useCursorInOpened(textarea, conversations, composer, conversations?.creating === true, state.conversationId);

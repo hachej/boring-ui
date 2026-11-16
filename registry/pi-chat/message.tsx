@@ -20,7 +20,7 @@ import type { FileKind, Piece } from '@hachej/boring-ui-kit/chat-text';
 import type { AudioUrlRead, MentionsConfig, PreviewRead, SentContent } from './config';
 import { voiceClock } from './config';
 import { Spinner } from '@/components/ui/spinner';
-import { isFileBlock, segments, targetContent, waits } from './rows';
+import { isFileBlock, replyRef, segments, targetContent, waits } from './rows';
 import type { DeriveOptions, Row, Segment, Step } from './rows';
 import { Button } from '@/components/ui/button';
 import { BlockActions } from '../button/actions';
@@ -106,8 +106,6 @@ function AnsweredByLine({ answered }: { readonly answered: AnsweredBy }) {
     {answered.fallback && <span data-testid="answered-fallback"> · {labels.answeredFallback(answered.fallback)}</span>}
   </p>;
 }
-
-const replyRef = (row: Extract<Row, { type: 'assistant' }>): ReplyRef => ({ key: row.key, text: row.text, entryId: row.entryId, timestamp: row.timestamp, model: row.model, durationMs: row.durationMs });
 
 function ImageThumbnails({ images, onOpenImage }: { readonly images: readonly ImageContent[]; readonly onOpenImage: RowContext['onOpenImage'] }) {
   const { labels } = useChatText();

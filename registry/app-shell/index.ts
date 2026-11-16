@@ -1,6 +1,7 @@
 // The app shell: layouts A (`screen`), B (`workspace`) and C (`chat`) with their navigation, header and account menu, and the AgentLayer it mounts.
 export { AppShell } from './app-shell';
 export type { AppShellProps } from './app-shell';
+export type { AppShellUpdate } from './update-notice';
 export { AccountChoices, NavUser } from './account';
 export type { AccountSpec } from './account';
 export { ListDetail, listDetailView } from './list-detail';
@@ -18,7 +19,7 @@ export type { ScreenHeaderSpec } from './header';
 export { useIsCompact } from './compact';
 export { AgentComposerAnchor, AgentDockLayout, AgentLayer, AgentTrigger, useAgentLayer, useAgentLoan } from './agent-layer';
 export type { AgentComposer, AgentLoan, AgentSpec } from './agent-layer';
-export { readAgentContext, useAgentContext } from './agent-context';
+export { readAgentContext, useAgentContext, useScreenActive } from './agent-context';
 export { agentLink, parseAgentLink } from './agent-link';
 export type { AgentLink } from './agent-link';
 export { useDictation } from './use-dictation';
