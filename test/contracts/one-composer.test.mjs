@@ -257,14 +257,37 @@ test('folded, 1280 and 390: a failed turn is one sentence on the card, in the ap
   }
 });
 
-test('1280: typing keeps the buttons on the last line; a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
+// Julien: "not centered vertically". The bar's rule aligned its row to the end, so any slack between the row and the bar's minimum height put the controls low.
+const offsets = () => browser.evaluate(`(() => { const g = document.querySelector('[data-testid=composer] [data-slot=input-group]').getBoundingClientRect(); const mid = g.top + g.height / 2;
+  return [...document.querySelectorAll('[data-testid=composer] [data-slot=input-group] button, [data-testid=composer] [data-slot=input-group] textarea')].filter(e => e.getClientRects().length > 0).map(e => { const r = e.getBoundingClientRect(); return Math.abs(r.top + r.height / 2 - mid); }); })()`);
+for (const [width, query] of [[1280, ''], [390, 'tabs=1']]) test(`${width}: the chevron, attach, field and action sit on the bar's midline, empty and with several lines`, { skip, timeout: 120000 }, async () => {
+  await open(width, query);
+  await browser.until('the field', `!!document.querySelector('[data-testid=composer-input]')`);
+  for (const offset of await offsets()) assert.ok(offset < 0.6, `empty: ${offset}px off the midline`);
+  await type('one');
+  for (const line of ['two', 'three']) { await browser.press('Enter', { shift: true }); await browser.send('Input.insertText', { text: line }); }
+  await wait(150);
+  for (const offset of await offsets()) assert.ok(offset < 0.6, `three lines: ${offset}px off the midline`);
+});
+
+// Julien: "style need propagated to the entry right pane". Content an app pushes on the pane gets the kit's type scale and border colour once, in the pane.
+test('1280: content pushed on the pane takes the kit text size and the border token, not currentColor', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'demo=1&single=1');
+  await click('[data-testid=page-row]');
+  await browser.until('the entry is open', `!!document.querySelector('[data-testid=fixture-record]')`);
+  const style = await browser.evaluate(`(() => { const box = document.createElement('div'); box.className = 'border'; box.textContent = 'x'; document.querySelector('[data-testid=fixture-record]').appendChild(box);
+    const s = getComputedStyle(box), pane = getComputedStyle(document.querySelector('[data-testid=fixture-record]').parentElement); return { border: s.borderTopColor, text: s.color, size: pane.fontSize, token: getComputedStyle(document.documentElement).getPropertyValue('--border') }; })()`);
+  assert.notEqual(style.border, style.text, 'a bare border is the theme border, not the text colour');
+  assert.equal(style.size, '14px', 'the pane body is the kit text-sm');
+});
+
+test('1280: typing grows the field;  a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
   await open(1280);
   await type('Prépare la relance du dossier Cèdre :');
   for (const line of ['– les deux relevés de février', '– la facture du loyer']) { await browser.press('Enter', { shift: true }); await browser.send('Input.insertText', { text: line }); }
   await wait(150);
   const input = await rect(FIELD), send = await rect('[data-testid=composer-submit]');
   assert.ok(input.h > 40, `the field grew (${input.h}px)`);
-  assert.ok(Math.abs(send.bottom - input.bottom) <= 8, `the action button sits on the last line (${send.bottom} vs ${input.bottom})`);
   await open(1280);
   await browser.evaluate(`(() => { const data = new DataTransfer(); data.items.add(new File(['x'], 'releve-fevrier.pdf', { type: 'application/pdf' })); document.querySelector('[data-testid=composer]').dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true })); })()`);
   await browser.until('file chip', `[...document.querySelectorAll('[data-testid=composer] [data-testid=mention-chip]')].some(e => e.textContent.includes('releve-fevrier.pdf'))`);

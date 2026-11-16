@@ -1,5 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Item, ItemGroup, ItemTitle } from '@/components/ui/item';
+import { Label } from '@/components/ui/label';
+import { Table as KitTable, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { FileTreeView } from '../../../registry/file-tree/file-tree.tsx';
 import { ATTACHMENTS } from './one-composer-files.js';
@@ -32,11 +36,11 @@ const siblings = path => { const dir = path.includes('/') ? path.slice(0, path.l
 export const demoLibrary = open => onPicked => {
   tree ??= createFileTreeController({ revisionProvider: provider });
   void tree.refresh();
-  return <div data-testid="fixture-library"><FileTreeView controller={tree} locale="en" upload={false} history={false} onOpen={path => { if (open) { open(path); onPicked(); } else onPicked({ path, files: siblings(path) }); }} /></div>;
+  return <div data-testid="fixture-library"><FileTreeView controller={tree} variant="plain" locale="en" upload={false} history={false} onOpen={path => { if (open) { open(path); onPicked(); } else onPicked({ path, files: siblings(path) }); }} /></div>;
 };
 
-const Table = ({ head, rows }) => <table className="w-full border-collapse text-left text-sm"><thead><tr className="border-b text-xs text-muted-foreground">{head.map((cell, i) => <th key={cell} className={`py-1 ${i === head.length - 1 ? 'text-right' : ''}`}>{cell}</th>)}</tr></thead>
-  <tbody>{rows.map(row => <tr key={row.join()} className="border-b last:border-b-0">{row.map((cell, i) => <td key={i} className={`py-2 ${i === row.length - 1 ? 'text-right tabular-nums' : ''}`}>{cell}</td>)}</tr>)}</tbody></table>;
+export const Table = ({ head, rows }) => <KitTable><TableHeader><TableRow>{head.map((cell, i) => <TableHead key={cell} className={i === head.length - 1 ? 'text-right' : ''}>{cell}</TableHead>)}</TableRow></TableHeader>
+  <TableBody>{rows.map(row => <TableRow key={row.join()}>{row.map((cell, i) => <TableCell key={i} className={i === row.length - 1 ? 'text-right tabular-nums' : ''}>{cell}</TableCell>)}</TableRow>)}</TableBody></KitTable>;
 export const fileView = path => {
   const name = path.split('/').at(-1);
   const body = name.endsWith('.csv') ? <><Table head={['Date', 'Label', 'Gap']} rows={[['Jan 09', 'Card Harbor Garage', '$12.00'], ['Jan 15', 'Card The Cedar Diner', '−$12.00']]} /><p className="text-muted-foreground">Two gaps to justify before the closing.</p></>
@@ -48,14 +52,13 @@ export const fileView = path => {
 // The line detail an app pushes on the pane (S-1): the line, its gap checkbox (state that back must keep), its attachments (each opens in the kit's
 // viewer on top, “← Entry of Jan 09”, stepping through the three) and the line's history, long enough to scroll.
 const HISTORY = ['Statement imported', 'Automatic reconciliation', 'Discrepancy found: $12.00', 'Ticket added by Maya', 'Note added', 'Reminder to the garage', 'Answer from the garage', 'Discrepancy explained', 'Accountant review', 'Entry corrected', 'Approval', 'Month closed'];
-export const recordView = ([date, label, amount, status], quote, open) => ({ title: `Entry of ${date}`, content: <div data-testid="fixture-record" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4 text-sm">
+export const recordView = ([date, label, amount, status], quote, open) => ({ title: `Entry of ${date}`, content: <div data-testid="fixture-record" className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
   <p className="text-base font-medium">{label}</p><p className="text-2xl font-semibold tabular-nums">{amount}</p><p className="text-muted-foreground">Status: {{ ok: 'reconciled', gap: 'gap to justify', wait: 'needs a receipt' }[status]}</p>
-  <label className="flex min-h-11 items-center gap-2"><input type="checkbox" data-testid="record-justified" className="size-4" />Gap justified</label>
+  <Label className="min-h-11"><Checkbox data-testid="record-justified" />Gap justified</Label>
   <Button type="button" variant="outline" data-testid="record-quote" className="self-start" onClick={quote}>Quote in the assistant</Button>
-  {open && <><p className="mt-2 font-medium">Attachments</p><ul className="m-0 flex list-none flex-col gap-1 p-0">{ATTACHMENTS.map(path => <li key={path}>
-    <button type="button" data-testid="record-attachment" data-path={path} className="min-h-11 w-full rounded-md border px-3 text-left hover:bg-muted" onClick={() => open(path, ATTACHMENTS)}>{path.split('/').at(-1)}</button></li>)}</ul></>}
+  {open && <><p className="mt-2 font-medium">Attachments</p><div className="flex flex-col gap-1">{ATTACHMENTS.map(path => <Button key={path} type="button" variant="outline" data-testid="record-attachment" data-path={path} className="w-full justify-start" onClick={() => open(path, ATTACHMENTS)}>{path.split('/').at(-1)}</Button>)}</div></>}
   <p className="mt-2 font-medium">History of the entry</p>
-  <ol data-testid="record-history" className="m-0 flex flex-col gap-2 pl-5">{HISTORY.map((step, i) => <li key={step} className="py-2">{`Jan ${String(i + 2).padStart(2, '0')} · ${step}`}</li>)}</ol></div> });
+  <ItemGroup data-testid="record-history" className="gap-0">{HISTORY.map((step, i) => <Item key={step} size="xs"><ItemTitle>{`Jan ${String(i + 2).padStart(2, '0')} · ${step}`}</ItemTitle></Item>)}</ItemGroup></div> });
 
 const say = (id, text) => ({ id, kind: 'message', model: [{ role: 'user', content: text, timestamp: 1 }] });
 const answer = (id, text) => ({ id, kind: 'message', byTaskId: 7, model: [{ role: 'assistant', content: [{ type: 'text', text }], api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: 2 }] });

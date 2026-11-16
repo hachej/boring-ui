@@ -13,6 +13,8 @@ Scenarios as data (`ux/scenarios/*.json`), one per layout or component, that a r
 - `ux-scripted-agent` the demos' assistant is data (`ux/scenarios/scripts/*.json`): turns with tool steps, streamed text, questions; `pace=real` for people and videos, `pace=instant` for `check`. `ux/fixtures/scripted-agent.mjs`.
 - `ux-demo-entry-controls` the bookkeeping demo uses kit Buttons for entry labels and quoting, so the kit owns their touch sizing. `test/fixtures/themes/one-composer.jsx`, `test/fixtures/themes/one-composer-demo.jsx`.
 - `ux-demo-entry-status` the bookkeeping page shows a translated status word below each amount on phones, using kit Badge variants for reconciled, gap and receipt states. Desktop keeps its separate status column. `test/fixtures/themes/one-composer.jsx`.
+- `ux-demo-pane-family` the demo's entry pane and library are one family: the entry is built from kit parts (Button, Checkbox, Label, Item rows, Table) and the library is the compact `variant="plain"` tree under the pane's own header, so there is one title and one row height (36 px, 44 px on touch). `test/fixtures/themes/one-composer-demo.jsx`.
+- `ux-showcase-design-check` the showcase fixtures (`test/fixtures/themes/one-composer*.jsx`, `ux/fixtures/*.jsx`) are held to `boring-ui-blocks design`: no raw form control or table, no arbitrary size, no hand-written touch size. Run `node scripts/check-showcase-design.mjs` (part of `npm run check`). `scripts/check-showcase-design.mjs`, `test/showcase-design.test.mjs`.
 
 ## How to get to it (user POV)
 
@@ -31,6 +33,8 @@ Preconditions: `npm ci && npm run build`, `CHROMIUM` set to a Chromium binary, `
 - `ux-scripted-agent`: open a fixture page with `?demo=1` and type “Reconcile the January statement”; any other text gets the script's plain fallback sentence.
 - `ux-demo-entry-controls`: at 390 px in `layout:bar`, tap the Jan 09 or Jan 15 entry label, then “Quote in the assistant”. Both controls use the kit's 44 px touch floor. Entry labels also open with Enter or Space. F03 and F04 drive these controls.
 - `ux-demo-entry-status`: inspect `layout:bar` at 390 px in light and dark. Scroll through the page and check that each amount has “Reconciled”, “Gap” or “Needs a receipt” beneath it. Open and close Jan 09 and Jan 15 in F03 and F04, then scroll to the last entry and confirm it remains above the composer. At 1440 px, status stays in its own column.
+- `ux-demo-pane-family`: in `layout:bar-pane` open an entry, then the library from its header. Both show one title, and rows are one height (36 px desktop, 44 px phone).
+- `ux-showcase-design-check`: add a raw `<button>` to `ux/fixtures/component-reply-card.jsx` and run `node scripts/check-showcase-design.mjs`; it exits 1 and names the line.
 
 ## Gotchas
 

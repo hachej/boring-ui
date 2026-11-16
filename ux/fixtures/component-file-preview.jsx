@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Button } from '@/components/ui/button';
 import { FileViewer } from '../../registry/pi-app/file-viewer.tsx';
 import { ArtifactPanel } from '../../registry/pi-app/artifact-panel.tsx';
 import { defaultKinds } from '../../registry/pi-app-kinds/pi-app-kinds.ts';
@@ -37,12 +38,12 @@ function App() {
   const [path, setPath] = useState(SHORT[params.get('open')] ?? null);
   window.__ux = { closed: () => window.__closed, open: name => setPath(name) };
   return <main className="flex min-h-dvh items-center justify-center bg-muted/30 p-4 sm:p-8">
-    <div data-testid="surface" className="flex h-[34rem] w-full max-w-3xl flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+    <div data-testid="surface" className="flex h-136 w-full max-w-3xl flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
       {path?.startsWith('table:') ? <ArtifactPanel key={path} active={{ descriptor: csvArtifact(path.slice(6)), follow: false }} versions={[]} options={{ client, identity, kinds }} onSelect={() => {}} onClose={() => { window.__closed += 1; setPath(null); }} />
         : path ? <FileViewer key={path} path={path} locator={locate(path)} options={{ client, identity, kinds }} onClose={() => { window.__closed += 1; setPath(null); }} />
         : <div data-testid="file-list" className="flex flex-col gap-2 p-6 text-sm">
           <h1 className="m-0 text-base font-semibold">Files of Harbor Studio (fictional)</h1>
-          {Object.keys(FILES).map(name => <button key={name} type="button" data-testid="open-file" data-name={name} className="h-11 rounded-md border px-3 text-left hover:bg-muted" onClick={() => setPath(name)}>{name}</button>)}
+          {Object.keys(FILES).map(name => <Button key={name} type="button" variant="outline" data-testid="open-file" data-name={name} className="justify-start" onClick={() => setPath(name)}>{name}</Button>)}
         </div>}
     </div>
   </main>;
@@ -65,7 +66,7 @@ function PanePage() {
   window.__ux = { closed: () => window.__closed, open: name => name ? open(name) : layer.pane.close() };
   return <div data-testid="file-list" className="flex flex-col gap-2 p-6 text-sm">
     <h1 className="m-0 text-base font-semibold">Files of Harbor Studio (fictional)</h1>
-    {names.map(name => <button key={name} type="button" data-testid="open-file" data-name={name} className="h-11 rounded-md border px-3 text-left hover:bg-muted" onClick={() => open(name)}>{name}</button>)}
+    {names.map(name => <Button key={name} type="button" variant="outline" data-testid="open-file" data-name={name} className="justify-start" onClick={() => open(name)}>{name}</Button>)}
   </div>;
 }
 const nav = [{ id: 'pieces', label: 'Files', icon: ({ className }) => <svg className={className} width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="2" fill="currentColor" /></svg>, render: () => <PanePage /> }];
