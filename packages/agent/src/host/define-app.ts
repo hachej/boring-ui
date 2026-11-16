@@ -115,13 +115,14 @@ const text = (v: unknown): v is string => typeof v === 'string' && v.trim() !== 
 
 /** Refuses a malformed definition at definition time. It cannot see agent names: `checkAgents` does at mount. */
 export const defineApp = <const A extends AppDefinition>(app: A): A => {
-  const fail = (why: string): never => { throw new Error(`defineApp(${app.name}): ${why}`); };
+  const fail = (why: string): never => { throw new Error(`defineApp(${app?.name}): ${why}`); };
+  if (!app || typeof app !== 'object') fail('the definition is not an object');
   if (typeof app.name !== 'string' || !/^[a-z][a-z0-9-]{1,20}$/.test(app.name)) fail('name: lowercase letters, digits, hyphens');
   const { languages } = app;
   if (!languages || typeof languages !== 'object') return fail('languages: required, with a base language and its words');
   if (!(KIT_LANGUAGES as readonly string[]).includes(languages.base)) fail(`languages.base: ${languages.base} is not a kit language`);
   for (const l of Object.keys(languages.words ?? {})) if (!(KIT_LANGUAGES as readonly string[]).includes(l)) fail(`languages.words: ${l} is not a kit language`);
-  if (!Array.isArray(app.views)) fail('views: required, a list with at least one view');
+  if (!Array.isArray(app.views) || app.views.some((v) => !v || typeof v !== 'object')) fail('views: required, a list of views with at least one');
   if (!app.expose || typeof app.expose !== 'object' || !Array.isArray(app.expose.page)) fail('expose: required, with a page list');
   const base = languages.words?.[languages.base];
   if (!base) fail(`languages.words: no words for the base language ${languages.base}`);
@@ -135,11 +136,14 @@ export const defineApp = <const A extends AppDefinition>(app: A): A => {
     if (!text(table.app?.title)) fail(`${at}.app.title: missing`);
     for (const id of Object.keys(base?.views ?? {})) if (!text(table.views?.[id])) fail(`${at}.views.${id}: missing, the base language has it`);
     for (const tag of Object.keys(base?.refusals ?? {})) if (!text(table.refusals?.[tag])) fail(`${at}.refusals.${tag}: missing, the base language has it`);
+    for (const id of Object.keys(table.views ?? {})) if (!Object.hasOwn(base?.views ?? {}, id)) fail(`${at}.views.${id}: the base language has no such view`);
+    for (const tag of Object.keys(table.refusals ?? {})) if (!Object.hasOwn(base?.refusals ?? {}, tag)) fail(`${at}.refusals.${tag}: the base language has no such refusal`);
   }
   if (app.expose.page.length === 0) fail('expose.page is empty: a person has no button');
   for (const n of app.needs ?? []) if (!NEEDS.includes(n)) fail(`needs: unknown capability ${n}`);
   if (app.units && !app.expose.page.includes(app.units.view)) fail(`units.view ${app.units.view} is not in expose.page`);
   for (const w of app.wakes ?? []) {
+    if (!w || typeof w.agent !== 'string') fail('wakes: each wake names its agent');
     if (!app.agents) fail(`wakes ${w.agent}: the app has no agents`);
     if (!Object.hasOwn(app.expose, w.agent) || !app.expose[w.agent]?.length) fail(`wakes ${w.agent}: a reader needs its own expose list (its one narrow write)`);
   }
@@ -148,10 +152,12 @@ export const defineApp = <const A extends AppDefinition>(app: A): A => {
 
 /** The host calls this at mount with the record `agents(kit)` returned. */
 export const checkAgents = (app: AppDefinition, agents: Record<string, DefinedAgent>): void => {
-  const fail = (why: string): never => { throw new Error(`checkAgents(${app.name}): ${why}`); };
+  const fail = (why: string): never => { throw new Error(`checkAgents(${app?.name}): ${why}`); };
+  if (!app?.expose) fail('the definition has no expose');
+  if (!agents || typeof agents !== 'object') fail('agents: the factory returned no record');
   const has = (name: string) => Object.hasOwn(agents, name);
   if (!has('assistant')) fail('agents: no agent named assistant');
-  for (const [key, a] of Object.entries(agents)) if (a.id !== key) fail(`agents.${key}: key differs from the agent's id ${a.id}`);
+  for (const [key, a] of Object.entries(agents)) if (!a || typeof a !== 'object') fail(`agents.${key}: not an agent`); else if (a.id !== key) fail(`agents.${key}: key differs from the agent's id ${a.id}`);
   for (const audience of Object.keys(app.expose)) {
     if (audience !== 'page' && audience !== 'mcp' && !has(audience)) fail(`expose.${audience}: not page, mcp or an agent's name`);
   }

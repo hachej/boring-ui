@@ -13,6 +13,7 @@ const HOST_PEERS = ['@alchemy.run/domain', 'effect', 'alchemy'];
 const rootPackage = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const agent = JSON.parse(readFileSync(join(root, 'packages/agent/package.json'), 'utf8'));
 const required = Object.fromEntries(Object.entries(agent.peerDependencies).filter(([name]) => !agent.peerDependenciesMeta?.[name]?.optional));
+const HOST_PEERS_VERSIONS = () => Object.fromEntries(HOST_PEERS.map((n) => [n, rootPackage.devDependencies[n]]));
 const exact = (range) => range.replace(/^[~^]/, '');
 const pi = Object.fromEntries(Object.entries(required).filter(([name]) => name.startsWith('@earendil-works/')).map(([name, range]) => [name, exact(range)]));
 
@@ -39,6 +40,11 @@ function consumer(name, extra, script) {
 consumer('agents', [], `import * as agents from '@hachej/boring-agent/agents';
 if (typeof agents.defineAgent !== 'function') throw new Error('defineAgent missing');
 console.log('agents entry loads without Domain, effect or alchemy');
+let message = '';
+try { await import('@hachej/boring-agent/host'); } catch (e) { message = e.message; }
+const expected = ${JSON.stringify(Object.entries(HOST_PEERS_VERSIONS()).map(([n, v]) => `${n}@${v}`))};
+for (const pin of expected) if (!message.includes(pin)) throw new Error('the host entry without its packages must name ' + pin + ': ' + message);
+console.log('host entry without them says:', message.split(':')[0]);
 `).trim().split('\n').forEach((line) => console.log(line));
 const withHost = consumer('host', HOST_PEERS, `import * as Layer from 'effect/Layer';
 import { defineApp, checkAgents } from '@hachej/boring-agent/host';

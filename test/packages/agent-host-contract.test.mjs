@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import { CurrentUser, KIT_LANGUAGES, checkAgents, defineApp, must, mustOwn } from '@hachej/boring-agent/host';
+import { HOST_PACKAGES, CurrentUser, KIT_LANGUAGES, checkAgents, defineApp, must, mustOwn } from '@hachej/boring-agent/host';
 import { defineAgent } from '@hachej/boring-agent/agents';
 import { checkSource } from '../../scripts/pi-policy.mjs';
 import notes from '../../fixtures/host-apps/notes/app.ts';
@@ -28,34 +28,46 @@ test('defineApp returns each fixture definition as the same object', () => {
   assert.deepEqual([...KIT_LANGUAGES], ['en', 'fr']);
 });
 
+const withEn = (en) => ({ ...ok, languages: { base: 'fr', words: { fr: words, en } } });
 const faults = {
-  'no page operations': { ...ok, expose: { page: [] } },
-  'unknown need': { ...ok, needs: ['gpu'] },
-  'bad name': { ...ok, name: 'Bad Name' },
-  'no view': { ...ok, views: [] },
-  'reader with no expose list': { ...ok, agents: () => ({}), wakes: [reader] },
-  'wake with no agents': { ...ok, wakes: [reader] },
-  'two views with one id': { ...ok, views: [{ id: 'v', component: './a.tsx' }, { id: 'v', component: './b.tsx' }] },
-  'needs mail': { ...ok, needs: ['mail'] },
-  'no languages': { ...ok, languages: undefined },
-  'base language not in the words': { ...ok, languages: { base: 'en', words: { fr: words } } },
-  'base language the kit does not speak': { ...ok, languages: { base: 'xx', words: { xx: words } } },
-  'words in a language the kit does not speak': { ...ok, languages: { base: 'fr', words: { fr: words, xx: words } } },
-  'a view with no name in the base words': { ...ok, views: [{ id: 'other', component: './o.tsx' }] },
-  'a language that is a string': { ...ok, languages: { base: 'fr', words: { fr: words, en: 'oops' } } },
-  'a language with no title': { ...ok, languages: { base: 'fr', words: { fr: words, en: { ...words, app: {} } } } },
-  'a language missing a view name': { ...ok, languages: { base: 'fr', words: { fr: words, en: { ...words, views: {} } } } },
-  'a language missing a refusal': { ...ok, languages: { base: 'fr', words: { fr: { ...words, refusals: { NotYours: 'Non' } }, en: words } } },
-  'no views': { ...ok, views: undefined },
-  'no expose': { ...ok, expose: undefined },
-  'no title in the base words': { ...ok, languages: { base: 'fr', words: { fr: { ...words, app: {} } } } },
+  'no page operations': [{ ...ok, expose: { page: [] } }, /expose\.page is empty/],
+  'unknown need': [{ ...ok, needs: ['gpu'] }, /needs: unknown capability gpu/],
+  'bad name': [{ ...ok, name: 'Bad Name' }, /name: lowercase/],
+  'no view': [{ ...ok, views: [] }, /views: at least one, each id once/],
+  'reader with no expose list': [{ ...ok, agents: () => ({}), wakes: [reader] }, /wakes r: a reader needs its own expose list/],
+  'wake with no agents': [{ ...ok, wakes: [reader] }, /wakes r: the app has no agents/],
+  'two views with one id': [{ ...ok, views: [{ id: 'v', component: './a.tsx' }, { id: 'v', component: './b.tsx' }] }, /views: at least one, each id once/],
+  'needs mail': [{ ...ok, needs: ['mail'] }, /needs: unknown capability mail/],
+  'no languages': [{ ...ok, languages: undefined }, /languages: required/],
+  'base language not in the words': [{ ...ok, languages: { base: 'en', words: { fr: words } } }, /languages\.words: no words for the base language en/],
+  'base language the kit does not speak': [{ ...ok, languages: { base: 'xx', words: { xx: words } } }, /languages\.base: xx is not a kit language/],
+  'words in a language the kit does not speak': [{ ...ok, languages: { base: 'fr', words: { fr: words, xx: words } } }, /languages\.words: xx is not a kit language/],
+  'a view with no name in the base words': [{ ...ok, views: [{ id: 'other', component: './o.tsx' }] }, /views\.other: no languages\.words\.fr\.views\.other/],
+  'a language that is a string': [withEn('oops'), /languages\.words\.en: not a words table/],
+  'a language that is null': [withEn(null), /languages\.words\.en: not a words table/],
+  'a language with no title': [withEn({ ...words, app: {} }), /languages\.words\.en\.app\.title: missing/],
+  'a language missing a view name': [withEn({ ...words, views: {} }), /languages\.words\.en\.views\.v: missing/],
+  'a language missing a refusal': [{ ...ok, languages: { base: 'fr', words: { fr: { ...words, refusals: { NotYours: 'Non' } }, en: words } } }, /languages\.words\.en\.refusals\.NotYours: missing/],
+  'a language with a view the base has not': [withEn({ ...words, views: { v: 'View', ghost: 'Ghost' } }), /languages\.words\.en\.views\.ghost: the base language has no such view/],
+  'a language with a refusal the base has not': [withEn({ ...words, refusals: { Gone: 'Gone' } }), /languages\.words\.en\.refusals\.Gone: the base language has no such refusal/],
+  'no views': [{ ...ok, views: undefined }, /views: required/],
+  'a null view': [{ ...ok, views: [null] }, /views: required/],
+  'no expose': [{ ...ok, expose: undefined }, /expose: required/],
+  'a null definition': [null, /the definition is not an object/],
+  'no title in the base words': [{ ...ok, languages: { base: 'fr', words: { fr: { ...words, app: {} } } } }, /languages\.words\.fr\.app\.title: missing/],
 };
+
+test('the packages the host names are the ones this repository tests with', () => {
+  const dev = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).devDependencies;
+  for (const [name, version] of Object.entries(HOST_PACKAGES)) assert.equal(dev[name], version, name);
+});
 
 test('defineApp refuses each planted fault, naming the app and the field', () => {
   let missed = 0;
-  for (const [fault, def] of Object.entries(faults)) {
+  for (const [fault, [def, field]] of Object.entries(faults)) {
     try { defineApp(def); console.log('NOT CAUGHT:', fault); missed++; } catch (e) {
-      assert.match(e.message, /^defineApp\((x1|Bad Name)\): \S/);
+      assert.match(e.message, /^defineApp\((x1|Bad Name|undefined)\): \S/);
+      assert.match(e.message, field, fault);
       console.log('caught:', fault, '->', e.message);
     }
   }
@@ -71,6 +83,7 @@ test('checkAgents refuses what only the agents record shows', () => {
     'wake of an unknown agent': [{ ...ok, wakes: [{ ...reader, agent: 'reader' }] }, { assistant: a('assistant') }],
     'expose key constructor': [{ ...ok, expose: { page: ['A'], constructor: ['A'] } }, { assistant: a('assistant') }],
     'expose key toString': [{ ...ok, expose: { page: ['A'], toString: ['A'] } }, { assistant: a('assistant') }],
+    'a null agent': [ok, { assistant: null }],
     'record key differs from the agent id': [ok, { assistant: a('assistant'), other: a('another') }],
   };
   let missed = 0;
@@ -130,8 +143,8 @@ test('the host source forbids targets, and the built entry reaches none', () => 
     if (seen.has(file)) return;
     seen.add(file);
     const source = readFileSync(file, 'utf8');
-    for (const m of source.matchAll(/(?:^|\n)\s*(?:import|export)\b[^'"\n]*?\bfrom\s*['"]([^'"]+)['"]|(?:^|\n)\s*import\s*['"]([^'"]+)['"]/g)) {
-      const spec = m[1] ?? m[2];
+    for (const m of source.matchAll(/(?:^|\n)\s*(?:import|export)\b[^'"\n]*?\bfrom\s*['"]([^'"]+)['"]|(?:^|\n)\s*import\s*['"]([^'"]+)['"]|\bimport\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+      const spec = m[1] ?? m[2] ?? m[3];
       if (spec.startsWith('.')) { const next = join(dirname(file), spec); if (existsSync(next)) visit(next); } else external.add(spec);
     }
   };
