@@ -335,6 +335,7 @@ test('1440: the docked conversation has one surface, a pane-height header and it
   await open(1440, 'demo=1&single=1');
   await click('[data-testid=page-row]');
   await browser.until('the entry is open', `!!document.querySelector('[data-testid=agent-preview-bar]')`);
+  const paneBarHeight = (await rect('[data-testid=agent-preview-bar]')).h;
   await click('[data-testid=agent-bar-conversation]');
   await browser.until('the tray is open', `!!document.querySelector('[data-testid=agent-tray-dock]')`);
   await click('[data-testid=agent-tray-dock]');
@@ -344,7 +345,7 @@ test('1440: the docked conversation has one surface, a pane-height header and it
     const surface = element => { for (let e = element; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') return c; } return 'none'; };
     const header = document.querySelector('[data-testid=agent-layer-header]'), body = document.querySelector('[data-testid=agent-layer] [data-boring=pi-chat]');
     const row = [...header.querySelectorAll('button')].filter(e => e.getClientRects().length);
-    return { header: surface(header), body: surface(body), headerHeight: header.getBoundingClientRect().height, bar: document.querySelector('[data-testid=agent-preview-bar]').getBoundingClientRect().height,
+    return { header: surface(header), body: surface(body), headerHeight: header.getBoundingClientRect().height, bar: ${paneBarHeight},
       names: row.map(e => e.getAttribute('data-testid')), divider: !!header.querySelector('[data-slot=separator]'), size: row.map(e => Math.round(e.getBoundingClientRect().height)) };
   })()`);
   assert.equal(seen.header, seen.body, 'the header and the body are on one surface');
