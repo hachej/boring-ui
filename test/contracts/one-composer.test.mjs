@@ -96,7 +96,7 @@ const type = async value => {
 const FIELD = '[data-testid=composer-input]';
 const oneField = async step => assert.equal(await count(FIELD), 1, `exactly one message field in the DOM (${step})`);
 // AC-2: the row is the chevron, attach, the field and one action button; nothing else can be pressed in it.
-const rowControls = () => browser.evaluate(`[...document.querySelectorAll('[data-testid=composer] [data-slot=input-group] button, [data-testid=composer] [data-slot=input-group] textarea')].filter(e => e.getClientRects().length > 0).map(e => e.dataset.testid || e.getAttribute('aria-label'))`);
+const rowControls = () => browser.evaluate(`[...document.querySelectorAll('[data-testid=composer] [data-slot=input-group] button, [data-testid=composer] [data-slot=input-group] textarea')].filter(e => e.getClientRects().length > 0 && !e.closest('[data-testid=composer-controller]')).map(e => e.dataset.testid || e.getAttribute('aria-label'))`);
 
 test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every step, and the right button says Dicter, Envoyer, Arrêter (AC-1, AC-2, AC-3)', { skip, timeout: 120000 }, async () => {
   await open(1280);
@@ -104,11 +104,11 @@ test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every
   assert.equal(await inside(FIELD, '[data-testid=agent-content-composer]'), true, 'ambient: the field is under the page');
   assert.equal(await dockState(), 'closed');
   assert.equal(await count('[data-testid=agent-tray]'), 0);
-  assert.equal(await inside('[data-testid=agent-bar-conversation]', '[data-testid=composer]'), true, 'the chevron is the field\'s first button');
+  assert.equal(await inside('[data-testid=agent-bar-conversation]', '[data-testid=agent-composer-box]'), true, 'the chevron is the controller on the bar\'s frame, not a button of the row');
   assert.equal(await count('[data-testid=composer-bar-attach]'), 1, 'attach is a bar button');
   assert.equal(await count('[data-testid=composer-bar-commands]') + await count('[data-testid=composer-plus]'), 0, 'no Actions button and no + menu');
   assert.equal(await actionName(), 'Dicter', 'empty field: the one action button dictates');
-  assert.deepEqual(await rowControls(), ['agent-bar-conversation', 'composer-bar-attach', 'composer-input', 'agent-talk'], 'one row: chevron, attach, field, one action (AC-2)');
+  assert.deepEqual(await rowControls(), ['composer-bar-attach', 'composer-input', 'agent-talk'], 'one row: attach, field, one action (AC-2); the chevron is the controller');
   assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=composer-input]')).whiteSpace`), 'nowrap', 'an empty field is one line: the placeholder never wraps (AC-2)');
   // « / » typed opens the actions.
   await type('/');
@@ -147,17 +147,17 @@ test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every
   const box = await rect('[data-testid=agent-composer-box]'), contentColumn = await rect('[data-boring=dock-main]');
   assert.ok(box.w <= 721 && box.w < contentColumn.w - 100, `the box keeps the field's width, never the page's (${box.w} in ${contentColumn.w})`);
   assert.ok(Math.abs((box.x + box.w / 2) - (contentColumn.x + contentColumn.w / 2)) <= 2, 'centred');
-  const row = await rect('[data-testid=agent-composer-box] [data-slot=input-group]'), chevron = await rect('[data-testid=agent-bar-conversation]');
+  const row = await rect('[data-testid=agent-composer-box] [data-slot=input-group]'), chevron = await rect('[data-testid=composer-controller] [data-action=chevron]');
   assert.ok(row.h >= 46 && row.h <= 52 && Math.abs((chevron.x + chevron.w / 2) - (row.x + row.w / 2)) <= 1, `the row is compact and the tab is in its middle (${row.h}px high, ${Math.round(chevron.x + chevron.w / 2 - row.x - row.w / 2)}px off the middle)`);
   assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-tray] [data-testid=agent-layer-library]').textContent.trim()`), '', '« Bibliothèque » is an icon (its name is the label)');
-  assert.equal(await browser.evaluate(`(() => { const b = document.querySelector('[data-testid=agent-bar-conversation]'); const r = parseFloat(getComputedStyle(b).borderTopLeftRadius); return r >= b.getBoundingClientRect().height / 2 - 1; })()`), true, 'round buttons in the row, as the agent bar (Julien)');
+  assert.equal(await browser.evaluate(`(() => { const b = document.querySelector('[data-testid=composer-controller] [data-action=chevron]'); const r = parseFloat(getComputedStyle(b).borderTopLeftRadius); return r >= b.getBoundingClientRect().height / 2 - 1; })()`), true, 'round buttons in the row, as the agent bar (Julien)');
   assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=agent-composer-box]')).backgroundColor === getComputedStyle(document.querySelector('[data-slot=sidebar-inset]')).backgroundColor && getComputedStyle(document.querySelector('[data-testid=agent-composer-box] [data-boring=pi-chat-composer]')).backgroundColor === getComputedStyle(document.querySelector('[data-slot=sidebar-inset]')).backgroundColor && getComputedStyle(document.querySelector('[data-testid=agent-composer-box]').parentElement).backgroundColor === getComputedStyle(document.querySelector('[data-slot=sidebar-inset]')).backgroundColor`), true, 'the box, the field and the strip around them take the main view\'s colour (Julien, demo review)');
   assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=composer-bar-attach]')).borderTopWidth === '0px' || getComputedStyle(document.querySelector('[data-testid=composer-bar-attach]')).borderTopColor.includes('0, 0, 0, 0')`), true, 'the attach button has no border in the one composer');
   assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=agent-composer-box] [data-slot=input-group]')).borderTopColor.includes('0, 0, 0, 0') || getComputedStyle(document.querySelector('[data-testid=agent-composer-box] [data-slot=input-group]')).borderTopColor === 'transparent'`), true, 'one frame: the input group draws no border of its own inside the box');
   // Ancré: the thread and the field in the right column, nothing at the bottom.
   // The field's look, measured here and again docked: the same composer wherever it sits (Julien's invariant).
   const look = framed => browser.evaluate(`(() => { const row = document.querySelector('[data-testid=composer] [data-slot=input-group]'); const frame = ${framed ? "document.querySelector('[data-testid=agent-composer-box]')" : 'row'};
-    const s = getComputedStyle(row), f = getComputedStyle(frame), chevron = getComputedStyle(document.querySelector('[data-testid=agent-bar-conversation]'));
+    const s = getComputedStyle(row), f = getComputedStyle(frame), chevron = getComputedStyle(document.querySelector('[data-testid=composer-bar-attach]'));
     return { height: Math.round(row.getBoundingClientRect().height), padding: s.padding, gap: s.columnGap, radius: f.borderTopLeftRadius, background: f.backgroundColor, button: chevron.borderTopLeftRadius, buttonBackground: chevron.backgroundColor }; })()`);
   const bottomLook = await look(true);
   await click('[data-testid=agent-tray-dock]');
@@ -343,13 +343,14 @@ test('1440: the docked conversation has one surface, a pane-height header and it
   const seen = await browser.evaluate(`(() => {
     const surface = element => { for (let e = element; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') return c; } return 'none'; };
     const header = document.querySelector('[data-testid=agent-layer-header]'), body = document.querySelector('[data-testid=agent-layer] [data-boring=pi-chat]');
-    const row = [...header.querySelectorAll('button')].filter(e => e.getClientRects().length), last = row.at(-1);
+    const row = [...header.querySelectorAll('button')].filter(e => e.getClientRects().length);
     return { header: surface(header), body: surface(body), headerHeight: header.getBoundingClientRect().height, bar: document.querySelector('[data-testid=agent-preview-bar]').getBoundingClientRect().height,
-      lastName: last.getAttribute('data-testid'), divider: !!header.querySelector('[data-slot=separator]'), size: row.map(e => Math.round(e.getBoundingClientRect().height)) };
+      names: row.map(e => e.getAttribute('data-testid')), divider: !!header.querySelector('[data-slot=separator]'), size: row.map(e => Math.round(e.getBoundingClientRect().height)) };
   })()`);
   assert.equal(seen.header, seen.body, 'the header and the body are on one surface');
   assert.equal(seen.headerHeight, seen.bar, 'the header is as tall as the pane headers');
-  assert.equal(seen.lastName, 'agent-layer-close', 'Close is last in the icon row');
+  assert.ok(seen.names.every(name => !/close|dock|full/.test(name)), `the header keeps History and the Library: no Close, split or full screen (${seen.names})`);
+  assert.ok(!seen.names.includes('agent-layer-close'), 'Close is the controller\'s chevron, not a header button');
   assert.equal(seen.divider, false, 'no divider before Close');
   assert.equal(new Set(seen.size).size, 1, `the icon buttons share one size (${seen.size})`);
 });
@@ -399,7 +400,7 @@ test('1440: the controller straddles the top of the bar in every state, rests as
   await browser.until('the tray is open', `!!document.querySelector('[data-testid=agent-tray]')`);
   await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 }); await wait(500);
   a = await onTop('tray open');
-  assert.deepEqual(a.actions, ['chevron', 'more', 'split'], 'half open: collapse, expand more, split');
+  assert.deepEqual(a.actions, ['chevron', 'more', 'split', 'full'], 'half open: collapse, expand more, split, full screen');
   assert.equal(a.moreOpacity, '0', 'at rest the other actions are hidden ' + JSON.stringify([a.moreOpacity, await browser.evaluate('matchMedia("(hover:none)").matches + " focus=" + document.activeElement?.dataset.testid')]));
   const rest = a.chevron;
   await browser.press('Shift'); await browser.evaluate(`document.querySelector('[data-action=chevron]').focus()`); await wait(400);
@@ -407,9 +408,16 @@ test('1440: the controller straddles the top of the bar in every state, rests as
   assert.equal(opened.moreOpacity, '1', 'focus within shows the other actions');
   assert.deepEqual(opened.chevron, rest, 'the chevron does not move when the strip opens');
   assert.ok(opened.moreLeft >= rest.x + rest.w - 1, `the other actions open to the chevron's right (${opened.moreLeft} vs ${rest.x + rest.w})`);
-  await click('[data-testid=agent-bar-more]'); await wait(500);
+  await click('[data-testid=agent-tray-grow]'); await wait(500);
   a = await onTop('tray, fully open');
-  assert.deepEqual(a.actions, ['chevron', 'split'], 'fully open: collapse and split');
+  assert.deepEqual(a.actions, ['chevron', 'split', 'full'], 'fully open: collapse, split and full screen');
+  await click('[data-testid=agent-tray-full]');
+  await browser.until('full screen', `!!document.querySelector('[data-testid=agent-full]')`); await wait(500);
+  a = await strip();
+  assert.deepEqual(a.actions, ['chevron'], 'full screen: the strip is the back chevron alone');
+  assert.deepEqual(a.ids, ['agent-full-back']);
+  await click('[data-testid=agent-full-back]');
+  await browser.until('back to the tray', `!document.querySelector('[data-testid=agent-full]') && !!document.querySelector('[data-testid=agent-tray-dock]')`); await wait(500);
   await click('[data-testid=agent-tray-dock]');
   await browser.until('docked', `!!document.querySelector('[data-testid=agent-layer-undock]')`); await wait(500);
   a = await strip();
@@ -801,7 +809,7 @@ test('390: the one field rests above the tabs; the chevron opens half with the t
   assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer]').dataset.layout`), 'pill', 'the same one-row field as on a computer');
   assert.equal(await count('[data-testid=agent-bar-conversation]'), 1, 'with the chevron');
   assert.equal(await actionName(), 'Dicter');
-  assert.deepEqual(await rowControls(), ['agent-bar-conversation', 'composer-bar-attach', 'composer-input', 'agent-talk'], 'the phone row is the same one row: one microphone (AC-2, AC-20)');
+  assert.deepEqual(await rowControls(), ['composer-bar-attach', 'composer-input', 'agent-talk'], 'the phone row is the same one row: one microphone (AC-2, AC-20)');
   const field = await rect('[data-testid=composer]');
   assert.ok(field.bottom <= tabbar.y + 1, `the field sits above the tabs (${field.bottom} <= ${tabbar.y})`);
   const tabHit = () => browser.evaluate(`(() => { const e = document.elementFromPoint(${tabbar.x}, ${tabbar.y + tabbar.h / 2}); return !!e && !!e.closest(${js(tabs)}); })()`);
@@ -879,7 +887,8 @@ test('AC-21: the shell\'s words are French defaults the app overrides; 44 px tar
   const ring = () => browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=agent-composer-box]')).boxShadow`);
   const resting = await ring();
   await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]').focus()`);
-  await browser.press('Tab'); await browser.press('Tab');
+  await browser.evaluate(`document.querySelector('[data-testid=composer-bar-attach]').focus()`);
+  await browser.press('Tab');
   assert.equal(await browser.evaluate(`document.activeElement?.dataset.testid`), 'composer-input', 'Tab reaches the field');
   assert.notEqual(await ring(), resting, `focus shows on the box (${resting} → ${await ring()})`);
   // Tokens: the box follows the theme in dark (no fixed colour).
@@ -1302,7 +1311,7 @@ test('1440: Expand goes to grown, Full covers the nav and the right pane, Esc go
     await browser.until('the right pane', `!!document.querySelector('[data-testid=agent-preview]')`);
     await click('[data-testid=agent-bar-conversation]');
     await browser.until('Ouvert', `!!document.querySelector('[data-testid=agent-tray]')`);
-    assert.equal(await count('[data-testid=agent-tray-full]'), 0, 'no Full before Expand');
+    assert.equal(await count('[data-testid=agent-tray-full]'), 1, 'the controller offers Full from the half-open tray (and Expand more)');
     await click('[data-testid=agent-tray-grow]');
     await wait(250);
     assert.equal(await count(FULL), 0, 'Expand is not full screen');
@@ -1326,9 +1335,9 @@ test('1440: Expand goes to grown, Full covers the nav and the right pane, Esc go
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=app-shell]').closest('body > *').inert`), true, 'the page behind is inert');
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=app-shell]').closest('body > *').getAttribute('aria-hidden')`), 'true');
     assert.equal(await browser.evaluate(`getComputedStyle(document.body).overflow`), 'hidden', 'the page does not scroll');
-    assert.equal(await browser.evaluate(`document.querySelectorAll('${FULL} [aria-label="Fermer"]').length`), 1, 'one Close, an icon');
-    assert.equal(await browser.evaluate(`document.querySelector('${FULL} [data-testid=agent-layer-back]').getAttribute('aria-label')`), 'Quitter le plein écran');
-    assert.equal(await browser.evaluate(`document.querySelector('${FULL} [aria-label="Fermer"]').textContent.trim()`), '', 'Close is an X only');
+    assert.equal(await browser.evaluate(`document.querySelectorAll('${FULL} [data-testid=agent-layer-header] button[aria-label="Fermer"]').length`), 0, 'the header has no Close: the controller chevron is the way back');
+    assert.equal(await browser.evaluate(`document.querySelector('${FULL} [data-testid=agent-full-back]').getAttribute('aria-label')`), 'Quitter le plein écran');
+    assert.equal(await browser.evaluate(`document.querySelector('${FULL} [data-testid=agent-full-back]').textContent.trim()`), '', 'the back chevron is an icon only');
     await browser.screenshot(`full-1440-${dark ? 'dark' : 'light'}-after.png`);
     // The composer inside keeps working.
     const sent = (await browser.evaluate('window.__sent')).length;
@@ -1349,13 +1358,15 @@ test('1440: Expand goes to grown, Full covers the nav and the right pane, Esc go
     // The back arrow does the same, Close shuts the conversation.
     await click('[data-testid=agent-tray-full]');
     await browser.until('full again', `!!document.querySelector('${FULL}')`);
-    await click(`${FULL} [data-testid=agent-layer-back]`);
+    await click(`${FULL} [data-testid=agent-full-back]`);
     await browser.until('grown again', `!document.querySelector('${FULL}')`);
     await click('[data-testid=agent-tray-full]');
     await browser.until('full a third time', `!!document.querySelector('${FULL}')`);
-    await click(`${FULL} [aria-label="Fermer"]`);
+    await click(`${FULL} [data-testid=agent-full-back]`);
+    await browser.until('grown', `!document.querySelector('${FULL}')`);
+    await click('[data-testid=agent-tray-reduce]');
     await browser.until('closed', `!document.querySelector('${FULL}') && !document.querySelector('[data-testid=agent-tray]')`);
-    assert.equal(await focusedId(), 'composer-input', 'Close returns to the field');
+    assert.equal(await focusedId(), 'composer-input', 'the chevron\'s collapse returns to the field');
     await oneField('closed');
   }
 });

@@ -19,7 +19,7 @@ import { useBackLayer } from '../utils/back';
 import { DOCK_KEY, FOLDED_FIELD, LayerContext, MIN_MAIN, PM_COLUMN, TRAY_MAX, useInternal } from './layer-context';
 import type { DockSide } from './layer-context';
 import { OneBox, VoiceProblem } from './agent-bar-parts';
-import { ChatSlot, Header, HistoryButton, LibraryButton, useTitle } from './agent-chats';
+import { ChatSlot, Header, HeaderHint, HistoryButton, LibraryButton, useTitle } from './agent-chats';
 import { CompactSheet } from './agent-compact';
 import { PaneDock, PaneStack } from './agent-pane';
 
@@ -162,8 +162,10 @@ export function AgentComposerAnchor({ className }: { readonly className?: string
 function ContentTray() {
   const layer = useInternal();
   const { text, title } = useTitle();
-  const { size, setSize } = layer;
+  const { size, setSize, side, moveToDock } = layer;
   const grown = size !== 'open';
+  const DockIcon = side === 'left' ? PanelLeftIcon : PanelRightIcon;
+  const dockLabel = side === 'left' ? text.dockLeft : text.dockRight;
   const reduce = useCallback(() => {
     layer.close();
     layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true });
@@ -198,6 +200,8 @@ function ContentTray() {
         <HistoryButton />
         {layer.bar && <LibraryButton open={layer.openLibrary} text={text} testId="agent-layer-library" />}
         {boxed ? null : <>
+          <HeaderHint label={dockLabel}><Button variant="ghost" size="icon" data-testid="agent-tray-dock" aria-label={dockLabel} title={dockLabel}
+            onClick={moveToDock}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>
           <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
             onClick={() => setSize(grown ? 'open' : 'grown')}>{grown ? <ChevronDownIcon className="size-4" aria-hidden="true" /> : <ChevronUpIcon className="size-4" aria-hidden="true" />}</Button>
           <Button variant="ghost" size="icon" data-testid="agent-tray-reduce" aria-label={text.collapse} title={text.collapse} onClick={reduce}><XIcon className="size-4" aria-hidden="true" /></Button>

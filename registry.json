@@ -2474,7 +2474,7 @@
           ".app-shell [data-testid=\"agent-preview\"] [data-boring=\"viewer-frame\"]": {
             "background-color": "var(--card)"
           },
-          ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"input-group\"] [data-slot=\"button\"]": {
+          ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"input-group\"] [data-slot=\"button\"], .app-shell [data-testid=\"composer-controller\"] [data-slot=\"button\"]": {
             "border-radius": "var(--radius-3xl)"
           },
           ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"input-group\"]": {
