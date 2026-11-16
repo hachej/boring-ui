@@ -49,7 +49,7 @@ const nav = [{ id: 'file', label: 'File', icon: SparklesIcon, render: () => <div
 const Shell = () => <AppShell layout="screen" locale="en" title="Harbor Studio (fictional)" nav={nav} route={{ id: 'file', onChange() {} }} composer="bar" sidebar={false}
   agent={{ controller, icon: SparklesIcon, label: 'Assistant', chatProps: { locale: 'en', toolDetails: DETAILS, ...words } }} />;
 const App = () => params.get('shell') === '1' ? <Shell /> : <main className="flex min-h-dvh items-center justify-center bg-muted/30 p-4 sm:p-8">
-  <div data-testid="surface" className="flex h-[34rem] w-full max-w-xl flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+  <div data-testid="surface" className="flex h-136 w-full max-w-xl flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
     <PiChat controller={controller} locale="en" header={false} showHistory={false} toolDetails={DETAILS} {...words} />
   </div>
 </main>;

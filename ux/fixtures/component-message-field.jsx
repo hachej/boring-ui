@@ -61,7 +61,7 @@ const attachments = { upload: async files => files.map(file => ({ name: file.nam
 const readOnly = <p data-testid="agent-read-only" className="m-0 flex min-h-14 items-center rounded-xl border bg-muted/40 px-4 text-sm text-muted-foreground">Read only: your role may read the Harbor Studio file, not write to it.</p>;
 
 const App = () => <main className="flex min-h-dvh items-center justify-center bg-muted/30 p-4 sm:p-8">
-  <div data-testid="surface" className="flex h-[26rem] w-full max-w-xl flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+  <div data-testid="surface" className="flex h-104 w-full max-w-xl flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
     <PiChat controller={controller} locale="en" header={false} showHistory={false} emptyState={<div />} emptyLayout="docked" composerLayout="pill" composerBarActions="attach" composerFileChips renderText={markdownText}
       labels={{ placeholder: 'Write, or type /' }} slash={slash} attachments={attachments} voiceMessage={{ transcribe: async () => 'Reminder to Delmore House for the January invoice.', ...voiceMessagePlugin }} voiceReplacesSend
       {...(params.get('enter') === 'always' ? { enterSends: 'always' } : {})}
