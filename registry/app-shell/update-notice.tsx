@@ -27,7 +27,8 @@ export function UpdateNotice({ update, text, lift }: { readonly update: AppShell
   useEffect(() => { if (!available) setDismissed(undefined); }, [available]);
   if (!updateShown(update, dismissed)) return null;
   return <div data-testid="update-notice" data-version={version} data-feedback-ignore="" style={lift ? { marginBottom: lift } : undefined} className="shrink-0 px-[var(--screen-gutter,1rem)] py-2">
-    <Alert variant="info" role="status" className="flex items-center gap-2">
+    {/* The info look through tokens on the default Alert: a shadcn Alert without the kit's `info` variant draws the same row. */}
+    <Alert role="status" className="flex items-center gap-2 border-info bg-info-soft *:[svg]:text-info-soft-foreground">
       <InfoIcon />
       <span data-testid="update-notice-text" className="min-w-0 flex-1">{text.updateAvailable}</span>
       <Button variant="outline" size="sm" data-testid="update-reload" onClick={() => (onReload ?? (() => globalThis.location?.reload()))()}>{text.updateReload}</Button>
