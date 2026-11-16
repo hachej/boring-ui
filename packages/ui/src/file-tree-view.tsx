@@ -3,7 +3,7 @@
 import type { Collapsible } from '@base-ui/react/collapsible';
 import { ChevronRight, Download, File, FileCode, FileImage, FileSpreadsheet, FileText, Folder, FolderInput, FolderOpen, History, LoaderCircle, MoreHorizontal, Pencil, Search, Trash2, Upload, X } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { ComponentProps, DragEvent, KeyboardEvent, ReactNode } from 'react';
+import type { ComponentProps, DragEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import type { ResourceSnapshot } from '@hachej/boring-files';
 import type { FileEntry, RevisionProvider, SavedRevision } from '@hachej/boring-files/revision';
 import { createFileTreeController, folderWritable } from './file-tree.js';
@@ -326,6 +326,13 @@ export interface FileTreeViewProps extends Omit<FileTreeProps, 'revisionProvider
 type UploadRow = { readonly kind: 'pending'; readonly size: number }
   | { readonly kind: 'failed'; readonly size: number; readonly reason: string; readonly retryLabel: string; readonly retry?: () => void };
 
+/** The full path is a tooltip only while the visible name is cut short: otherwise it repeats the label beside it. */
+const revealTruncated = (path: string) => (event: MouseEvent<HTMLElement>) => {
+  const name = event.currentTarget.querySelector<HTMLElement>('.file-tree-name');
+  if (name && name.scrollWidth > name.clientWidth) event.currentTarget.title = path;
+};
+const clearTruncated = (event: MouseEvent<HTMLElement>) => { event.currentTarget.removeAttribute('title'); };
+
 /** Renders a borrowed controller, for a workspace whose chat and tree share upload state. */
 export function FileTreeView({ components, controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refresh = true, variant = 'list', title, onClose, refreshKey, historyKey, maxBytes, tooLarge, uploadBlob, capabilities, onRenamed, onDeleted, decorate }: FileTreeViewProps) {
   const changed = useRef({ onRenamed, onDeleted }); changed.current = { onRenamed, onDeleted };
@@ -547,10 +554,11 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
     const changeable = mutable(entry);
     const draggable = changeable && can.rename && !folder;
     const decoration = decorate?.(entry) ?? undefined;
-    const button = <Button type="button" variant={selectedPath === entry.path ? 'secondary' : 'ghost'} data-active={selectedPath === entry.path} tabIndex={-1} title={entry.path} disabled={temporary}
+    const button = <Button type="button" variant={selectedPath === entry.path ? 'secondary' : 'ghost'} data-active={selectedPath === entry.path} tabIndex={-1} disabled={temporary}
       className="file-tree-row-button" draggable={draggable || undefined}
+      onMouseEnter={revealTruncated(entry.path)} onMouseLeave={clearTruncated}
       onClick={() => { focus(entry.path); if (!folder) onOpen?.(entry.path); }}>
-      {folder ? <ChevronRight aria-hidden="true" /> : list && <span className="file-tree-chevron-space" aria-hidden="true" />}
+      {folder ? <ChevronRight className="file-tree-chevron" aria-hidden="true" /> : <span className="file-tree-chevron-space" aria-hidden="true" />}
       <Icon aria-hidden="true" />
       <span className="file-tree-copy"><span className="file-tree-name">{name}</span>
         {list ? folder ? childCount !== undefined && <span data-file-meta>{childCount}</span> : <span data-file-meta>{kind.label} · {fileSize(blob?.size ?? entry.size, locale)}{parent && ` · ${parent}`}</span> : parent && <span className="file-tree-parent" data-file-meta>{parent}</span>}

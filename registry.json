@@ -3313,13 +3313,14 @@
       "name": "viewer-code",
       "type": "registry:component",
       "title": "Code viewers",
-      "description": "The SVG and CSV kinds: `svgKind` (a preview from a blob URL, or its source) and `csvKind` (a table), drawn inside the artifact panel's bar. Each view loads the first time its artifact opens; other code stays in the panel's code block.",
+      "description": "The SVG and CSV kinds: `svgKind` (a preview from a blob URL, or its source) and `csvKind` (a table, with an « @ » action on each row where the shell offers one: `RowReferenceContext`), drawn inside the artifact panel's bar. Each view loads the first time its artifact opens; other code stays in the panel's code block.",
       "dependencies": [
         "react@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/viewer-frame",
         "@boring-ui/pi-chat",
+        "@boring-ui/button",
         "@boring-ui/_shared"
       ],
       "files": [
@@ -3337,6 +3338,11 @@
           "path": "registry/viewer-code/csv-table.tsx",
           "type": "registry:component",
           "target": "components/viewer-code/csv-table.tsx"
+        },
+        {
+          "path": "registry/viewer-code/row-reference.tsx",
+          "type": "registry:component",
+          "target": "components/viewer-code/row-reference.tsx"
         }
       ]
     },

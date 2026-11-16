@@ -6,7 +6,9 @@ import { FileTextIcon, FolderIcon } from '../../registry/_shared/icons';
 import { FileTreeView } from '../../registry/file-tree/file-tree.tsx';
 import { useAgentLayer } from '../../registry/app-shell/agent-layer.tsx';
 import { DEMO_KINDS, demoTree } from '../../test/fixtures/themes/one-composer-demo.jsx';
-import { demoFiles } from '../../test/fixtures/themes/one-composer-files.js';
+import { DEMO_FILES, demoFiles } from '../../test/fixtures/themes/one-composer-files.js';
+import { csvRows } from '../../registry/viewer-code/csv-table.tsx';
+import { columnNames, rowMentionPath, rowReferenceLabel } from '../../registry/viewer-code/row-reference.tsx';
 import { createDemoController } from './demo-controller.mjs';
 import { installFakeMic } from './fake-mic.mjs';
 import script from '../scenarios/scripts/design-system.json';
@@ -75,14 +77,29 @@ function Page() {
 }
 const Placeholder = () => <Empty><EmptyHeader><EmptyTitle>Nothing here yet</EmptyTitle><EmptyDescription>The app's screen goes here.</EmptyDescription></EmptyHeader></Empty>;
 const { controller, actions, reset } = createDemoController({ script, pace: new URLSearchParams(location.search).get('pace') === 'instant' ? 0.15 : 1 });
+// What the assistant received, for a test: the text of each send, mention tokens included.
+const deliver = controller.send;
+controller.send = async (kind, content) => { (window.__sent ??= []).push({ kind, text: content?.text ?? controller.getSnapshot().draft.text }); return deliver(kind, content); };
 window.__ux = { reset };
 installFakeMic();
+// The `@` picker lists the workspace's files and the rows of the sample table (`@open-gaps`): a row is the same `row` mention the table's « @ » action inserts.
+const TABLE = 'samples/open-gaps.csv';
+const tableRows = async () => {
+  const [head = [], ...rows] = csvRows(await (await demoFiles.read(TABLE)).blob.text()), names = columnNames(head);
+  return rows.map((row, at) => rowMentionPath({ path: TABLE, row: at + 1, cells: Object.fromEntries(names.map((name, j) => [name, row[j] ?? ''])) }));
+};
+const mentions = { listLabel: 'Files and rows', search: async query => {
+  const needle = query.toLowerCase();
+  const files = DEMO_FILES.filter(path => path.toLowerCase().includes(needle)).slice(0, 4).map(path => ({ path, kind: 'file' }));
+  const rows = (await tableRows()).map(path => ({ path, label: rowReferenceLabel(path.slice(4)) })).filter(row => row.label.toLowerCase().includes(needle) || TABLE.includes(needle));
+  return [...files, ...rows];
+} };
 const attachments = { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })) };
 const nav = [
   { id: 'design', label: 'Design system', icon: FileTextIcon, render: () => <ScreenBody><Page /></ScreenBody> },
   { id: 'empty', label: 'Empty app view', icon: FolderIcon, render: () => <ScreenBody><Placeholder /></ScreenBody> },
 ];
-const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the change', onSelect() {} }, voice: { transcribe: async () => 'Dictated text (fictional)' }, files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en', actions, attachments } };
+const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the change', onSelect() {} }, voice: { transcribe: async () => 'Dictated text (fictional)' }, files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en', actions, attachments, mentions } };
 function App() {
   const [route, setRoute] = useState('design'), [theme, setTheme] = useState(initial);
   return <AppShell layout="screen" locale="en" title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" agent={agent}

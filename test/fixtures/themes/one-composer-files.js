@@ -72,6 +72,7 @@ const MAKERS = {
   'samples/booking.maquette.json': () => text(JSON.stringify(maquette), 'application/json'),
   'samples/entries.records.json': () => text(JSON.stringify({ kind: 'records@1', columns: [{ key: 'date', label: 'Date', type: 'date' }, { key: 'label', label: 'Label', type: 'text' }, { key: 'amount', label: 'Amount', type: 'number' }],
     rows: [{ id: 'e1', values: { date: '2026-01-09', label: 'Card Harbor Garage', amount: -96.5 } }, { id: 'e2', values: { date: '2026-01-15', label: 'Card The Cedar Diner', amount: -58.2 } }] }), 'application/json'),
+  'samples/open-gaps.csv': () => text('Label,Date,Amount,Status\nDelmore House invoice 0112,Jan 12,"$1,368.00",Unpaid\nCard The Cedar Diner,Jan 15,-$12.00,Needs a receipt\nCard Harbor Garage,Jan 09,$12.00,Needs a receipt\nBrown & Sons invoice 0121,Jan 21,"$1,150.00",Reminder due\nAxiom Insurance premium,Jan 08,$212.00,No entry\n', 'text/csv'),
   'samples/reconcile.ts': () => text('export const gap = (statement: number, books: number): number => Math.round((statement - books) * 100) / 100;\n', 'text/plain'),
   'samples/reconcile.py': () => text('def gap(statement, books):\n    return round(statement - books, 2)\n', 'text/plain'),
   'samples/close-month.sh': () => text('#!/bin/sh\n# Invented closing steps (fictional).\necho "Justify the January gaps"\n', 'text/plain'),

@@ -10,6 +10,8 @@
   { "match": "^error$", "steps": [{ "tool": "read", "path": "samples/reconcile.py", "progress": "3 of 8 lines", "ms": 700 }, { "fail": "Provider unavailable (fictional)" }] },
   { "match": "^files$", "steps": [{ "think": true, "ms": 500 }, { "present": "samples/booking.diagram.json", "ms": 1500 }, { "text": "Opened on the right: @samples/booking.diagram.json.\nAlso see @samples/oakfield-garden.excalidraw.json, @samples/bakery-morning.drawio.xml and @samples/entries.records.json.", "stream": true }] },
   { "match": "^approval$", "steps": [{ "approve": { "tool": "delete_file", "arguments": { "path": "samples/old-draft.md" }, "summary": "Delete the old draft?" }, "then": [{ "text": "Decision received.", "stream": true }] }] },
+  { "match": "open-gaps\\.csv#3 ", "steps": [{ "think": true, "ms": 500 }, { "text": "Row 3 of @samples/open-gaps.csv: Card Harbor Garage, Jan 09, $12.00, status Needs a receipt. I will ask for the receipt and add the line once it arrives.", "stream": true }] },
+  { "match": "open-gaps\\.csv#\\d+ ", "steps": [{ "text": "I have the row you referenced and its cells.", "stream": true }] },
   { "match": "^typing$", "steps": [{ "think": true, "ms": 4000 }, { "text": "That took a moment.", "stream": true }] }
  ]
 }
