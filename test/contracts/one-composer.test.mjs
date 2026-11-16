@@ -366,6 +366,62 @@ test('1440: the Library holds a sample of each viewer and the pane draws it (dia
   }
 });
 
+// Julien: "the pill must STRADDLE the top border, whatever the bar contains", and "one controller": the strip is anchored on its chevron, quiet at rest, and its actions
+// follow the state (bar, half open, open, docked). Every measure is against the OUTER frame of the bar (or the open tray's top), not the row inside it.
+const strip = () => browser.evaluate(`(() => { const s = document.querySelector('[data-testid=composer-controller]'); if (!s) return null; const c = s.querySelector('[data-action=chevron]').getBoundingClientRect();
+  const more = s.querySelector('[data-testid=composer-controller-more]'), m = more ? getComputedStyle(more).opacity : null;
+  return { actions: [...s.querySelectorAll('button')].map(b => b.dataset.action), ids: [...s.querySelectorAll('button')].map(b => b.dataset.testid), chevron: { x: c.x, y: c.y, w: c.width, h: c.height }, midY: c.y + c.height / 2, midX: c.x + c.width / 2, moreOpacity: m,
+    moreLeft: more ? Math.min(...[...more.querySelectorAll('button')].map(b => b.getBoundingClientRect().left)) : null }; })()`);
+const frameTop = () => browser.evaluate(`(() => { const t = document.querySelector('[data-testid=agent-tray]'), o = t && t.closest('[data-testid=agent-composer-box]') ? t.parentElement.getBoundingClientRect().top : null; const b = document.querySelector('[data-testid=agent-composer-box]').getBoundingClientRect(); return { box: b.top, trayTop: t ? t.getBoundingClientRect().top : null, boxLeft: b.left, boxMid: b.left + b.width / 2, boxBottom: b.bottom, boxHeight: b.height }; })()`);
+test('1440: the controller straddles the top of the bar in every state, rests as the chevron alone, opens to its right and follows the state', { skip, timeout: 240000 }, async () => {
+  await open(1440, 'demo=1&single=1&pace=instant');
+  await browser.until('the bar', `!!document.querySelector('[data-testid=composer-controller]')`);
+  const onTop = async step => { const [a, f] = [await strip(), await frameTop()]; assert.ok(Math.abs(a.midY - (f.trayTop !== null && step.includes('tray') ? f.trayTop : f.box)) <= 1.5, `${step}: the strip's middle ${a.midY} is on the frame's top ${f.trayTop ?? f.box}`); return a; };
+  let a = await onTop('empty bar');
+  assert.deepEqual(a.actions, ['chevron'], 'at rest the bar offers the chevron');
+  const f0 = await frameTop(), group = await rect('[data-testid=composer] [data-slot=input-group]');
+  assert.ok(Math.abs(group.y + group.h / 2 - (f0.box + f0.boxHeight / 2)) <= 1, 'the row midline is the outer frame midline');
+  assert.ok(Math.abs(a.midX - f0.boxMid) <= 1, 'the strip is in the middle of the bar');
+  await browser.evaluate(`document.querySelector('[data-testid=composer-input]').focus()`);
+  await type('one'); for (const line of ['two', 'three']) { await browser.press('Enter', { shift: true }); await browser.send('Input.insertText', { text: line }); }
+  await wait(500); await onTop('three lines');
+  const grown = await frameTop(); const g2 = await rect('[data-testid=composer] [data-slot=input-group]');
+  assert.ok(Math.abs(g2.y + g2.h / 2 - (grown.box + grown.boxHeight / 2)) <= 1, 'three lines: the row midline is the outer frame midline');
+  await browser.evaluate(`(() => { const e = document.querySelector('[data-testid=composer-input]'); e.select(); document.execCommand('delete'); })()`);
+  await type('Reconcile the January statement'); await click('[data-testid=composer-submit]');
+  await browser.until('the folded card', `!!document.querySelector('[data-testid=agent-card]')`, 30000);
+  await wait(400); await onTop('folded card above the field');
+  await browser.until('the reply is in', `document.querySelector('[data-testid=agent-card-status]')?.textContent.includes('Done') || !!document.querySelector('[data-testid=agent-card-reply]')`, 30000).catch(() => {});
+  await onTop('folded reply card');
+  // rest: only the chevron shows; focus opens the rest to its right and the chevron does not move
+  a = await strip(); const before = a.chevron;
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('the tray is open', `!!document.querySelector('[data-testid=agent-tray]')`);
+  await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 }); await wait(500);
+  a = await onTop('tray open');
+  assert.deepEqual(a.actions, ['chevron', 'more', 'split'], 'half open: collapse, expand more, split');
+  assert.equal(a.moreOpacity, '0', 'at rest the other actions are hidden ' + JSON.stringify([a.moreOpacity, await browser.evaluate('matchMedia("(hover:none)").matches + " focus=" + document.activeElement?.dataset.testid')]));
+  const rest = a.chevron;
+  await browser.press('Shift'); await browser.evaluate(`document.querySelector('[data-action=chevron]').focus()`); await wait(400);
+  const opened = await strip();
+  assert.equal(opened.moreOpacity, '1', 'focus within shows the other actions');
+  assert.deepEqual(opened.chevron, rest, 'the chevron does not move when the strip opens');
+  assert.ok(opened.moreLeft >= rest.x + rest.w - 1, `the other actions open to the chevron's right (${opened.moreLeft} vs ${rest.x + rest.w})`);
+  await click('[data-testid=agent-bar-more]'); await wait(500);
+  a = await onTop('tray, fully open');
+  assert.deepEqual(a.actions, ['chevron', 'split'], 'fully open: collapse and split');
+  await click('[data-testid=agent-tray-dock]');
+  await browser.until('docked', `!!document.querySelector('[data-testid=agent-layer-undock]')`); await wait(500);
+  a = await strip();
+  assert.deepEqual(a.actions, ['chevron', 'undock'], 'docked: collapse and undock');
+  await click('[data-testid=agent-layer-undock]');
+  await browser.until('back to the tray', `!!document.querySelector('[data-testid=agent-tray]')`);
+  await click('[data-testid=agent-tray-reduce]');
+  await browser.until('folded again', `!document.querySelector('[data-testid=agent-tray]')`);
+  a = await strip(); assert.deepEqual(a.actions, ['chevron'], 'folded again: the chevron alone');
+  assert.ok(before.w > 0);
+});
+
 test('1280: typing grows the field;  a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
   await open(1280);
   await type('Prépare la relance du dossier Cèdre :');

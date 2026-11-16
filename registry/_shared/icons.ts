@@ -23,6 +23,7 @@ export {
   CaretLeftIcon as ChevronLeftIcon,
   CaretRightIcon as ChevronRightIcon,
   CaretUpIcon as ChevronUpIcon,
+  CaretDoubleUpIcon as ChevronsUpIcon,
   CaretDoubleLeftIcon as ChevronsLeftIcon,
   CaretDoubleRightIcon as ChevronsRightIcon,
   CaretUpDownIcon as ChevronsUpDownIcon,

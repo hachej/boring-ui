@@ -3,7 +3,7 @@
 // The wide placements: the dock (docked or floating), the content column with its tray and anchor, the preview column, and the layer root.
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactElement, ReactNode } from 'react';
-import { ChevronDownIcon, ChevronUpIcon, Maximize2Icon, Minimize2Icon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, XIcon } from '../_shared/icons';
+import { ChevronDownIcon, ChevronUpIcon, Maximize2Icon, Minimize2Icon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -77,12 +77,7 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   const act = (run: () => void) => () => { restoreFocusRef.current = true; run(); };
   const control = (id: string, label: string, Icon: ComponentType<{ className?: string }>, run: () => void) =>
     <Button variant="ghost" size="icon" key={id} data-testid={`agent-layer-${id}`} data-dock-control="" aria-label={label} title={label} onClick={act(run)}><Icon data-icon="inline-start" aria-hidden="true" /></Button>;
-  // `composer: 'bar'`: one way out besides Fermer, back to the bottom (Ouvert); the field goes back under the page with the thread.
-  const undock = () => {
-    layer.setMode('tray');
-    requestAnimationFrame(() => layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true }));
-  };
-  const controls = layer.bar ? <HeaderHint label={text.undock}><Button variant="ghost" size="icon" data-testid="agent-layer-undock" data-dock-control="" aria-label={text.undock} title={text.undock} onClick={undock}><PanelBottomIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint> : <>
+  const controls = layer.bar ? null : <>
     {!floating && control('float', text.float, PictureInPicture2Icon, () => api.float())}
     {(floating || side === 'right') && control('dock-left', text.dockLeft, PanelLeftIcon, () => { layer.setSide('left'); api.dock(); })}
     {(floating || side === 'left') && control('dock-right', text.dockRight, PanelRightIcon, () => { layer.setSide('right'); api.dock(); })}
@@ -165,7 +160,7 @@ export function AgentComposerAnchor({ className }: { readonly className?: string
 function ContentTray() {
   const layer = useInternal();
   const { text, title } = useTitle();
-  const { grown, setGrown, side, moveToDock } = layer;
+  const { grown, setGrown } = layer;
   const reduce = useCallback(() => {
     layer.close();
     layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true });
@@ -186,8 +181,6 @@ function ContentTray() {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
-  const DockIcon = side === 'left' ? PanelLeftIcon : PanelRightIcon;
-  const dockLabel = side === 'left' ? text.dockLeft : text.dockRight;
   // In an anchor the tray sits in the app's column, whose height is not the content column's: a share of the viewport, and Agrandir takes more of it instead of hiding the page.
   const boxed = layer.bar && layer.contentComposer;
   const overlay = boxed && !layer.anchored;
@@ -201,12 +194,9 @@ function ContentTray() {
         <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
         <HistoryButton />
         {layer.bar && <LibraryButton open={layer.openLibrary} text={text} testId="agent-layer-library" />}
-        <HeaderHint label={dockLabel}><Button variant="ghost" size="icon" data-testid="agent-tray-dock" aria-label={dockLabel} title={dockLabel}
-          onClick={moveToDock}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>
         {boxed ? <>
           <HeaderHint label={grown ? text.collapse : text.expand}><Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={grown ? text.collapse : text.expand} title={grown ? text.collapse : text.expand} aria-pressed={grown}
             onClick={() => setGrown(!grown)}>{grown ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <Maximize2Icon className="size-4" aria-hidden="true" />}</Button></HeaderHint>
-          <Button variant="ghost" size="icon" data-testid="agent-tray-reduce" aria-label={text.close} title={text.close} onClick={reduce}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
         </> : <>
           <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
             onClick={() => setGrown(!grown)}>{grown ? <ChevronDownIcon className="size-4" aria-hidden="true" /> : <ChevronUpIcon className="size-4" aria-hidden="true" />}</Button>

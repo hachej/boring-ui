@@ -3,9 +3,9 @@
 // `composer: 'bar'`'s own pieces: the microphone's tap or hold, the conversation's chevron, the folded card on the field, its send problem, the box.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, FileTextIcon, Loader2Icon, MicIcon, SquareIcon, XIcon } from '../_shared/icons';
+import { createPortal } from 'react-dom';
+import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, FileTextIcon, Loader2Icon, MicIcon, PanelBottomIcon, PanelRightIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
@@ -127,24 +127,60 @@ export function VoiceProblem() {
   return voice.problem ? <p role="alert" data-testid="agent-voice-problem" className="m-0 shrink-0 px-3 pb-1 text-xs leading-4 text-destructive">{voice.problem}</p> : null;
 }
 
+/** One action of the composer controller: its name (aria-label and tooltip), icon and what it does; `primary` is the chevron, always shown. */
+interface ControllerAction { readonly id: string; readonly testId: string; readonly label: string; readonly icon: ReactNode; readonly onSelect: () => void; readonly primary?: boolean; readonly expanded?: boolean; readonly on?: boolean }
+
+/** The actions of the conversation's layout in the state it is in: the chevron (expand or collapse) first, then what the state offers (expand more, split or undock). */
+function useControllerActions(): readonly ControllerAction[] {
+  const layer = useInternal();
+  const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
+  const focusField = () => requestAnimationFrame(() => (layer.host?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]'))?.focus({ preventScroll: true }));
+  const up = <ChevronUpIcon aria-hidden="true" />, down = <ChevronDownIcon aria-hidden="true" />;
+  const more = (onSelect: () => void): ControllerAction => ({ id: 'more', testId: 'agent-bar-more', label: text.expand, icon: <ChevronsUpIcon aria-hidden="true" />, onSelect });
+  if (!layer.expanded) {
+    const open = layer.snap === 'half' || layer.snap === 'full';
+    return [{ id: 'chevron', testId: 'agent-bar-conversation', label: open ? text.collapse : text.conversation, icon: open ? down : up, expanded: open, primary: true, onSelect: () => { if (open) { layer.close(); focusField(); } else layer.open('agent'); } },
+      ...(layer.snap === 'half' ? [more(() => layer.setSnap('full'))] : [])];
+  }
+  if (layer.dockOpen) return [
+    { id: 'chevron', testId: 'agent-layer-close', label: text.collapse, icon: down, expanded: true, primary: true, onSelect: () => { layer.close(); focusField(); } },
+    { id: 'undock', testId: 'agent-layer-undock', label: text.undock, icon: <PanelBottomIcon aria-hidden="true" />, on: true, onSelect: () => { layer.setMode('tray'); focusField(); } },
+  ];
+  if (layer.trayOpen) return [
+    { id: 'chevron', testId: 'agent-tray-reduce', label: text.collapse, icon: down, expanded: true, primary: true, onSelect: () => { layer.close(); focusField(); } },
+    ...(layer.grown ? [] : [more(() => layer.setGrown(true))]),
+    { id: 'split', testId: 'agent-tray-dock', label: layer.side === 'left' ? text.dockLeft : text.dockRight, icon: <PanelRightIcon aria-hidden="true" />, onSelect: layer.moveToDock },
+  ];
+  return [{ id: 'chevron', testId: 'agent-bar-conversation', label: text.conversation, icon: up, expanded: false, primary: true, onSelect: () => layer.open('agent') }];
+}
+
 /**
- * `composer: 'bar'`: the tab on the field's top border, centred and straddling it (half above, half below). It unfolds the conversation above the field and folds it
- * back; a dot while a reply is unread. The row keeps no control for it. The button is the hit area (the touch floor, 44 px, or the icon size on a pointer) and the Badge pill is
- * its look; the field's group is the positioned box it sits on.
+ * `composer: 'bar'`: ONE controller for the conversation's layout, a strip centred on the top border of the container (half above, half below). At rest only the
+ * chevron shows (expand or collapse); the other actions of the state (split, undock) open on hover and on focus within, and stay shown on a touch screen. A dot on the
+ * chevron while a reply is unread. Desktop: the strip is portalled into the bar's box (its frame) and rides the box's top edge, or the open tray's; on a phone and in
+ * the docked column it sits on the field's own border. Each action is a kit Button (the touch floor gives the 44 px hit area), named by aria-label and title.
  */
 export function ConversationChevron({ unread }: { readonly unread: { readonly label: string } | undefined }) {
   const layer = useInternal();
-  const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  const open = layer.expanded ? layer.trayOpen || layer.dockOpen : layer.snap === 'half' || layer.snap === 'full';
-  return <span className="absolute top-0 left-1/2 z-30 -translate-x-1/2 -translate-y-1/2">
-    <Button type="button" variant="ghost" size="icon" data-testid="agent-bar-conversation" aria-label={text.conversation} title={text.conversation} aria-expanded={open}
-      onClick={() => { if (open) { layer.close(); requestAnimationFrame(() => (layer.host?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]'))?.focus({ preventScroll: true })); } else layer.open('agent'); }}>
-      <Badge variant="secondary" className="relative">
-        {open ? <ChevronDownIcon aria-hidden="true" /> : <ChevronUpIcon aria-hidden="true" />}
-        {unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute -top-0.5 -right-0.5 size-2 rounded-(--radius-3xl) bg-primary" />}
-      </Badge>
-    </Button>
+  const actions = useControllerActions();
+  const [box, setBox] = useState<HTMLElement | null>(null);
+  const overlay = layer.trayOpen && !layer.anchored;
+  const [first, ...rest] = actions;
+  const button = (action: ControllerAction, dot = false) => <Button key={action.id} type="button" variant="ghost" size="icon-sm" data-testid={action.testId} data-action={action.id} aria-label={action.label} title={action.label}
+    {...(action.expanded !== undefined ? { 'aria-expanded': action.expanded } : {})} {...(action.on ? { 'aria-pressed': true } : {})} onClick={action.onSelect}>
+    {action.icon}
+    {dot && unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-0 right-0 size-1.5 rounded-(--radius-3xl) bg-primary" />}
+  </Button>;
+  // The chevron is the anchor: centred on the frame line and never moved. The other actions open to its right (hover or focus within; always on a touch screen), so the pointer stays on the default.
+  const strip = <span data-testid="composer-controller" style={box && overlay ? { top: 'calc(0px - var(--app-shell-bar-tray-size))' } : undefined}
+    className="group/ctl absolute top-0 left-1/2 z-30 flex -translate-x-1/2 -translate-y-1/2 items-center text-muted-foreground hover:text-foreground focus-within:text-foreground">
+    <span className="relative inline-flex rounded-(--radius-3xl) bg-card ring-1 ring-border/55">{first && button(first, true)}</span>
+    {rest.length > 0 && <span data-testid="composer-controller-more" className="absolute top-0 left-full flex h-full items-center overflow-hidden rounded-(--radius-3xl) bg-card ring-1 ring-border/55 max-w-0 opacity-0 transition-[max-width,opacity] duration-(--duration-fast) group-hover/ctl:max-w-32 group-hover/ctl:opacity-100 group-has-[:focus-visible]/ctl:max-w-32 group-has-[:focus-visible]/ctl:opacity-100 motion-reduce:transition-none pointer-coarse:max-w-32 pointer-coarse:opacity-100">{rest.map(action => button(action))}</span>}
   </span>;
+  return <>
+    <span ref={node => setBox(node?.closest<HTMLElement>('[data-one-composer]') ?? null)} hidden />
+    {box ? createPortal(strip, box) : strip}
+  </>;
 }
 
 /**
@@ -298,8 +334,8 @@ export function OneBox({ children }: { readonly children: ReactNode }) {
   const { dockOpen, anchored, folded, trayOpen } = useInternal();
   const overlay = trayOpen && !anchored;
   return <div className={cn('shrink-0 bg-card px-6 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]', dockOpen && 'hidden')}>
-    <div data-one-composer="" data-folded={folded || undefined} data-testid="agent-composer-box" style={anchored ? undefined : { marginInlineStart: 'clamp(0px, calc((100cqw - var(--app-shell-composer-max)) / 2 - var(--spacing) * 6), max(0px, calc(100% - var(--container-xs, 20rem))))', marginInlineEnd: 0, width: 'auto' }} className={cn('group/one-box mx-auto flex w-full max-w-[720px] min-w-0 flex-col rounded-(--radius-3xl) bg-card text-card-foreground', !anchored && 'relative', overlay ? 'overflow-visible' : 'overflow-hidden ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring')}>
-      {children}
+    <div data-one-composer="" data-folded={folded || undefined} data-testid="agent-composer-box" style={anchored ? undefined : { marginInlineStart: 'clamp(0px, calc((100cqw - var(--app-shell-composer-max)) / 2 - var(--spacing) * 6), max(0px, calc(100% - var(--container-xs, 20rem))))', marginInlineEnd: 0, width: 'auto' }} className={cn('group/one-box mx-auto flex w-full max-w-[720px] min-w-0 flex-col rounded-(--radius-3xl) bg-card text-card-foreground', !anchored && 'relative', 'overflow-visible', !overlay && 'ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring')}>
+      <div className={cn('flex min-w-0 flex-col rounded-(--radius-3xl)', !overlay && 'overflow-hidden')}>{children}</div>
       {overlay && <>
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-1/2 z-20 overflow-hidden" style={{ top: 'calc(0px - var(--app-shell-bar-tray-expanded))' }}>
           <div className="absolute inset-x-0 top-0 -bottom-(--radius-3xl) rounded-(--radius-3xl) ring-1 ring-inset ring-border group-has-focus-visible/one-box:ring-2 group-has-focus-visible/one-box:ring-ring transition-transform duration-(--duration-fast) ease-(--ease-standard) motion-reduce:transition-none" style={{ transform: 'translateY(calc(var(--app-shell-bar-tray-expanded) - var(--app-shell-bar-tray-size)))' }} />

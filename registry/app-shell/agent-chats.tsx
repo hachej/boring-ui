@@ -241,7 +241,7 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
     {!layer.bar && compactSnap === 'half' && <HeaderHint label={text.expand}><Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {!layer.bar && compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {controls}
-    <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
+    {!layer.bar && <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
   </div>;
 }
 
