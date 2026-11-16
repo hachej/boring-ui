@@ -6,15 +6,24 @@ import { Label } from '@/components/ui/label';
 import { Table as KitTable, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { FileTreeView } from '../../../registry/file-tree/file-tree.tsx';
-import { ATTACHMENTS } from './one-composer-files.js';
+import { ATTACHMENTS, DEMO_FILES } from './one-composer-files.js';
+import { diagramKind } from '../../../registry/diagram-viewer/diagram-kind.tsx';
+import { drawingKind } from '../../../registry/drawing-viewer/drawing-kind.tsx';
+import { mockupKind } from '../../../registry/mockup-viewer/mockup-kind.tsx';
+import { recordsKind } from '../../../registry/record-viewer/records-kind.tsx';
+import { maquetteKind } from '../../../registry/maquette-viewer/maquette-kind.tsx';
 
 // The UX demo layer (`?demo=1`, UX loop): what a person does with the one composer, over invented English bookkeeping content:
 // a library (the kit's FileTreeView over an in-memory provider), earlier conversations (the chat's History list), a long conversation,
 // a record opened from a page row, a quote from the page. Nothing here changes the default fixture page.
+/** The artifact kinds the demo's pane draws (`agent.fileKinds`): diagram, drawing (Excalidraw and draw.io), mock-up, records and maquette. The board needs a workspace client and the looks a reader for its screens: neither is here. */
+export const DEMO_KINDS = [diagramKind, drawingKind, mockupKind, recordsKind, maquetteKind];
 export const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 
 const TREE = {
-  '': [['uploads', 'directory'], ['invoices', 'directory'], ['receipts', 'directory'], ['exports', 'directory'], ['videos', 'directory'], ['closing-notes.md', 'file', 2400]],
+  '': [['uploads', 'directory'], ['invoices', 'directory'], ['receipts', 'directory'], ['exports', 'directory'], ['videos', 'directory'], ['samples', 'directory'], ['closing-notes.md', 'file', 2400]],
+  samples: [['archive', 'directory'], ...DEMO_FILES.filter(path => path.startsWith('samples/') && !path.startsWith('samples/archive/')).map(path => [path.slice(8), 'file', 2000])],
+  'samples/archive': DEMO_FILES.filter(path => path.startsWith('samples/archive/')).map(path => [path.slice(16), 'file', 800]),
   receipts: [['receipt-harbor-garage-0109.pdf', 'file', 2100], ['note-gap-0109.md', 'file', 300], ['ticket-harbor-garage-0109.png', 'file', 18000]],
   exports: [['entries-january.json', 'file', 400], ['reminder-delmore.txt', 'file', 200]],
   videos: [['studio-tour.webm', 'file', 30000]],
@@ -30,13 +39,12 @@ const provider = {
   history: async () => [], read: async () => { throw new Error('unavailable'); }, publish: async () => { throw new Error('unavailable'); }, lookup: async () => undefined,
 };
 let tree;
+export const demoTree = () => { tree ??= createFileTreeController({ revisionProvider: provider }); void tree.refresh(); return tree; };
 /** The files of `path`'s folder, in the tree's order: the set previous and next step through. */
 const siblings = path => { const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''; return (TREE[dir] ?? []).filter(row => row[1] === 'file').map(([name]) => dir ? `${dir}/${name}` : name); };
 // `open` is the app's own preview (`?viewer=app`); without it the pick goes to the kit's viewer with its folder (`onPicked({ path, files })`).
 export const demoLibrary = open => onPicked => {
-  tree ??= createFileTreeController({ revisionProvider: provider });
-  void tree.refresh();
-  return <div data-testid="fixture-library"><FileTreeView controller={tree} variant="plain" locale="en" upload={false} history={false} onOpen={path => { if (open) { open(path); onPicked(); } else onPicked({ path, files: siblings(path) }); }} /></div>;
+  return <div data-testid="fixture-library"><FileTreeView controller={demoTree()} variant="plain" locale="en" upload={false} history={false} onOpen={path => { if (open) { open(path); onPicked(); } else onPicked({ path, files: siblings(path) }); }} /></div>;
 };
 
 export const Table = ({ head, rows }) => <KitTable><TableHeader><TableRow>{head.map((cell, i) => <TableHead key={cell} className={i === head.length - 1 ? 'text-right' : ''}>{cell}</TableHead>)}</TableRow></TableHeader>

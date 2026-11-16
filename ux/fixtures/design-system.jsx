@@ -3,6 +3,15 @@ import { createRoot } from 'react-dom/client';
 import { AppShell } from '../../registry/app-shell/app-shell.tsx';
 import { ScreenBody } from '../../registry/app-shell/screen-body.tsx';
 import { FileTextIcon, FolderIcon } from '../../registry/_shared/icons';
+import { FileTreeView } from '../../registry/file-tree/file-tree.tsx';
+import { useAgentLayer } from '../../registry/app-shell/agent-layer.tsx';
+import { DEMO_KINDS, demoTree } from '../../test/fixtures/themes/one-composer-demo.jsx';
+import { DEMO_FILES, demoFiles } from '../../test/fixtures/themes/one-composer-files.js';
+import { csvRows } from '../../registry/viewer-code/csv-table.tsx';
+import { columnNames, rowMentionPath, rowReferenceLabel } from '../../registry/viewer-code/row-reference.tsx';
+import { createDemoController } from './demo-controller.mjs';
+import { installFakeMic } from './fake-mic.mjs';
+import script from '../scenarios/scripts/design-system.json';
 import { UpdateNotice } from '../../registry/app-shell/update-notice.tsx';
 import { appShellText } from '../../registry/app-shell/text.ts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -35,6 +44,7 @@ const Section = ({ id, title, children }) => <section data-testid={`ds-${id}`} c
 const Row = ({ children }) => <div className="flex flex-wrap items-center gap-2">{children}</div>;
 
 function Page() {
+  const layer = useAgentLayer();
   return <div className="mx-auto flex max-w-3xl flex-col gap-8 text-sm">
     <p className="m-0 text-muted-foreground">The kit's defaults, light and dark: switch the theme in the account menu. Fictional content.</p>
     <Section id="colours" title="Colours"><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{COLOURS.map(([name, bg]) => <div key={name} className="flex flex-col gap-1"><div className={`h-10 rounded-md border ${bg}`} /><span className="text-xs">{name}</span></div>)}</div></Section>
@@ -56,6 +66,7 @@ function Page() {
       <Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader><TableBody><TableRow><TableCell>Jan 02</TableCell><TableCell className="text-right tabular-nums">$12.00</TableCell></TableRow></TableBody></Table>
       <Card><CardHeader><CardTitle>A card</CardTitle><CardDescription>Flat, one border.</CardDescription></CardHeader><CardContent>Content</CardContent></Card>
     </Section>
+    <Section id="files" title="File tree: every viewer"><div className="rounded-lg border"><FileTreeView controller={demoTree()} variant="plain" locale="en" upload={false} history={false} refresh={false} onOpen={path => layer.pane.push({ file: path })} /></div></Section>
     <Section id="navigation" title="Tabs, dialog, empty, loading">
       <Tabs defaultValue="a"><TabsList><TabsTrigger value="a">All</TabsTrigger><TabsTrigger value="b">Gaps</TabsTrigger></TabsList><TabsContent value="a">Everything</TabsContent><TabsContent value="b">Only gaps</TabsContent></Tabs>
       <Dialog><DialogTrigger render={<Button variant="outline" className="self-start">Open a dialog</Button>} /><DialogContent><DialogHeader><DialogTitle>A dialog</DialogTitle><DialogDescription>Kit defaults.</DialogDescription></DialogHeader></DialogContent></Dialog>
@@ -65,21 +76,30 @@ function Page() {
   </div>;
 }
 const Placeholder = () => <Empty><EmptyHeader><EmptyTitle>Nothing here yet</EmptyTitle><EmptyDescription>The app's screen goes here.</EmptyDescription></EmptyHeader></Empty>;
-let snapshot = { identity: { runtimeId: 'fictional', scopeId: 'design-system', principalId: 'fictional-reader' }, conversationId: 'design-system', connection: { kind: 'connected' },
-  view: { entries: [], docs: {} }, draft: { text: '', attachments: [], version: 0 }, outbox: [], echo: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
-const listeners = new Set();
-const change = patch => { snapshot = { ...snapshot, ...patch }; for (const listener of listeners) listener(); };
-const controller = {
-  getSnapshot: () => snapshot, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
-  setText: text => change({ draft: { ...snapshot.draft, text, version: snapshot.draft.version + 1 } }),
-  setAttachments: attachments => change({ draft: { ...snapshot.draft, attachments, version: snapshot.draft.version + 1 } }),
-  send: async () => undefined, connect: async () => {}, stop: async () => {}, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {},
+const { controller, actions, reset } = createDemoController({ script, pace: new URLSearchParams(location.search).get('pace') === 'instant' ? 0.15 : 1 });
+// What the assistant received, for a test: the text of each send, mention tokens included.
+const deliver = controller.send;
+controller.send = async (kind, content) => { (window.__sent ??= []).push({ kind, text: content?.text ?? controller.getSnapshot().draft.text }); return deliver(kind, content); };
+window.__ux = { reset };
+installFakeMic();
+// The `@` picker lists the workspace's files and the rows of the sample table (`@open-gaps`): a row is the same `row` mention the table's « @ » action inserts.
+const TABLE = 'samples/open-gaps.csv';
+const tableRows = async () => {
+  const [head = [], ...rows] = csvRows(await (await demoFiles.read(TABLE)).blob.text()), names = columnNames(head);
+  return rows.map((row, at) => rowMentionPath({ path: TABLE, row: at + 1, cells: Object.fromEntries(names.map((name, j) => [name, row[j] ?? ''])) }));
 };
+const mentions = { listLabel: 'Files and rows', search: async query => {
+  const needle = query.toLowerCase();
+  const files = DEMO_FILES.filter(path => path.toLowerCase().includes(needle)).slice(0, 4).map(path => ({ path, kind: 'file' }));
+  const rows = (await tableRows()).map(path => ({ path, label: rowReferenceLabel(path.slice(4)) })).filter(row => row.label.toLowerCase().includes(needle) || TABLE.includes(needle));
+  return [...files, ...rows];
+} };
+const attachments = { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })) };
 const nav = [
   { id: 'design', label: 'Design system', icon: FileTextIcon, render: () => <ScreenBody><Page /></ScreenBody> },
   { id: 'empty', label: 'Empty app view', icon: FolderIcon, render: () => <ScreenBody><Placeholder /></ScreenBody> },
 ];
-const agent = { controller, label: 'Assistant', library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en' } };
+const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the change', onSelect() {} }, voice: { transcribe: async () => 'Dictated text (fictional)' }, files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en', actions, attachments, mentions } };
 function App() {
   const [route, setRoute] = useState('design'), [theme, setTheme] = useState(initial);
   return <AppShell layout="screen" locale="en" title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" agent={agent}

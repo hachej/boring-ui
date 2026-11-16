@@ -6,9 +6,10 @@ import { AppShell } from '../../../registry/app-shell/app-shell.tsx';
 import { useAgentLayer } from '../../../registry/app-shell/agent-layer.tsx';
 import { SlashPicker } from '../../../registry/pi-chat-slash/slash-menu.tsx';
 import { createScriptedAgent } from '../../../ux/fixtures/scripted-agent.mjs';
+import { installFakeMic } from '../../../ux/fixtures/fake-mic.mjs';
 import script from '../../../ux/scenarios/scripts/bar.json';
 import { FileTextIcon, FolderIcon, SparklesIcon } from '../../../registry/_shared/icons';
-import { CONVERSATIONS, DEMO, demoLibrary, fileView, recordView, Table, useDemoConversations } from './one-composer-demo.jsx';
+import { CONVERSATIONS, DEMO, demoLibrary, DEMO_KINDS, fileView, recordView, Table, useDemoConversations } from './one-composer-demo.jsx';
 import { demoFiles } from './one-composer-files.js';
 
 // D-2198: the real AppShell with `composer="bar"` (the one composer) in French, over a fake controller with fictional bookkeeping text.
@@ -26,29 +27,8 @@ const LOCALE = EN ? 'en' : 'fr';
 if (params.get('dark') === '1') document.documentElement.classList.add('dark');
 try { for (const key of Object.keys(localStorage)) if (key.startsWith('boring-ui:sidebar-agent-mode') || key.startsWith('boring.app-shell.agent.')) localStorage.removeItem(key); } catch { /* none */ }
 window.__sent = [];
-// The fake microphone (as the agent bar's fixture): getUserMedia hands out one track, MediaRecorder hands over one chunk when it stops; the
-// fixture's `transcribe` answers « Texte dicté fictif ». Web Audio is removed so the kit's capture takes the MediaRecorder path.
-Object.defineProperty(window, 'AudioContext', { configurable: true, value: undefined });
-Object.defineProperty(window, 'webkitAudioContext', { configurable: true, value: undefined });
-// `?slowmic=1`: the first open of the microphone takes 700 ms, as a real phone's first open does (permission, device start); the next ones are instant.
-let micOpened = false;
-Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
-  if (params.get('slowmic') === '1' && !micOpened) await new Promise(done => setTimeout(done, 700));
-  micOpened = true;
-  const track = { stop() {} };
-  return { getTracks: () => [track], getAudioTracks: () => [track] };
-} } });
-class FakeRecorder extends EventTarget {
-  static isTypeSupported() { return true; }
-  constructor() { super(); this.state = 'inactive'; this.mimeType = 'audio/webm'; }
-  start() { this.state = 'recording'; }
-  stop() {
-    this.state = 'inactive';
-    const chunk = new Event('dataavailable'); chunk.data = new Blob(['fictional audio'], { type: 'audio/webm' }); this.dispatchEvent(chunk);
-    this.dispatchEvent(new Event('stop'));
-  }
-}
-window.MediaRecorder = FakeRecorder;
+// The fake microphone (`ux/fixtures/fake-mic.mjs`); `?slowmic=1`: the first open takes 700 ms, as a real phone's first open does. The fixture's `transcribe` answers « Texte dicté fictif ».
+installFakeMic({ slow: params.get('slowmic') === '1' });
 window.__answered = [];
 const assistant = (content, stopReason = content.some(part => part.type === 'toolCall') ? 'toolUse' : 'stop') => ({ role: 'assistant', content, api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason, timestamp: 2 });
 const entry = (id, model) => ({ id, kind: 'message', byTaskId: 7, model: [model] });
@@ -168,7 +148,7 @@ const library = onPicked => <ul data-testid="fixture-library" className="m-0 fle
 window.__undone = 0;
 const TU = { conversation: 'Ton fil', dictate: 'Dicte', listening: 'Je t’écoute…', releaseToSend: 'Relâche et j’envoie', answerHere: 'Ou réponds ici', sendFailed: 'Ton message n’est pas parti : il est revenu dans le champ.',
   placeholder: 'Dis-moi ce que tu as mangé', send: 'Envoie', stop: 'Arrête', attachFiles: 'Joins un fichier', retry: 'Réessaie', voiceStop: 'Arrête de m’écouter', voiceCancel: 'Annule', emptyTitle: 'Parle-moi', emptyDescription: 'Dis-moi ce que tu as mangé.' };
-const agent = { controller, icon: DEMO ? SparklesIcon : Icon, label: 'Assistant', library: DEMO ? demoLibrary(KIT ? undefined : onOpenFile) : library, ...(KIT ? { files: demoFiles } : {}),
+const agent = { controller, icon: DEMO ? SparklesIcon : Icon, label: 'Assistant', library: DEMO ? demoLibrary(KIT ? undefined : onOpenFile) : library, ...(KIT ? { files: demoFiles, fileKinds: DEMO_KINDS } : {}),
   ...((DEMO ? params.get('action') !== '0' : params.get('action') === '1') ? { replyAction: { label: DEMO ? T('Annuler le rapprochement', 'Undo reconciliation') : T('Annuler', 'Undo'), onSelect() { window.__undone += 1; } } } : {}),
   ...(params.get('status') === '1' ? { workingWords: ({ tool }) => tool === 'read' ? 'Max compte…' : 'Max réfléchit…' } : {}),
   ...(params.get('tu') === '1' ? { words: TU } : {}), ...(params.get('words') === '1' ? { words: { dictate: 'Parler', conversation: 'Le fil' } } : {}), ...(params.get('readonly') === '1' ? { readOnly: T('Lecture seule : votre rôle permet de lire, pas d’écrire (fictif).', 'Read only: your role may read, not write (fictional).') } : {}), voice: { transcribe: async () => T('Texte dicté fictif', 'Dictated text (fictional)'), send: 'draft' },

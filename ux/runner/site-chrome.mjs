@@ -31,5 +31,5 @@ export function framePage({ title, description, depth, body, cards, current }) {
   const group = (label, list) => list.length ? `<optgroup label="${label}">${list.map(c => `<option value="${up}${esc(c.name)}/index.html"${c.name === current ? ' selected' : ''}>${esc(c.meta.title)}</option>`).join('')}</optgroup>` : '';
   const first = cards.filter(c => c.name === DEFAULT_PAGE), rest = cards.filter(c => c.name !== DEFAULT_PAGE);
   const menu = `<select class="icon-btn" id="pages" aria-label="Page">${group('Start', first)}${group('Layouts', rest.filter(c => c.meta.level === 'layout'))}${group('Components', rest.filter(c => c.meta.level === 'component'))}</select>`;
-  return `${head(title, depth, description)}<body class="app"><header class="bar">${menu}${body.switcher}<span class="grow"></span><button type="button" class="icon-btn" id="theme" aria-pressed="false">Dark</button></header>${body.stage}</body></html>`;
+  return `${head(title, depth, description)}<body class="app"><header class="bar">${menu}${body.switcher}${body.play}<span class="grow"></span><button type="button" class="icon-btn" id="theme" aria-pressed="false">Dark</button></header>${body.stage}</body></html>`;
 }
