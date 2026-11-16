@@ -243,7 +243,7 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
     {!layer.bar && compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {controls}
     {layer.bar && <Separator orientation="vertical" aria-hidden="true" className="mx-1 my-2 w-px self-stretch" />}
-    <Button variant="ghost" size={layer.bar ? 'sm' : 'icon'} ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" />{layer.bar && text.close}</Button>
+    <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
   </div>;
 }
 

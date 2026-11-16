@@ -2471,6 +2471,9 @@
           ".app-shell [data-one-composer] [data-boring=\"pi-chat-composer\"], .app-shell [data-one-composer] [data-boring=\"pi-chat\"]": {
             "background-color": "var(--card)"
           },
+          ".app-shell [data-testid=\"agent-preview\"] [data-boring=\"viewer-frame\"]": {
+            "background-color": "var(--card)"
+          },
           ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"input-group\"] [data-slot=\"button\"]": {
             "border-radius": "var(--radius-3xl)"
           },

@@ -207,7 +207,7 @@ function ContentTray() {
           <HeaderHint label={grown ? text.collapse : text.expand}><Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={grown ? text.collapse : text.expand} title={grown ? text.collapse : text.expand} aria-pressed={grown}
             onClick={() => setGrown(!grown)}>{grown ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <Maximize2Icon className="size-4" aria-hidden="true" />}</Button></HeaderHint>
           <Separator orientation="vertical" aria-hidden="true" className="mx-1 my-2 w-px self-stretch" />
-          <Button variant="ghost" size="sm" data-testid="agent-tray-reduce" aria-label={text.close} title={text.close} onClick={reduce}><XIcon data-icon="inline-start" aria-hidden="true" />{text.close}</Button>
+          <Button variant="ghost" size="icon" data-testid="agent-tray-reduce" aria-label={text.close} title={text.close} onClick={reduce}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>
         </> : <>
           <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
             onClick={() => setGrown(!grown)}>{grown ? <ChevronDownIcon className="size-4" aria-hidden="true" /> : <ChevronUpIcon className="size-4" aria-hidden="true" />}</Button>
