@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -147,11 +147,16 @@ test('messages: a build says what it wrote, and a missing folder is a missing fo
   refused(join(scratch, 'no-such-folder'), ['--options', './o.ts'], /no-such-folder: no such folder/, 'folder');
 });
 
-test('caller check: the exported entry gives the text a caller compares server.ts with', async () => {
+const hostBuildJs = join(root, 'packages/agent/dist/host-build.js');
+const leftovers = (dir, prefix) => readdirSync(dir).filter((n) => n.startsWith(prefix));
+
+test('caller check: server.ts equals entry(specifier(appDir, flag)) for a relative and an absolute flag', async () => {
   const dir = copy('todo', 'caller');
-  assert.equal(build(dir, '--options', './options.ts').status, 0);
-  const { entry } = await import(join(root, 'packages/agent/dist/host-build.js'));
-  assert.equal(readFileSync(join(dir, '.gen/server.ts'), 'utf8'), entry('../options.ts'));
+  const { entry, specifier } = await import(hostBuildJs);
+  for (const flag of ['./options.ts', join(dir, 'options.ts')]) {
+    assert.equal(build(dir, '--options', flag).status, 0);
+    assert.equal(readFileSync(join(dir, '.gen/server.ts'), 'utf8'), entry(specifier(dir, flag)), flag);
+  }
 });
 
 test('old copy: a .gen.old left behind never blocks a build, and one that cannot be removed is named', () => {
@@ -159,13 +164,31 @@ test('old copy: a .gen.old left behind never blocks a build, and one that cannot
   mkdirSync(join(dir, '.gen.old/sub'), { recursive: true }); writeFileSync(join(dir, '.gen.old/sub/x'), 'x\n'); chmodSync(join(dir, '.gen.old/sub'), 0o555);
   mkdirSync(join(dir, '.gen/sub'), { recursive: true }); writeFileSync(join(dir, '.gen/sub/y'), 'y\n'); chmodSync(join(dir, '.gen/sub'), 0o555);
   try {
-    const r = refused(dir, ['--options', './options.ts'], /old copy .*\.gen\.old.* could not be removed/, 'read-only old copy');
+    refused(dir, ['--options', './options.ts'], /old copy .*\.gen\.old.* could not be removed/, 'read-only old copy');
     assert.equal(existsSync(join(dir, '.gen/server.ts')), true, 'the new .gen is in place');
-    for (const f of readdirSync(dir).filter((n) => n.startsWith('.gen.old'))) { chmodSync(join(dir, f, 'sub'), 0o755); rmSync(join(dir, f), { recursive: true, force: true }); }
-    assert.equal(build(dir, '--options', './options.ts').status, 0, 'the next build works');
+    assert.equal(build(dir, '--options', './options.ts').status, 0, 'the next build works with the old copies still there');
+    assert.ok(leftovers(dir, '.gen.old-').length > 0, 'the read-only old copy is still there');
   } finally {
-    for (const f of readdirSync(dir).filter((n) => n.startsWith('.gen.old'))) { try { chmodSync(join(dir, f, 'sub'), 0o755); } catch {} }
+    for (const f of leftovers(dir, '.gen.old')) { try { chmodSync(join(dir, f, 'sub'), 0o755); } catch {} }
   }
+});
+
+test('own pid: leftovers carrying the build\'s own process id never block it', async () => {
+  const dir = copy('todo', 'own-pid');
+  for (const n of [`.gen.old-${process.pid}`, `.gen.tmp-${process.pid}`]) { mkdirSync(join(dir, n)); writeFileSync(join(dir, n, 'x'), 'x\n'); }
+  mkdirSync(join(dir, '.gen')); writeFileSync(join(dir, '.gen/server.ts'), 'old\n');
+  const { hostBuild } = await import(hostBuildJs);
+  await hostBuild(dir, { options: './options.ts' });
+  assert.deepEqual(Object.keys(gen(dir)), ['assets.ts', 'page.tsx', 'server.ts']);
+});
+
+test('stale: a build removes its own old leftovers and nothing else', () => {
+  const dir = copy('todo', 'stale');
+  const hour = new Date(Date.now() - 3600e3);
+  for (const n of ['.gen.tmp-abc123', '.gen.old-def456', '.gen.tmp', '.gen.keepme', '.genx.tmp-abc']) { mkdirSync(join(dir, n)); utimesSync(join(dir, n), hour, hour); }
+  mkdirSync(join(dir, '.gen.tmp-young1'));
+  assert.equal(build(dir, '--options', './options.ts').status, 0);
+  assert.deepEqual(readdirSync(dir).filter((n) => n.startsWith('.gen')).sort(), ['.gen', '.gen.keepme', '.gen.tmp', '.gen.tmp-young1', '.genx.tmp-abc']);
 });
 
 test('inside: a view or a skill folder that leaves the app folder is refused, an absolute skills path and a bare file name get a hint', () => {
