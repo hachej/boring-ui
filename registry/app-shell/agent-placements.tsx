@@ -179,8 +179,8 @@ function ContentTray() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
-      // Only a key pressed in the tray or in the one field is the tray's; a host dock beside the content, a menu or a dialog keep their own Esc.
-      if (!(event.target instanceof Element) || !event.target.closest('[data-testid=agent-tray], [data-testid=agent-content-composer], [data-testid=agent-composer-anchor]')) return;
+      // Only a key pressed in the tray, in the one field or on the controller strip is the tray's; a host dock beside the content, a menu or a dialog keep their own Esc.
+      if (!(event.target instanceof Element) || !event.target.closest('[data-testid=agent-tray], [data-testid=agent-content-composer], [data-testid=agent-composer-anchor], [data-testid=composer-controller]')) return;
       if (document.querySelector('[role=menu],[role=listbox],[role=dialog],[role=alertdialog],[data-boring-overlay]')) return;
       if (event.target instanceof Element && event.target.closest('[aria-haspopup][aria-expanded=true]')) return;
       event.preventDefault();

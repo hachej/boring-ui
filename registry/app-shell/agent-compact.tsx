@@ -243,11 +243,11 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   useEffect(() => {
     const handle = layer.bar ? sheet?.closest('[data-slot=drawer-popup]')?.querySelector<HTMLElement>('[data-slot=drawer-swipe-handle]') : null;
     if (!handle) return;
-    const hit = ['before:absolute', 'before:-inset-y-3', 'before:inset-x-6', 'before:content-[""]'];
+    const hit = ['before:absolute', 'before:-inset-y-4', 'before:inset-x-6', 'before:content-[""]'];
     handle.classList.add(...hit);
     // The drawer captures the pointer for its swipe, so the press and the release are read on the window, and counted when the press started on the grabber (its 44 px box).
     let down: { readonly x: number; readonly y: number; readonly t: number } | undefined;
-    const onDown = (event: PointerEvent) => { const r = handle.getBoundingClientRect(); down = event.clientX >= r.left - 24 && event.clientX <= r.right + 24 && event.clientY >= r.top - 12 && event.clientY <= r.bottom + 12 ? { x: event.clientX, y: event.clientY, t: Date.now() } : undefined; };
+    const onDown = (event: PointerEvent) => { const r = handle.getBoundingClientRect(); down = event.clientX >= r.left - 24 && event.clientX <= r.right + 24 && event.clientY >= r.top - 16 && event.clientY <= r.bottom + 16 ? { x: event.clientX, y: event.clientY, t: Date.now() } : undefined; };
     const onUp = (event: PointerEvent) => { const start = down; down = undefined; if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) <= 8 && Date.now() - start.t < 400) cycle.current(); };
     window.addEventListener('pointerdown', onDown, true); window.addEventListener('pointerup', onUp, true);
     return () => { window.removeEventListener('pointerdown', onDown, true); window.removeEventListener('pointerup', onUp, true); handle.classList.remove(...hit); };

@@ -468,6 +468,18 @@ test('1440: the controller straddles the top of the bar in every state, rests as
   assert.ok(before.w > 0);
 });
 
+// Keyboard only: Enter on the controller's chevron opens the conversation, and Esc pressed there (focus stays on the strip) closes it again.
+test('1440: Esc on the controller strip closes the conversation (keyboard only)', { skip, timeout: 120000 }, async () => {
+  await open(1440, 'demo=1&single=1');
+  await browser.press('Shift'); await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]').focus()`);
+  await browser.press('Enter');
+  await browser.until('the tray', `!!document.querySelector('[data-testid=agent-tray]')`);
+  assert.equal(await focused(), 'agent-tray-reduce', 'focus is on the strip chevron');
+  await browser.press('Escape');
+  await browser.until('closed by Esc on the strip', `!document.querySelector('[data-testid=agent-tray]')`);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]').getAttribute('aria-expanded')`), 'false');
+});
+
 // Julien: docking while a file is open in the right pane left the conversation behind the pane. Docking replaces the pane: the file closes and the column takes its place.
 test('1440: docking with a file open closes the preview, and the docked conversation is visible, on top, with focus in its field', { skip, timeout: 120000 }, async () => {
   await open(1440, 'demo=1&single=1');
