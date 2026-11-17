@@ -40,5 +40,12 @@
       "target": "components/pi-ambient/notifications.tsx"
     }
   ],
+  "css": {
+    "@layer utilities": {
+      ".pi-chat.pi-ambient :is([data-testid=\"composer-bar-attach\"], [data-testid=\"composer-bar-commands\"], [data-testid=\"composer-plus\"], [data-testid=\"composer-submit\"], [data-testid=\"composer-queue\"], [data-testid=\"voice-message-record\"], [data-testid=\"agent-talk\"])": {
+        "border-radius": "var(--pm-radius-round)"
+      }
+    }
+  },
   "type": "registry:block"
 }
