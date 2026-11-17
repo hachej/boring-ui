@@ -70,8 +70,8 @@ export interface AgentBarChat {
    * thread's `replyError` receives. It goes when the person sends again or the assistant answers. While work runs or a question waits the card shows those first (`foldedCardKind`).
    */
   readonly failed: ReplyRef | undefined;
-  /** For `AgentBar historyBadge`: the dot while `reply` is unread. */
-  readonly historyBadge: { readonly label: string } | undefined;
+  /** For `AgentBar historyBadge`: the dot while a reply is unread; `count` is how many replies came since the person last looked (the controller shows a number from two). */
+  readonly historyBadge: { readonly label: string; readonly count: number } | undefined;
   /** The person saw the conversation: the reply is read. */
   readonly markRead: () => void;
   /** For `AgentBar onSend`. */
@@ -191,7 +191,10 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
     return { key: lastReply.key, text: lastReply.text.trim(), used, files: mentionedPaths(lastReply.text) };
   }, [finished, lastReply, read, turn]);
   const replyKey = reply?.key;
-  const markRead = useCallback(() => { if (replyKey !== undefined) setRead(replyKey); }, [replyKey]);
+  // Every reply that ended unseen is counted, and the count outlives the next run: it clears only when the person looks (`markRead`).
+  const [unseen, setUnseen] = useState<readonly string[]>([]);
+  if (replyKey !== undefined && !unseen.includes(replyKey)) setUnseen([...unseen, replyKey]);
+  const markRead = useCallback(() => { if (replyKey !== undefined) setRead(replyKey); setUnseen(keys => keys.length ? [] : keys); }, [replyKey]);
 
   const onCancel = useCallback(() => { void latest.current.controller.stop().catch(() => {}); }, []);
   const onSend = useCallback(({ text: value }: { readonly text: string }) => {
@@ -205,5 +208,5 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
 
   const status = working ? { state: 'working' as const, text: doing, onCancel }
     : finished ? { state: 'done' as const, text: text.done } : undefined;
-  return { question, approval, status, reply, failed, historyBadge: reply ? { label: text.unread } : undefined, markRead, onSend };
+  return { question, approval, status, reply, failed, historyBadge: unseen.length ? { label: text.unread, count: unseen.length } : undefined, markRead, onSend };
 }

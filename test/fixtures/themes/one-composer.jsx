@@ -80,6 +80,8 @@ const runs = {
   approval: () => ({ entries: [...history, ask, read, readDone, gated], docs: live([{ callId: 'a1', taskId: 8, details: { 'boring.approval': { summary: APPROVAL } } }]) }),
   form: () => ({ entries: [...history, ask, read, readDone, form], docs: live() }),
   reply: () => ({ entries: [...history, ask, read, readDone, entry(14, assistant([{ type: 'text', text: REPLY }]))], docs: {} }),
+  // A second turn that ends with its own reply (`think`, then this): two replies came while folded.
+  reply2: () => ({ entries: [...history, ask, read, readDone, entry(14, assistant([{ type: 'text', text: REPLY }])), say(17, T('Et pour février ?', 'And for February?')), entry(18, assistant([{ type: 'text', text: T('Février compte 12 lignes, toutes rapprochées.', 'February has 12 lines, all reconciled.') }]))], docs: {} }),
   // The turn ends in an error: an assistant message with stopReason `error` and no text.
   failed: () => ({ entries: [...history, ask, read, readDone, entry(15, assistant([], 'error'))], docs: {} }),
 };

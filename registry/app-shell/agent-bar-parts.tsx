@@ -176,16 +176,28 @@ function ControllerCell({ action, extra, round, dot, ...rest }: { readonly actio
  * chevron while a reply is unread. Desktop: the strip is portalled into the bar's box (its frame) and rides the box's top edge, or the open tray's; on a phone and in
  * the docked column it sits on the field's own border. Each action is a kit Button (the touch floor gives the 44 px hit area), named by aria-label and title.
  */
-export function ConversationChevron({ unread }: { readonly unread: { readonly label: string } | undefined }) {
+export function ConversationChevron({ unread }: { readonly unread: { readonly label: string; readonly count?: number } | undefined }) {
   const layer = useInternal();
   const actions = useControllerActions();
   const [box, setBox] = useState<HTMLElement | null>(null);
+  const [handle, setHandle] = useState<HTMLElement | null>(null);
   const overlay = layer.trayOpen && !layer.anchored;
   const [first, ...rest] = actions;
   if (!first) return null;
+  // The unread mark: a dot, or from two replies a pill as wide and high as the chevron (so the chevron never moves). `dot` and `pill` place each; `more` is extra classes.
+  const badge = (dot: string, pill: string, more: string) => {
+    if (!unread) return null;
+    const several = (unread.count ?? 1) > 1;
+    return <span role="img" aria-label={several ? `${unread.label} (${unread.count})` : unread.label} data-testid="agent-bar-unread" data-count={unread.count}
+      className={cn('pointer-events-none absolute', more, several ? `${pill} flex h-4 w-8 items-center justify-center rounded-full bg-info text-[10px] font-semibold tabular-nums text-white ring-2 ring-card` : `${dot} size-1.5 rounded-(--radius-3xl) bg-primary`)}>{several ? unread.count : null}</span>;
+  };
   // A phone has no strip: the size is the sheet's grabber (tap for the next snap, drag for any). This control is the grabber's keyboard and screen reader twin: invisible and out of the pointer's way until focused.
-  if (!layer.expanded) return <button type="button" data-testid={first.testId} data-action="chevron" aria-label={first.label} aria-expanded={first.expanded} onClick={first.onSelect}
-    className="pointer-events-none absolute top-0 left-1/2 z-30 size-11 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 outline-ring focus-visible:opacity-100 focus-visible:outline-2" />;
+  // The unread mark sits beside the grabber's pill: portalled into the drawer's swipe handle, which is that pill.
+  if (!layer.expanded) return <>
+    <button ref={node => setHandle(node?.closest('[data-slot=drawer-popup]')?.querySelector<HTMLElement>('[data-slot=drawer-swipe-handle]') ?? null)} type="button" data-testid={first.testId} data-action="chevron" aria-label={first.label} aria-expanded={first.expanded} onClick={first.onSelect}
+      className="pointer-events-none absolute top-0 left-1/2 z-30 size-11 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 outline-ring focus-visible:opacity-100 focus-visible:outline-2" />
+    {handle && createPortal(badge('top-1/2 left-1/2 ml-8 -translate-y-1/2', 'top-1/2 left-1/2 ml-9 -translate-y-1/2', ''), handle)}
+  </>;
   // One small notch (mockup 6): cells of 32 and 28 by 16 px with 11 px icons, no chip or circle behind an icon (a hover fill only), 1 px hairlines between cells. The 44 px
   // hit area is the ::before of each cell, never visible. The chevron is the anchor (the strip's left edge is half a cell from the middle): the other cells open to its right,
   // inside the same container, which widens (hover or focus within; always on a touch screen).
@@ -198,7 +210,7 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
     <span className="relative flex items-center">
       <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-4 -translate-y-1/2 rounded-full bg-card ring-4 ring-card outline-1 outline-offset-4 outline-border/70" />
       {cell(first, false, false)}
-      {unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-1/2 -right-3 size-1.5 -translate-y-1/2 rounded-(--radius-3xl) bg-primary group-hover/ctl:opacity-0 group-has-[:focus-visible]/ctl:opacity-0" />}
+      {badge('top-1/2 -right-3 -translate-y-1/2', 'top-0 left-full ml-1.5', 'group-hover/ctl:opacity-0 group-has-[:focus-visible]/ctl:opacity-0')}
       {rest.map((action, i) => cell(action, true, i === rest.length - 1))}
     </span>
   </span>;

@@ -239,6 +239,34 @@ test('1280, folded: the card on the field says what the tool does, asks both que
   await oneField('reply read');
 });
 
+// AC-1 (notifications): a reply that ends while the conversation is folded puts a dot on the notch (the grabber's pill on a phone), a count pill beside the chevron from the second, and opening clears it.
+test('folded, 1280 and 390: one reply is a dot, two are a count pill beside the chevron (which does not move), and opening the conversation clears it (AC-1)', { skip, timeout: 120000 }, async () => {
+  for (const [width, query] of [[1280, ''], [390, 'tabs=1']]) {
+    await open(width, query);
+    const before = await rect('[data-testid=agent-bar-conversation]');
+    await browser.evaluate(`window.__run('tool')`);
+    await browser.evaluate(`window.__run('reply')`);
+    await browser.until('a dot', `!!document.querySelector('[data-testid=agent-bar-unread]')`);
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-unread]').dataset.count`), '1', `one reply is a dot at ${width}`);
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-unread]').textContent`), '', 'no number on a dot');
+    await browser.evaluate(`window.__run('think')`);
+    await browser.evaluate(`window.__run('reply2')`);
+    await browser.until('a count', `document.querySelector('[data-testid=agent-bar-unread]')?.dataset.count === '2'`);
+    assert.equal(await text('[data-testid=agent-bar-unread]'), '2', `two replies are a count at ${width}`);
+    assert.equal(await count('[data-testid=agent-bar-unread]'), 1, 'one mark, not a dot and a count');
+    if (width > 768) {
+      const pill = await rect('[data-testid=agent-bar-unread]');
+      assert.equal(Math.round(pill.w) + 'x' + Math.round(pill.h), '32x16', 'the pill is the chevron\'s size');
+      const chevron = await rect('[data-testid=agent-bar-conversation]');
+      assert.deepEqual([chevron.x, chevron.w, chevron.h], [before.x, before.w, before.h], 'the chevron did not move or change size');
+    }
+    assert.ok(['closed', 'peek'].includes(await dockState()), 'nothing opened by itself');
+    await browser.screenshot(`notifications-count-${width}-light.png`);
+    await click('[data-testid=agent-bar-conversation]');
+    await browser.until('cleared', `!document.querySelector('[data-testid=agent-bar-unread]')`);
+  }
+});
+
 test('folded, 1280 and 390: a failed turn is one sentence on the card, in the app\'s words when it gives replyError, and the next turn clears it', { skip, timeout: 120000 }, async () => {
   for (const [width, query] of [[1280, ''], [390, 'tabs=1'], [1280, 'replyError=1']]) {
     await open(width, query);
