@@ -7,7 +7,6 @@ import test, { after } from 'node:test';
 import * as Domain from '@alchemy.run/domain';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import * as Schema from 'effect/Schema';
 import * as Scope from 'effect/Scope';
 import { Harness, MemoryStorage, createRegistry, defineExtension } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
@@ -104,7 +103,7 @@ test('tools: a read declares replay safe, a command declares none, and the calle
   assert.equal(readBack.results[0].isError, false, readBack.results[0].text);
 });
 
-test('scope: a session scoped to one notebook never reaches another, in seven spellings, for the assistant and the researcher', async () => {
+test('scope (hors du carnet): a session scoped to one notebook never reaches another, in seven spellings, for the assistant and the researcher', async () => {
   const scope = { kind: 'unit', unit: 'camille', role: 'owner' };
   const agents = build(notes, notesAgents, { scope });
   const names = ['dominique', 'Camille', 'camille-', 'camille/../dominique', 'camille\u0000', 'camille,dominique', 'camill'];
@@ -128,7 +127,7 @@ test('scope: a session scoped to one notebook never reaches another, in seven sp
   assert.deepEqual(await read('dominique', 'dominique'), before, 'a write into B left B unchanged');
 });
 
-test('sender unknown: the tool refuses before any operation and writes nothing', async () => {
+test('sender unknown (expéditeur inconnu): the tool refuses before any operation and writes nothing', async () => {
   const count = { services: 0 };
   const agents = build(notes, notesAgents, { attribution: async (call) => { throw new SenderUnknown(call.callId); }, count });
   const before = await read('camille', 'camille');
@@ -145,7 +144,7 @@ test('sender unknown: the tool refuses before any operation and writes nothing',
 const withExpose = (def, expose) => ({ ...def, expose: { ...def.expose, ...expose } });
 const refuses = (fn, ...parts) => assert.throws(fn, (error) => parts.every((part) => error.message.includes(part)), parts.join(' / '));
 
-test('exposure: a name that gives no tool, or a tool name Domain refuses, stops the definition naming the app, the audience and the operation', () => {
+test('exposure (définition refusée): a name that gives no tool, or a tool name Domain refuses, stops the definition naming the app, the audience and the operation', () => {
   checkExpose(notes);
   checkExpose(todo);
   refuses(() => checkExpose(withExpose(notes, { assistant: [...notes.expose.assistant, 'DeleteEverything'] })), 'notes', 'assistant', 'DeleteEverything');
@@ -153,16 +152,15 @@ test('exposure: a name that gives no tool, or a tool name Domain refuses, stops 
   refuses(() => checkExpose(withExpose(notes, { mcp: [...notes.expose.mcp, 'Notes.watch'] })), 'notes', 'mcp', 'Notes.watch');
   refuses(() => appTools({ def: withExpose(notes, { assistant: ['DeleteEverything'] }), api, agent: 'assistant', scope: undefined, services: () => world, attribution: acting('camille') }), 'notes', 'assistant', 'DeleteEverything');
 
-  // An operation whose tool name passes 64 characters: Domain keeps no tool for it.
-  const Long = 'A'.repeat(60);
-  class LongNamed extends Domain.Command(Long, { target: Schema.String, middleware: [Session], input: { text: Schema.String }, events: [], rejects: [], reply: { ok: Schema.Boolean } }, { description: 'Too long.' }) {}
-  class Scratch extends Domain.Api('ScratchApi', { model: Notebook, commands: [LongNamed], views: [], streams: [], queries: [] }, { description: 'Scratch.' }) {}
-  refuses(() => checkExpose({ name: 'scratch', api: Scratch, expose: { page: [Long] } }), 'scratch', 'page', Long);
+  // A real operation (AddNote) on an Api whose long name puts the tool name past 64 characters: Domain keeps no tool, and the reason says length.
+  class LongApi extends Domain.Api('L'.repeat(60), { model: Notebook, commands: ['AddNote'], views: [], streams: [], queries: [] }, { description: 'Scratch.' }) {}
+  refuses(() => checkExpose({ name: 'scratch', api: LongApi, expose: { page: ['AddNote'] } }), 'scratch', 'page', 'AddNote', 'passes 64 characters');
+  assert.throws(() => checkExpose(withExpose(notes, { page: [...notes.expose.page, 'Nope.get'] })), (error) => !/passes 64/.test(error.message));
 });
 
 const check = (def, agents) => () => checkAgentTools(def, agents);
 
-test('one extension per agent: each agent has its own host.tools extension, a delegate holds a subset of its caller, and a conversation selects only its agent', async () => {
+test('one extension per agent (un agent, une extension): each agent has its own host.tools extension, a delegate holds a subset of its caller, and a conversation selects only its agent', async () => {
   for (const [def, make] of [[notes, notesAgents], [todo, todoAgents]]) {
     const agents = build(def, make);
     checkAgentTools(def, agents);
@@ -188,6 +186,14 @@ test('one extension per agent: each agent has its own host.tools extension, a de
   const researcher = defineAgent({ id: 'researcher', ...plain, extensions: [tools(scribed, 'researcher')], delegates: [{ agent: scribe, name: 'delegate_scribe', description: 'Writes.' }] });
   refuses(check(scribed, { ...agents, researcher, scribe }), 'notes', 'scribe', 'AddNote');
 
+  // Smuggling: the assistant's write repackaged in an app extension a delegate holds is refused, whatever the extension is called.
+  const addNote = tools(notes, 'assistant').tools.find((tool) => tool.name === 'NotebookApi_AddNote_send');
+  const smuggler = defineAgent({ id: 'researcher', ...plain, extensions: [tools(notes, 'researcher'), defineExtension({ name: 'app.extra', tools: [addNote] })] });
+  const lead = defineAgent({ id: 'assistant', ...plain, extensions: [tools(notes, 'assistant')], delegates: [{ agent: smuggler, name: 'delegate_researcher', description: 'Reads.' }] });
+  const own = defineAgent({ id: 'assistant', ...plain, extensions: [tools(notes, 'assistant')], delegates: [{ agent: build(notes, notesAgents).researcher, name: 'delegate_researcher', description: 'Reads.' }] });
+  checkAgentTools(notes, { ...agents, assistant: own });
+  refuses(check(notes, { ...agents, assistant: lead, researcher: smuggler }), 'notes', 'researcher', 'NotebookApi_AddNote_send');
+
   // A reader conversation is offered only its own extension's tools, whatever else is installed.
   const { offered, results } = await drive(agents, 'reader', [send('AddNote', 'camille', { text: 'Non' })]);
   assert.ok(offered.includes('NotebookApi_RecordGist_send'));
@@ -196,7 +202,7 @@ test('one extension per agent: each agent has its own host.tools extension, a de
   assert.ok(!(await read('camille', 'camille')).notes.some((n) => n.text === 'Non'));
 
   const source = readFileSync(new URL('../../packages/agent/src/host/runtime/tools.ts', import.meta.url), 'utf8');
-  assert.doesNotMatch(source, /createRegistry|new Map\(/, 'no registry of ours');
+  assert.doesNotMatch(source, /createRegistry|new Map\b|new WeakMap\b/, 'no registry or lookup by name of ours');
 });
 
 test('tools: the command id the host supplies reaches the command', async () => {
@@ -205,4 +211,22 @@ test('tools: the command id the host supplies reaches the command', async () => 
   const first = await drive(agents, 'assistant', [send('AddNote', 'camille', { text: 'Une fois' })]);
   assert.equal(first.results[0].isError, false, first.results[0].text);
   assert.equal(seen.length, 1);
+});
+
+test('tools: a command id the model chooses never reaches Domain, and the model is not offered one', async () => {
+  await doAs('dominique', (c) => c.AddNote('dominique', { text: 'Avant' }, { commandId: 'cmd-B-1' }));
+  await doAs('camille', (c) => c.AddNote('camille', { text: 'Premier' }, { commandId: 'cmd-A-1' }));
+  const mine = build(notes, notesAgents, { scope: { kind: 'unit', unit: 'camille', role: 'owner' } });
+  for (const tool of mine.assistant.extensions.flatMap((e) => e.tools ?? []).filter((t) => t.name.endsWith('_send'))) {
+    assert.ok(!('commandId' in tool.parameters.properties), `${tool.name}: no commandId offered`);
+  }
+  const before = await read('dominique', 'dominique');
+  const across = await drive(mine, 'assistant', [['NotebookApi_AddNote_send', { target: 'dominique', input: { text: 'Rejeu' }, commandId: 'cmd-B-1' }]]);
+  assert.equal(across.results[0].isError, true, across.results[0].text);
+  assert.match(across.results[0].text, /NotYours/);
+  assert.deepEqual(await read('dominique', 'dominique'), before);
+
+  const same = await drive(mine, 'assistant', [['NotebookApi_AddNote_send', { target: 'camille', input: { text: 'Second' }, commandId: 'cmd-A-1' }]]);
+  assert.equal(same.results[0].isError, false, same.results[0].text);
+  assert.ok((await read('camille', 'camille')).notes.some((n) => n.text === 'Second'), 'the reused id did not turn the write into a no-op');
 });
