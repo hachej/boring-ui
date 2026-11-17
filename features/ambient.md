@@ -5,6 +5,8 @@
 ## Sub-features
 
 - `ambient-bar` bar, expanded window and minimised pill over one controller, draggable, position remembered. `registry/pi-ambient/ambient.tsx`.
+- `ambient-phone-grabber` on a phone the ambient bar has no strip and no drag: a grabber on its top edge (`ambient-grabber`, a 44px target) is the size control (a tap opens the full window, whose minimize goes back; it straddles the bar's top edge so it never covers a header control), and the header and composer buttons are 44px targets (not round: the browser design audit keeps the kit's button radius). `registry/pi-ambient/ambient.tsx`.
+- `ambient-slash` the ambient bar's `/` menu is the one grouped list (`composer slashList`): Commands, Skills and Actions under headings with a kind icon per row, the field as the search, and a Commands button on touch screens. `registry/pi-ambient/ambient.tsx`, `registry/pi-chat/composer.tsx`, `registry/pi-chat-slash/slash-menu.tsx`.
 - `ambient-jump-latest` scrolled up, the down arrow sits in its own row under the messages and covers no text; it scrolls back to the end. `registry/pi-ambient/ambient.tsx`.
 - `ambient-notifications` toasts for background conversations and tasks (`createNotificationStore`, `watchConversation`). `registry/pi-ambient/notifications.tsx`.
 - `ambient-browser-notify` optional browser notifications. `registry/pi-ambient/browser-notify.ts`.
@@ -19,6 +21,7 @@
 
 Preconditions: `npm run build`, Chromium.
 
+- **Phone and `/`.** `ambient-phone-grabber`, `ambient-slash`: `CHROMIUM=... node --test test/ux-ambient.test.mjs` (390 and 360: no strip, the grabber taps bar and full window, round 44px buttons; 1440 and 390: `/` shows three headings, `/exp` leaves the action, the Commands button opens the menu on touch).
 - **Bar.** `ambient-bar`: `npm run ambient:journey` (or `ambient:journey:scripted` without a model): type, expand, minimise, drag, reload; position and conversation persist.
 - **Jump to latest.** `ambient-jump-latest`: the scripted journey scrolls the expanded window up, checks the arrow is outside the messages' box, clicks it and is back at the end (`06b-scrolled-up.png`).
 - **Notifications.** `ambient-notifications`: the journey's background task raises a toast.

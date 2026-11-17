@@ -56,6 +56,8 @@ import type { ConversationFile, PendingUpload, ChatSessionFeedback } from '@hach
 export interface ComposerProps {
   /** `/` menu of commands and skills. Absent: no menu and no keyboard trigger. */
   readonly slash?: SlashConfig | undefined;
+  /** The `/` menu is one grouped list above the field (headings per group, a kind icon per row, no search box: the field is the search) and a touch screen gets a Commands button. The bar's `barActions: 'attach'` has it by itself; the ambient bar sets it. */
+  readonly slashList?: boolean | undefined;
   /** Reports a failing command. */
   readonly onSlashError?: ((cause: unknown) => void) | undefined;
   /** `@` file picker. Absent: no picker. */
@@ -419,7 +421,7 @@ export function Composer(props: ComposerProps) {
     {!pill && <span className="min-w-0 flex-1" />}
     {!slots && props.barActions === true && items.length > 0 && <BarCommands disabled={disabled || recording} onCommands={openCommands} />}
     {/* The bar's slash menu has no keyboard on a phone: a Commands button at the end of the bar opens it (touch screens only). */}
-    {!slots && props.barActions === 'attach' && items.length > 0 && <Button type="button" variant="secondary" size="icon" data-testid="composer-bar-commands" aria-label={labels.commands} title={labels.commands} disabled={disabled || recording} onClick={openCommands} className="hidden shrink-0 max-md:inline-flex pointer-coarse:inline-flex">
+    {!slots && (props.barActions === 'attach' || props.slashList) && items.length > 0 && <Button type="button" variant="secondary" size="icon" data-testid="composer-bar-commands" aria-label={labels.commands} title={labels.commands} disabled={disabled || recording} onClick={openCommands} className="hidden shrink-0 max-md:inline-flex pointer-coarse:inline-flex">
       <icons.commands data-icon="inline-start" aria-hidden="true" /></Button>}
     {slots ? !stopInSend && props.recordingStop !== undefined && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.recordingStop}</div>
       : props.barEnd && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.barEnd}</div>}
@@ -432,7 +434,7 @@ export function Composer(props: ComposerProps) {
   // values), or one row with the text between the controls (`pill`, chips above it). Its look is the host's; ours is layout only.
   const contents = <>
     {fileEl}
-    {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} {...(props.barActions === 'attach' ? { bare: true } : {})} />}
+    {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} {...(props.barActions === 'attach' || props.slashList ? { bare: true } : {})} />}
     {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} header={typeof mentions.pickerHeader === 'function' ? mentions.pickerHeader(trigger!.query) : mentions.pickerHeader} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
     {pill && !props.recording && chipList && <div className="flex flex-wrap gap-2 empty:hidden">{chipList}</div>}
     {slots ? pill ? <InputGroup className="h-auto">

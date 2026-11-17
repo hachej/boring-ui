@@ -362,10 +362,26 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   // The phone's drawer is this same state: its full snap is `full`, its half is `open`.
   const size: ConversationSize = compact ? (snap === 'full' ? 'full' : 'open') : wideSize;
   const setSize = useCallback((next: ConversationSize) => { if (!specs.current.expanded) setSnap(next === 'full' ? 'full' : 'half'); else setWideSize(next); }, [setSnap]);
+  // Full screen remembers where it came from, so back returns there: the folded bar, the docked column, or (otherwise) the grown tray.
+  const fullFrom = useRef<'folded' | 'dock' | undefined>(undefined);
+  useEffect(() => { if (size !== 'full') fullFrom.current = undefined; }, [size]);
+  const enterFull = useCallback((from?: 'folded' | 'dock') => {
+    fullFrom.current = from;
+    if (from === 'folded') open('agent');
+    if (from === 'dock') setMode('tray');
+    setSize('full');
+  }, [open, setMode, setSize]);
+  const leaveFull = useCallback(() => {
+    const from = fullFrom.current;
+    fullFrom.current = undefined;
+    if (from === 'folded') close();
+    else if (from === 'dock') { setWideSize('open'); dockHere(); }
+    else setSize('grown');
+  }, [close, dockHere, setSize]);
   const value = useMemo<Internal>(() => ({
-    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, anchored: anchor !== null, setAnchor, setDropZone, onSent, mode, setMode, moveToDock: dockHere, registerDock, size, setSize, setFullField, trayOpen, dockOpen,
+    state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, anchored: anchor !== null, setAnchor, setDropZone, onSent, mode, setMode, moveToDock: dockHere, registerDock, size, setSize, enterFull, leaveFull, setFullField, trayOpen, dockOpen,
     bar, folded, cardSlot, setCardSlot, setPhoneCard, cardPx, setCardPx, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, holdSend,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, dockHere, registerDock, size, setSize, setFullField, trayOpen, dockOpen, bar, folded, cardSlot, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, cardPx]);
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, dockHere, registerDock, size, setSize, enterFull, leaveFull, setFullField, trayOpen, dockOpen, bar, folded, cardSlot, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, cardPx]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   // `--agent-bar-reserve`: what the bar takes from the bottom of a screen (the phone's peek and its card; see `barReserve`). The shell pads the bottom of each screen with it (a sticky bar inside a screen already sticks above that padding); a host element placed against the screen's box uses it as `bottom`.
