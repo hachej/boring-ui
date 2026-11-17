@@ -5,7 +5,7 @@
 // and the agent's `present`. Data first: a stack of typed entries (`PaneEntry`), the top one last. The top one shows; the ones under it stay mounted,
 // hidden, so back returns to them as they were (scroll, selection). Wide: the `preview` Dock on the right, or over the docked conversation in its
 // column (« ← Assistant »). Phone: full screen, and the system Back steps back too. Every entry is drawn in the kit's `ViewerFrame`.
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { ArrowLeftIcon, LibraryIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ import { ViewerFrame, ViewerWindowProvider } from '../viewer-frame/viewer-frame'
 import { frenchViewerLabels } from '../viewer-frame/viewer-labels-fr';
 import type { LocalTextKind } from '../viewer-pdf/local-file-viewer';
 import { csvKind, svgKind } from '../viewer-code/code-kinds';
-import { RowReferenceContext, rowMentionPath } from '../viewer-code/row-reference';
+import { GROUP_AFTER, RowReferenceContext, referencedRows, rowKey, rowMentionPath } from '../viewer-code/row-reference';
 import type { RowReferenceTarget } from '../viewer-code/row-reference';
 import { StepButtons, stepIndex, stepOffset } from '../pi-chat/image-viewer';
 import { useBackLayer } from '../utils/back';
@@ -28,6 +28,7 @@ import { shellWords, useInternal } from './layer-context';
 import type { AgentPane, AgentSpec, FileKind, PaneEntry, PaneItem, PanePresent } from './layer-context';
 
 const MAX_DEPTH = 12;
+const noSubscription = () => () => {};
 type FileReader = NonNullable<AgentSpec['files']>['read'];
 /** A new entry, before the stack gives it an id and its opener. */
 type Draft = PaneEntry extends infer E ? E extends PaneEntry ? Omit<E, 'id' | 'opener'> : never : never;
@@ -325,9 +326,20 @@ function EntryView({ entry, below, top, placement, assistant }: { readonly entry
   const id = top ? 'agent-preview' : 'agent-preview-under';
   const backTitle = below?.title ?? (placement === 'stacked' ? assistant : undefined);
   const headerStart = backTitle ? <BackButton title={backTitle} text={text} onBack={layer.pane.back} testId={`${id}-back`} /> : undefined;
-  // A table file offers « @ » on each row when the app's chat has mentions: the row goes to the field as one `row` mention (the same `talkAbout` path as a quoted page entry).
-  const { talkAbout } = layer, hasMentions = layer.agent?.chatProps?.mentions !== undefined, filePath = entry.kind === 'file' ? entry.path : undefined;
-  const rows = useMemo<RowReferenceTarget | null>(() => hasMentions && filePath ? { path: filePath, label: text.referenceRow, reference: row => { talkAbout(mentionToken(rowMentionPath(row))); } } : null, [hasMentions, filePath, talkAbout, text.referenceRow]);
+  // A table file offers « @ » on each row when the app's chat has mentions: each row goes to the field as a `row` mention after the ones already there (the same
+  // `talkAbout` path as a quoted page entry, with `add`); more than GROUP_AFTER new rows at once are one grouped chip.
+  const { talkAbout } = layer, controller = layer.agent?.controller, hasMentions = layer.agent?.chatProps?.mentions !== undefined, filePath = entry.kind === 'file' ? entry.path : undefined;
+  const draft = useSyncExternalStore(controller?.subscribe ?? noSubscription, () => controller?.getSnapshot().draft.text ?? '');
+  const referenced = useMemo(() => referencedRows(draft), [draft]);
+  const rows = useMemo<RowReferenceTarget | null>(() => hasMentions && filePath ? {
+    path: filePath, referenced,
+    words: { reference: text.referenceInAgent, referenced: text.referencedInAgent, referenceRows: text.referenceRows, selectRow: text.selectRow, clearSelection: text.clearSelection },
+    reference: chosen => {
+      const fresh = chosen.filter(item => !referenced.has(rowKey(filePath, item.row)));
+      const groups = fresh.length > GROUP_AFTER ? [fresh] : fresh.map(item => [item]);
+      for (const group of groups) talkAbout(mentionToken(rowMentionPath({ path: filePath, rows: group })), { add: true });
+    },
+  } : null, [hasMentions, filePath, referenced, talkAbout, text]);
   const library = entry.kind === 'view' && layer.openLibrary ? [{ id: 'library', label: text.library, icon: LibraryIcon, onSelect: layer.openLibrary, placement: 'header' as const }] : undefined;
   if (entry.kind === 'file' && layer.agent?.files) {
     // A phone folds a frame's controls into its « … » menu: there previous and next sit under the file instead.

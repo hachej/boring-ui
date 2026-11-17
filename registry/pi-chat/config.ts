@@ -47,8 +47,12 @@ export interface SlashConfig {
 }
 
 export interface MentionResult { readonly path: string; readonly kind?: 'file' | 'directory'; readonly label?: string }
+/** What a composer chip shows for a mention: the identity (`title`, `badge`) and a summary line. */
+export interface MentionChipView { readonly title: string; readonly badge?: string | undefined; readonly description?: string | undefined }
 export interface MentionKind {
   readonly label: (path: string) => string;
+  /** The composer chip's own shape: a title (never cut short by the rest), a muted badge beside it and a muted second line. Without it the chip shows `label`. */
+  readonly present?: ((path: string) => MentionChipView) | undefined;
   readonly icon: ReactNode;
   readonly open?: ((path: string) => void) | undefined;
   readonly renderSent?: ((path: string) => ReactNode | undefined) | undefined;

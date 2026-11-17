@@ -14,7 +14,7 @@ import type { CSSProperties, ReactElement, ReactNode, RefObject } from 'react';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { useChatVoice } from '@hachej/boring-ui-kit/chat-react/voice';
 import type { ChatVoiceHandle as Voice } from '@hachej/boring-ui-kit/chat-react/voice';
-import { appendToDraft, mentionToken, pieces, removeMention } from '@hachej/boring-ui-kit/chat-text';
+import { appendToDraft, hasMention, mentionToken, pieces, removeMention } from '@hachej/boring-ui-kit/chat-text';
 import { useMedia, usePhone } from '../utils/use-media';
 import type { DockApi } from '../dock/dock';
 import { useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
@@ -288,9 +288,10 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     const path = parsed[0].value!;
     const before = previousTalk.current;
     const draft = selected.controller.getSnapshot().draft.text;
-    const text = before?.controller === selected.controller ? removeMention(draft, before.path) : draft;
-    selected.controller.setText(`${appendToDraft(text, mentionToken(path))} `);
-    previousTalk.current = { controller: selected.controller, path };
+    // `add`: the mention joins the ones already in the draft (once: a repeat changes nothing) and the next quote still replaces only a mention that was not added.
+    const text = !options.add && before?.controller === selected.controller ? removeMention(draft, before.path) : draft;
+    if (!options.add || !hasMention(draft, path)) selected.controller.setText(`${appendToDraft(text, mentionToken(path))} `);
+    if (!options.add) previousTalk.current = { controller: selected.controller, path };
     // The tray takes room from the content column: the row the person cited (focused when they cited it) is kept in view above it.
     const cited = specs.current.contentComposer && specs.current.mode === 'tray' && document.activeElement instanceof HTMLElement && !document.activeElement.closest('[data-testid=composer-dock]') && document.activeElement.closest('[data-testid=agent-content]') ? document.activeElement : null;
     if (cited) requestAnimationFrame(() => requestAnimationFrame(() => (cited.closest('[role=row]') ?? cited).scrollIntoView({ block: 'nearest' })));
