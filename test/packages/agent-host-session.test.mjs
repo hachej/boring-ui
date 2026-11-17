@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as Domain from '@alchemy.run/domain';
 import * as Effect from 'effect/Effect';
+import * as Exit from 'effect/Exit';
 import * as Layer from 'effect/Layer';
 import * as Scope from 'effect/Scope';
 import { BACKGROUND_CONTEXT as ctx } from '@earendil-works/chord/context';
@@ -27,13 +28,19 @@ import notes from '../../fixtures/host-apps/notes/app.ts';
 import todo from '../../fixtures/host-apps/todo/app.ts';
 import { Notebook, NotebookHandlers, ReaderOnDeposit } from '../../fixtures/host-apps/notes/models/Notebook.model.ts';
 import { NotebookApi } from '../../fixtures/host-apps/notes/models/NotebookApi.api.ts';
+import { Notebook as NotebookAggregate } from '../../fixtures/host-apps/notes/models/Notebook/Notebook.aggregate.ts';
+import { DocumentDeposited } from '../../fixtures/host-apps/notes/models/Notebook/Deposit.command.ts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const policy = JSON.parse(readFileSync(join(root, 'ARCHITECTURE.json'), 'utf8'));
 const sessionSource = join(root, 'packages/agent/src/host/runtime/session.ts');
+const DEPOSIT = ReaderOnDeposit.key;
 const tmp = mkdtempSync(join(tmpdir(), 'host-session-'));
+const removeTmp = () => rmSync(tmp, { recursive: true, force: true });
+process.once('exit', removeTmp);
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => process.exit(1));
 const cleanups = [];
-after(async () => { for (const f of cleanups.reverse()) await f().catch(() => undefined); rmSync(tmp, { recursive: true, force: true }); });
+after(async () => { for (const f of cleanups.reverse()) await f().catch(() => undefined); removeTmp(); });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (f, ms = 15_000) => { for (const end = Date.now() + ms; Date.now() < end; await sleep(25)) { const v = await f(); if (v) return v; } throw new Error('timed out'); };
@@ -43,6 +50,7 @@ const deferred = () => { let resolve; const promise = new Promise((r) => { resol
 const World = Notebook.layer(Layer.mergeAll(NotebookHandlers, ReaderOnDeposit.toLayer(Effect.succeed(() => Effect.void)))).pipe(Layer.provide(Domain.InMemory));
 const worldScope = await Effect.runPromise(Scope.make());
 const world = await Effect.runPromise(Layer.buildWithScope(World, worldScope));
+cleanups.push(() => Effect.runPromise(Scope.close(worldScope, Exit.void)));
 const as = (userId) => NotebookApi.clientInProcess.pipe(Effect.provide(Layer.succeed(Session, (effect) => Effect.provideService(effect, CurrentUser, { userId }))));
 const app = (userId, f) => Effect.runPromise(Effect.scoped(Effect.flatMap(as(userId), f)).pipe(Effect.provideContext(world)));
 await app('camille', (c) => c.CreateNotebook('camille', { name: 'Carnet' }));
@@ -109,13 +117,17 @@ const submit = (s, person, content) => s.fetch(new Request(url('submit'), { meth
 const entries = async (s, person) => JSON.stringify(await (await s.fetch(new Request(url('entries', '&limit=200')), person)).json());
 const answered = (s, person, text) => until(async () => (await entries(s, person)).includes(`ack ${text}`)).catch(async (error) => { throw new Error(`${error.message}: no "ack ${text}" in ${(await entries(s, person)).slice(0, 1500)}`); });
 
+const kept = [];
 /** An NDJSON watch: the lines seen so far, and a way to stop it. */
 const watch = (s, person) => {
   const ac = new AbortController();
   const lines = [];
   let ended;
   const done = (async () => {
-    const response = await s.fetch(new Request(url('watch'), { signal: ac.signal }), person);
+    // The Request is kept: Node links its signal to ours only weakly, so once it is collected `ac.abort()` no longer reaches the stream.
+    const request = new Request(url('watch'), { signal: ac.signal });
+    kept.push(request);
+    const response = await s.fetch(request, person);
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -270,13 +282,13 @@ test('files: only an app that asks for them has upload and the file tools', asyn
 
 test('reader wake: only wake(unit, event, key, text) on its own reader session; a repeated event is one submission', async () => {
   const reader = await make({ id: 'reader:camille' });
-  await reader.session.wake('dominique', 'ReaderOnDeposit', '1', 'Document n°1');
+  await reader.session.wake('dominique', DEPOSIT, '1', 'Document n°1');
   assert.deepEqual([reader.opens, reader.seen.length, reader.kvWrites], [0, 0, 0], 'another unit: no Harness, no model request, no key written');
   const personal = await make({ id: 'me:camille' });
-  await personal.session.wake('camille', 'ReaderOnDeposit', '1', 'Document n°1');
+  await personal.session.wake('camille', DEPOSIT, '1', 'Document n°1');
   assert.deepEqual([personal.opens, personal.seen.length, personal.kvWrites], [0, 0, 0]);
-  await reader.session.wake('camille', 'ReaderOnDeposit', '2', 'Document n°2 « Facture »');
-  await reader.session.wake('camille', 'ReaderOnDeposit', '2', 'Document n°2 « Facture »');
+  await reader.session.wake('camille', DEPOSIT, '2', 'Document n°2 « Facture »');
+  await reader.session.wake('camille', DEPOSIT, '2', 'Document n°2 « Facture »');
   await until(() => reader.seen.length >= 1);
   await sleep(300);
   assert.equal(reader.seen.length, 1, 'two wakes, one submission, one model request');
@@ -325,7 +337,7 @@ test('who is acting: the record is the session\'s own, written once per call, re
 
   const theirs = [];
   const reader = await make({ id: 'reader:camille', tools: toolsFor(theirs), respond: callThen('who_reader', {}) });
-  await reader.session.wake('camille', 'ReaderOnDeposit', '9', 'Document n°9');
+  await reader.session.wake('camille', DEPOSIT, '9', 'Document n°9');
   await until(() => theirs.length > 0);
   assert.deepEqual(theirs[0].actor, { requestedBy: 'reader:camille' });
   assert.deepEqual(theirs[0].scope, { kind: 'reader', unit: 'camille', role: 'editor', ops: ['RecordGist'] }, 'derived from the id and the app\'s expose list');
@@ -393,7 +405,7 @@ test('order of calls: a time is armed before every open, submit, answer, abort a
     assert.ok(armedBetween(h, mark, 'model'), `${op}: a time was armed before the work started`);
   }
   const reader = await make({ id: 'reader:camille' });
-  await reader.session.wake('camille', 'ReaderOnDeposit', '5', 'Document n°5');
+  await reader.session.wake('camille', DEPOSIT, '5', 'Document n°5');
   await until(() => reader.log.includes('model'));
   assert.ok(reader.log.indexOf('arm') < reader.log.indexOf('open') && reader.log.indexOf('arm', reader.log.indexOf('open')) < reader.log.indexOf('model'), 'wake: armed before the open and again before the model');
   console.log('order of calls:', h.log.slice(0, 8).join(' > '), '| reader:', reader.log.slice(0, 6).join(' > '));
@@ -426,4 +438,55 @@ test('le processus tué (crash): a process killed mid-turn is resumed by alarm()
   await w.stop();
   await submit(h.session, camille, 'suite');
   await answered(h.session, camille, '[language: fr] suite');
+});
+
+test('la clé du réveil: a reader is woken by its policy\'s stable key, whatever its JavaScript name; an unknown key wakes nothing and is recorded', async () => {
+  const options = { from: NotebookAggregate, on: [DocumentDeposited] };
+  const AsConst = Domain.Policy('ReaderOnDeposit', options);
+  class Renamed extends Domain.Policy('ReaderOnDeposit', options) {}
+  Object.defineProperty(Renamed, 'name', { value: 'e' });
+  for (const policy of [AsConst, Renamed]) {
+    assert.equal(policy.key, DEPOSIT);
+    assert.notEqual(policy.name, 'ReaderOnDeposit', 'a bundler may erase the JavaScript name');
+    const reader = await make({ id: 'reader:camille', def: defineApp({ ...notes, wakes: [{ ...notes.wakes[0], policy }] }) });
+    await reader.session.wake('camille', policy.name, '1', 'Document n°1');
+    assert.equal(reader.opens, 0, 'the JavaScript name wakes nothing');
+    assert.equal((await reader.session.info()).ignoredWake, policy.name, 'and the session says so');
+    await reader.session.wake('camille', policy.key, '2', 'Document n°2');
+    await until(() => reader.seen.length === 1);
+    assert.equal(reader.seen[0].user, 'Document n°2');
+  }
+  await assert.rejects(make({ id: 'reader:camille', def: defineApp({ ...notes, wakes: [{ ...notes.wakes[0], policy: {} }] }) }), /notes: a wake policy has no stable key/);
+});
+
+test('info: an open that failed is recorded for wake and alarm too, and cleared once a later open succeeds', async () => {
+  const h = await make({ failFirstOpen: true });
+  assert.equal((await h.session.fetch(new Request(url('entries', '&limit=5')), camille)).status, 503);
+  assert.match((await h.session.info()).openError, /storage unavailable/);
+  assert.equal((await h.session.fetch(new Request(url('entries', '&limit=5')), camille)).status, 200);
+  assert.equal((await h.session.info()).openError, undefined);
+  const reader = await make({ id: 'reader:camille', failFirstOpen: true });
+  await assert.rejects(reader.session.wake('camille', DEPOSIT, '1', 'Document n°1'), /storage unavailable/);
+  assert.match((await reader.session.info()).openError, /storage unavailable/);
+  const late = await make({ failFirstOpen: true });
+  await assert.rejects(late.session.alarm(), /storage unavailable/);
+  assert.match((await late.session.info()).openError, /storage unavailable/);
+});
+
+test('reader without its agent: the sentence is about the reader', async () => {
+  const ghost = defineApp({ ...notes, wakes: [{ ...notes.wakes[0], agent: 'ghost' }], expose: { ...notes.expose, ghost: ['RecordGist'] } });
+  await assert.rejects(make({ id: 'reader:camille', def: ghost }), /notes declares no reader agent: no agent named ghost/);
+});
+
+test('un flux coupé: a watch whose request is aborted leaves no heartbeat timer, so its process exits by itself', async () => {
+  const child = join(root, 'test/helpers/host-session-child.mjs');
+  const result = await new Promise((resolve) => {
+    const p = spawn(process.execPath, ['--no-warnings', child, storageFile(), 'watch'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    p.stdout.on('data', (d) => { out += d; });
+    const timer = setTimeout(() => { p.kill('SIGKILL'); }, 25_000);
+    p.on('exit', (code, signal) => { clearTimeout(timer); resolve({ code, signal, out }); });
+  });
+  assert.deepEqual([result.code, result.signal], [0, null], `the process exited by itself: ${result.out}`);
+  assert.ok(result.out.includes('watch ended'));
 });

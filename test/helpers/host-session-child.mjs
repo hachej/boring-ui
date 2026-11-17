@@ -33,6 +33,14 @@ if (mode === 'submit') {
   const response = await session.fetch(new Request('http://host.test/session?op=submit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: 'crash-1', content: 'bloque' }) }), { id: 'camille', language: 'fr' });
   console.log('submitted', response.status);
   setInterval(() => undefined, 1_000);
+} else if (mode === 'watch') {
+  const ac = new AbortController();
+  const request = new Request('http://host.test/session?op=watch', { signal: ac.signal }); // kept alive below: its signal is linked to ours weakly
+  const reader = (await session.fetch(request, { id: 'camille', language: 'fr' })).body.getReader();
+  await reader.read();
+  ac.abort();
+  try { while (!(await reader.read()).done); } catch { /* a cancelled stream */ }
+  console.log('watch ended', request.method);
 } else {
   await session.alarm();
   console.log('alarm-returned');

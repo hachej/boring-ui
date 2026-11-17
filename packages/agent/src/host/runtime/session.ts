@@ -30,7 +30,10 @@ export const createSession: CreateSession = options => {
   if (readers.length > 1) throw new Error(`createSession(${id}): ${def.name} has wakes for more than one agent (${readers.join(', ')}); one reader per app until a later card designs several`);
   const readerAgent = readers[0];
   if (kind === 'reader' && !readerAgent) throw new Error(`createSession(${id}): ${def.name} has no wakes, so it has no reader`);
-  const declared = (def.wakes ?? []).map(w => (w.policy as { name?: string }).name); // the host names an event by its policy
+  // A wake's `event` is Domain's stable id of its policy (`policy.key`), never a JavaScript name, which a bundler erases.
+  const declared = (def.wakes ?? []).map(w => (w.policy as { key?: unknown }).key);
+  if (declared.some(key => typeof key !== 'string' || key === '')) throw new Error(`createSession(${id}): ${def.name}: a wake policy has no stable key (policy.key)`);
+  let ignoredWake: string | undefined;
   const scope: Scope | undefined = kind === 'reader' ? { kind: 'reader', unit: owner, role: 'editor', ops: [...(def.expose[readerAgent!] ?? [])] } : undefined;
   const hostFiles = kind === 'me' && def.needs?.includes('files') === true ? options.files : undefined; // files only where the app asks, and only for one person
   const tools = options.tools ?? appTools;
@@ -64,7 +67,8 @@ export const createSession: CreateSession = options => {
   // The agent this session talks to must exist: said now, not as a failed open on the first request.
   const talksTo = kind === 'me' ? 'assistant' : readerAgent!;
   if (!Object.hasOwn(def.agents?.(kitOf(agent => defineExtension({ name: `host.tools.${agent}` }))) ?? {}, talksTo)) {
-    throw new Error(`createSession(${id}): ${def.name} declares no agent a person can talk to: no agent named ${talksTo}`);
+    throw new Error(kind === 'me' ? `createSession(${id}): ${def.name} declares no agent a person can talk to: no agent named ${talksTo}`
+      : `createSession(${id}): ${def.name} declares no reader agent: no agent named ${talksTo}`);
   }
   let openError: string | undefined;
 
@@ -90,13 +94,16 @@ export const createSession: CreateSession = options => {
   };
   // Opened on first use, once; a failed open is forgotten so the next request tries again.
   let opened: ReturnType<typeof build> | undefined;
-  const open = () => (opened ??= build().catch(error => { opened = undefined; throw error; }));
+  const open = () => (opened ??= build().then(
+    session => { openError = undefined; return session; },
+    error => { opened = undefined; openError = error instanceof Error ? error.message : String(error); throw error; }, // the cause stays on the host: `info()`
+  ));
   const armActive = (harness: Harness) => arm({ ...harness.wake(), active: true });
 
   const fetch: ReturnType<CreateSession>['fetch'] = async (request, sender) => {
     if (kind !== 'me' || sender.id !== owner) return answer(404, 'unknown');
     let session: Awaited<ReturnType<typeof build>>;
-    try { session = await open(); } catch (error) { openError = error instanceof Error ? error.message : String(error); return answer(503, 'unavailable'); } // the cause stays on the host: `info()`
+    try { session = await open(); } catch { return answer(503, 'unavailable'); }
     const operation = new URL(request.url).searchParams.get('op');
     if (operation === 'submit' || operation === 'abort' || operation === 'answer') await armActive(session.harness); // before any call that can start work
     return createChatTransportHandler({
@@ -119,7 +126,8 @@ export const createSession: CreateSession = options => {
     fetch,
     ...(hostFiles ? { upload: async (request, sender) => (sender.id === owner ? hostFiles.upload(request, sender) : answer(404, 'unknown')) } : {}),
     wake: async (unit, event, key, text) => {
-      if (kind !== 'reader' || unit !== owner || !declared.includes(event)) return;
+      if (kind !== 'reader' || unit !== owner) return;
+      if (!declared.includes(event)) { ignoredWake = event; return; } // `HostSession.wake` resolves void (frozen): the refusal is in `info()`
       const { harness, root, meter } = await open();
       await armActive(harness);
       await meter.conversation(root, { userId: id }).submit({ type: 'input', content: text, requestId: `${event}-${key}` }, ctx);
@@ -130,6 +138,6 @@ export const createSession: CreateSession = options => {
       harness.resume(); // due sleeps and work a lost instance left
       await untilIdle(harness);
     },
-    info: async () => ({ id, scope, openError, wake: await opened?.then(({ harness }) => harness.wake(), () => undefined) }),
+    info: async () => ({ id, scope, openError, ignoredWake, wake: await opened?.then(({ harness }) => harness.wake(), () => undefined) }),
   };
 };
