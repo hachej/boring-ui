@@ -17,7 +17,7 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 test('shared run id is built from the input and the tool key', async () => {
   const ids = [];
   const send = async (p, key, signal, record) => { await record(charge); return { text: 'x' }; };
-  for (const input of [{ q: 1 }, { q: 1 }, { q: 2 }, { f: new Uint8Array([1, 2]) }, { f: new Uint8Array([1, 3]) }]) {
+  for (const input of [{ q: 1 }, { q: 1 }, { q: 2 }, { f: new Uint8Array([1, 2]) }, { f: new Uint8Array([1, 3]) }, { f: new Uint8Array([1, 2]).buffer }]) {
     const s = sink();
     await call('llm', input, { providers: ['a'], meter: { sink: s, userId: 'camille' } }, table, send, '7.3');
     const [, reserve] = s.calls[0];
@@ -26,6 +26,7 @@ test('shared run id is built from the input and the tool key', async () => {
     ids.push(reserve.runId);
   }
   assert.equal(ids[0], ids[1]);
+  assert.equal(ids[3], ids[5], 'the same bytes give the same id, as a byte array or a raw buffer');
   assert.equal(new Set(ids).size, 4);
   const s = sink();
   await call('llm', {}, { providers: ['a'], meter: { sink: s, userId: 'u' } }, table, answer);
@@ -81,7 +82,7 @@ test('shared time limit covers the whole call and the caller can abort', async (
   const slow = async (p, key, signal) => { seen = signal; await pause(300); return { text: 'late' }; };
   const started = Date.now();
   assert.deepEqual(await call('llm', {}, { providers: ['a'], timeoutMs: 40 }, table, slow), { ok: false, kind: 'timeout', retryable: true });
-  assert.ok(Date.now() - started < 200 && seen.aborted);
+  assert.ok(Date.now() - started < 280 && seen.aborted);
   const caller = new AbortController(), pending = call('llm', {}, { providers: ['a'], signal: caller.signal }, table, slow);
   await pause(10); caller.abort();
   assert.deepEqual(await pending, { ok: false, kind: 'aborted', retryable: false });

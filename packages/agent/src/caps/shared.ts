@@ -25,13 +25,13 @@ export type Send<T> = (provider: Provider, key: string | undefined, signal: Abor
 
 const refuse = (kind: string, retryable: boolean): Refusal => ({ ok: false, kind, retryable });
 const isRefusal = (value: unknown): value is Refusal => typeof value === 'object' && value !== null && (value as { ok?: unknown }).ok === false;
-const hex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
-const sha256 = async (data: string | Uint8Array) => hex(await crypto.subtle.digest('SHA-256', typeof data === 'string' ? new TextEncoder().encode(data) : (data as Uint8Array<ArrayBuffer>)));
+const hex = (digest: Awaited<ReturnType<SubtleCrypto['digest']>>) => [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+const sha256 = async (data: string | Uint8Array) => hex(await crypto.subtle.digest('SHA-256', (typeof data === 'string' ? new TextEncoder().encode(data) : data) as never));
 
 /** The input as plain JSON, each byte array replaced by the sha256 hex of its bytes. */
 async function plain(value: unknown): Promise<unknown> {
   if (value instanceof Uint8Array) return sha256(value);
-  if (value instanceof ArrayBuffer) return sha256(new Uint8Array(value));
+  if (typeof value === 'object' && value !== null && 'byteLength' in value && !('length' in value)) return sha256(new Uint8Array(value as never));
   if (Array.isArray(value)) return Promise.all(value.map(plain));
   if (value && typeof value === 'object') return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([k, v]) => [k, await plain(v)])));
   return value;
