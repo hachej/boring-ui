@@ -2613,6 +2613,11 @@
           "target": "components/app-shell/agent-chats.tsx"
         },
         {
+          "path": "registry/app-shell/file-chip.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/file-chip.tsx"
+        },
+        {
           "path": "registry/app-shell/agent-compact.tsx",
           "type": "registry:component",
           "target": "components/app-shell/agent-compact.tsx"
