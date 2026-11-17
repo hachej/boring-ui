@@ -8,9 +8,9 @@ import type { CodeViewProps } from './svg-view';
 
 const TONE: Readonly<Record<TokenKind, string>> = {
   comment: 'text-muted-foreground italic',
-  string: 'text-success-soft-foreground',
-  number: 'text-warning-soft-foreground',
-  keyword: 'text-info-soft-foreground font-medium',
+  string: 'text-chart-2',
+  number: 'text-chart-4',
+  keyword: 'text-chart-1 font-medium',
 };
 
 /**
