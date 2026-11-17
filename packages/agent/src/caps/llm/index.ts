@@ -6,6 +6,7 @@ import { createModels } from '@earendil-works/pi-ai/models';
 import { jsonSchemaTool } from '../../json-schema-tool.js';
 import { call, refusedText, toolKey, usageOf } from '../shared.js';
 import type { Answered, CapOptions, Provider, Refusal, Region, Send } from '../shared.js';
+import { nativeFormat, readNative, withFormat } from './native.js';
 import { fakeStructured, llmOf, schemaCheck } from './structured-port.js';
 
 export type Turn = { role: 'system'; content: string } | { role: 'user'; content: string | (TextContent | ImageContent)[] } | { role: 'assistant'; content: string };
@@ -38,7 +39,7 @@ function limits(input: Record<string, any>, options: LlmOptions, structured: boo
   if (turns.reduce((n, turn) => n + chars(turn), 0) > 200_000) return 'llm-chars:200000';
   const range = (v: unknown, max: number) => v === undefined || (Number.isInteger(v) && (v as number) >= 1 && (v as number) <= max);
   if (!range(input.maxTokens, 32_000)) return 'llm-max-tokens:32000';
-  if (!range(options.timeoutMs, 300_000)) return 'llm-timeout:300000';
+  if (!range(options.timeoutMs, 600_000)) return 'llm-timeout:600000';
   if (Object.keys(input).some((k) => !FIELDS.includes(k) && !(structured && k === 'schema')) || (input.effort !== undefined && !EFFORTS.includes(input.effort))) return 'llm-field';
   return structured && (schemaCheck().problem(input.schema) || open(input.schema)) ? 'invalid-schema' : undefined;
 }
@@ -67,7 +68,7 @@ async function resolve(options: LlmOptions) {
 function sender(kind: 'complete' | 'structured', input: Record<string, any>, registry: Models, targets: Map<string, Model<any>>, options: LlmOptions): Send<{ text?: string; value?: unknown; usage: Usage }> {
   return async (provider, key, signal, record) => {
     let total = usageOf(0);
-    const step = async ({ messages }: { messages: Turn[] }) => {
+    const step = async ({ messages }: { messages: Turn[] }, onPayload?: (payload: unknown) => unknown) => {
       if (signal.aborted) throw new Error('stopped');
       if (provider.name === 'fake') return { text: input.schema ? fakeStructured(input.schema) : 'fake reply', usage: { input: 0, output: 0 }, model: 'fake', region: provider.region };
       const model = targets.get(provider.name)!, system = messages.filter((t) => t.role === 'system').map((t) => t.content).join('\n\n');
@@ -75,7 +76,7 @@ function sender(kind: 'complete' | 'structured', input: Record<string, any>, reg
         : { role: 'assistant' as const, content: [{ type: 'text' as const, text: t.content }], api: model.api, provider: model.provider, model: model.id, usage: usageOf(0), stopReason: 'stop' as const, timestamp: Date.now() } satisfies AssistantMessage]);
       const reply = await registry.completeSimple(model, { ...(system && { systemPrompt: system }), messages: turns }, {
         signal, maxRetries: 2, maxTokens: Math.min(input.maxTokens ?? 1024, model.maxTokens), ...(key && { apiKey: key }), ...(options.fetch && { fetch: options.fetch }),
-        ...(input.effort && input.effort !== 'off' && { reasoning: input.effort }),
+        ...(input.effort && input.effort !== 'off' && { reasoning: input.effort }), ...(onPayload && { onPayload }),
       });
       if (reply.stopReason === 'error' || reply.stopReason === 'aborted') throw new Error(reply.errorMessage ?? reply.stopReason);
       await record({ bucket: `model:${model.provider}/${model.id}`, usage: reply.usage, amountMicros: Math.ceil(reply.usage.cost.total * 1_000_000) });
@@ -84,6 +85,14 @@ function sender(kind: 'complete' | 'structured', input: Record<string, any>, reg
       return { text, usage: { input: reply.usage.input, output: reply.usage.output }, model: model.id, region: provider.region };
     };
     if (kind === 'complete') return { text: (await step({ messages: input.messages })).text, usage: total };
+    if (nativeFormat(targets.get(provider.name))) {
+      // The schema rides on the request; the reply is the value; one corrective turn on a miss, as the envelope does.
+      const hook = withFormat(input.schema), first = await step({ messages: input.messages }, hook);
+      let got = readNative(input.schema, first.text);
+      if ('problem' in got) got = readNative(input.schema, (await step({ messages: [...input.messages, { role: 'assistant', content: first.text.slice(0, 4000).trim() || '(empty)' },
+        { role: 'user', content: `That reply is not valid (${got.problem}). Reply again with only the JSON value.` }] }, hook)).text);
+      return 'value' in got ? { value: got.value, usage: total } : refusal('invalid', true);
+    }
     try {
       const fail = (_status: number, message: string, extra: object) => { throw Object.assign(new Error(message), extra); };
       const answer = await llmOf({ llm: step }, () => {}, fail).structured({ ...input, timeoutMs: 300_000 }) as { value: unknown };
