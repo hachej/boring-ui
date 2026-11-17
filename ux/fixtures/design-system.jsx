@@ -13,7 +13,7 @@ import { createDemoController } from './demo-controller.mjs';
 import { installFakeMic } from './fake-mic.mjs';
 import script from '../scenarios/scripts/design-system.json';
 import { demoSlash } from './demo-slash.jsx';
-import { NoticeHost } from '../../registry/app-shell/notice.tsx';
+import { NoticeHost } from '../../registry/app-shell/shell-notice.tsx';
 import { updateNotice } from '../../registry/app-shell/update-notice.tsx';
 import { appShellText } from '../../registry/app-shell/text.ts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';

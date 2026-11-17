@@ -63,7 +63,7 @@ export function NoticeHost({ notices, text, compact }: { readonly notices: reado
   const dismiss = () => { if (!shown) return; setGone(ids => [...ids, shown.id]); setHeld(false); shown.onDismiss?.(); };
   const fading = shown !== undefined && fades(shown);
   const latest = useRef(shown);
-  latest.current = shown;
+  useEffect(() => { latest.current = shown; });
   const shownId = shown?.id;
   useEffect(() => {
     if (shownId === undefined || !fading || held) return;

@@ -1422,7 +1422,7 @@ test('notices: the update joins the queue instead of stacking, and the shell\'s 
 });
 
 test('notices: at most 5 wait; past that the oldest info or success go, and a warning or an error is never dropped', async t => {
-  const { capNotices } = await bundle('notice.tsx');
+  const { capNotices } = await bundle('shell-notice.tsx');
   const ids = list => capNotices(list).map(n => n.id).join('');
   assert.equal(ids([notice('1', 'info'), notice('2', 'info'), notice('3', 'info'), notice('4', 'info'), notice('5', 'info'), notice('6', 'info')]), '12345', 'a sixth replaces the oldest (last) info');
   assert.equal(ids([notice('1', 'error'), notice('2', 'info'), notice('3', 'success'), notice('4', 'warning'), notice('5', 'info'), notice('6', 'info'), notice('7', 'info')]), '12345', 'the newest-listed infos go first from the end, the error and the warning stay');

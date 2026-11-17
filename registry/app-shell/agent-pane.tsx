@@ -328,7 +328,7 @@ function EntryView({ entry, below, top, placement, assistant }: { readonly entry
   const headerStart = backTitle ? <BackButton title={backTitle} text={text} onBack={layer.pane.back} testId={`${id}-back`} /> : undefined;
   // A table file offers « @ » on each row when the app's chat has mentions: each row goes to the field as a `row` mention after the ones already there (the same
   // `talkAbout` path as a quoted page entry, with `add`); more than GROUP_AFTER new rows at once are one grouped chip.
-  const { talkAbout } = layer, controller = layer.agent?.controller, hasMentions = layer.agent?.chatProps?.mentions !== undefined, filePath = entry.kind === 'file' ? entry.path : undefined;
+  const { talkAbout, status } = layer, controller = layer.agent?.controller, hasMentions = layer.agent?.chatProps?.mentions !== undefined, filePath = entry.kind === 'file' ? entry.path : undefined;
   const draft = useSyncExternalStore(controller?.subscribe ?? noSubscription, () => controller?.getSnapshot().draft.text ?? '');
   const referenced = useMemo(() => referencedRows(draft), [draft]);
   const rows = useMemo<RowReferenceTarget | null>(() => hasMentions && filePath ? {
@@ -338,9 +338,9 @@ function EntryView({ entry, below, top, placement, assistant }: { readonly entry
       const fresh = chosen.filter(item => !referenced.has(rowKey(filePath, item.row)));
       const groups = fresh.length > GROUP_AFTER ? [fresh] : fresh.map(item => [item]);
       for (const group of groups) talkAbout(mentionToken(rowMentionPath({ path: filePath, rows: group })), { add: true });
-      if (fresh.length) layer.status(text.rowsReferenced.replace('{n}', String(fresh.length)));
+      if (fresh.length) status(text.rowsReferenced.replace('{n}', String(fresh.length)));
     },
-  } : null, [hasMentions, filePath, referenced, talkAbout, layer.status, text]);
+  } : null, [hasMentions, filePath, referenced, talkAbout, status, text]);
   const library = entry.kind === 'view' && layer.openLibrary ? [{ id: 'library', label: text.library, icon: LibraryIcon, onSelect: layer.openLibrary, placement: 'header' as const }] : undefined;
   if (entry.kind === 'file' && layer.agent?.files) {
     // A phone folds a frame's controls into its « … » menu: there previous and next sit under the file instead.

@@ -1,7 +1,7 @@
 // The update notice (`AppShell update`): a newer version of the app is online while the page is open. It is one `AppShellNotice` (an info notice that stays until dismissed) drawn
 // by the shell's notice host, with a Reload action and a dismiss that holds for the version named. Host concern: Pi has no layout; the host decides when `available` is true
 // (a version poll, a service worker).
-import type { AppShellNotice } from './notice';
+import type { AppShellNotice } from './shell-notice';
 import type { AppShellText } from './text';
 
 export interface AppShellUpdate {

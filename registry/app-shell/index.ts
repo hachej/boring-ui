@@ -2,7 +2,7 @@
 export { AppShell } from './app-shell';
 export type { AppShellProps } from './app-shell';
 export type { AppShellUpdate } from './update-notice';
-export type { AppShellNotice } from './notice';
+export type { AppShellNotice } from './shell-notice';
 export { AccountChoices, NavUser } from './account';
 export type { AccountSpec } from './account';
 export { ListDetail, listDetailView } from './list-detail';
