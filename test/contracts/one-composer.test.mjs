@@ -468,6 +468,20 @@ test('1440: the controller straddles the top of the bar in every state, rests as
   assert.ok(before.w > 0);
 });
 
+// Keyboard only: Enter on the controller's chevron opens the conversation, and Esc pressed there (focus stays on the strip) closes it again.
+test('1440: Esc on the controller strip closes the conversation (keyboard only)', { skip, timeout: 120000 }, async () => {
+  await open(1440);
+  await browser.press('Shift'); await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]').focus()`);
+  await browser.press('Enter');
+  await browser.until('the tray', `!!document.querySelector('[data-testid=agent-tray]')`);
+  assert.equal(await browser.evaluate(`document.activeElement?.dataset?.testid`), 'agent-tray-reduce', 'focus is on the strip chevron');
+  // The chevron's tooltip (open on keyboard focus) takes the first Esc, as any tooltip does; the next one reaches the tray.
+  await browser.press('Escape');
+  if (await count('[data-testid=agent-tray]')) await browser.press('Escape');
+  await browser.until('closed by Esc on the strip', `!document.querySelector('[data-testid=agent-tray]')`);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]').getAttribute('aria-expanded')`), 'false');
+});
+
 const sameRect = (a, b, what) => { for (const key of ['x', 'y', 'w', 'h']) assert.ok(Math.abs(a[key] - b[key]) <= 1.5, `${what}: ${key} ${a[key]} vs ${b[key]}`); };
 const focused = () => browser.evaluate(`document.activeElement?.dataset?.testid ?? document.activeElement?.tagName`);
 

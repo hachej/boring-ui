@@ -2,7 +2,7 @@
  "target": "layout:bar-pane",
  "title": "Right pane",
  "summary": "The right pane: a line\u0027s detail, files in the kit\u0027s viewers, the library, previous and next, and a way back.",
- "try": [{"label": "Open a line's detail", "steps": [{"do": "tap", "text": "Card Harbor Garage", "until": "visible:fixture-record"}]}, {"label": "Open a file from the line", "steps": [{"do": "tap", "text": "Card Harbor Garage", "until": "visible:fixture-record"}, {"do": "tap", "target": "record-attachment[data-path=\"receipts/note-gap-0109.md\"]", "until": "visible:pane-markdown"}]}, {"label": "Open the library", "steps": [{"do": "tap", "target": "agent-bar-conversation", "until": "visible:agent-tray|agent-layer[data-state=half]"}, {"do": "tap", "target": "agent-layer-library", "until": "visible:fixture-library"}]}, {"label": "Ask the assistant to show a file", "steps": [{"do": "type", "target": "composer-input", "text": "Show me the discrepancies", "only": "1440"}, {"do": "tap", "target": "composer-submit", "only": "1440", "until": "visible:artifact-csv", "timeout": 8000}]}],
+ "try": [{"label": "Open a line's detail", "steps": [{"do": "tap", "text": "Card Harbor Garage", "until": "visible:fixture-record"}]}, {"label": "Open a file from the line", "steps": [{"do": "tap", "text": "Card Harbor Garage", "until": "visible:fixture-record"}, {"do": "tap", "target": "record-attachment[data-path=\"receipts/note-gap-0109.md\"]", "until": "visible:pane-markdown"}]}, {"label": "Open the library", "steps": [{"do": "tap", "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"}, "until": "visible:agent-tray|agent-layer[data-state=half]"}, {"do": "tap", "target": "agent-layer-library", "until": "visible:fixture-library"}]}, {"label": "Ask the assistant to show a file", "steps": [{"do": "type", "target": "composer-input", "text": "Show me the discrepancies", "only": "1440"}, {"do": "tap", "target": "composer-submit", "only": "1440", "until": "visible:artifact-csv", "timeout": 8000}]}],
  "purpose": "AppShell composer=\"bar\": the right pane is one place with a back stack (an app's detail, a file in the kit's viewer, the library, the agent's present), previous and next through a set, Esc and focus, a phone's Back, a resize and a reload.",
  "fixture": {
   "entry": "test/fixtures/themes/one-composer.jsx",
@@ -37,7 +37,8 @@
     { "do": "tap", "target": "agent-preview-close", "only": "390", "say": "Close the detail", "until": "gone:agent-preview", "expect": "The pane closes." }
   ] },
   { "id": "S2", "name": "Docked, the agent presents a file: it takes the conversation's place under “← Assistant”", "only": "1440", "steps": [
-    { "do": "tap", "target": "agent-bar-conversation", "say": "Open the conversation", "until": "visible:agent-tray" },
+    { "do": "tap", "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"}, "say": "Open the conversation", "until": "visible:agent-tray" },
+    { "do": "press", "key": "Shift", "say": "Press a key (focus then shows as a keyboard focus)", "only": "1440" }, { "do": "focus", "target": "agent-tray-reduce", "say": "Focus the chevron (it reveals the controller)", "only": "1440" },
     { "do": "tap", "target": "agent-tray-dock", "say": "Dock it on the right", "until": "visible:agent-layer[data-state=open]" },
     { "do": "type", "target": "composer-input", "text": "Show me the discrepancies", "say": "Ask to see the gaps" },
     { "do": "tap", "target": "composer-submit", "say": "Send", "motion": true, "timeout": 8000, "until": "visible:agent-preview[data-placement=stacked] & visible:artifact-csv & text:agent-preview-back~Assistant & eval:window.__presented.some(a => a.kind === 'opened') && [...document.querySelectorAll('[data-testid=composer-input]')].filter(e => e.getClientRects().length).length === 1", "expect": "The file replaces the chat in the column, “← Assistant”; the one field stays under it; the agent's present is acknowledged." },
@@ -69,7 +70,7 @@
     { "do": "tap", "target": "agent-preview-close", "say": "Close", "until": "gone:agent-preview" }
   ] },
   { "id": "K2", "name": "From the library: an image to zoom, a JSON, a text, a video; back to the library", "steps": [
-    { "do": "tap", "target": "agent-bar-conversation", "say": "Open the conversation", "until": "visible:agent-tray|agent-layer[data-state=half]" },
+    { "do": "tap", "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"}, "say": "Open the conversation", "until": "visible:agent-tray|agent-layer[data-state=half]" },
     { "do": "tap", "target": "agent-layer-library", "say": "Tap “Library”", "until": "visible:fixture-library" },
     { "do": "tap", "text": "receipts", "say": "Unfold “receipts”", "until": "text:fixture-library~ticket-harbor-garage-0109.png" },
     { "do": "tap", "text": "ticket-harbor-garage-0109.png", "say": "Open the photo of the ticket", "motion": true, "until": "visible:[data-pane-top] img & text:agent-preview-back~Library & text:file-position~3 / 3", "expect": "The image in the kit's viewer, on top of the library, “3 / 3” of its folder." },
@@ -84,7 +85,7 @@
     { "do": "tap", "target": { "390": "agent-preview-back", "1440": "agent-preview-close" }, "say": "Leave", "until": { "390": "visible:fixture-library", "1440": "gone:agent-preview" } }
   ] },
   { "id": "R1", "name": "A wider pane and a reload: the width and the files stay", "steps": [
-    { "do": "tap", "target": "agent-bar-conversation", "say": "Open the conversation", "until": "visible:agent-tray|agent-layer[data-state=half]" },
+    { "do": "tap", "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"}, "say": "Open the conversation", "until": "visible:agent-tray|agent-layer[data-state=half]" },
     { "do": "tap", "target": "agent-layer-library", "say": "Tap “Library”", "until": "visible:fixture-library" },
     { "do": "tap", "text": "uploads", "say": "Unfold “uploads”", "until": "text:fixture-library~discrepancies-january.csv" },
     { "do": "tap", "text": "discrepancies-january.csv", "say": "Open the table", "until": "visible:artifact-csv & eval:(window.__pw = document.querySelector('[data-dock=preview]')?.getBoundingClientRect().width ?? 0) >= 0" },

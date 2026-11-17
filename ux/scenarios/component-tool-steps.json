@@ -164,7 +164,7 @@
     },
     {
      "do": "tap",
-     "target": "agent-bar-conversation",
+     "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"},
      "say": "Open the conversation",
      "until": "visible:tool-failed-summary",
      "timeout": 9000,

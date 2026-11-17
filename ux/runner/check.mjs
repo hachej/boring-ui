@@ -19,7 +19,8 @@ export function findings(s, result) {
       const where = `${at} step ${i + 1} "${st.say}"`;
       const step = (text, plain) => add(where, text, plain, f, i);
       if (st.gap) return;
-      if (!st.ok) return step(`did not complete${st.error ? ` (${st.error})` : ''}`, 'The step did not complete.');
+      if (st.notRun) return; // counted on the step that broke the flow
+      if (!st.ok) { const later = f.steps.slice(i + 1).filter(x => x.notRun).length; return step(`did not complete${st.error ? ` (${st.error})` : ''}${later ? `; ${later} later step${later === 1 ? '' : 's'} not run` : ''}`, 'The step did not complete.'); }
       if (st.repeats) step('needed the gesture twice', 'The gesture had to be repeated before it worked.');
       if (st.cls > th.cls) step(`layout shift ${st.cls} > ${th.cls}`, `The layout jumps while it settles (shift ${st.cls}, expected at most ${th.cls}).`);
       if (st.settledMs !== null && st.settledMs > th.settledMs) step(`settled in ${st.settledMs} ms > ${th.settledMs}`, `It takes ${seconds(st.settledMs)} to settle (expected under ${seconds(th.settledMs)}).`);

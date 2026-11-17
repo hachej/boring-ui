@@ -130,7 +130,7 @@
     },
     {
      "do": "tap",
-     "target": "agent-bar-conversation",
+     "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"},
      "until": "visible:agent-tray|agent-layer[data-state=half]"
     }
    ]
@@ -156,13 +156,13 @@
     },
     {
      "do": "tap",
-     "target": "agent-bar-conversation",
+     "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"},
      "until": "visible:agent-tray|agent-layer[data-state=half]"
     },
     {
      "do": "tap",
      "target": {
-      "390": "agent-layer-expand",
+      "390": "[data-slot=drawer-swipe-handle]",
       "1440": "agent-tray-grow"
      }
     }
@@ -189,9 +189,10 @@
     },
     {
      "do": "tap",
-     "target": "agent-bar-conversation",
+     "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"},
      "until": "visible:agent-tray|agent-layer[data-state=half]"
     },
+    { "do": "press", "key": "Shift", "say": "Press a key (focus then shows as a keyboard focus)", "only": "1440" }, { "do": "focus", "target": "agent-tray-reduce", "say": "Focus the chevron (it reveals the controller)", "only": "1440" },
     {
      "do": "tap",
      "target": "agent-tray-dock",
@@ -322,7 +323,7 @@
    "steps": [
     {
      "do": "tap",
-     "target": "agent-bar-conversation",
+     "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"},
      "until": "visible:agent-tray|agent-layer[data-state=half]"
     }
    ],
@@ -418,7 +419,7 @@
     },
     {
      "do": "tap",
-     "target": "agent-bar-conversation",
+     "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"},
      "until": "visible:agent-tray|agent-layer[data-state=half]"
     }
    ],
@@ -495,7 +496,7 @@
    "steps": [
     {
      "do": "tap",
-     "target": "agent-bar-conversation",
+     "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"},
      "say": "Open the conversation",
      "motion": true,
      "until": "visible:agent-tray|agent-layer[data-state=half]",
@@ -602,7 +603,7 @@
    "steps": [
     {
      "do": "tap",
-     "target": "agent-bar-conversation",
+     "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"},
      "say": "Open the conversation",
      "motion": true,
      "until": "visible:agent-tray|agent-layer[data-state=half]"
@@ -630,7 +631,7 @@
    "name": "The library from the bar, a wider preview kept",
    "only": "1440",
    "steps": [
-    { "do": "tap", "target": "agent-bar-conversation", "say": "Open the conversation", "until": "visible:agent-tray" },
+    { "do": "tap", "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"}, "say": "Open the conversation", "until": "visible:agent-tray" },
     { "do": "tap", "target": "agent-layer-library", "say": "Tap “Library”", "motion": true, "until": "visible:fixture-library & eval:(window.__pw = document.querySelector('[data-dock=preview]')?.getBoundingClientRect().width ?? 0) > 0", "expect": "The library opens in the right column." },
     { "do": "focus", "target": "[role=separator]:has(+ [data-dock=preview])", "say": "Focus the column's edge" },
     { "do": "press", "key": "ArrowLeft ArrowLeft ArrowLeft ArrowLeft", "say": "Widen it with the arrow keys", "reflow": true, "until": "eval:(window.__pw2 = document.querySelector('[data-dock=preview]').getBoundingClientRect().width) > window.__pw + 40", "expect": "The column grows; the page beside it narrows." },
@@ -645,7 +646,8 @@
    "name": "History in the docked column",
    "only": "1440",
    "steps": [
-    { "do": "tap", "target": "agent-bar-conversation", "say": "Open the conversation", "until": "visible:agent-tray" },
+    { "do": "tap", "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"}, "say": "Open the conversation", "until": "visible:agent-tray" },
+    { "do": "press", "key": "Shift", "say": "Press a key (focus then shows as a keyboard focus)", "only": "1440" }, { "do": "focus", "target": "agent-tray-reduce", "say": "Focus the chevron (it reveals the controller)", "only": "1440" },
     { "do": "tap", "target": "agent-tray-dock", "say": "Dock it to the right", "reflow": true, "motion": true, "until": "visible:agent-layer[data-state=open]" },
     { "do": "tap", "target": "history-open", "say": "Tap “History”", "motion": true, "until": "visible:conversations", "expect": "The list opens in the column, under its header." },
     { "do": "tap", "target": "conversation-row[data-conversation-id=relance]", "say": "Open “December customer reminders”", "until": "gone:conversations & text:transcript~Three reminders", "expect": "The docked column shows that conversation." }
@@ -968,7 +970,7 @@
    "steps": [
     {
      "do": "tap",
-     "target": "agent-bar-conversation",
+     "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"},
      "say": "Open (chevron)",
      "motion": true,
      "until": "visible:agent-tray|agent-layer[data-state=half]",
@@ -977,7 +979,7 @@
     {
      "do": "tap",
      "target": {
-      "390": "agent-layer-expand",
+      "390": "[data-slot=drawer-swipe-handle]",
       "1440": "agent-tray-grow"
      },
      "say": "Expand",
@@ -987,7 +989,7 @@
     {
      "do": "tap",
      "target": {
-      "390": "agent-layer-collapse",
+      "390": "[data-slot=drawer-swipe-handle]",
       "1440": "agent-tray-grow"
      },
      "say": "Reduce",
@@ -996,11 +998,12 @@
     },
     {
      "do": "tap",
-     "target": "agent-bar-conversation",
+     "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"},
      "say": "Open again if it folded",
      "until": "visible:agent-tray|agent-layer[data-state=half]",
      "when": "gone:agent-tray & gone:agent-layer[data-state=half]"
     },
+    { "do": "press", "key": "Shift", "say": "Press a key (focus then shows as a keyboard focus)", "only": "1440" }, { "do": "focus", "target": "agent-tray-reduce", "say": "Focus the chevron (it reveals the controller)", "only": "1440" },
     {
      "do": "tap",
      "target": "agent-tray-dock",
@@ -1024,8 +1027,8 @@
     {
      "do": "tap",
      "target": {
-      "390": "agent-bar-conversation",
-      "1440": "agent-tray-grow"
+      "390": "agent-layer-close",
+      "1440": "agent-tray-reduce"
      },
      "say": "Close",
      "motion": true,
@@ -1040,7 +1043,7 @@
    "steps": [
     {
      "do": "tap",
-     "target": "agent-bar-conversation",
+     "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"},
      "say": "Open the conversation (22 exchanges)",
      "motion": true,
      "until": "visible:agent-tray|agent-layer[data-state=half]",
@@ -1056,7 +1059,7 @@
     },
     {
      "do": "tap",
-     "target": "agent-bar-conversation",
+     "target": {"390": "agent-layer-close", "default": "agent-tray-reduce"},
      "say": "Fold it (chevron)",
      "motion": true,
      "until": "gone:agent-tray",
@@ -1064,7 +1067,7 @@
     },
     {
      "do": "tap",
-     "target": "agent-bar-conversation",
+     "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"},
      "say": "Reopen it",
      "motion": true,
      "until": "visible:agent-tray|agent-layer[data-state=half]",
@@ -1119,7 +1122,7 @@
     },
     {
      "do": "focus",
-     "target": "agent-bar-conversation",
+     "target": {"390": "[data-slot=drawer-swipe-handle]", "default": "agent-bar-conversation"},
      "say": "Focus the chevron"
     },
     {
