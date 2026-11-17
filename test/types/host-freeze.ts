@@ -8,12 +8,13 @@ import { defineAgent, type SkillSource } from '@hachej/boring-agent/agents';
 import type { MeteringSink } from '@hachej/boring-agent/metering';
 import type {
   AgentKit, AppDefinition, AppHostProps, Assets, HostBuild, HostEntry, MountApp, MountOptions, OpenHarness, Person, ResolveLanguage,
-  RouteName, SecretByName, ViewProps, WriteAttribution,
+  HostOptions, RouteName, SecretByName, ViewProps, WriteAttribution,
 } from '@hachej/boring-agent/host';
 import { SenderUnknown } from '@hachej/boring-agent/host-runtime';
 import type {
   Acting, Actor, AppTools, BlobStore, CheckAgentTools, CheckExpose, CreateHostFiles, CreateSession, HostFiles, HostSession, ModelRoute,
 } from '@hachej/boring-agent/host-runtime';
+import { toolableApi } from '@hachej/boring-agent/host-runtime';
 import * as runtime from '@hachej/boring-agent/host-runtime';
 import * as cloudflare from '@hachej/boring-agent/host-cloudflare';
 import * as build from '@hachej/boring-agent/host-build';
@@ -39,7 +40,7 @@ export const openHarness: OpenHarness = (store: Storage, options: HarnessOptions
 export const openedOnce = openHarness(storage, {} as HarnessOptions, context);
 
 const sessionOptions = {
-  id: 'me:camille', def, api: {}, storage, openHarness, models, model: { provider: 'faux', modelId: 'faux' },
+  id: 'me:camille', def, api: toolableApi(def), storage, openHarness, models, model: { provider: 'faux', modelId: 'faux' },
   services: () => EffectContext.empty() as EffectContext.Context<any>, skills: () => ({}) as SkillSource, kv: { get: async () => undefined, put: async () => undefined },
   wake: { arm: async () => undefined }, language: async () => 'fr' as const, budget: sink,
 };
@@ -78,6 +79,11 @@ export const bareHostTypedView: AppHostProps = {
   // @ts-expect-error A view typed with the app's own words needs `AppHostProps<typeof fr>`, not the bare form.
   views: [{ id: 'notes', component: (props: ViewProps<Notes>) => props.words.notes.empty && null }],
 };
+
+// The options module's default export has a name, not an Omit written by each card.
+export const optionsModule: HostOptions = { worker: { name: 'w' }, signUp: false };
+// @ts-expect-error The options module carries no `main`: the generated entry supplies it.
+export const optionsWithMain: HostOptions = { worker: { name: 'w' }, main: 'file:///entry.js' };
 
 export const noExtensionSoFar: Extension | undefined = undefined;
 export const mountOnly = (a: MountApp, b: HostBuild) => [a, b];

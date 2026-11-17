@@ -1,4 +1,4 @@
-// The notes app's agents, with boring-agent's own defineAgent. The host hands in this person's tools for each audience.
+// The notes app's agents, with boring-agent's own defineAgent. The host hands in one Extension of tools for each agent (`kit.tools(<agent id>)`).
 import { defineAgent } from "@hachej/boring-agent/agents";
 import type { AgentKit } from "@hachej/boring-agent/host";
 

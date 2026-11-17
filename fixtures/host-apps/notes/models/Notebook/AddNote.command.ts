@@ -18,10 +18,10 @@ export class LastOwner extends Domain.Rejection("LastOwner", {}, { description: 
 
 export class CreateNotebook extends Domain.Command("CreateNotebook", {
   ...cmd, input: { name: Schema.String }, events: [NotebookCreated], rejects: [EmptyNote, ...rights], reply: { created: Schema.Boolean },
-}, { description: "Create a notebook; you become its owner." }) {}
+}, { description: "Create your notebook, under your own id; you become its owner." }) {}
 export class SetMember extends Domain.Command("SetMember", {
-  ...cmd, input: { userId: Schema.String, role: Role }, events: [MemberSet], rejects: [...rights], reply: { members: Schema.Int },
-}, { description: "Give a person a role in the notebook (owner only)." }) {}
+  ...cmd, input: { userId: Schema.String, role: Role }, events: [MemberSet], rejects: [LastOwner, ...rights], reply: { members: Schema.Int },
+}, { description: "Give a person a role in the notebook (owner only); the last owner stays an owner." }) {}
 export class RemoveMember extends Domain.Command("RemoveMember", {
   ...cmd, input: { userId: Schema.String }, events: [MemberRemoved], rejects: [LastOwner, ...rights], reply: { members: Schema.Int },
 }, { description: "Remove a person from the notebook (owner only); the last owner stays." }) {}

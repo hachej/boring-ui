@@ -16,15 +16,18 @@ export class Notebook extends Domain.Aggregate("Notebook", {
   initial: { members: [], notes: 0, docs: 0, recorded: [] },
   commands: [CreateNotebook, SetMember, RemoveMember, AddNote, Deposit, RecordGist],
   decide: {
-    CreateNotebook: Effect.fn(function* (s, c) {
+    CreateNotebook: Effect.fn(function* (s, c, { id }) {
       const me = yield* CurrentUser;
-      // An agent session never creates a notebook, and an existing one is not revealed.
-      if (s.members.length > 0 || me.scope) return yield* new NotYours();
+      // The rule the seed depends on: a person creates a notebook only under their own id, the key their personal session uses, so
+      // nobody can take another person's key. An agent session never creates one, and an existing one is not revealed.
+      if (id !== me.userId || s.members.length > 0 || me.scope) return yield* new NotYours();
       if (c.name.trim() === "") return yield* new EmptyNote({ received: c.name });
       return [new NotebookCreated({ name: c.name.trim(), by: me.userId })];
     }),
     SetMember: Effect.fn(function* (s, c, { id }) {
       yield* must("owner", id, s.members, "SetMember");
+      const current = s.members.find((m) => m.userId === c.userId);
+      if (current?.role === "owner" && c.role !== "owner" && s.members.filter((m) => m.role === "owner").length === 1) return yield* new LastOwner();
       return [new MemberSet({ userId: c.userId, role: c.role, by: (yield* CurrentUser).userId })];
     }),
     RemoveMember: Effect.fn(function* (s, c, { id }) {

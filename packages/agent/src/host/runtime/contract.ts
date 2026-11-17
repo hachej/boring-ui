@@ -3,11 +3,15 @@ import type { Extension, Storage, ToolExecutionApi } from '@earendil-works/pi-du
 import type { ExecutionEnv, FileSystem } from '@earendil-works/pi-durable/env';
 import type { Context } from '@earendil-works/chord/context';
 import type { Models } from '@earendil-works/pi-ai';
+import type { Toolable } from '@alchemy.run/domain/Ai';
 import type * as EffectContext from 'effect/Context';
 import type { DefinedAgent, SkillSource } from '../../agents.js';
 import type { AppDefinition, Role, Scope } from '../index.js';
 import type { OpenHarness, Person, ResolveLanguage, RouteName, SecretByName } from '../contract.js';
 import type { MeteringSink } from '../../metering.js';
+
+/** `AppDefinition.api` is `unknown` because `./host` may not import Domain's `Ai` module; the one cast to what Domain's `toToolkit` and `toMcp` take lives here. */
+export const toolableApi = (def: AppDefinition): Toolable => def.api as Toolable;
 
 /** Item 3. `upload` exists only for an app with needs: ["files"]; on a shared session it answers 403 `files-personal-only`. */
 export type HostSession = {
@@ -21,7 +25,7 @@ export type HostSession = {
 export type CreateSession = (options: {
   readonly id: string;
   readonly def: AppDefinition;
-  readonly api: unknown;
+  readonly api: Toolable;
   readonly storage: Storage;
   readonly openHarness: OpenHarness;
   readonly models: Models | (() => Models);
@@ -57,7 +61,7 @@ export type Acting = (call: ToolExecutionApi, context: Context) => Promise<Actor
 /** Item 7. One agent's Domain tools, as one Extension named `host.tools.<agent>`. */
 export type AppTools = (input: {
   readonly def: AppDefinition;
-  readonly api: unknown;
+  readonly api: Toolable;
   readonly agent: string;
   readonly scope: Scope | undefined;
   readonly services: () => EffectContext.Context<any>;

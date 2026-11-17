@@ -39,6 +39,8 @@ export type MountOptions = {
   readonly modelRoutes?: readonly RouteName[];
   readonly secrets?: { readonly store: string; readonly prefix: string };
 };
+/** What an options module's default export is: the mount options the stack computes, without the two the generated entry supplies. */
+export type HostOptions = Omit<MountOptions, 'main' | 'openHarness'>;
 /** An Alchemy Worker class; `unknown` here because its type is `@alchemy.run/cloudflare`'s, which `./host` may not import. */
 export type MountApp = (def: AppDefinition, assets: Assets, options: MountOptions) => unknown;
 export type AppHostProps<W extends AppWords = AppWords> = {
@@ -46,6 +48,7 @@ export type AppHostProps<W extends AppWords = AppWords> = {
   readonly languages: Languages<W>;
   readonly views: readonly { readonly id: string; readonly component: (props: ViewProps<W>) => unknown }[];
 };
-/** The text of `.gen/server.ts`. */
-export type HostEntry = (optionsSpecifier: string | undefined) => string;
-export type HostBuild = (appDir: string, flags: { readonly shell?: string; readonly page?: string; readonly options?: string; readonly stack?: string }) => Promise<void>;
+/** The text of `.gen/server.ts`. There is one path: the options module is required, because `MountOptions.worker` is. */
+export type HostEntry = (optionsSpecifier: string) => string;
+/** `options` is required; the build refuses, with one sentence, when it is missing. */
+export type HostBuild = (appDir: string, flags: { readonly shell?: string; readonly page?: string; readonly options: string; readonly stack?: string }) => Promise<void>;

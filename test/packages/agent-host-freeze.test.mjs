@@ -23,12 +23,14 @@ const node = (code) => spawnSync(process.execPath, ['--input-type=module', '-e',
 
 test('entries: the built host-runtime and host-build entries export functions and load in plain Node', async () => {
   const runtime = await import(entry('host-runtime.js'));
-  for (const name of ['createSession', 'appTools', 'checkExpose', 'checkAgentTools', 'modelRoute']) assert.equal(typeof runtime[name], 'function', name);
+  for (const name of ['createSession', 'appTools', 'checkExpose', 'checkAgentTools', 'modelRoute', 'toolableApi']) assert.equal(typeof runtime[name], 'function', name);
   assert.equal(typeof runtime.SenderUnknown, 'function');
   assert.ok(new runtime.SenderUnknown('call-1') instanceof Error);
   assert.equal(new runtime.SenderUnknown('call-1').callId, 'call-1');
   const build = await import(entry('host-build.js'));
   assert.equal(typeof build.hostBuild, 'function');
+  assert.equal(typeof runtime.toolableApi, 'function');
+  await assert.rejects(build.hostBuild('app', { options: './options.ts' }), /not built/);
   for (const file of ['host-runtime.js', 'host-build.js']) {
     const child = node(`await import(${JSON.stringify(entry(file))}); console.log('loaded')`);
     assert.equal(child.status, 0, `${file}: ${child.stderr}`);
@@ -106,13 +108,26 @@ test('fixtures: the notes notebook, run on Domain in memory, each operation as i
 
     assert.equal((yield* outcome(camille.RemoveMember('camille', { userId: 'camille' }))).rejected, 'LastOwner');
     assert.equal((yield* outcome(camille.CreateNotebook('camille', { name: 'Deux' }))).rejected, 'NotYours');
-    const scoped = yield* as('camille', { kind: 'reader', unit: 'zoe', role: 'owner' });
-    assert.equal((yield* outcome(scoped.CreateNotebook('zoe', { name: 'Agent' }))).rejected, 'NotYours');
+    const scoped = yield* as('frida', { kind: 'reader', unit: 'frida', role: 'owner' });
+    assert.equal((yield* outcome(scoped.CreateNotebook('frida', { name: 'Agent' }))).rejected, 'NotYours');
+
+    // A notebook is created only under its creator's own id, so nobody can take another person's key.
+    assert.equal((yield* outcome(camille.CreateNotebook('edgar', { name: 'Pris' }))).rejected, 'NotYours');
+    const edgar = yield* as('edgar');
+    assert.equal((yield* outcome(edgar.CreateNotebook('edgar', { name: 'Carnet' }))).rejected, undefined);
+    const dominiqueOwn = yield* as('dominique');
+    assert.equal((yield* outcome(dominiqueOwn.CreateNotebook('dominique', { name: 'Carnet' }))).rejected, undefined);
+
+    // The last owner stays an owner: SetMember refuses the demotion as RemoveMember refuses the removal, and allows it with a second owner.
+    assert.equal((yield* outcome(edgar.SetMember('edgar', { userId: 'edgar', role: 'editor' }))).rejected, 'LastOwner');
+    yield* edgar.SetMember('edgar', { userId: 'camille', role: 'owner' });
+    assert.equal((yield* outcome(edgar.SetMember('edgar', { userId: 'edgar', role: 'editor' }))).rejected, undefined);
 
     yield* camille.Deposit('camille', { name: 'Facture', body: 'Courses de la semaine' });
     const reader = yield* as('camille', { kind: 'reader', unit: 'camille', role: 'editor', ops: ['RecordGist'] });
     assert.equal((yield* outcome(reader.RecordGist('camille', { number: 1, topic: 'shopping' }))).rejected, undefined);
     assert.equal((yield* outcome(reader.AddNote('camille', { text: 'Non' }))).rejected, 'NotYours');
+    // Dominique's notebook exists (created above): the scope, not a missing notebook, refuses.
     assert.equal((yield* outcome(reader.RecordGist('dominique', { number: 1, topic: 'work' }))).rejected, 'NotYours');
 
     assert.equal((yield* outcome(dominique.AddContact('camille', { name: 'Garage', address: 'garage@example.test' }))).rejected, 'NotYours');
