@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, FileTextIcon, Loader2Icon, MicIcon, MaximizeIcon, PanelRightIcon, ShieldAlertIcon, SquareIcon, XIcon } from '../_shared/icons';
+import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, Loader2Icon, MicIcon, MaximizeIcon, PanelRightIcon, ShieldAlertIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Separator } from '@/components/ui/separator';
@@ -20,6 +20,7 @@ import { chatTextFor } from '../pi-chat/locale';
 import { foldedCardKind } from '../agent-bar/folded-card';
 import type { AgentBarChat } from '../agent-bar/use-agent-bar-chat';
 import { composerLabels, shellWords, useInternal } from './layer-context';
+import { FileChip, isCitedFile, ReplyActionButton } from './file-chip';
 
 /** Tap to start; while active, this same control is the composer's replacement recording row. In the bar it stands in Send's place, named « Dicter ». */
 export function TalkButton({ label, primary = false }: { readonly label?: string; readonly primary?: boolean }) {
@@ -361,9 +362,8 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
         {/* A tap on the reply opens the conversation, as the chevron does (the chevron stays the way for a keyboard). */}
         <FoldedReply text={reply.text} onOpen={() => layer.open('agent')} />
         {(reply.files.length > 0 || action) && <div role="list" data-testid="agent-card-files" className="flex flex-wrap items-center gap-1.5">
-          {reply.files.map(path => <span role="listitem" key={path}><Button type="button" variant="outline" size="sm" data-testid="agent-card-file" data-path={path} disabled={!onOpenFile} onClick={() => onOpenFile?.(path, reply.files)}>
-            <FileTextIcon data-icon="inline-start" aria-hidden="true" />{path.split('/').at(-1)}</Button></span>)}
-          {action && <span role="listitem"><Button type="button" variant="ghost" size="sm" data-testid="agent-card-action" onClick={action.onSelect} className="pointer-coarse:min-h-11">{action.label}</Button></span>}
+          {reply.files.map(path => isCitedFile(path) && <span role="listitem" key={path}><FileChip path={path} files={layer.agent?.files} kinds={layer.agent?.fileKinds} testid="agent-card-file" onOpen={onOpenFile ? target => onOpenFile(target, reply.files) : undefined} /></span>)}
+          {action && <span role="listitem"><ReplyActionButton action={action} testid="agent-card-action" className="pointer-coarse:min-h-11" /></span>}
         </div>}
       </>}
     </section>

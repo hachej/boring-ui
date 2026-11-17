@@ -8,7 +8,7 @@ import { SlashPicker } from '../../../registry/pi-chat-slash/slash-menu.tsx';
 import { createScriptedAgent } from '../../../ux/fixtures/scripted-agent.mjs';
 import { installFakeMic } from '../../../ux/fixtures/fake-mic.mjs';
 import script from '../../../ux/scenarios/scripts/bar.json';
-import { FileTextIcon, FolderIcon, SparklesIcon } from '../../../registry/_shared/icons';
+import { FileTextIcon, FolderIcon, SparklesIcon, Undo2Icon } from '../../../registry/_shared/icons';
 import { CONVERSATIONS, DEMO, demoLibrary, DEMO_KINDS, fileView, recordView, Table, useDemoConversations } from './one-composer-demo.jsx';
 import { demoFiles } from './one-composer-files.js';
 
@@ -153,7 +153,7 @@ window.__undone = 0;
 const TU = { conversation: 'Ton fil', dictate: 'Dicte', listening: 'Je t’écoute…', releaseToSend: 'Relâche et j’envoie', answerHere: 'Ou réponds ici', sendFailed: 'Ton message n’est pas parti : il est revenu dans le champ.',
   placeholder: 'Dis-moi ce que tu as mangé', send: 'Envoie', stop: 'Arrête', attachFiles: 'Joins un fichier', retry: 'Réessaie', voiceStop: 'Arrête de m’écouter', voiceCancel: 'Annule', emptyTitle: 'Parle-moi', emptyDescription: 'Dis-moi ce que tu as mangé.' };
 const agent = { controller, icon: DEMO ? SparklesIcon : Icon, label: 'Assistant', library: DEMO ? demoLibrary(KIT ? undefined : onOpenFile) : library, ...(KIT ? { files: demoFiles, fileKinds: DEMO_KINDS } : {}),
-  ...((DEMO ? params.get('action') !== '0' : params.get('action') === '1') ? { replyAction: { label: DEMO ? T('Annuler le rapprochement', 'Undo reconciliation') : T('Annuler', 'Undo'), onSelect() { window.__undone += 1; } } } : {}),
+  ...((DEMO ? params.get('action') !== '0' : params.get('action') === '1') ? { replyAction: { label: DEMO ? T('Annuler le rapprochement', 'Undo reconciliation') : T('Annuler', 'Undo'), icon: DEMO ? <Undo2Icon /> : undefined, onSelect() { window.__undone += 1; } } } : {}),
   ...(params.get('status') === '1' ? { workingWords: ({ tool }) => tool === 'read' ? 'Max compte…' : 'Max réfléchit…' } : {}),
   ...(params.get('tu') === '1' ? { words: TU } : {}), ...(params.get('words') === '1' ? { words: { dictate: 'Parler', conversation: 'Le fil' } } : {}), ...(params.get('readonly') === '1' ? { readOnly: T('Lecture seule : votre rôle permet de lire, pas d’écrire (fictif).', 'Read only: your role may read, not write (fictional).') } : {}), voice: { transcribe: async () => T('Texte dicté fictif', 'Dictated text (fictional)'), send: 'draft' },
   // `?fork=1`: the host's conversations with fork and new (edit last, D3): `window.__forked` holds the entries forked at, `window.__new` counts new ones.
