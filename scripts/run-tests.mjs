@@ -12,9 +12,17 @@ export function testFiles(directory) {
   }).sort();
 }
 
+/** Shard `index` of `total` (1-based): every total-th file of the sorted list, so the shards together run each file exactly once and neighbours (often the same browser family) spread out. */
+export function shardOf(files, index, total) {
+  return files.filter((_, position) => position % total === index - 1);
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  if (args.length > 1 || args.some(arg => arg !== '--exclude-registered')) throw new Error(`Unknown test runner argument: ${args.join(' ')}`);
+  const shardArg = args.find(arg => arg.startsWith('--shard='));
+  const shard = shardArg?.match(/^--shard=([1-9]\d*)\/([1-9]\d*)$/);
+  if (shardArg && (!shard || Number(shard[1]) > Number(shard[2]))) throw new Error(`Bad --shard (want i/n with 1 <= i <= n): ${shardArg}`);
+  if (args.some(arg => arg !== '--exclude-registered' && arg !== shardArg)) throw new Error(`Unknown test runner argument: ${args.join(' ')}`);
   const root = fileURLToPath(new URL('../', import.meta.url));
   let files = testFiles(resolve(root, 'test'));
   if (args.includes('--exclude-registered')) {
@@ -29,7 +37,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     for (const path of registered) if (!files.includes(path)) throw new Error(`Registered test not discovered: ${path}`);
     files = files.filter(path => !registered.has(path));
   }
+  if (shard) files = shardOf(files, Number(shard[1]), Number(shard[2]));
   if (!files.length) throw new Error('No tests discovered');
+  if (shard) console.log(`Shard ${shard[1]} of ${shard[2]}: ${files.length} test files`);
   const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
   const result = spawnSync(process.execPath, ['--import', fileURLToPath(new URL('./css-stub-register.mjs', import.meta.url)), '--test', '--experimental-test-isolation=none', ...files], { stdio: 'inherit', env });
   if (result.error) throw result.error;

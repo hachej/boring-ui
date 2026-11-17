@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { runCaptured } from './run-captured.mjs';
 
 export const REQUIRED_CHECKS = {
-  'verify.yml': ['Specification checks', 'tests', 'release-gate', 'Public demo Worker bundle',
+  'verify.yml': ['Specification checks', ...[1, 2, 3, 4, 5].map(shard => `Tests (${shard} of 5)`), 'tests', 'release-gate', 'Public demo Worker bundle',
     ...['documents', 'native', 'canvas', 'composition'].map(kind => `Isolated package consumers (${kind})`),
     'Isolated package consumers', 'verify'],
   'studio-scripted.yml': [...['studio-1', 'studio-2', 'design', 'workspace', 'documents'].map(shard => `Studio scripted journeys (${shard})`), 'Studio scripted journeys'],
