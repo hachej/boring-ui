@@ -43,6 +43,12 @@ test('the Play menu plays a response into the design system page, and the demo h
   assert.ok(items.includes('Markdown answer') && items.includes('Question card: choices') && items.includes('Error') && items.at(-1) === 'Reset the conversation', `the menu lists the page's flows (${items})`);
   await page.selectOption('#play', { label: 'Markdown answer' });
   await demo.getByText('A Markdown answer').first().waitFor({ timeout: 40000 });
+  const folded = await demo.locator('[data-testid=agent-card-reply]').first().textContent();
+  assert.ok(!/#|\*|`/.test(folded), `the folded card shows the Markdown reply as plain text (${JSON.stringify(folded)})`);
+  assert.ok(folded.includes('bold') && folded.includes('inline code'), 'the words are kept');
+  await demo.locator('[data-testid=agent-bar-conversation]').click();
+  await demo.locator('[data-testid=agent-tray] [data-testid=transcript] h2').first().waitFor({ timeout: 10000 });
+  assert.ok(await demo.locator('[data-testid=agent-tray] [data-testid=transcript] strong').count() >= 1, 'the open conversation still renders bold');
   await page.selectOption('#play', { label: 'Approval card' });
   await demo.locator('[data-testid=approval-card]').first().waitFor({ timeout: 40000 });
   await page.selectOption('#play', { label: 'Reply card with an action' });

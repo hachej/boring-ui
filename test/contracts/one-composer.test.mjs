@@ -96,7 +96,7 @@ const type = async value => {
 const FIELD = '[data-testid=composer-input]';
 const oneField = async step => assert.equal(await count(FIELD), 1, `exactly one message field in the DOM (${step})`);
 // AC-2: the row is the chevron, attach, the field and one action button; nothing else can be pressed in it.
-const rowControls = () => browser.evaluate(`[...document.querySelectorAll('[data-testid=composer] [data-slot=input-group] button, [data-testid=composer] [data-slot=input-group] textarea')].filter(e => e.getClientRects().length > 0 && !e.closest('[data-testid=composer-controller]')).map(e => e.dataset.testid || e.getAttribute('aria-label'))`);
+const rowControls = () => browser.evaluate(`[...document.querySelectorAll('[data-testid=composer] [data-slot=input-group] button, [data-testid=composer] [data-slot=input-group] textarea')].filter(e => e.getClientRects().length > 0 && !e.closest('[data-testid=composer-controller]') && e.dataset.testid !== 'agent-bar-conversation').map(e => e.dataset.testid || e.getAttribute('aria-label'))`);
 
 test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every step, and the right button says Dicter, Envoyer, Arrêter (AC-1, AC-2, AC-3)', { skip, timeout: 120000 }, async () => {
   await open(1280);
@@ -297,13 +297,17 @@ for (const [width, query] of [[1280, ''], [390, 'tabs=1']]) test(`${width}: the 
   await open(width, query);
   await browser.until('the field', `!!document.querySelector('[data-testid=composer-input]')`);
   for (const offset of await offsets()) assert.ok(offset < 0.6, `empty: ${offset}px off the midline`);
-  const tab = await browser.evaluate(`(() => { const g = document.querySelector('[data-testid=composer] [data-slot=input-group]').getBoundingClientRect(), t = document.querySelector('[data-testid=agent-bar-conversation]'), r = t.getBoundingClientRect(), pill = t.firstElementChild.getBoundingClientRect();
-    return { across: Math.abs((r.top + r.height / 2) - g.top), middle: Math.abs((r.left + r.width / 2) - (g.left + g.width / 2)), pillAbove: pill.top < g.top - 1 && pill.bottom > g.top + 1, hit: Math.min(r.width, r.height), name: t.getAttribute('aria-label'), expanded: t.getAttribute('aria-expanded') }; })()`);
-  assert.ok(tab.across <= 1.5, `the tab's middle is on the bar's top border (${tab.across}px off)`);
-  assert.ok(tab.middle <= 1, `the tab is in the middle of the bar (${tab.middle}px off)`);
-  assert.equal(tab.pillAbove, true, 'half of the pill is above the border, half below');
-  assert.ok(tab.name && tab.expanded === 'false', 'the tab keeps its name and aria-expanded');
-  if (width < 500) assert.ok(tab.hit >= 44, `a 44 px hit area on touch (${tab.hit})`);
+  // A phone has no strip: the sheet's grabber is the pill on the border (see the phone test); the tab straddling the border is the wide screen's.
+  if (width < 500) assert.equal(await count('[data-slot=drawer-swipe-handle]'), 1, 'the grabber pill stands where the tab would');
+  else {
+    const tab = await browser.evaluate(`(() => { const g = document.querySelector('[data-testid=composer] [data-slot=input-group]').getBoundingClientRect(), t = document.querySelector('[data-testid=agent-bar-conversation]'), r = t.getBoundingClientRect(), pill = t.firstElementChild.getBoundingClientRect();
+      return { across: Math.abs((r.top + r.height / 2) - g.top), middle: Math.abs((r.left + r.width / 2) - (g.left + g.width / 2)), pillAbove: pill.top < g.top - 1 && pill.bottom > g.top + 1, hit: Math.min(r.width, r.height), name: t.getAttribute('aria-label'), expanded: t.getAttribute('aria-expanded') }; })()`);
+    assert.ok(tab.across <= 1.5, `the tab's middle is on the bar's top border (${tab.across}px off)`);
+    assert.ok(tab.middle <= 1, `the tab is in the middle of the bar (${tab.middle}px off)`);
+    assert.equal(tab.pillAbove, true, 'half of the pill is above the border, half below');
+    assert.ok(tab.name && tab.expanded === 'false', 'the tab keeps its name and aria-expanded');
+    if (width < 500) assert.ok(tab.hit >= 44, `a 44 px hit area on touch (${tab.hit})`);
+  }
   await type('create a new file tt..md');
   await wait(150);
   for (const offset of await offsets()) assert.ok(offset < 1, `typed, with Send: ${offset}px off the midline`);
@@ -510,6 +514,7 @@ test('1440: the composer has the same radius, height and round buttons in the ba
 test('1440 and 390: the controller is one small notch: one box, cells at most 34 px wide, at most 20 px high, no circle larger than the strip', { skip, timeout: 180000 }, async () => {
   for (const [width, query] of [[1440, 'demo=1&single=1&pace=instant'], [390, 'demo=1&tabs=1&pace=instant']]) {
     await open(width, query);
+    if (width < 500) { await browser.until('the bar', `!!document.querySelector('[data-testid=composer-input]')`); assert.equal(await count('[data-testid=composer-controller]'), 0, 'a phone has no strip'); continue; }
     await browser.until('the strip', `!!document.querySelector('[data-testid=composer-controller]')`);
     await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 }); await wait(300);
     const measure = () => browser.evaluate(`(() => { const s = document.querySelector('[data-testid=composer-controller]'), box = s.querySelector('[aria-hidden=true]').getBoundingClientRect(); const cells = [...s.querySelectorAll('button')].map(b => b.getBoundingClientRect());
@@ -518,12 +523,35 @@ test('1440 and 390: the controller is one small notch: one box, cells at most 34
       return { h: box.height, w: box.width, cells: cells.map(c => Math.round(c.width)), inside, tall, tallList, shapes: s.querySelectorAll('[data-slot=button]').length }; })()`);
     const rest = await measure();
     assert.ok(rest.h <= 20 && (width < 500 || Math.max(...rest.cells) <= 34) && rest.inside && rest.tall === 0 && rest.shapes === 0, `${width}: one small notch at rest (${JSON.stringify(rest)})`);
-    if (width < 500) { assert.ok(rest.cells.every(c => c === 0 || c >= 44), 'touch: each cell is a 44 px wide box ('+rest.cells+')'); continue; }
     await browser.evaluate(`document.querySelector('[data-action=chevron]').focus()`); await browser.press('Shift'); await browser.evaluate(`document.querySelector('[data-action=chevron]').blur(); document.querySelector('[data-action=chevron]').focus()`); await wait(400);
     const opened = await measure();
     assert.ok(opened.h <= 20 && Math.max(...opened.cells) <= 34 && opened.inside && opened.tall === 0, `${width}: opened, the extra cells are inside the one box (${JSON.stringify(opened)})`);
     assert.ok(opened.w > rest.w, 'the one container widens');
   }
+});
+
+// Julien: "still a problem on mobile". A phone has no strip: the sheet's grabber is the size control (tap: next snap), the header is title, History, Library and one X, and the bar's buttons are circles.
+for (const width of [390, 360]) test(`${width}: no strip on a phone, the grabber taps through peek, half and full, round buttons on the bar's midline, the header has History, Library and an X`, { skip, timeout: 180000 }, async () => {
+  await open(width, 'tabs=1');
+  await browser.until('the bar', `!!document.querySelector('[data-testid=composer-input]')`);
+  assert.equal(await count('[data-testid=composer-controller]'), 0, 'no strip on a phone');
+  const state = () => browser.evaluate(`document.querySelector('[data-testid=agent-layer]')?.dataset.state`);
+  const look = () => browser.evaluate(`(() => { const g = document.querySelector('[data-testid=composer] [data-slot=input-group]').getBoundingClientRect(), mid = g.top + g.height / 2;
+    return [...document.querySelectorAll('[data-testid=composer-bar-attach], [data-testid=agent-talk], [data-testid=composer-submit]')].filter(e => e.getClientRects().length).map(e => { const r = e.getBoundingClientRect(), rad = parseFloat(getComputedStyle(e).borderTopLeftRadius); return { id: e.dataset.testid, circle: rad >= Math.min(r.width, r.height) / 2 - 1, w: Math.round(r.width), h: Math.round(r.height), off: Math.abs(r.top + r.height / 2 - mid) }; }); })()`);
+  for (const b of await look()) assert.ok(b.circle && b.w >= 40 && b.h >= 40 && b.off <= 1, `${b.id} is a circle of at least 40 px on the bar's midline (${JSON.stringify(b)})`);
+  assert.equal(await state(), 'peek');
+  const hit = await rect('[data-testid=agent-bar-conversation]');
+  assert.ok(hit.w >= 44 && hit.h >= 44, `the keyboard twin of the grabber is a 44 px box (${hit.w}x${hit.h})`);
+  const tap = async () => { const [x, y] = await center('[data-slot=drawer-swipe-handle]'); await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y); await wait(900); };
+  await tap(); assert.equal(await state(), 'half', 'a tap on the grabber goes from peek to half');
+  assert.equal(await count('[data-testid=composer-controller]'), 0, 'still no strip at half');
+  const header = await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer-header] button')].filter(e => e.getClientRects().length).map(e => [e.dataset.testid, Math.round(e.getBoundingClientRect().width), Math.round(e.getBoundingClientRect().height)])`);
+  assert.deepEqual(header.map(h => h[0]).filter(id => id !== 'history-open'), ['agent-layer-library', 'agent-layer-close'], `the header has (History when the app has conversations,) Library and one X, no size icon (${JSON.stringify(header)})`);
+  assert.ok(header.every(([, w, h]) => w >= 44 && h >= 44), 'each header control is a 44 px box');
+  await tap(); assert.equal(await state(), 'full', 'a tap goes from half to full');
+  await tap(); assert.equal(await state(), 'peek', 'a tap goes from full back to peek');
+  await tap(); await click('[data-testid=agent-layer-close]'); await wait(800);
+  assert.equal(await state(), 'peek', 'the X collapses to peek');
 });
 
 test('1280: typing grows the field;  a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
@@ -1486,20 +1514,19 @@ test('1440: Esc in full keeps its menus: an open menu keeps the key', { skip, ti
   assert.equal(await count(FULL), 1, 'an open menu keeps Esc');
 });
 
-test('390: the phone\'s full snap is the same state: it covers the tab bar, one composer, Close and Collapse go back', { skip, timeout: 120000 }, async () => {
+test('390: the phone\'s full snap is the same state: it covers the tab bar, one composer, the grabber goes back', { skip, timeout: 120000 }, async () => {
   await open(390);
   await browser.evaluate(`window.__layer.open('agent', 'half')`);
   await browser.until('the drawer', `!!document.querySelector('[data-testid=composer-input]')`);
-  await click('[data-testid=agent-layer-expand]');
-  await wait(600);
+  const tap = async () => { const [x, y] = await center('[data-slot=drawer-swipe-handle]'); await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y); await wait(900); };
+  await tap();
   await browser.screenshot('full-390-full-snap.png');
   const view = await viewportOf();
   const sheet = await rect('[data-testid=agent-layer]');
   assert.ok(sheet.y <= 1 && sheet.bottom >= view.h - 1, `the full snap covers the viewport (${JSON.stringify(sheet)})`);
   assert.equal(await count('[data-testid=agent-full]'), 0, 'no second full-screen host on a phone');
   await oneField('phone full');
-  await click('[data-testid=agent-layer-collapse]');
-  await wait(500);
-  const half = await rect('[data-testid=agent-layer]');
-  assert.ok(half.h < sheet.h, 'collapse goes back to half');
+  await tap();
+  const back = await rect('[data-testid=agent-layer]');
+  assert.ok(back.h < sheet.h, 'a tap on the grabber goes back down');
 });
