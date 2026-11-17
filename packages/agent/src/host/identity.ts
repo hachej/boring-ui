@@ -50,7 +50,7 @@ const roleIn = (need: Role, unit: string, members: ReadonlyArray<Member>, op: st
   const role = caller.scope
     ? (caller.scope.unit === unit && (!caller.scope.ops || caller.scope.ops.includes(op)) ? caller.scope.role : undefined)
     : members.find((m) => m.userId === caller.person)?.role ?? (emptyByKey && members.length === 0 && unit === caller.person ? 'owner' : undefined);
-  if (!role) return 'NotYours';
+  if (!role || !Object.hasOwn(RANK, role)) return 'NotYours';
   return RANK[role] < RANK[need] ? 'NotAllowed' : { person: caller.person, role };
 };
 

@@ -100,7 +100,7 @@ const payloadOf = (args: Record<string, Schema.Json>, write: boolean, id: string
 
 /** One agent's tools as one Extension. Built once; everything that changes per call (who, which scope, the Layer) is read inside the call. */
 export const appTools: AppTools = ({ def, api, agent, scope, services = () => { throw new Error(`appTools(${def.name}): no services for ${agent}`); }, attribution, commandId, storage, caps }) => {
-  const plain = plainTools({ def, agent, scope, attribution, commandId, storage, caps });
+  const plain = plainTools({ def, api, agent, scope, attribution, commandId, storage, caps });
   if (domainNames(def, agent).length === 0) return defineExtension({ name: `${PREFIX}${agent}`, tools: plain });
   checkAudience(def, agent, api!);
   const toolkit = toToolkit(api!, exposing(domainNames(def, agent)));

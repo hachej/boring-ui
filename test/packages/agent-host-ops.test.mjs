@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import * as Effect from 'effect/Effect';
-import { obj, str } from '@earendil-works/pi-schema';
+import { arr, obj, str, union } from '@earendil-works/pi-schema';
 import { Harness, MemoryStorage, createRegistry, defineExtension } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
@@ -125,6 +125,7 @@ test('mapping: each agent has one Extension of its plain operations, each tool t
   assert.notEqual(answered.isError, true);
   const source = readFileSync(new URL('packages/agent/src/host/runtime/ops.ts', root), 'utf8');
   assert.ok(source.split('\n').length - 1 <= 80, 'ops.ts is at most 80 lines');
+  console.log(`la traduction: ops.ts is ${source.split('\n').length - 1} lines (at most 80); each tool takes the operation's own schema as parameters, unconverted`);
 });
 
 const FIELDS = ['target', 'key', 'unit', 'notebook', 'userId', 'by', 'author', 'scope'];
@@ -468,4 +469,58 @@ test('mapping (declaration): defineOp returns the same object, and the built op.
   assert.equal(isRefusal({ kind: 'K' }), false);
   const built = readFileSync(new URL('packages/agent/dist/host/op.js', root), 'utf8');
   assert.doesNotMatch(built, /^\s*import\s/m, 'a type-only import leaves no import behind');
+});
+
+test('no field (unknown role): a role that is not owner, editor or reader is never admitted', async () => {
+  for (const role of ['viewer', 'Owner', 'reader ', '__proto__', 'toString']) {
+    for (const need of ['reader', 'owner']) {
+      const got = admit(need, 'u1', [{ userId: 'gaspard', role }], 'x', { person: 'gaspard' });
+      assert.equal(isRefusal(got) && got.kind, 'NotYours', `member role ${JSON.stringify(role)}, need ${need}`);
+      const viaMust = await Effect.runPromise(Effect.result(must(need, 'u1', [{ userId: 'gaspard', role }], 'x').pipe(Effect.provideService(CurrentUser, { userId: 'gaspard' }))));
+      assert.equal(viaMust._tag === 'Failure' && viaMust.failure._tag, 'NotYours', `must: ${role}`);
+    }
+  }
+  const scoped = admit('owner', 'u1', [], 'x', { person: 'gaspard', scope: { kind: 'unit', unit: 'u1', role: 'superuser' } });
+  assert.equal(isRefusal(scoped) && scoped.kind, 'NotYours', 'a scope role "superuser"');
+});
+
+test('refused at mount (schéma ouvert): every object of an input is closed, at any depth, and appTools checks it itself', () => {
+  const open = (input) => withOp({ ...addNote, name: 'deep', input });
+  const closed = [
+    obj({ text: str() }),
+    obj({ meta: obj({ a: str() }) }),
+    obj({ items: arr(obj({ a: str() })) }),
+    obj({ pick: union([obj({ a: str() }), str()]) }),
+  ];
+  for (const input of closed) assert.doesNotThrow(() => checkExpose(open(input)));
+  const opened = {
+    'a nested object without additionalProperties': obj({ meta: { type: 'object', properties: { userId: { type: 'string' } } } }),
+    'an open obj inside obj': obj({ meta: obj({}, { open: true }) }),
+    'an array of open objects': obj({ items: arr(obj({}, { open: true })) }),
+    'a union branch that is open': obj({ pick: union([obj({}, { open: true }), str()]) }),
+    patternProperties: { ...obj({}), patternProperties: { '^u': { type: 'string' } } },
+  };
+  for (const [name, input] of Object.entries(opened)) {
+    refuses(() => checkExpose(open(input)), 'deep', 'open');
+    refuses(() => appTools({ def: open(input), agent: 'assistant', scope: undefined, attribution: acting('camille'), storage: () => ({}) }), 'deep', 'open');
+    console.log('refusé au montage:', name);
+  }
+});
+
+test('refused at mount (phrases): an operation with no input, and both forms built without api, answer a sentence', () => {
+  refuses(() => checkExpose(withOp({ ...addNote, name: 'noInput', input: undefined })), 'noInput', 'input');
+  const both = { ...notes, ops: { list: [addNote] }, expose: { ...notes.expose, assistant: ['AddNote', 'addNote'] } };
+  assert.throws(() => appTools({ def: both, agent: 'assistant', scope: undefined, attribution: acting('camille'), storage: () => ({}) }), (e) => !(e instanceof TypeError) && /notes.*assistant.*no api/.test(e.message));
+});
+
+test('risky (avant la question): an unknown sender or a missing role is refused before the person is asked', async () => {
+  const w = await seeded();
+  const timed = (promise) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error('the person was asked to approve')), 8000))]);
+  const call = [send('removeMember', { userId: 'emma' })];
+  const unknown = await timed(drive(build(notesPlain, w, { attribution: async (c) => { throw new SenderUnknown(c.callId); } }), 'assistant', call));
+  assert.deepEqual(unknown.results, [{ text: REFUSED, isError: true }]);
+  const editor = await timed(drive(build(notesPlain, w, { scope: { kind: 'unit', unit: 'camille', role: 'editor' }, attribution: acting('dominique') }), 'assistant', call));
+  assert.deepEqual(editor.results, [{ text: '{"_tag":"NotAllowed","need":"owner"}', isError: true }]);
+  assert.ok(w.rows('camille', 'members').some((m) => m.user_id === 'emma'));
+  console.log('accord: refused before asking (unknown sender, missing role); Approve and Deny as in the risky test');
 });
