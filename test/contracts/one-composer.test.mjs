@@ -309,6 +309,32 @@ test('folded, 1280: a warning notice holds a chip in the field when its @ is use
   assert.equal(await text('[data-testid=notice-text]'), 'Fictional: the daily limit is near.');
 });
 
+// AC-6 (notifications): the bar itself says the agent waits: a warning border and a soft ring around the whole bar while a decision (an approval or a question) is on the folded card; no tray opens.
+test('folded, 1280 and 390: a decision on the card gives the bar a warning border and soft ring, and the ring goes with the decision (AC-6)', { skip, timeout: 120000 }, async () => {
+  for (const [width, query, bar] of [[1280, '', '[data-testid=agent-composer-box]'], [390, 'tabs=1', '[data-testid=agent-layer]']]) {
+    await open(width, query);
+    const shadow = () => browser.evaluate(`getComputedStyle(document.querySelector(${js(bar)})).boxShadow`);
+    await browser.evaluate(`window.__run('tool')`);
+    await browser.evaluate(`window.__run('reply')`);
+    await browser.until('reply card', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply'`);
+    const calm = await shadow();
+    for (const [kind, selector] of [['approval', '[data-testid=agent-approval]'], ['form', '[data-testid=agent-question]']]) {
+      await browser.evaluate(`window.__run('${kind}')`);
+      await browser.until(`${kind} card`, `!!document.querySelector('[data-testid=agent-card] ${selector}')`);
+      const ringed = await shadow();
+      assert.ok(ringed.includes(' 3px') && ringed !== calm, `the ${kind} ring at ${width} (${ringed})`);
+      assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=agent-card][data-needs-you]')`), true);
+      assert.equal(await count('[data-testid=agent-tray]'), 0, 'no tray');
+      assert.ok(['closed', 'peek'].includes(await dockState()), 'the conversation stays folded');
+      await browser.screenshot(`notifications-needs-you-${kind}-${width}-light.png`);
+    }
+    await browser.evaluate(`window.__run('think')`);
+    await browser.evaluate(`window.__run('reply')`);
+    await browser.until('calm again', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply'`);
+    assert.equal(await shadow(), calm, 'the ring goes with the decision');
+  }
+});
+
 test('folded, 1280 and 390: a failed turn is one sentence on the card, in the app\'s words when it gives replyError, and the next turn clears it', { skip, timeout: 120000 }, async () => {
   for (const [width, query] of [[1280, ''], [390, 'tabs=1'], [1280, 'replyError=1']]) {
     await open(width, query);
