@@ -14,5 +14,5 @@ demos/workspace/cloudflare/public/
 .wrangler/
 .dev.vars
 .gen/
-.gen.tmp/
-.gen.old/
+.gen.tmp*/
+.gen.old*/

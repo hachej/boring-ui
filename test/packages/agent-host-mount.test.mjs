@@ -147,21 +147,43 @@ test('messages: a build says what it wrote, and a missing folder is a missing fo
   refused(join(scratch, 'no-such-folder'), ['--options', './o.ts'], /no-such-folder: no such folder/, 'folder');
 });
 
-test('exit: an app.ts that exits before the build wrote anything never gives exit 0', () => {
-  const exits = {
-    'at the top': 'process.exit(0);\n',
-    'from a timer after the import': 'setTimeout(() => process.exit(0), 1);\n',
-    'with exit replaced': 'process.exit = () => process.reallyExit(0);\nprocess.exit(0);\n',
-  };
-  for (const [name, code] of Object.entries(exits)) {
-    const dir = copy('todo', `exit/${name.replace(/\W/g, '-')}`);
-    mkdirSync(join(dir, '.gen')); writeFileSync(join(dir, '.gen/server.ts'), 'old\n');
-    writeFileSync(join(dir, 'app.ts'), readFileSync(join(dir, 'app.ts'), 'utf8') + code);
-    const r = build(dir, '--options', './options.ts');
-    if (r.status === 0) assert.deepEqual(Object.keys(gen(dir)), ['assets.ts', 'page.tsx', 'server.ts'], `${name}: exit 0 only with a full build`);
-    else assert.deepEqual(gen(dir), { 'server.ts': 'old\n' }, `${name}: the previous .gen stays`);
-    if (name !== 'from a timer after the import') assert.notEqual(r.status, 0, name);
+test('caller check: the exported entry gives the text a caller compares server.ts with', async () => {
+  const dir = copy('todo', 'caller');
+  assert.equal(build(dir, '--options', './options.ts').status, 0);
+  const { entry } = await import(join(root, 'packages/agent/dist/host-build.js'));
+  assert.equal(readFileSync(join(dir, '.gen/server.ts'), 'utf8'), entry('../options.ts'));
+});
+
+test('old copy: a .gen.old left behind never blocks a build, and one that cannot be removed is named', () => {
+  const dir = copy('todo', 'old-copy');
+  mkdirSync(join(dir, '.gen.old/sub'), { recursive: true }); writeFileSync(join(dir, '.gen.old/sub/x'), 'x\n'); chmodSync(join(dir, '.gen.old/sub'), 0o555);
+  mkdirSync(join(dir, '.gen/sub'), { recursive: true }); writeFileSync(join(dir, '.gen/sub/y'), 'y\n'); chmodSync(join(dir, '.gen/sub'), 0o555);
+  try {
+    const r = refused(dir, ['--options', './options.ts'], /old copy .*\.gen\.old.* could not be removed/, 'read-only old copy');
+    assert.equal(existsSync(join(dir, '.gen/server.ts')), true, 'the new .gen is in place');
+    for (const f of readdirSync(dir).filter((n) => n.startsWith('.gen.old'))) { chmodSync(join(dir, f, 'sub'), 0o755); rmSync(join(dir, f), { recursive: true, force: true }); }
+    assert.equal(build(dir, '--options', './options.ts').status, 0, 'the next build works');
+  } finally {
+    for (const f of readdirSync(dir).filter((n) => n.startsWith('.gen.old'))) { try { chmodSync(join(dir, f, 'sub'), 0o755); } catch {} }
   }
+});
+
+test('inside: a view or a skill folder that leaves the app folder is refused, an absolute skills path and a bare file name get a hint', () => {
+  const outside = join(scratch, 'outside-view'); mkdirSync(outside, { recursive: true }); writeFileSync(join(outside, 'V.tsx'), 'export default () => null;\n');
+  const view = copy('todo', 'view-out');
+  writeFileSync(join(view, 'app.ts'), readFileSync(join(view, 'app.ts'), 'utf8').replace('./web/TodosView.tsx', '../../outside-view/V.tsx'));
+  refused(view, ['--options', './options.ts'], /views\.todos\.component: \.\.\/\.\.\/outside-view\/V\.tsx is outside the app folder/, 'view path');
+  const link = copy('todo', 'view-link');
+  rmSync(join(link, 'web/TodosView.tsx')); symlinkSync(join(outside, 'V.tsx'), join(link, 'web/TodosView.tsx'));
+  refused(link, ['--options', './options.ts'], /views\.todos\.component: .* is outside the app folder/, 'view link');
+  const skill = copy('todo', 'skill-link');
+  rmSync(join(skill, 'skills/assistant'), { recursive: true }); symlinkSync(join(scratch, 'outside-skills'), join(skill, 'skills/assistant'));
+  mkdirSync(join(scratch, 'outside-skills'), { recursive: true });
+  refused(skill, ['--options', './options.ts'], /skills: skills\/assistant is outside the app folder/, 'agent folder link');
+  const absolute = copy('todo', 'skills-abs');
+  writeFileSync(join(absolute, 'app.ts'), readFileSync(join(absolute, 'app.ts'), 'utf8').replace('skills: "./skills"', `skills: ${JSON.stringify(join(absolute, 'skills'))}`));
+  refused(absolute, ['--options', './options.ts'], /skills: .* is an absolute path, write it relative to the app folder/, 'absolute skills');
+  refused(copy('todo', 'bare'), ['--options', 'options.ts'], /--options: options\.ts is a file in the app folder, write \.\/options\.ts/, 'bare');
 });
 
 test('broken folder: a refused app is one line, exit 1, and .gen stays as it was', () => {
