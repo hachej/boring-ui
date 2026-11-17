@@ -87,6 +87,9 @@ test('shards together run every test file exactly once', () => {
   const shards = [1, 2, 3, 4, 5].map(index => shardOf(files, index, 5));
   assert.deepEqual(shards.flat().sort(), [...files].sort());
   assert.ok(shards.every(shard => shard.length >= 4 && shard.length <= 5));
+  const weighted = [1, 2, 3].map(index => shardOf(['a/big.test.mjs', ...files.slice(0, 7)], index, 3, { big: 100 }));
+  assert.deepEqual(weighted[0], ['a/big.test.mjs'], 'a very heavy file gets a shard to itself');
+  assert.deepEqual(weighted.flat().sort(), ['a/big.test.mjs', ...files.slice(0, 7)].sort());
 });
 
 test('a failing nested test makes the actual discovery runner fail', () => {

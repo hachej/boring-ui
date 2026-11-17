@@ -1,5 +1,5 @@
-import { readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
@@ -12,9 +12,17 @@ export function testFiles(directory) {
   }).sort();
 }
 
-/** Shard `index` of `total` (1-based): every total-th file of the sorted list, so the shards together run each file exactly once and neighbours (often the same browser family) spread out. */
-export function shardOf(files, index, total) {
-  return files.filter((_, position) => position % total === index - 1);
+/** Shard `index` of `total` (1-based). Files go heaviest first to the lightest shard (weights: seconds by file name, 1.5 when unknown), ties by order,
+ *  so the shards are balanced and together run each file exactly once; every shard computes the same split from the same inputs. */
+export function shardOf(files, index, total, weights = {}) {
+  const weight = file => weights[basename(file).replace(/\.test\.mjs$/, '')] ?? 1.5;
+  const load = Array.from({ length: total }, () => 0), mine = new Set();
+  for (const file of files.map((file, order) => ({ file, order })).sort((a, b) => weight(b.file) - weight(a.file) || a.order - b.order).map(entry => entry.file)) {
+    const target = load.indexOf(Math.min(...load));
+    load[target] += weight(file);
+    if (target === index - 1) mine.add(file);
+  }
+  return files.filter(file => mine.has(file));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -37,7 +45,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     for (const path of registered) if (!files.includes(path)) throw new Error(`Registered test not discovered: ${path}`);
     files = files.filter(path => !registered.has(path));
   }
-  if (shard) files = shardOf(files, Number(shard[1]), Number(shard[2]));
+  if (shard) files = shardOf(files, Number(shard[1]), Number(shard[2]), JSON.parse(readFileSync(resolve(root, 'scripts/test-shard-weights.json'), 'utf8')));
   if (!files.length) throw new Error('No tests discovered');
   if (shard) console.log(`Shard ${shard[1]} of ${shard[2]}: ${files.length} test files`);
   const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
