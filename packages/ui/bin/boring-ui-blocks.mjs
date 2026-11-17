@@ -217,7 +217,9 @@ export function appPaths(app) {
   const file = join(app, 'components.json');
   if (!existsSync(file)) throw new Error(`no components.json in ${app}: run in the app's web directory or pass --cwd`);
   const { aliases = {} } = JSON.parse(readFileSync(file, 'utf8'));
-  const dir = alias => join(app, existsSync(join(app, 'src')) ? 'src' : '', alias.replace(/^[@~]\//, ''));
+  // `@/` is src/ when the app has one, else the root tsconfig's `@/*` (components.json at the repo root, the app in web/src), else the app root.
+  const base = existsSync(join(app, 'src')) ? join(app, 'src') : aliasRoots(app)[0] ?? app;
+  const dir = alias => join(base, alias.replace(/^[@~]\//, ''));
   const components = dir(aliases.components ?? '@/components');
   return { components, ui: aliases.ui ? dir(aliases.ui) : join(components, 'ui') };
 }
@@ -1848,12 +1850,18 @@ export function kitParts(dir, { manifest = MANIFEST } = {}) {
   const { components, ui } = root ? appPaths(root) : { components: join(dir, 'components'), ui: join(dir, UI_DIR) };
   const kit = kitRoot(root ?? dir), items = kit ? readItems(kit) : [];
   const parts = new Map(), targets = new Map();
+  // Where the blocks are: the alias as components.json gives it (the root tsconfig's `@/*` counts, see appPaths) and the scanned dir's own `components`.
+  const bases = [...new Set([components, join(dir, 'components')])];
   for (const item of items) for (const file of item.files ?? []) {
     if (!file.target) continue; // a ui-<name> item's file has no target: the manifest records the primitive (kind 'shadcn')
-    const path = join(components, file.target.replace(/^components\//, ''));
-    targets.set(path, { name: item.name, contents: [...(targets.get(path)?.contents ?? []), normal(file.content ?? '')] });
+    for (const base of bases) {
+      const path = join(base, file.target.replace(/^components\//, ''));
+      targets.set(path, { name: item.name, contents: [...(targets.get(path)?.contents ?? []), normal(file.content ?? '')] });
+    }
   }
   for (const [path, { name, contents }] of targets) if (existsSync(path)) parts.set(path, { kind: 'block', name, edited: !contents.includes(normal(readFileSync(path, 'utf8'))) });
+  // The rules the shadcn CLI merged into the app's css for a block (the item's `css`) are kit code in the app's own stylesheet, whether or not the block's files are still there.
+  parts.kitCss = new Set(items.flatMap((item) => kitSelectors(item.css)));
   const manifestPath = root ? resolve(root, manifest) : null;
   const recorded = manifestPath && existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')).files ?? {} : {};
   for (const [name, { path, hash }] of uiHashes(ui)) if (!parts.has(path) && name in recorded) parts.set(path, { kind: 'shadcn', name: posix(manifest), edited: recorded[name] !== hash });
@@ -1864,6 +1872,40 @@ export function kitParts(dir, { manifest = MANIFEST } = {}) {
     if (text.startsWith(GENERATED_CSS_MARK)) parts.set(path, { kind: 'css', name: basename(path), edited: !isGeneratedCss(text, byName) });
   }
   return parts;
+}
+
+/** The directories the root tsconfig's `@/*` points at (absolute). */
+function aliasRoots(at) {
+  try {
+    const paths = JSON.parse(readFileSync(join(at, 'tsconfig.json'), 'utf8')).compilerOptions?.paths?.['@/*'] ?? [];
+    return paths.map((path) => resolve(at, path.replace(/\/?\*$/, '')));
+  } catch { return []; }
+}
+
+const cssKey = (selector) => selector.replace(/\s+/g, '').replace(/'/g, '"');
+/** The selectors of an item's `css` object, normalised (an at-rule such as `@layer base` is walked into, not listed). */
+function kitSelectors(css, found = []) {
+  for (const [key, value] of Object.entries(css ?? {})) {
+    if (!value || typeof value !== 'object') continue;
+    if (!key.startsWith('@')) found.push(cssKey(key));
+    kitSelectors(value, found);
+  }
+  return found;
+}
+
+/** The lines (1-based) of the rules in `text` whose selector is one of `selectors`: what the CLI wrote there for a block. */
+export function kitCssLines(text, selectors) {
+  const lines = new Set(), stack = [];
+  const code = text.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ' '));
+  let line = 1, header = '', headerLine = 1;
+  for (const ch of code) {
+    if (ch === '{') { stack.push({ header: cssKey(header), start: headerLine }); header = ''; }
+    else if (ch === '}') { const open = stack.pop(); if (open && selectors.has(open.header)) for (let n = open.start; n <= line; n++) lines.add(n); header = ''; }
+    else if (ch === ';') header = '';
+    else { if (!header.trim() && ch.trim()) headerLine = line; header += ch; }
+    if (ch === '\n') line++;
+  }
+  return lines;
 }
 
 const KIT_PART_WHAT = {
@@ -1880,7 +1922,10 @@ export function designFindings(dir, { cwd = process.cwd(), changed = null, scan,
   const found = files.flatMap((path) => {
     const name = relative(cwd, path).split(sep).join('/'), part = kit.get(path);
     if (part) return part.edited ? [kitPartEdited(name, part)] : [];
-    return checkSource(name, readFileSync(path, 'utf8'), { ui: relative(dir, path).split(sep).join('/').startsWith(`${UI_DIR}/`), scan, exceptions });
+    const source = readFileSync(path, 'utf8'), own = checkSource(name, source, { ui: relative(dir, path).split(sep).join('/').startsWith(`${UI_DIR}/`), scan, exceptions });
+    if (!kit.kitCss?.size || !path.endsWith('.css') || !own.length) return own;
+    const written = kitCssLines(source, kit.kitCss); // rules the shadcn CLI wrote for an installed block are kit code, not the app's
+    return own.filter((finding) => !(finding.rule === 'design-no-kit-restyle' && written.has(finding.line))); // only the restyle rule: a theme selector such as :root is shared with kit items
   });
   const local = files.find((path) => basename(path) === 'theme.derived.css'); // one hit per app, not per line
   if (local) found.push({ file: relative(cwd, local).split(sep).join('/'), line: 1, rule: 'design-theme-local-derived', level: LEVELS['design-theme-local-derived'], message: 'this app has its own theme.derived.css: delete it and import the kit\'s: app.css, then @hachej/boring-ui-kit/theme.derived.css, then ./theme.core.css' });

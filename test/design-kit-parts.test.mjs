@@ -147,3 +147,49 @@ test('an exceptions list that still names kit files fails once per file and says
   const baseline = spawnSync(process.execPath, [bin, 'design', 'web/src', '--baseline'], { cwd: dir, encoding: 'utf8' });
   assert.deepEqual(JSON.parse(baseline.stdout), { 'design-color': { 'App.tsx': 1 } });
 });
+
+// Chase's layout: components.json and tsconfig at the repo root (`@/*` is web/src/*), so the alias lands outside the scanned dir, and the shadcn CLI
+// merged the feedback block's `css` into the app's own index.css, in its own formatting, beside the app's rules.
+function rootApp(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'boring-design-kit-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const kit = join(dir, 'node_modules/@hachej/boring-ui-kit'), src = join(dir, 'web/src');
+  mkdirSync(join(kit, 'r'), { recursive: true });
+  writeFileSync(join(kit, 'package.json'), JSON.stringify({ name: '@hachej/boring-ui-kit', version: '0.5.0' }));
+  for (const name of ['inline-question', 'feedback']) {
+    const item = registryItem(name);
+    writeFileSync(join(kit, 'r', `${name}.json`), JSON.stringify(item));
+    if (name === 'inline-question') for (const file of item.files) { mkdirSync(dirname(join(src, file.target)), { recursive: true }); writeFileSync(join(src, file.target), file.content); }
+  }
+  writeFileSync(join(dir, 'components.json'), JSON.stringify({ aliases: { components: '@/components', ui: '@/components/ui' } }));
+  writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify({ compilerOptions: { paths: { '@/*': ['./web/src/*'] } } }));
+  writeFileSync(join(dir, 'SHADCN-GENERATED.json'), JSON.stringify({ generatedBy: 'boring-ui-blocks', dir: 'components/ui', files: {} }));
+  const merged = `@layer base {\n  [data-boring="feedback"] :where(button, [role="button"]) {\n    appearance: none;\n    border: 0;\n}\n}\n  [data-boring="feedback"] {\n    --boring-feedback-accent: var(--primary);\n}\n`;
+  writeFileSync(join(src, 'index.css'), `${merged}\n[data-slot="button"] {\n  border: 0;\n}\n`);
+  return { dir, merged };
+}
+const designAt = dir => JSON.parse(spawnSync(process.execPath, [bin, 'design', 'web/src', '--json'], { cwd: dir, encoding: 'utf8' }).stdout);
+
+test('components.json above the app\'s src: block files found through the tsconfig `@/*` are kit parts, an edit is one finding', t => {
+  const { dir } = rootApp(t);
+  writeFileSync(join(dir, 'web/src/App.tsx'), HIT);
+  assert.deepEqual(designAt(dir).findings.filter(finding => finding.file.includes('/components/')), []);
+  edit(dir, BLOCK_FILE, text => `${text}\n${HIT}`);
+  assert.deepEqual(designAt(dir).findings.filter(finding => finding.file.includes('/components/')).map(finding => finding.rule), ['kit-part-edited']);
+});
+
+test('css the shadcn CLI merged into index.css for a block is not the app\'s; the app\'s own rules in the same file are still read', t => {
+  const { dir } = rootApp(t);
+  const rules = designAt(dir).findings.filter(finding => finding.file === 'web/src/index.css');
+  assert.deepEqual(rules.map(finding => [finding.rule, finding.line]), [['design-no-kit-restyle', 11]]);
+  assert.match(rules[0].message, /\[data-slot="button"\]/);
+});
+
+test('components.json above the app\'s src: `manifest` records the shadcn files under web/src (it recorded none), and design then skips them', t => {
+  const { dir } = rootApp(t);
+  mkdirSync(join(dir, 'web/src/components/ui'), { recursive: true });
+  writeFileSync(join(dir, 'web/src/components/ui/card.tsx'), HIT);
+  assert.equal(spawnSync(process.execPath, [bin, 'manifest', '--cwd', dir], { encoding: 'utf8' }).status, 0);
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(dir, 'SHADCN-GENERATED.json'), 'utf8')).files), ['card.tsx']);
+  assert.deepEqual(designAt(dir).findings.filter(finding => finding.file.endsWith('card.tsx')), []);
+});
