@@ -65,8 +65,8 @@ test('InteractiveFrame supplies a declared library offline, only when declared',
     const container = document.createElement('div'); document.body.append(container);
     const root = createRoot(container);
     await act(async () => root.render(createElement(InteractiveFrame, { text, sources: [] })));
-    // The library loads lazily: wait for the frame or an alert (at most 3 s) instead of a fixed 20 ms, which a loaded machine can miss.
-    for (let waited = 0; waited < 3000 && !container.querySelector('iframe, [role=alert]'); waited += 20) await act(async () => { await new Promise(done => setTimeout(done, 20)); });
+    // The library loads lazily (a 250 KB chunk read from disk): wait for the frame or an alert, not a fixed 20 ms or 3 s that a loaded runner misses (CI run 44040205326). A page that really never renders still fails, at 20 s.
+    for (let waited = 0; waited < 20000 && !container.querySelector('iframe, [role=alert]'); waited += 20) await act(async () => { await new Promise(done => setTimeout(done, 20)); });
     await act(async () => { await new Promise(done => setTimeout(done, 20)); });
     cleanups.push(async () => { await act(async () => root.unmount()); container.remove(); });
     const frame = container.querySelector('iframe');
