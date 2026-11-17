@@ -13,7 +13,7 @@ export type { RemoteShellAccess, RemoteShellHandlerOptions } from './remote-shel
 export interface RemoteShellOptions {
   readonly identity: WorkspaceIdentity;
   readonly endpoint: string | URL;
-  /** Trusted authenticated transport. It must honor redirect:error and must not retry command requests. */
+  /** Trusted authenticated transport. It must not follow redirects (the client sends redirect:manual and refuses any non-200 answer, a 3xx included) and must not retry command requests. */
   readonly fetch: (request: Request) => Promise<Response>;
   readonly maxRequestBytes?: number;
   readonly maxFrameBytes?: number;
@@ -45,7 +45,7 @@ export function createRemoteShellLease(options: RemoteShellOptions): WorkspaceLe
         const { onOutput: _callback, ...arguments_ } = options ?? {};
         const body = JSON.stringify({ schema, version, nativeVersion, requestId, identity: selected, command: shellCommand(command), options: wireOptions(arguments_), output: onOutput !== undefined });
         if ((typeof command !== 'string' && !Array.isArray(command)) || new TextEncoder().encode(body).byteLength > maxRequestBytes) return err(new ExecutionError('shell_unavailable', 'Remote shell request is invalid or exceeds its byte limit'));
-        const request = new Request(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body, redirect: 'error', signal });
+        const request = new Request(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body, redirect: 'manual', signal });
         dispatched = true;
         const pending = fetch(request);
         void pending.then(response => { if (signal?.aborted) void response.body?.cancel().catch(() => {}); }, () => {});

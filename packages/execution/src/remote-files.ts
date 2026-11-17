@@ -61,7 +61,7 @@ export function createRemoteFileSystemLease(options: RemoteFileSystemOptions): W
       requestInput(JSON.parse(body));
       if (new TextEncoder().encode(body).length > maxRequestBytes) throw new TypeError('Filesystem request byte limit exceeded');
       if (context.abortSignal?.aborted || closed) { await dispose(); return err(new FileError('aborted', 'Filesystem operation aborted before dispatch')); }
-      const request = new Request(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: abort.signal, redirect: 'error' });
+      const request = new Request(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: abort.signal, redirect: 'manual' });
       dispatched = true;
       const pending = fetch(request);
       void pending.then(value => { if (abort.signal.aborted) void value.body?.cancel().catch(() => {}); }, () => {});
