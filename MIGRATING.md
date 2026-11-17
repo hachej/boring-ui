@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`@hachej/boring-agent/host-runtime`: `createSession` is built for personal sessions (`me:<person>`) and reader sessions (`reader:<unit>`); additive.** One neutral session per id on the host's `OpenHarness`, ports and the app's `tools`: it opens on first use, finishes a turn after its request and after an eviction (the host's alarm calls `alarm()`), sends each sender's language as the first line of the message (`[language: fr]`), and answers a failed open with 503 `{ "error": "unavailable" }`. Shared sessions and the default `appTools` come with their own cards; until then a session over a shared id throws and `tools` must be passed.
+
 # Migrating to 0.5.2
 
 - **The `/` menu has Actions, headings and a Commands button on phones (`pi-chat`, `pi-chat-slash`, `agent-bar`; additive: `slash.actions`, `argumentHint`, `labels.slashHeading`; `@hachej/boring-ui-kit/chat-text` gains `SlashSource` `'action'`).** `slash` takes a third list next to `commands` and `skills`: `actions` (the same shape as a command: `name`, `description`, `run`), picked like a command and listed under an Actions heading. Any entry may carry `argumentHint` (`<file>`), shown dim after its name. In the one composer (`composer="bar"`) the menu groups its rows under non-focusable headings (Commands, Skills, Actions) with a kind icon, and the bar ends with a Commands button on touch screens (`composer-bar-commands`). Without `actions` nothing changes; no migration needed. The `slashHeading` chat label names the headings (English and French built in).
