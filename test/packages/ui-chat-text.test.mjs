@@ -86,6 +86,8 @@ test('slash, mention triggers, pieces and file rules', () => {
   assert.equal(slashQuery('a /rev', 6), null);
   assert.deepEqual(mentionTrigger('see @"Meet', 10), { query: 'Meet', start: 4, end: 10 });
   assert.deepEqual(slashItems({ commands: [{ name: 'clear', sourcePlugin: 'core' }], skills: [{ name: 'review', description: 'Fictional' }] }).map(item => [item.name, item.source, slashGroup(item)]), [['clear', 'local', 'core'], ['review', 'skill', 'skills']]);
+  assert.deepEqual(slashItems({ commands: [{ name: 'clear' }], skills: [{ name: 'review', description: 'Fictional', argumentHint: '<file>' }], actions: [{ name: 'export', description: 'Fictional' }] }).map(item => [item.name, item.source, slashGroup(item), item.argumentHint]),
+    [['clear', 'local', 'built-in', undefined], ['review', 'skill', 'skills', '<file>'], ['export', 'action', 'actions', undefined]], 'commands, then skills, then actions, each in its own group');
   assert.deepEqual(pieces('/review @a.md now', { mentions: true, skills: ['review'] }).map(piece => piece.kind ?? 'text'), ['skill', 'text', 'mention', 'text']);
   assert.deepEqual(visibleParts(pieces('@uploads/x.png hello', { mentions: true, skills: [] }), piece => piece.kind === 'mention'), [{ text: 'hello' }]);
   assert.equal(fileKind('a/B.PDF'), 'pdf');

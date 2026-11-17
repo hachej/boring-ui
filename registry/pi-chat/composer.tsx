@@ -317,7 +317,7 @@ export function Composer(props: ComposerProps) {
   const pickSlash = (item: SlashItem) => {
     const rest = text.slice(caret).replace(/^\s+/, '');
     if (item.source === 'skill') return edit(`/${item.name} ${rest}`, item.name.length + 2);
-    const command = slash?.commands?.find(candidate => candidate.name === item.name);
+    const command = (item.source === 'action' ? slash?.actions : slash?.commands)?.find(candidate => candidate.name === item.name);
     onText(rest); setCaret(0);
     inner.current?.focus();
     if (!command) return;
@@ -417,6 +417,9 @@ export function Composer(props: ComposerProps) {
     {!slots && uploading && !(props.uploads?.length) && <span role="status" className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2Icon className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{labels.preparingAttachments}</span>}
     {!pill && <span className="min-w-0 flex-1" />}
     {!slots && props.barActions === true && items.length > 0 && <BarCommands disabled={disabled || recording} onCommands={openCommands} />}
+    {/* The bar's slash menu has no keyboard on a phone: a Commands button at the end of the bar opens it (touch screens only). */}
+    {!slots && props.barActions === 'attach' && items.length > 0 && <Button type="button" variant="secondary" size="icon" data-testid="composer-bar-commands" aria-label={labels.commands} title={labels.commands} disabled={disabled || recording} onClick={openCommands} className="hidden shrink-0 max-md:inline-flex pointer-coarse:inline-flex">
+      <icons.commands data-icon="inline-start" aria-hidden="true" /></Button>}
     {slots ? !stopInSend && props.recordingStop !== undefined && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.recordingStop}</div>
       : props.barEnd && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.barEnd}</div>}
     {!slots && working && hasContent && <Button variant="ghost" size="icon" data-testid="composer-queue" aria-label={labels.queue} title={labels.queue} disabled={!canSubmit} onClick={props.onSend} className="shrink-0">
