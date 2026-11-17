@@ -23,7 +23,8 @@ jobs:
   showcase:
     name: Check, capture and publish the showcase
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Measured on the 2-core VM: the check about 10 minutes, the capture (without video) about 23, the video recordings and the site on top: 30 was not enough.
+    timeout-minutes: 60
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

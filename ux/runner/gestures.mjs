@@ -20,7 +20,9 @@ export function condition(text, viewport) {
     if (kind === 'visible') return `(${any(rest)})`;
     if (kind === 'gone') return `!(${any(rest)})`;
     if (kind === 'focus') return `document.activeElement?.matches(${JSON.stringify(css(rest))})`;
-    if (kind === 'value' || kind === 'text') { const [t, needle] = rest.split('~'); return `((document.querySelector(${JSON.stringify(css(t))})?.${kind === 'value' ? 'value' : 'textContent'}) ?? '').includes(${JSON.stringify(needle)})`; }
+    if (kind === 'value' || kind === 'text') { const [t, needle] = rest.split('~'); // An icon-only control (a back arrow) is named by its aria-label, so `text` reads both.
+      const read = kind === 'value' ? 'e?.value' : "(e?.textContent ?? '') + ' ' + (e?.getAttribute('aria-label') ?? '')";
+      return `((e => ${read})(document.querySelector(${JSON.stringify(css(t))})) ?? '').includes(${JSON.stringify(needle)})`; }
     if (kind === 'count') { const [t, n] = rest.split('>='); return `document.querySelectorAll(${JSON.stringify(css(t))}).length >= ${Number(n)}`; }
     if (kind === 'eval') return `(${rest})`;
     throw new Error(`unknown condition: ${part}`);
@@ -47,7 +49,9 @@ export async function prepare(h, step) {
   });
   const ready = async () => {
     const l = loc(); await l.waitFor({ timeout: step.wait ?? 4000 }); const b = await l.boundingBox(); const a = b && touch ? await reach(l) : null;
-    h.target = b ? { w: Math.round(Math.max(b.width, a?.w ?? 0)), h: Math.round(Math.max(b.height, a?.h ?? 0)) } : null; return [l, b];
+    // The sheet's grabber counts a tap within 16 px above and below it and 24 px to each side (a window-level detector, `agent-compact`), not a hit-testable box: measure that.
+    const grabber = b && await l.evaluate(el => el.matches('[data-slot=drawer-swipe-handle]')).catch(() => false);
+    h.target = b ? { w: Math.round(Math.max(b.width + (grabber ? 48 : 0), a?.w ?? 0)), h: Math.round(Math.max(b.height + (grabber ? 32 : 0), a?.h ?? 0)) } : null; return [l, b];
   };
   switch (step.do) {
     case 'tap': case 'click': { const [l] = await ready(); return () => touch ? l.tap() : l.click(); }

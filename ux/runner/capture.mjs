@@ -82,6 +82,11 @@ async function runStates(browser, s, vp, out, opts, result) {
   }
 }
 
+// A step that was not tried because an earlier step of its flow did not complete.
+function notRun(def, h, ctx) {
+  return { say: def.say ?? `${def.do} ${pick(def.target ?? def.text ?? def.key ?? '', h.viewport)}`.trim(), ok: false, notRun: true, gap: def.gap ?? null, expect: def.expect ?? null, repeats: 0, target: null, focusAfter: null, offscreen: [], overlaps: [], truncated: [], horizontalScroll: false, cls: 0, moved: {}, scrollBefore: ctx.before.scroll, scrollAfter: ctx.before.scroll };
+}
+
 async function runFlow(browser, s, f, vp, out, opts, result) {
   const dir = join(out, 'flows', f.id, vp.name); rmSync(dir, { recursive: true, force: true }); mkdirSync(dir, { recursive: true });
   const h = await open(browser, s, vp, f.query, opts);
@@ -89,7 +94,14 @@ async function runFlow(browser, s, f, vp, out, opts, result) {
   const ctx = { before: await h.page.evaluate(snap(s.watch)) };
   if (!opts.fast) ctx.shot = async (label, ms, metric) => { const file = `frame-${String(frames.length).padStart(2, '0')}.png`; await h.page.screenshot({ path: join(dir, file) }); frames.push({ file, label, ms, metric }); return file; };
   await ctx.shot?.('Before', null);
-  for (const def of f.steps) { if (def.only && String(def.only) !== vp.name) continue; if (def.skip && String(def.skip) === vp.name) continue; steps.push(await step(h, s, def, ctx)); }
+  // A step that does not complete ends the flow: the steps after it depend on it, and each would wait out its own timeouts (a broken flow costs seconds, not minutes).
+  let broken = false;
+  for (const def of f.steps) {
+    if (def.only && String(def.only) !== vp.name) continue; if (def.skip && String(def.skip) === vp.name) continue;
+    if (broken) { steps.push(notRun(def, h, ctx)); continue; }
+    const rec = await step(h, s, def, ctx); steps.push(rec);
+    if (!rec.ok && !def.gap) broken = true;
+  }
   await h.ctx.close();
   const metrics = { id: f.id, name: f.name, viewport: vp.name, steps, consoleErrors: [...h.errors], failedRequests: [...h.failed] };
   result.flows.push(metrics);
