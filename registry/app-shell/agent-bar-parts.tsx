@@ -348,7 +348,7 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
   </>;
 }
 /** The bar while the agent waits for a decision (an approval or a question on the folded card): a warning border and a soft ring around the whole bar. No tray opens. */
-export const NEEDS_YOU = 'has-[[data-needs-you]]:ring-1 has-[[data-needs-you]]:ring-warning has-[[data-needs-you]]:shadow-[0_0_0_3px_color-mix(in_oklab,var(--warning)_22%,transparent)]';
+export const NEEDS_YOU = 'has-[[data-needs-you]]:ring-1 has-[[data-needs-you]]:ring-warning has-[[data-needs-you]]:outline-3 has-[[data-needs-you]]:outline-warning/25';
 
 /** `composer: 'bar'`: the thread (Ouvert), the folded card and the field in one frame at the field's width, never the page's (AC-16). The inner input group's own frame is cleared by the block's CSS (`.app-shell [data-one-composer]`). */
 export function OneBox({ children }: { readonly children: ReactNode }) {

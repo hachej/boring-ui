@@ -313,7 +313,7 @@ test('folded, 1280: a warning notice holds a chip in the field when its @ is use
 test('folded, 1280 and 390: a decision on the card gives the bar a warning border and soft ring, and the ring goes with the decision (AC-6)', { skip, timeout: 120000 }, async () => {
   for (const [width, query, bar] of [[1280, '', '[data-testid=agent-composer-box]'], [390, 'tabs=1', '[data-testid=agent-layer]']]) {
     await open(width, query);
-    const shadow = () => browser.evaluate(`getComputedStyle(document.querySelector(${js(bar)})).boxShadow`);
+    const shadow = () => browser.evaluate(`(s => s.boxShadow + ' ' + s.outlineWidth + ' ' + s.outlineColor)(getComputedStyle(document.querySelector(${js(bar)})))`);
     await browser.evaluate(`window.__run('tool')`);
     await browser.evaluate(`window.__run('reply')`);
     await browser.until('reply card', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply'`);
@@ -322,7 +322,7 @@ test('folded, 1280 and 390: a decision on the card gives the bar a warning borde
       await browser.evaluate(`window.__run('${kind}')`);
       await browser.until(`${kind} card`, `!!document.querySelector('[data-testid=agent-card] ${selector}')`);
       const ringed = await shadow();
-      assert.ok(ringed.includes(' 3px') && ringed !== calm, `the ${kind} ring at ${width} (${ringed})`);
+      assert.ok(ringed.includes(' 3px ') && ringed !== calm, `the ${kind} ring at ${width} (${ringed})`);
       assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=agent-card][data-needs-you]')`), true);
       assert.equal(await count('[data-testid=agent-tray]'), 0, 'no tray');
       assert.ok(['closed', 'peek'].includes(await dockState()), 'the conversation stays folded');
