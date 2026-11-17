@@ -13,6 +13,7 @@ import { createDemoController } from './demo-controller.mjs';
 import { installFakeMic } from './fake-mic.mjs';
 import script from '../scenarios/scripts/design-system.json';
 import { demoSlash } from './demo-slash.jsx';
+import { TASKS, Task } from './agent-card-demo.jsx';
 import { NoticeHost } from '../../registry/app-shell/shell-notice.tsx';
 import { updateNotice } from '../../registry/app-shell/update-notice.tsx';
 import { appShellText } from '../../registry/app-shell/text.ts';
@@ -45,6 +46,16 @@ const SCALE = ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl', 'text-2x
 const Section = ({ id, title, children }) => <section data-testid={`ds-${id}`} className="flex flex-col gap-3"><h2 className="m-0 text-lg font-semibold">{title}</h2>{children}</section>;
 const Row = ({ children }) => <div className="flex flex-wrap items-center gap-2">{children}</div>;
 
+// The « Agent cards » section: the kit's AgentCard for three agents in their colours (Reader, Mailer, Ledger) and a task card, folded by default;
+// the strip on a card's lower border opens its chat. Each card has its own scripted agent (`agent-card-demo.jsx`, shared with the Agent cards page).
+const SHOWN = ['running', 'needs', 'done', 'task'];
+function AgentCards() {
+  const [levels, setLevels] = useState({});
+  return <div data-testid="ds-agent-card-list" className="flex flex-col">
+    {TASKS.filter(task => SHOWN.includes(task.id)).map(task => <Task key={task.id} task={task} level={levels[task.id] ?? 0} onLevel={level => setLevels(now => ({ ...now, [task.id]: level }))} dock={null} docked={false} onDocked={() => {}} />)}
+  </div>;
+}
+
 function Page() {
   const layer = useAgentLayer();
   return <div className="mx-auto flex max-w-3xl flex-col gap-8 text-sm">
@@ -69,6 +80,16 @@ function Page() {
       <Card><CardHeader><CardTitle>A card</CardTitle><CardDescription>Flat, one border.</CardDescription></CardHeader><CardContent>Content</CardContent></Card>
     </Section>
     <Section id="files" title="File tree: every viewer"><div className="rounded-lg border"><FileTreeView controller={demoTree()} variant="plain" locale="en" upload={false} history={false} refresh={false} onOpen={path => layer.pane.push({ file: path })} /></div><p data-testid="ds-files-note" className="m-0 text-sm text-muted-foreground">Boards and canvases (tldraw) are not in this public demo: tldraw needs a licence key for production use (docs/architecture/CANVAS.md). They are checked by their own journeys (npm run board:journey).</p></Section>
+    <Section id="agent-cards" title="Agent cards">
+      <p className="m-0 text-muted-foreground">One unit of agent work as a folding card, three agents in their colours and a task card. Folded, a card is a header and what the agent does; a decision it waits for shows right on it. The strip on its lower border opens the chat, as on the assistant bar.</p>
+      <AgentCards />
+    </Section>
+    <Section id="notifications" title="Notifications">
+      <p className="m-0 text-muted-foreground">One notice at a time, shown above the assistant bar (look at the bottom of the screen). A decision the agent waits for rings the bar; a reply that arrives while the conversation is folded puts a count on the notch.</p>
+      <Row>{['info', 'success', 'warning', 'error'].map(kind => <Button key={kind} variant="outline" data-testid={`ds-notify-${kind}`} onClick={() => notify(kind)}>{kind[0].toUpperCase() + kind.slice(1)}</Button>)}
+        <Button variant="outline" data-testid="ds-notify-needs" onClick={() => { layer.close(); void controller.send('followUp', { text: 'approval', attachments: [], restore: { text: '', attachments: [] } }); }}>Needs you</Button>
+        <Button variant="outline" data-testid="ds-notify-reply" onClick={() => { layer.close(); void controller.send('followUp', { text: 'answer', attachments: [], restore: { text: '', attachments: [] } }); }}>A reply arrives while folded</Button></Row>
+    </Section>
     <Section id="navigation" title="Tabs, dialog, empty, loading">
       <Tabs defaultValue="a"><TabsList><TabsTrigger value="a">All</TabsTrigger><TabsTrigger value="b">Gaps</TabsTrigger></TabsList><TabsContent value="a">Everything</TabsContent><TabsContent value="b">Only gaps</TabsContent></Tabs>
       <Dialog><DialogTrigger render={<Button variant="outline" className="self-start">Open a dialog</Button>} /><DialogContent><DialogHeader><DialogTitle>A dialog</DialogTitle><DialogDescription>Kit defaults.</DialogDescription></DialogHeader></DialogContent></Dialog>
