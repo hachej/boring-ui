@@ -53,7 +53,6 @@
           "radius-xl": "calc(var(--radius) + 4px)",
           "radius-2xl": "calc(var(--radius) * 1.8)",
           "radius-3xl": "calc(var(--radius) * 2.2)",
-            "radius-round": "9999px",
           "default-border-width": "var(--border-width, 1px)",
           "shadow-xs": "var(--shadow-xs)",
           "shadow-sm": "var(--shadow-sm)",
@@ -2476,7 +2475,7 @@
             "background-color": "var(--card)"
           },
           ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"input-group\"] [data-slot=\"button\"]": {
-            "border-radius": "var(--radius-round)"
+            "border-radius": "var(--pm-radius-round)"
           },
           ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"input-group\"]": {
             "align-items": "center",
