@@ -92,7 +92,7 @@ export interface AgentLayerApi {
   /** Closes what `showing` names: with both open, the assistant (a second call closes the PM). */
   close(): void;
   /** Open the real chat with one card mention. Call directly from a click or swipe release to grant microphone permission. False without an agent. */
-  readonly talkAbout: (mention: string, options?: { readonly voice?: boolean; readonly at?: 'half' | 'full' }) => boolean;
+  readonly talkAbout: (mention: string, options?: { readonly voice?: boolean; readonly at?: 'half' | 'full'; readonly add?: boolean }) => boolean;
   readonly expanded: boolean;
   /**
    * `composer: 'bar'` (D-2198): shows the app's preview of a file (dropped, attached or cited) in the right column, or full screen on a phone. The column holds one
