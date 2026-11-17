@@ -57,6 +57,10 @@
       "types": "./dist/documents.d.ts",
       "import": "./dist/documents.js"
     },
+    "./caps/extraction": {
+      "types": "./dist/caps/extraction/index.d.ts",
+      "import": "./dist/caps/extraction/index.js"
+    },
     "./file-convert": {
       "types": "./dist/file-convert.d.ts",
       "import": "./dist/file-convert.js"
@@ -140,6 +144,10 @@
     "./approval": {
       "types": "./dist/approval.d.ts",
       "import": "./dist/approval.js"
+    },
+    "./caps/decision": {
+      "types": "./dist/caps/decision/index.d.ts",
+      "import": "./dist/caps/decision/index.js"
     },
     "./memory/optchat": {
       "types": "./dist/memory/optchat.d.ts",

@@ -37,3 +37,5 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Atlas | the screens-and-states manifest, its schema and `atlas --check` | [atlas.md](atlas.md) |
 | One model call | `complete`, `structured` and the `llm_structured` tool as a plain import | [cap-llm.md](cap-llm.md) |
 | Transcription | `transcribe`, the `transcribeHandler` route, the kit's `transcribeClient` and the `transcribe` tool, as a plain import | [cap-transcription.md](cap-transcription.md) |
+| Extraction | a PDF or a photo as text and checked fields, the `documents` OCR callback and the `extract_fields` tool, as a plain import | [cap-extraction.md](cap-extraction.md) |
+| A decision | `run`, `pickOne` and the `decide` tool over pi-ai's classify, as a plain import | [cap-decision.md](cap-decision.md) |

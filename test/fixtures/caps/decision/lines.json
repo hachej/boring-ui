@@ -1,0 +1,38 @@
+{
+  "accounts": {
+    "606100": "Eau, gaz et électricité",
+    "606300": "Petit équipement et outillage",
+    "606400": "Fournitures de bureau et papeterie",
+    "613200": "Loyer des locaux",
+    "616000": "Primes d'assurance",
+    "622600": "Honoraires (avocat, expert-comptable)",
+    "625100": "Voyages et déplacements (train, taxi, péage)",
+    "625600": "Repas d'affaires et missions",
+    "625700": "Réceptions et cafés offerts",
+    "626000": "Téléphone, internet et frais postaux",
+    "627000": "Frais bancaires",
+    "651000": "Abonnements logiciels"
+  },
+  "lines": [
+    { "text": "Facture EDF 84,20 €", "account": "606100" },
+    { "text": "Café 3,50 €", "account": "625700" },
+    { "text": "Billet de train Lyon-Paris 62,00 €", "account": "625100" },
+    { "text": "Ramettes de papier A4 x5 24,90 €", "account": "606400" },
+    { "text": "Loyer bureau mars 950,00 €", "account": "613200" },
+    { "text": "Assurance responsabilité civile pro 312,00 €", "account": "616000" },
+    { "text": "Honoraires avocat dossier bail 480,00 €", "account": "622600" },
+    { "text": "Déjeuner client restaurant Le Fictif 58,40 €", "account": "625600" },
+    { "text": "Forfait mobile Orange-Exemple 19,99 €", "account": "626000" },
+    { "text": "Frais de tenue de compte 9,00 €", "account": "627000" },
+    { "text": "Abonnement logiciel de facturation 29,00 €", "account": "651000" },
+    { "text": "Perceuse sans fil 89,00 €", "account": "606300" },
+    { "text": "Facture eau Veolia-Exemple 41,10 €", "account": "606100" },
+    { "text": "Taxi gare-bureau 23,00 €", "account": "625100" },
+    { "text": "Timbres et lettre recommandée 12,60 €", "account": "626000" },
+    { "text": "Cartouches d'encre imprimante 46,00 €", "account": "606400" },
+    { "text": "Commission carte bancaire 3,20 €", "account": "627000" },
+    { "text": "Viennoiseries réunion d'équipe 15,80 €", "account": "625700" },
+    { "text": "Péage autoroute A7 18,30 €", "account": "625100" },
+    { "text": "Abonnement stockage en ligne 9,99 €", "account": "651000" }
+  ]
+}

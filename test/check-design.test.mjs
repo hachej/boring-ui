@@ -46,6 +46,21 @@ test('no Card is nested inside another Card; a sibling or a render prop is not n
   assert.deepEqual(scanDesign('registry/feedback/feedback-list.tsx', flat).filter(finding => finding.rule === 'design-no-nested-card'), []);
 });
 
+test('a TypeScript type argument named Card is not a nested Card', () => {
+  const text = 'const rows = op<Card>("list");\nconst all: Array<Card> = [];\nexport const view = <Card>x</Card>;\nconst more = useState<Card | null>(null);';
+  assert.deepEqual(scanAppDesign('src/ops.tsx', text).filter(finding => finding.rule === 'design-no-nested-card'), []);
+  const inside = '<Card>\n  {op<Card>("a")}\n</Card>';
+  assert.deepEqual(scanAppDesign('src/ops.tsx', inside).filter(finding => finding.rule === 'design-no-nested-card'), []);
+});
+
+test('the focus ring the kit writes into index.css passes; another shadow literal in app css still fails', () => {
+  const ring = '.boring-markdown-source:focus-visible {\n  border-color: transparent;\n  box-shadow: inset 0 0 0 2px var(--ring);\n}';
+  assert.deepEqual(scanAppDesign('src/index.css', ring), []);
+  for (const bad of ['box-shadow: 2px 4px 12px var(--ring);', 'box-shadow: inset 0 0 0 2px #fff;', 'box-shadow: inset 0 2px 0 2px var(--ring);']) {
+    assert.ok(scanAppDesign('src/index.css', `.a {\n  ${bad}\n}`).some(finding => finding.rule === 'literal-value'), bad);
+  }
+});
+
 test('app code gets the same card rules through the app profile', () => {
   const text = '<Card className="shadow-md"><Card /></Card>';
   const rules = new Set(scanAppDesign('src/app/page.tsx', text).map(finding => finding.rule));
