@@ -57,6 +57,10 @@
       "types": "./dist/documents.d.ts",
       "import": "./dist/documents.js"
     },
+    "./caps/extraction": {
+      "types": "./dist/caps/extraction/index.d.ts",
+      "import": "./dist/caps/extraction/index.js"
+    },
     "./file-convert": {
       "types": "./dist/file-convert.d.ts",
       "import": "./dist/file-convert.js"
@@ -113,6 +117,14 @@
       "types": "./dist/chat-transport.d.ts",
       "import": "./dist/chat-transport.js"
     },
+    "./caps/transcription": {
+      "types": "./dist/caps/transcription/index.d.ts",
+      "import": "./dist/caps/transcription/index.js"
+    },
+    "./caps/transcription-client": {
+      "types": "./dist/caps/transcription/client.d.ts",
+      "import": "./dist/caps/transcription/client.js"
+    },
     "./conversations": {
       "types": "./dist/conversations.d.ts",
       "import": "./dist/conversations.js"
@@ -132,6 +144,10 @@
     "./approval": {
       "types": "./dist/approval.d.ts",
       "import": "./dist/approval.js"
+    },
+    "./caps/decision": {
+      "types": "./dist/caps/decision/index.d.ts",
+      "import": "./dist/caps/decision/index.js"
     },
     "./memory/optchat": {
       "types": "./dist/memory/optchat.d.ts",

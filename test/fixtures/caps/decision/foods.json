@@ -1,0 +1,12 @@
+[
+  { "sentence": "une part de tarte aux pommes et un jus d'orange", "item": "tarte aux pommes", "options": { "tarte-pommes": "Tarte aux pommes, pâtisserie", "pomme": "Pomme crue, fruit", "compote": "Compote de pommes" }, "expected": "tarte-pommes" },
+  { "sentence": "une part de tarte aux pommes et un jus d'orange", "item": "jus d'orange", "options": { "orange": "Orange crue, fruit", "jus-orange": "Jus d'orange pur jus", "soda-orange": "Boisson gazeuse à l'orange" }, "expected": "jus-orange" },
+  { "sentence": "deux tartines de pain beurré", "item": "pain", "options": { "pain-blanc": "Pain blanc, baguette", "pain-mie": "Pain de mie", "biscotte": "Biscotte" }, "expected": "pain-blanc" },
+  { "sentence": "un yaourt nature au petit déjeuner", "item": "yaourt nature", "options": { "yaourt-nature": "Yaourt nature au lait entier", "yaourt-fruits": "Yaourt aux fruits", "fromage-blanc": "Fromage blanc" }, "expected": "yaourt-nature" },
+  { "sentence": "une assiette de riz blanc avec du poulet", "item": "riz", "options": { "riz-cuit": "Riz blanc cuit", "riz-cru": "Riz blanc cru", "risotto": "Risotto" }, "expected": "riz-cuit" },
+  { "sentence": "une assiette de riz blanc avec du poulet", "item": "poulet", "options": { "poulet-roti": "Poulet rôti, viande", "nuggets": "Nuggets de poulet panés", "bouillon": "Bouillon de volaille" }, "expected": "poulet-roti" },
+  { "sentence": "un café noir sans sucre", "item": "café", "options": { "cafe-noir": "Café noir, sans sucre", "cappuccino": "Cappuccino", "cafe-soluble": "Café soluble en poudre" }, "expected": "cafe-noir" },
+  { "sentence": "une banane après le sport", "item": "banane", "options": { "banane": "Banane crue, fruit", "banane-sechee": "Banane séchée", "smoothie": "Smoothie banane" }, "expected": "banane" },
+  { "sentence": "un bol de soupe de légumes", "item": "soupe", "options": { "soupe-legumes": "Soupe de légumes maison", "veloute": "Velouté à la crème", "gaspacho": "Gaspacho" }, "expected": "soupe-legumes" },
+  { "sentence": "trois carrés de chocolat noir", "item": "chocolat noir", "options": { "chocolat-noir": "Chocolat noir 70 %", "chocolat-lait": "Chocolat au lait", "pate-tartiner": "Pâte à tartiner" }, "expected": "chocolat-noir" }
+]
