@@ -1,5 +1,5 @@
 // What the capabilities share (llm, extraction, transcription, decision): one plain call with a listed-provider failover, an optional meter,
-// one time limit and a run id built from the input. No host, no Effect, no environment, no console. Runs on Workers (WebCrypto only).
+// one time limit and a run id built from the input. No host, no Effect, no environment, no logging. Runs on Workers (WebCrypto only).
 import type { Usage } from '@earendil-works/pi-ai';
 import type { MeteringReservation, MeteringSink } from '../metering.js';
 
