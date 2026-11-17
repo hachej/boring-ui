@@ -43,6 +43,17 @@ for (const directory of readdirSync(join(root, 'packages'), { withFileTypes: tru
     else errors.push(`repo verify: ${relative(root, packageRoot)} exports ${file}, but no matching source exists under src/`);
   }
 }
+// A `bin` target under ./dist/ is a root the same way an export is (a bin outside dist/, such as the kit's own, is unchanged).
+for (const directory of readdirSync(join(root, 'packages'), { withFileTypes: true }).filter((entry) => entry.isDirectory())) {
+  const packageRoot = join(root, 'packages', directory.name);
+  const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
+  for (const file of Object.values(typeof manifest.bin === 'string' ? { bin: manifest.bin } : manifest.bin ?? {})) {
+    if (typeof file !== 'string' || !file.startsWith('./dist/')) continue;
+    const source = candidates(join(packageRoot, 'src', file.slice('./dist/'.length).replace(/\.js$/, ''))).find((path) => knownSources.has(path));
+    if (source) roots.add(source);
+    else errors.push(`repo verify: ${relative(root, packageRoot)} has bin ${file}, but no matching source exists under src/`);
+  }
+}
 const testFiles = walk(join(root, 'test'), (path) => /\.test\.[cm]?[jt]sx?$/.test(path));
 for (const entry of config.additionalSourceRoots ?? []) {
   const directory = resolve(root, entry.path);

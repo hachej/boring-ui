@@ -25,6 +25,8 @@ export function checkSource(file, source, policy) {
   const rules = policy.packages[owner];
   const errors = sf.parseDiagnostics.map((d) => `BORING-PI-4 ${file}: cannot parse source: ${ts.flattenDiagnosticMessageText(d.messageText, ' ')}`);
   const aliases = new Map();
+  // host-contract-freeze AC-15: the one computed import() that SELF-2 (check-pi-boundary.mjs) allows, in host-build.ts only.
+  let computedAllowed = file === 'packages/agent/src/host-build.ts' ? 1 : 0;
   const fail = (law, message) => errors.push(`${law} ${file}: ${message}`);
   // Folder rules inside one package (`pathRules`): a subpath such as a browser entry cannot import what its
   // package may import elsewhere, by module name or by a relative path into a sibling folder.
@@ -37,6 +39,10 @@ export function checkSource(file, source, policy) {
         const target = posix.normalize(posix.join(dirname(file), name)).slice(`packages/${owner}/`.length);
         if ((rule.forbiddenRelative ?? []).some((prefix) => target.startsWith(prefix))) fail('BORING-PI-5', `forbidden relative import in ${rule.prefix}: ${name}`);
       }
+    }
+    // Allow-only form: a name that matches `names` is imported only from a file under one of `prefixes`.
+    for (const rule of rules.onlyIn ?? []) {
+      if (!name.startsWith('.') && matches(name, rule.names) && !rule.prefixes.some((prefix) => local.startsWith(prefix))) fail('BORING-PI-5', `${name} is allowed only in ${rule.prefixes.join(', ')}`);
     }
     const pi = upstream(name, policy);
     if (pi && (privatePath(name) || !matches(name === pi ? '.' : `.${name.slice(pi.length)}`, policy.upstreamExports[pi]))) {
@@ -87,7 +93,8 @@ export function checkSource(file, source, policy) {
       if (name !== undefined) moduleRule(name, true);
     } else if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === 'require'))) {
       const name = node.arguments[0] && text(node.arguments[0]);
-      if (name === undefined) fail('BORING-PI-4', 'computed loading is not an approved public seam');
+      if (name === undefined && node.expression.kind === ts.SyntaxKind.ImportKeyword && computedAllowed-- > 0) { /* the named exception */ }
+      else if (name === undefined) fail('BORING-PI-4', 'computed loading is not an approved public seam');
       else {
         moduleRule(name, false);
         if (upstream(name, policy) && ts.isVariableDeclaration(node.parent)) {

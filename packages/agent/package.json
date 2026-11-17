@@ -176,7 +176,26 @@
     "./actions": {
       "types": "./dist/actions.d.ts",
       "import": "./dist/actions.js"
+    },
+    "./host": {
+      "types": "./dist/host.d.ts",
+      "import": "./dist/host.js"
+    },
+    "./host-runtime": {
+      "types": "./dist/host-runtime.d.ts",
+      "import": "./dist/host-runtime.js"
+    },
+    "./host-cloudflare": {
+      "types": "./dist/host-cloudflare.d.ts",
+      "import": "./dist/host-cloudflare.js"
+    },
+    "./host-build": {
+      "types": "./dist/host-build.d.ts",
+      "import": "./dist/host-build.js"
     }
+  },
+  "bin": {
+    "boring-host-build": "./dist/host-build-cli.js"
   },
   "dependencies": {
     "unpdf": "1.9.1"
