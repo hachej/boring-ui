@@ -23,7 +23,7 @@ import { cn } from '../utils/utils';
 /** 0 folded, 1 the small tray, 2 the whole chat. */
 export type AgentCardLevel = 0 | 1 | 2;
 export interface AgentCardLabels { readonly expand: string; readonly expandMore: string; readonly collapse: string; readonly dock: string; readonly undock: string; readonly docked: string; readonly unread: string; readonly chat: string }
-const WORDS: AgentCardLabels = { expand: 'Expand', expandMore: 'Expand more', collapse: 'Collapse', dock: 'Dock', undock: 'Undock', docked: 'Docked', unread: 'New reply', chat: 'Message the agent' };
+const WORDS: AgentCardLabels = { expand: 'Expand', expandMore: 'Expand more', collapse: 'Collapse', dock: 'Dock', undock: 'Undock', docked: 'Docked', unread: 'New reply', chat: 'Open the chat' };
 
 export interface AgentCardProps extends Pick<AgentChatProps, 'controller' | 'agent' | 'status' | 'chatProps'> {
   readonly title: string;
@@ -65,11 +65,14 @@ export function AgentCard({ controller, agent, title, status, activity, meta, le
   useEffect(() => { if (level > 0 && bar.reply) bar.markRead(); }, [level, bar]);
 
   const arrows = stripIcons('bottom');
+  // The ladder, one step at a time (the card grows downward from its strip): chat bubble, composer, tray, full chat; Dock at every step.
+  const collapse = { id: 'chevron', testId: 'agent-card-collapse', label: words.collapse, icon: arrows.collapse, expanded: true, primary: true } as const;
+  const ladder: ControllerAction[] = level === 2 ? [{ ...collapse, onSelect: () => setLevel(1, true) }]
+    : level === 1 ? [{ ...collapse, onSelect: () => { setLevel(0, true); setComposer(true); } }, { id: 'more', testId: 'agent-card-expand-more', label: words.expandMore, icon: arrows.more, onSelect: () => setLevel(2) }]
+    : composer ? [{ ...collapse, onSelect: () => setComposer(false) }, { id: 'expand', testId: 'agent-card-expand', label: words.expand, icon: arrows.expand, expanded: false, onSelect: () => setLevel(1) }]
+    : [{ id: 'chat', testId: 'agent-card-chat', label: words.chat, icon: <MessageSquareIcon aria-hidden="true" />, primary: true, onSelect: () => setComposer(true) }];
   const actions: ControllerAction[] = docked ? [{ id: 'undock', testId: 'agent-card-undock', label: words.undock, icon: <PanelRightIcon aria-hidden="true" />, primary: true, on: true, onSelect: () => setDocked(false) }]
-    : [...(level === 0 ? [{ id: 'chat', testId: 'agent-card-chat', label: words.chat, icon: <MessageSquareIcon aria-hidden="true" />, primary: true, on: composer, onSelect: () => setComposer(now => !now) },
-      { id: 'chevron', testId: 'agent-card-expand', label: words.expand, icon: arrows.expand, expanded: false, onSelect: () => setLevel(1) }] : [{ id: 'chevron', testId: 'agent-card-collapse', label: words.collapse, icon: arrows.collapse, expanded: true, primary: true, onSelect: () => setLevel(0, true) }]),
-    ...(level === 1 ? [{ id: 'more', testId: 'agent-card-expand-more', label: words.expandMore, icon: arrows.more, onSelect: () => setLevel(2) }] : []),
-    ...(dock ? [{ id: 'dock', testId: 'agent-card-dock', label: words.dock, icon: <PanelRightIcon aria-hidden="true" />, onSelect: () => setDocked(true) }] : [])];
+    : [...ladder, ...(dock ? [{ id: 'dock', testId: 'agent-card-dock', label: words.dock, icon: <PanelRightIcon aria-hidden="true" />, onSelect: () => setDocked(true) }] : [])];
 
   const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented && level > 0 && !docked) { event.preventDefault(); setLevel(0, true); } };
   const line = activity ?? bar.status?.text;
