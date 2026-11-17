@@ -146,7 +146,7 @@ function useControllerActions(): readonly ControllerAction[] {
     return [{ id: 'chevron', testId: 'agent-bar-conversation', label: open ? text.collapse : text.conversation, icon: open ? down : up, expanded: open, primary: true, onSelect: () => { if (open) { layer.close(); focusField(); } else layer.open('agent'); } },
       ...(layer.snap === 'half' ? [more(() => layer.setSnap('full'))] : [])];
   }
-  if (layer.trayOpen && layer.size === 'full') return [{ id: 'chevron', testId: 'agent-full-back', label: text.exitFullScreen, icon: down, expanded: true, primary: true, onSelect: () => layer.setSize('grown') }];
+  if (layer.trayOpen && layer.size === 'full') return [{ id: 'chevron', testId: 'agent-full-back', label: text.exitFullScreen, icon: down, expanded: true, primary: true, onSelect: layer.leaveFull }];
   if (layer.dockOpen) return [];
   if (layer.trayOpen) return [
     { id: 'chevron', testId: 'agent-tray-reduce', label: text.collapse, icon: down, expanded: true, primary: true, onSelect: () => { layer.close(); focusField(); } },
@@ -155,7 +155,7 @@ function useControllerActions(): readonly ControllerAction[] {
     full,
   ];
   return [{ id: 'chevron', testId: 'agent-bar-conversation', label: text.conversation, icon: up, expanded: false, primary: true, onSelect: () => layer.open('agent') },
-    { ...full, onSelect: () => { layer.open('agent'); layer.setSize('full'); } }];
+    { ...full, onSelect: () => layer.enterFull('folded') }];
 }
 
 /** One cell of the controller notch: a plain 16 px high button (no chip, no circle: a hover fill only) whose 44 px hit area is its invisible ::before. `extra` cells start closed (0 wide). */

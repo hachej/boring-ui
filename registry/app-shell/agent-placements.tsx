@@ -4,7 +4,7 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactElement, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDownIcon, ChevronUpIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, XIcon } from '../_shared/icons';
+import { ChevronDownIcon, ChevronUpIcon, MaximizeIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -79,6 +79,7 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   const control = (id: string, label: string, Icon: ComponentType<{ className?: string }>, run: () => void) =>
     <Button variant="ghost" size="icon" key={id} data-testid={`agent-layer-${id}`} data-dock-control="" aria-label={label} title={label} onClick={act(run)}><Icon data-icon="inline-start" aria-hidden="true" /></Button>;
   const controls = layer.bar ? <>
+    <Button variant="ghost" size="icon" data-testid="agent-layer-full" aria-label={text.fullScreen} title={text.fullScreen} onClick={() => layer.enterFull('dock')}><MaximizeIcon data-icon="inline-start" aria-hidden="true" /></Button>
     <Button variant="ghost" size="icon" data-testid="agent-layer-undock" aria-label={text.undock} title={text.undock} aria-pressed onClick={() => { layer.setMode('tray'); requestAnimationFrame(() => layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true })); }}><PanelBottomIcon data-icon="inline-start" aria-hidden="true" /></Button>
     <Button variant="ghost" size="icon" data-testid="agent-layer-close" aria-label={text.collapse} title={text.collapse} onClick={layer.close}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button>
   </> : <>
@@ -245,7 +246,7 @@ function FullScreen() {
   const { text, title } = useTitle();
   const root = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLElement | null>(typeof document === 'undefined' ? null : document.activeElement as HTMLElement | null);
-  const { setSize, setFullField, close } = layer;
+  const { setFullField, close } = layer;
   const closing = useRef(false);
   const closeAll = useCallback(() => { closing.current = true; close(); }, [close]);
   // The conversation fills the main area, the rect the bar is centred on: the left navigation and the right pane stay beside it, visible and live.
@@ -259,7 +260,7 @@ function FullScreen() {
     window.addEventListener('resize', measure);
     return () => { observer?.disconnect(); window.removeEventListener('resize', measure); };
   }, []);
-  const back = useCallback(() => setSize('grown'), [setSize]);
+  const { leaveFull: back } = layer;
   const backRef = useRef(back);
   useLayoutEffect(() => { backRef.current = back; });
   useLayoutEffect(() => {
@@ -291,11 +292,14 @@ function FullScreen() {
         (el as HTMLElement).inert = inert;
         if (hidden === null) el.removeAttribute('aria-hidden'); else el.setAttribute('aria-hidden', hidden);
       }
-      requestAnimationFrame(() => {
-        // Back and Esc land on the opener (the strip's Full control when that is gone).
-        const target = closing.current ? document.querySelector<HTMLElement>('[data-testid=composer-input]') : returnTo?.isConnected ? returnTo : document.querySelector<HTMLElement>('[data-testid=agent-tray-full]');
+      // Back and Esc land on the opener (the strip's or the docked header's Full control when that is gone, which may mount a frame or two later).
+      let frames = 0;
+      const land = () => {
+        const target = closing.current ? document.querySelector<HTMLElement>('[data-testid=composer-input]') : returnTo && returnTo !== document.body && returnTo.isConnected && returnTo.getClientRects().length > 0 ? returnTo : document.querySelector<HTMLElement>('[data-testid=agent-tray-full], [data-testid=agent-layer-full]');
         target?.focus({ preventScroll: true });
-      });
+        if (document.activeElement !== target && ++frames < 12) requestAnimationFrame(land);
+      };
+      requestAnimationFrame(land);
     };
   }, []);
   return createPortal(

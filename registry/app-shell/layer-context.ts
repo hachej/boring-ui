@@ -214,6 +214,9 @@ export interface Internal extends Omit<AgentLayerApi, 'agent'> {
   /** How much of the screen the conversation takes: `open` (the tray, the phone's half), `grown` (Agrandir: the tray fills the main column) and `full` (the whole viewport over the nav and the right pane; the phone's full snap is this same state). */
   readonly size: ConversationSize;
   readonly setSize: (size: ConversationSize) => void;
+  /** Go full screen, remembering the origin: `folded` (the collapsed bar) and `dock` (the docked column) are where `leaveFull` goes back to; no origin goes back to the grown tray. */
+  readonly enterFull: (from?: 'folded' | 'dock') => void;
+  readonly leaveFull: () => void;
   /** Where the one composer is drawn while the conversation is full screen (set by that surface, null otherwise). */
   readonly setFullField: (element: HTMLElement | null) => void;
   /** The thread is on show in the tray above the field. */
