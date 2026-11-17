@@ -46,9 +46,10 @@ const cardFlat = /<Card\b[^>]*?\bclassName\s*=\s*(?:"[^"]*\b(?:border|shadow|rin
 
 /** `<Card` tags opened inside another open `<Card>` (a self-closing Card and a Card in a prop are not nesting). Lexical, over JSX tags. */
 function nestedCards(source) {
-  const found = [], open = [], tag = /<(\/?)Card\b/g;
+  // A `<Card` right after a word character, `.`, `)` or `]` is a type argument (`op<Card>(...)`, `Array<Card>`), not JSX (same guard as CARD_OPEN).
+  const found = [], open = [], tag = /<\/Card\b|(?<![\w$.)\]])<Card\b/g;
   for (let match; (match = tag.exec(source));) {
-    if (match[1]) { open.pop(); continue; }
+    if (match[0][1] === '/') { open.pop(); continue; }
     let depth = 0, quote = null, end = match.index + match[0].length;
     for (; end < source.length; end++) {
       const char = source[end];
@@ -95,7 +96,8 @@ export const APP_RULES = [
   ['border-width', /(?<![\w-])border(?:-[trblxyse])?-(?!0(?![\w.]))\d+(?![\w-])/g],
   ['border-width', new RegExp(String.raw`\b(?:border(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?(?:-width)?|border(?:Top|Right|Bottom|Left)?Width|border(?:Top|Right|Bottom|Left)?)\s*:\s*['"]?(?=[^;\n}"']*?${LENGTH})[^;\n}"']*`, 'g')],
   ['font', /\bfont-family\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+|\bfontFamily\s*:\s*['"](?!var\()[^'"]+['"]|\bfont\s*:\s*(?!\s*(?:var\(|inherit\b))[^;\n}]+/g],
-  ['literal-value', /\b(?:border-radius|borderRadius|box-shadow|boxShadow|font-size|fontSize|letter-spacing|letterSpacing)\s*:\s*['"]?(?!\s*(?:var\(|calc\(\s*var\(|inherit\b|initial\b|unset\b|none\b|0(?![\w.])))(?=[^;\n}"']*\d)[^;\n}"']*/g],
+  // `inset 0 0 0 <n>px var(--token)` is the focus ring the kit's own viewer-frame css writes into an app's index.css: no offset, blur or colour is chosen, so it passes; any other shadow literal still fails.
+  ['literal-value', /\b(?:border-radius|borderRadius|box-shadow|boxShadow|font-size|fontSize|letter-spacing|letterSpacing)\s*:\s*['"]?(?!\s*(?:var\(|calc\(\s*var\(|inherit\b|initial\b|unset\b|none\b|0(?![\w.])|inset\s+0\s+0\s+0\s+\d+(?:\.\d+)?px\s+var\(--[\w-]+\)\s*(?:[;}\n"']|$)))(?=[^;\n}"']*\d)[^;\n}"']*/g],
   ['dark', /(?<![\w-])dark:[^\s"'`]+/g],
   ['design-no-x-scroll', noXScroll],
 ];
