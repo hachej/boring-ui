@@ -290,7 +290,8 @@ export const FOLDED_FIELD = '[&_[data-testid=preparing]]:hidden [&_[data-testid=
 /** An artifact kind as the pane's file viewer uses it: structurally the `match` and `renderer` of a diagram, drawing, mock-up, records or maquette kind. */
 export interface FileKind {
   readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;
-  readonly renderer: (props: { readonly text: string }) => ReactNode;
+  /** `title`: the file's name (the last path segment), for a kind that reads its siblings. */
+  readonly renderer: (props: { readonly text: string; readonly title?: string | undefined }) => ReactNode;
   /** The kind's name (« Diagram ») and icon: the file card and the file chips use them, as the Library does. */
   readonly label?: string | undefined;
   readonly icon?: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }> | undefined;

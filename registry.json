@@ -3318,12 +3318,13 @@
       "name": "viewer-code",
       "type": "registry:component",
       "title": "Code viewers",
-      "description": "The SVG and CSV kinds: `svgKind` (a preview from a blob URL, or its source) and `csvKind` (a table, with an « @ » action on each row where the shell offers one: `RowReferenceContext`), drawn inside the artifact panel's bar. Each view loads the first time its artifact opens; other code stays in the panel's code block.",
+      "description": "The SVG, CSV and code kinds: `svgKind` (a preview from a blob URL, or its source), `codeKind` (TypeScript, JavaScript, Python, shell and JSON with coloured syntax and numbered lines, no highlighter dependency) and `csvKind` (a table, with an « @ » action on each row where the shell offers one: `RowReferenceContext`), drawn inside the artifact panel's bar. Each view loads the first time its artifact opens; other text stays in the panel's code block.",
       "dependencies": [
         "react@^19.0.0",
         "@hachej/boring-ui-kit@^0.5.2"
       ],
       "registryDependencies": [
+        "@boring-ui/utils",
         "@boring-ui/viewer-frame",
         "@boring-ui/pi-chat",
         "@boring-ui/button",
@@ -3349,6 +3350,16 @@
           "path": "registry/viewer-code/row-reference.tsx",
           "type": "registry:component",
           "target": "components/viewer-code/row-reference.tsx"
+        },
+        {
+          "path": "registry/viewer-code/code-view.tsx",
+          "type": "registry:component",
+          "target": "components/viewer-code/code-view.tsx"
+        },
+        {
+          "path": "registry/viewer-code/highlight.ts",
+          "type": "registry:lib",
+          "target": "components/viewer-code/highlight.ts"
         }
       ]
     },

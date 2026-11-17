@@ -4,6 +4,14 @@ import maquette from '../board/booking.maquette.json';
 import excalidraw from '../drawing/oakfield-garden.excalidraw';
 import drawio from '../drawing/bakery-morning.drawio';
 import mockup from '../booking.mockup.html';
+import gapsChart from '../html/gaps-chart.html';
+import welcome from '../html/welcome.html';
+import looksFile from '../looks/missing-receipts.looks.json';
+import looksMockup from '../looks/missing-receipts.mockup.html';
+import layoutsFile from '../looks/missing-receipts-layouts.looks.json';
+import layoutBoard from '../looks/layout-board.mockup.html';
+import layoutListDetail from '../looks/layout-list-detail.mockup.html';
+import layoutTable from '../looks/layout-table.mockup.html';
 
 // The demo's files (`?demo=1`), made in memory on first read, all invented English bookkeeping content: what `agent.files.read` hands the pane's
 // viewer. One of each kind the kit shows: PDFs of one and two pages, a CSV table, Markdown notes, a PNG receipt, a JSON export, a plain text and a
@@ -75,9 +83,68 @@ const MAKERS = {
   'samples/open-gaps.csv': () => text('Label,Date,Amount,Status\nDelmore House invoice 0112,Jan 12,"$1,368.00",Unpaid\nCard The Cedar Diner,Jan 15,-$12.00,Needs a receipt\nCard Harbor Garage,Jan 09,$12.00,Needs a receipt\nBrown & Sons invoice 0121,Jan 21,"$1,150.00",Reminder due\nAxiom Insurance premium,Jan 08,$212.00,No entry\n', 'text/csv'),
   'samples/archive/gaps-2025.csv': () => text('Label,Date,Amount,Status\nDelmore House invoice 0098,Dec 12,"$980.00",Paid\n', 'text/csv'),
   'samples/archive/notes-2025.md': () => text('# Notes 2025\n\nInvented closing notes (fictional).\n', 'text/markdown'),
-  'samples/reconcile.ts': () => text('export const gap = (statement: number, books: number): number => Math.round((statement - books) * 100) / 100;\n', 'text/plain'),
-  'samples/reconcile.py': () => text('def gap(statement, books):\n    return round(statement - books, 2)\n', 'text/plain'),
-  'samples/close-month.sh': () => text('#!/bin/sh\n# Invented closing steps (fictional).\necho "Justify the January gaps"\n', 'text/plain'),
+  'samples/gaps-chart.html': () => text(gapsChart, 'text/html'),
+  'samples/welcome.html': () => text(welcome, 'text/html'),
+  'samples/looks/missing-receipts.looks.json': () => text(JSON.stringify(looksFile), 'application/json'),
+  'samples/looks/missing-receipts.mockup.html': () => text(looksMockup, 'text/html'),
+  'samples/looks/missing-receipts-layouts.looks.json': () => text(JSON.stringify(layoutsFile), 'application/json'),
+  'samples/looks/layout-board.mockup.html': () => text(layoutBoard, 'text/html'),
+  'samples/looks/layout-list-detail.mockup.html': () => text(layoutListDetail, 'text/html'),
+  'samples/looks/layout-table.mockup.html': () => text(layoutTable, 'text/html'),
+  'samples/reconcile.ts': () => text(`// Invented reconciliation helper (fictional).
+import type { Line } from './lines';
+
+export interface Gap { readonly label: string; readonly amount: number }
+
+/** The difference between the bank statement and the books, rounded to cents. */
+export const gap = (statement: number, books: number): number => Math.round((statement - books) * 100) / 100;
+
+export function openGaps(lines: readonly Line[]): Gap[] {
+  const found: Gap[] = [];
+  for (const line of lines) {
+    const amount = gap(line.statement, line.books);
+    if (amount !== 0) found.push({ label: \`\${line.label} (\${line.date})\`, amount });
+  }
+  return found; /* sorted by the caller */
+}
+`, 'text/plain'),
+  'samples/reconcile.py': () => text(`"""Invented reconciliation helper (fictional)."""
+from dataclasses import dataclass
+
+
+@dataclass
+class Line:
+    label: str
+    statement: float
+    books: float
+
+
+def gap(statement, books):
+    # The difference, rounded to cents.
+    return round(statement - books, 2)
+
+
+def open_gaps(lines):
+    return [(line.label, gap(line.statement, line.books)) for line in lines if gap(line.statement, line.books) != 0]
+
+
+if __name__ == "__main__":
+    print(open_gaps([Line("Card Harbor Garage", 96.5, 84.5)]), 12.0, None)
+`, 'text/plain'),
+  'samples/close-month.sh': () => text(`#!/bin/sh
+# Invented closing steps (fictional).
+set -eu
+
+month="\${1:-2026-01}"
+echo "Justify the gaps of $month"
+
+for file in uploads/discrepancies-*.csv; do
+  if [ -f "$file" ]; then
+    echo "checking $file"
+  fi
+done
+exit 0
+`, 'text/plain'),
 };
 export const DEMO_FILES = Object.keys(MAKERS);
 /** The attachments of the line detail opened from the page (the Jan 9 gap): a receipt PDF, a note and the photo of the ticket. */
