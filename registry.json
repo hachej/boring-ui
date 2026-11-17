@@ -1141,7 +1141,7 @@
       ],
       "registryDependencies": [
         "@boring-ui/pi-chat",
-        "@boring-ui/pi-chat-approval",
+        "@boring-ui/pi-chat-plugins",
         "@boring-ui/_shared",
         "@boring-ui/utils"
       ],
@@ -1150,6 +1150,29 @@
           "path": "registry/agent-chat/agent-chat.tsx",
           "type": "registry:component",
           "target": "components/agent-chat/agent-chat.tsx"
+        }
+      ]
+    },
+    {
+      "name": "agent-card",
+      "type": "registry:block",
+      "title": "Agent card",
+      "description": "One unit of agent work (a run, a task, a job) as a collapsible card that keeps working in the background: a header with the agent's colour dot, a title, a status chip and one line of activity, an optional `meta` for a task's fields, a decision the agent waits for on the folded card, and the composer's levels (folded, a small tray, the whole chat, docked) on a controller strip on its lower border.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/agent-chat",
+        "@boring-ui/agent-bar",
+        "@boring-ui/pi-chat-approval",
+        "@boring-ui/_shared",
+        "@boring-ui/utils"
+      ],
+      "files": [
+        {
+          "path": "registry/agent-card/agent-card.tsx",
+          "type": "registry:component",
+          "target": "components/agent-card/agent-card.tsx"
         }
       ]
     },

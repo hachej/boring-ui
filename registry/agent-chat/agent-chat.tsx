@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { PiChat } from '../pi-chat/pi-chat';
 import type { PiChatProps } from '../pi-chat/pi-chat';
-import { ApprovalCard } from '../pi-chat-approval/approval-card';
+import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import { cn } from '../utils/utils';
 
 /** The agent's colour: one of the theme's five chart tokens, so an app keeps to its palette and no colour is written by hand. */
@@ -42,7 +42,7 @@ export interface AgentChatProps {
   readonly closeLabel?: string | undefined;
   /** No header at all: the card that holds the chat draws its own. */
   readonly header?: boolean | undefined;
-  /** Passed to the chat (the approval card is plugged in by default; `actions.answer` is the host's). */
+  /** Passed to the chat (the kit's plugins are on, as in the shell: Markdown, the approval and question cards, artifact cards once `artifacts.open` is given; `actions.answer` is the host's). */
   readonly chatProps?: Omit<PiChatProps, 'controller'> | undefined;
   readonly className?: string | undefined;
 }
@@ -61,7 +61,7 @@ export function AgentChat({ controller, agent, title, status, headerEnd, onBack,
     </header>}
     {header && <Separator />}
     <div className="min-h-0 flex-1">
-      <PiChat header={false} showHistory={false} {...chatProps} controller={controller} cards={{ approval: ApprovalCard, ...chatProps?.cards }} />
+      <PiChat {...withChatPlugins({ header: false, showHistory: false, ...chatProps })} controller={controller} />
     </div>
   </section>;
 }
