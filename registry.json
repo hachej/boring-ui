@@ -3459,6 +3459,26 @@
       ]
     },
     {
+      "name": "mcp-setup",
+      "type": "registry:component",
+      "title": "MCP setup",
+      "description": "An icon button for the top right of an app's header that opens a popover on how to connect a person's own assistant (Claude, ChatGPT, Claude Code, others) to the app over MCP: the address with a copy button and short steps per assistant. Props in, no fetch; French by default, labels overridable.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/utils",
+        "@boring-ui/_shared"
+      ],
+      "files": [
+        {
+          "path": "registry/mcp-setup/mcp-setup.tsx",
+          "type": "registry:component",
+          "target": "components/mcp-setup/mcp-setup.tsx"
+        }
+      ]
+    },
+    {
       "name": "task-list-viewer",
       "type": "registry:component",
       "title": "Consumer task-list viewer",
