@@ -1219,13 +1219,6 @@
       "type": "registry:block",
       "title": "Pi ambient agent",
       "description": "AmbientChat, a compact floating agent bar that grows into a chat window over an existing page, and AgentNotifications, toasts over the kit's shared chat-react run notifications (with the one guarded browser Notification helper). A block over the pi-chat item; its in-window artifact panel uses the pi-workspace layout.",
-      "css": {
-        "@layer utilities": {
-          ".pi-chat[data-phone] :is([data-testid=\"ambient-header\"], [data-slot=\"input-group\"], [data-testid=\"composer\"]) :is([data-slot=\"button\"], [data-testid=\"composer-plus\"])": {
-            "border-radius": "var(--pm-radius-round)"
-          }
-        }
-      },
       "dependencies": [
         "@hachej/boring-ui-kit@^0.5.2",
         "react@^19.0.0",

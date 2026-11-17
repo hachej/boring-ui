@@ -387,7 +387,7 @@ test('1440: the docked conversation has one surface, a pane-height header and it
   })()`);
   assert.equal(seen.header, seen.body, 'the header and the body are on one surface');
   assert.equal(seen.headerHeight, seen.bar, 'the header is as tall as the pane headers');
-  assert.deepEqual(seen.names, ['history-open', 'agent-layer-library', 'agent-layer-undock', 'agent-layer-close'], 'the docked header is the title, History, Library, then undock and collapse (no strip on a docked column)');
+  assert.deepEqual(seen.names, ['history-open', 'agent-layer-library', 'agent-layer-full', 'agent-layer-undock', 'agent-layer-close'], 'the docked header is the title, History, Library, Full screen, then undock and collapse last (no strip on a docked column)');
   assert.equal(seen.divider, false, 'no divider before Close');
   assert.equal(new Set(seen.size).size, 1, `the icon buttons share one size (${seen.size})`);
 });

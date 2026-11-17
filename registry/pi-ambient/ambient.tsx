@@ -509,9 +509,9 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
     {picking && conversations && <ConversationHistory conversations={conversations} placement={expanded ? 'below' : 'above'} onClose={() => setPicking(false)} />}
     <div data-testid="ambient-surface" className={surface}>
       {card && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
-      {/* A phone has no strip and no drag: the grabber on the top edge is the size control, as the app shell's sheet has it. A tap goes from the bar to the full window and back. */}
-      {phone && !embedded && <Button variant="ghost" data-testid="ambient-grabber" aria-label={expanded ? labels.minimize : labels.openChat(shownTitle)} aria-expanded={expanded}
-        onClick={() => { setPicking(false); if (expanded) setWindowState('bar'); else expand(); }} className="absolute top-0 left-1/2 z-10 h-11 w-24 -translate-x-1/2 px-0 hover:bg-transparent">
+      {/* A phone has no strip and no drag: the grabber on the top edge is the size control, as the app shell's sheet has it. A tap opens the full window; its header's minimize (a 44px target) goes back to the bar. The grabber is only there in the bar, straddling its top edge, so it never covers a header control of the full window. */}
+      {phone && !embedded && !expanded && <Button variant="ghost" data-testid="ambient-grabber" aria-label={labels.openChat(shownTitle)} aria-expanded={false}
+        onClick={() => { setPicking(false); expand(); }} className="absolute top-0 left-1/2 z-10 h-11 w-24 -translate-x-1/2 -translate-y-1/2 px-0 hover:bg-transparent">
         <span aria-hidden="true" className="h-1 w-10 rounded-(--pm-radius-round) bg-muted-foreground/40" /></Button>}
       {artifactPanel ? <ArtifactWorkspace open={panelOpen} onClose={closeArtifact} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey="boring.ambient.panel-width" panelLabel={labels.artifactPanel}
         defaultWidth={600} minPanel={320} minChat={300}

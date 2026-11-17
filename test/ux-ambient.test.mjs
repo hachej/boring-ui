@@ -8,7 +8,7 @@ import test from 'node:test';
 import { buildPage, root } from '../ux/runner/build.mjs';
 
 // The ambient bar (`AmbientChat`) on a phone behaves as the app shell's bar does: no strip, the grabber on the top edge is the size control (a tap
-// goes from the bar to the full window and back), round buttons with 44px hit areas; and its `/` menu is the same grouped menu with a Commands button on touch.
+// opens the full window, whose minimize goes back), 44px hit areas (the browser audit keeps the kit's button radius, so no round buttons here); and its `/` menu is the same grouped menu with a Commands button on touch.
 const require = createRequire(join(root, 'package.json'));
 let playwright; try { playwright = require('playwright-core'); } catch { /* not installed */ }
 const skip = !process.env.CHROMIUM || !playwright;
@@ -32,7 +32,7 @@ async function launch(t, viewport, touch) {
 }
 
 for (const [width, height] of [[390, 844], [360, 740]]) {
-  test(`${width}: the ambient bar has no strip, a grabber that taps bar and full window, round 44px buttons`, { skip, timeout: 120000 }, async t => {
+  test(`${width}: the ambient bar has no strip, a grabber that opens the full window, 44px buttons`, { skip, timeout: 120000 }, async t => {
     const page = await launch(t, { width, height }, true);
     const state = () => page.locator('[data-boring=ambient-chat]').getAttribute('data-state');
     assert.equal(await state(), 'bar');
@@ -40,22 +40,23 @@ for (const [width, height] of [[390, 844], [360, 740]]) {
     const grabber = page.locator('[data-testid=ambient-grabber]');
     const hit = await grabber.boundingBox();
     assert.ok(hit.width >= 44 && hit.height >= 44, `the grabber is a 44px target (${hit.width}x${hit.height})`);
-    // Every control of the bar is a round 44px target.
+    // Every control of the bar is a 44px target.
     const buttons = await page.locator('[data-testid=ambient-header] button:visible, [data-testid=composer] button:visible, [data-slot=input-group] button:visible').evaluateAll(list => [...new Set(list)].map(b => {
       const r = b.getBoundingClientRect(), radius = parseFloat(getComputedStyle(b).borderTopLeftRadius);
       return { id: b.dataset.testid ?? b.getAttribute('aria-label'), w: r.width, h: r.height, round: radius >= Math.min(r.width, r.height) / 2 - 0.5, label: b.textContent.trim() };
     }));
     assert.ok(buttons.length >= 3, `the bar has its buttons (${JSON.stringify(buttons)})`);
-    for (const b of buttons) { assert.ok(b.w >= 43.5 && b.h >= 43.5, `${b.id} is 44px (${b.w}x${b.h})`); if (!b.label && b.id !== 'ambient-header-fill') assert.ok(b.round, `${b.id} is round`); }
+    for (const b of buttons) { assert.ok(b.w >= 43.5 && b.h >= 43.5, `${b.id} is 44px (${b.w}x${b.h})`); }
     await page.screenshot({ path: join(root, '.cache/evidence', `ambient-${width}-bar.png`) });
     await grabber.tap();
     await page.waitForFunction(() => document.querySelector('[data-boring=ambient-chat]').dataset.state === 'expanded');
     const full = await page.locator('[data-boring=ambient-chat]').boundingBox();
     assert.ok(full.width >= width - 1 && full.height >= height - 1, `a tap on the grabber opens the full window (${full.width}x${full.height})`);
     await page.screenshot({ path: join(root, '.cache/evidence', `ambient-${width}-full.png`) });
-    await page.locator('[data-testid=ambient-grabber]').tap();
+    assert.equal(await page.locator('[data-testid=ambient-grabber]').count(), 0, 'the full window has no grabber over its header (its minimize goes back)');
+    await page.locator('[data-testid=ambient-minimize]').tap();
     await page.waitForFunction(() => document.querySelector('[data-boring=ambient-chat]').dataset.state === 'bar');
-    assert.equal(await state(), 'bar', 'a second tap goes back to the bar');
+    assert.equal(await state(), 'bar', 'minimize goes back to the bar');
   });
 }
 
