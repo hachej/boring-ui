@@ -106,7 +106,7 @@ test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every
   assert.equal(await count('[data-testid=agent-tray]'), 0);
   assert.equal(await inside('[data-testid=agent-bar-conversation]', '[data-testid=agent-composer-box]'), true, 'the chevron is the controller on the bar\'s frame, not a button of the row');
   assert.equal(await count('[data-testid=composer-bar-attach]'), 1, 'attach is a bar button');
-  assert.equal(await count('[data-testid=composer-bar-commands]') + await count('[data-testid=composer-plus]'), 0, 'no Actions button and no + menu');
+  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=composer-bar-commands], [data-testid=composer-plus]')].filter(e => e.getClientRects().length > 0).length`), 0, 'no visible Actions button and no + menu (the Commands button is for touch screens)');
   assert.equal(await actionName(), 'Dicter', 'empty field: the one action button dictates');
   assert.deepEqual(await rowControls(), ['composer-bar-attach', 'composer-input', 'agent-talk'], 'one row: attach, field, one action (AC-2); the chevron is the controller');
   assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=composer-input]')).whiteSpace`), 'nowrap', 'an empty field is one line: the placeholder never wraps (AC-2)');
@@ -254,6 +254,39 @@ test('folded, 1280 and 390: a failed turn is one sentence on the card, in the ap
     await browser.evaluate(`window.__run('think')`);
     await browser.until('the next turn', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'working' || !document.querySelector('[data-testid=agent-card-failed]')`);
     assert.equal(await count('[data-testid=agent-card-failed]'), 0, 'the sentence goes when the next turn starts');
+  }
+});
+
+// An approval is a decision like a question: it folds into the bar's card (Approve and Deny, the arguments one tap away) and never opens the conversation by itself.
+test('folded, 1280 and 390: an approval waits on the card with Approve and Deny, the arguments behind a disclosure, the conversation stays folded and the field keeps its focus', { skip, timeout: 120000 }, async () => {
+  for (const [width, query] of [[1280, ''], [390, 'tabs=1']]) {
+    await open(width, query);
+    await browser.evaluate(`window.__run('tool')`);
+    await browser.until('working card', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'working'`);
+    await browser.evaluate(`document.activeElement?.blur?.()`);
+    await browser.evaluate(`window.__run('approval')`);
+    await browser.until('approval card', `!!document.querySelector('[data-testid=agent-card] [data-testid=agent-approval]')`);
+    assert.equal(await count('[data-testid=agent-tray]') + (await browser.evaluate(`document.querySelector('[data-testid=agent-layer]')?.dataset.state`) === 'half' ? 1 : 0), 0, `${width}: the conversation stays folded`);
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]')?.getAttribute('aria-expanded')`), 'false', 'the chevron says folded');
+    assert.equal(await browser.evaluate(`document.activeElement?.dataset?.testid === 'composer-input'`), false, 'the card does not take the focus');
+    assert.equal(await count('[data-testid=agent-card] [data-testid=agent-question]'), 0, 'not a question');
+    assert.ok((await text('[data-testid=agent-card-status]')).includes('En attente de votre réponse'), 'a status line: waiting for the answer');
+    assert.ok((await text('[data-testid=agent-approval-summary]')).includes('relevé de décembre'), 'the host summary is the title');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-approval-details]').open`), false, 'the arguments are folded');
+    const buttons = await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-approval-approve], [data-testid=agent-approval-deny]')].map(e => [e.textContent.trim(), e.getBoundingClientRect().height])`);
+    assert.equal(buttons.length, 2, 'Approve and Deny');
+    if (width === 390) for (const [name, height] of buttons) assert.ok(height >= 43.5, `${name} is a 44px target (${height})`);
+    assert.equal(await browser.evaluate(`(r => r.bottom <= innerHeight && r.top >= 0)(document.querySelector('[data-testid=agent-approval]').getBoundingClientRect())`), true, 'on screen');
+    await browser.screenshot(`one-composer-${width}-light-collapsed-approval.png`);
+    await click('[data-testid=agent-approval-details] summary');
+    assert.ok((await text('[data-testid=agent-approval-args]')).includes('releve-decembre'), 'the arguments open in place');
+    assert.equal(await count('[data-testid=agent-tray]'), 0, 'still folded after the disclosure');
+    await click('[data-testid=agent-approval-approve]');
+    await browser.until('decided', `window.__answered.length === 1`);
+    assert.equal((await browser.evaluate('window.__answered'))[0].text, 'Approve');
+    await browser.until('done', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply'`);
+    assert.equal(await count('[data-testid=agent-approval]'), 0, 'the decision card is gone');
+    assert.ok((await text('[data-testid=agent-card-status]')).startsWith('Terminé'), 'the card folds to the Done reply');
   }
 });
 
@@ -900,7 +933,7 @@ test('390: the one field rests above the tabs; the chevron opens half with the t
   assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer]').dataset.layout`), 'pill', 'the same one-row field as on a computer');
   assert.equal(await count('[data-testid=agent-bar-conversation]'), 1, 'with the chevron');
   assert.equal(await actionName(), 'Dicter');
-  assert.deepEqual(await rowControls(), ['composer-bar-attach', 'composer-input', 'agent-talk'], 'the phone row is the same one row: one microphone (AC-2, AC-20)');
+  assert.deepEqual(await rowControls(), ['composer-bar-attach', 'composer-input', 'composer-bar-commands', 'agent-talk'], 'the phone row is the same one row: attach, field, the Commands button of touch screens, one microphone (AC-2, AC-20)');
   const field = await rect('[data-testid=composer]');
   assert.ok(field.bottom <= tabbar.y + 1, `the field sits above the tabs (${field.bottom} <= ${tabbar.y})`);
   const tabHit = () => browser.evaluate(`(() => { const e = document.elementFromPoint(${tabbar.x}, ${tabbar.y + tabbar.h / 2}); return !!e && !!e.closest(${js(tabs)}); })()`);

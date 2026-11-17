@@ -12,6 +12,9 @@
   { "match": "^missing file$", "steps": [{ "text": "Not written yet: @samples/never-written.csv. Written: @samples/booking.diagram.json.", "stream": true }] },
   { "match": "^approval$", "steps": [{ "approve": { "tool": "delete_file", "arguments": { "path": "samples/old-draft.md" }, "summary": "Delete the old draft?" }, "then": [{ "text": "Decision received.", "stream": true }] }] },
   { "match": "open-gaps\\.csv#3 ", "steps": [{ "think": true, "ms": 500 }, { "text": "Row 3 of @samples/open-gaps.csv: Card Harbor Garage, Jan 09, $12.00, status Needs a receipt. I will ask for the receipt and add the line once it arrives.", "stream": true }] },
+  { "match": "^/summarize\\b", "steps": [{ "think": true, "ms": 500 }, { "tool": "read", "path": "samples/open-gaps.csv", "progress": "4 of 4 rows", "ms": 1000 }, { "text": "Four gaps are open, 12.00 to 48.00. Two need a receipt and two wait for a bank line.", "stream": true }] },
+  { "match": "^Export the open gaps$", "steps": [{ "approve": { "tool": "export_csv", "arguments": { "file": "exports/open-gaps.csv", "rows": 4 }, "summary": "Export the open gaps to a CSV file?" }, "then": [{ "tool": "export_csv", "path": "exports/open-gaps.csv", "progress": "4 rows", "ms": 800 }, { "text": "Done: 4 rows saved to exports/open-gaps.csv.", "stream": true }] }] },
+  { "match": "^Archive the old draft$", "steps": [{ "text": "The old draft is in the archive.", "stream": true }] },
   { "match": "open-gaps\\.csv#[\\d,]+ ", "steps": [{ "text": "I have what you referenced from the table, with its cells.", "stream": true }] },
   { "match": "^typing$", "steps": [{ "think": true, "ms": 4000 }, { "text": "That took a moment.", "stream": true }] }
  ]

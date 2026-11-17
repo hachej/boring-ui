@@ -117,6 +117,7 @@ export const frenchChatLabels: ChatLabels = {
   filterBySource: 'Filtrer par source',
   allSources: 'Toutes',
   noCommands: 'Aucune commande ne correspond.',
+  slashHeading: group => group === 'built-in' ? 'Commandes' : group === 'skills' ? 'Compétences' : group === 'actions' ? 'Actions' : group,
   slashGroup: group => group === 'skills' ? 'compétences' : group === 'built-in' ? 'intégrées' : group,
   skillBadge: 'compétence',
   workspaceFiles: 'Fichiers de l’espace',

@@ -32,16 +32,23 @@ export interface SlashCommand {
   readonly description?: string;
   /** Shown as a badge and as a filter chip; commands without one are grouped as `built-in`. */
   readonly sourcePlugin?: string;
+  /** What the command takes after its name (`<file>`), shown dim in the menu. */
+  readonly argumentHint?: string;
   readonly run: (api: SlashApi) => void | Promise<void>;
 }
 export interface SlashSkill {
   readonly name: string;
   readonly description: string;
   readonly sourcePlugin?: string;
+  readonly argumentHint?: string;
 }
+/** Something the app does for the person; picked like a command, listed under its own « Actions » heading. */
+export type SlashAction = SlashCommand;
 export interface SlashConfig {
   readonly commands?: readonly SlashCommand[];
   readonly skills?: readonly SlashSkill[];
+  /** The app's actions: picked like a command (`run`), listed in their own group. */
+  readonly actions?: readonly SlashAction[];
   /** The `/` menu (`SlashPicker` of `pi-chat-slash`). Without it there is no `/` menu and no Commands entry. */
   readonly Picker?: ComponentType<SlashPickerProps> | undefined;
 }

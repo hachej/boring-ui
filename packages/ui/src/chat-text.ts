@@ -5,31 +5,37 @@
  */
 
 /** Where a `/` menu entry comes from. Skills and host commands are grouped separately in the menu. */
-export type SlashSource = 'local' | 'extension' | 'prompt' | 'skill';
+export type SlashSource = 'local' | 'extension' | 'prompt' | 'skill' | 'action';
 /** The unified `/` menu entry. */
 export interface SlashItem {
   readonly name: string;
   readonly description: string;
   readonly source: SlashSource;
   readonly sourcePlugin?: string;
+  /** What the entry takes after its name (`<file>`), shown dim in the menu. */
+  readonly argumentHint?: string;
 }
 /** The commands and skills a `/` menu lists (the item's `SlashConfig` is assignable to it). */
 export interface SlashEntries {
-  readonly commands?: readonly { readonly name: string; readonly description?: string | undefined; readonly sourcePlugin?: string | undefined }[] | undefined;
-  readonly skills?: readonly { readonly name: string; readonly description: string; readonly sourcePlugin?: string | undefined }[] | undefined;
+  readonly commands?: readonly { readonly name: string; readonly description?: string | undefined; readonly sourcePlugin?: string | undefined; readonly argumentHint?: string | undefined }[] | undefined;
+  readonly skills?: readonly { readonly name: string; readonly description: string; readonly sourcePlugin?: string | undefined; readonly argumentHint?: string | undefined }[] | undefined;
+  /** Things the app can do for the person (like a command, but its own group in the menu). */
+  readonly actions?: readonly { readonly name: string; readonly description?: string | undefined; readonly sourcePlugin?: string | undefined; readonly argumentHint?: string | undefined }[] | undefined;
 }
 
-/** The `/` menu entries: host commands first, then skills. */
+/** The `/` menu entries: host commands first, then skills, then actions. */
 export function slashItems(config: SlashEntries): SlashItem[] {
   return [
-    ...(config.commands ?? []).map((command): SlashItem => ({ name: command.name, description: command.description ?? '', source: 'local', ...(command.sourcePlugin ? { sourcePlugin: command.sourcePlugin } : {}) })),
-    ...(config.skills ?? []).map((skill): SlashItem => ({ name: skill.name, description: skill.description, source: 'skill', ...(skill.sourcePlugin ? { sourcePlugin: skill.sourcePlugin } : {}) })),
+    ...(config.commands ?? []).map((command): SlashItem => ({ name: command.name, description: command.description ?? '', source: 'local', ...(command.sourcePlugin ? { sourcePlugin: command.sourcePlugin } : {}), ...(command.argumentHint ? { argumentHint: command.argumentHint } : {}) })),
+    ...(config.skills ?? []).map((skill): SlashItem => ({ name: skill.name, description: skill.description, source: 'skill', ...(skill.sourcePlugin ? { sourcePlugin: skill.sourcePlugin } : {}), ...(skill.argumentHint ? { argumentHint: skill.argumentHint } : {}) })),
+    ...(config.actions ?? []).map((action): SlashItem => ({ name: action.name, description: action.description ?? '', source: 'action', ...(action.sourcePlugin ? { sourcePlugin: action.sourcePlugin } : {}), ...(action.argumentHint ? { argumentHint: action.argumentHint } : {}) })),
   ];
 }
 
-/** The group an item lives under in the filter chips: skills, its plugin, or `built-in`. */
+/** The group an item lives under in the filter chips: skills, actions, its plugin, or `built-in`. */
 export function slashGroup(item: Pick<SlashItem, 'source' | 'sourcePlugin'>): string {
   if (item.source === 'skill') return 'skills';
+  if (item.source === 'action') return 'actions';
   return item.sourcePlugin || 'built-in';
 }
 
