@@ -13,3 +13,6 @@ examples/hosts/cloudflare/public/
 demos/workspace/cloudflare/public/
 .wrangler/
 .dev.vars
+.gen/
+.gen.tmp*/
+.gen.old*/
