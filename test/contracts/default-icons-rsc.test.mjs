@@ -59,7 +59,7 @@ test('pinned shadcn RSC install transform preserves the shared client boundary f
   const outfile = join(evidence, 'ordinary-ssr.mjs');
   await build({ stdin: { contents: `export * as icons from './components/_shared/icons'; export { KpiStat } from './components/kpi-stat/kpi-stat'; export { EmptyState } from './components/empty-state/blank-state';`, resolveDir: evidence, loader: 'tsx' }, outfile, bundle: true, platform: 'node', format: 'esm', jsx: 'automatic', packages: 'external' });
   const { icons, KpiStat, EmptyState } = await import(pathToFileURL(outfile));
-  assert.equal(Object.keys(icons).length, 133, 'existing symbol surface unchanged');
+  assert.equal(Object.keys(icons).length, 134, 'the symbol surface is the existing icons plus the table icon of the row chip');
   const html = renderToStaticMarkup(React.createElement(React.Fragment, null,
     React.createElement(KpiStat, { label: 'Fictional total', value: '12', compare: { current: 12, previous: 10 } }),
     React.createElement(EmptyState, { title: 'No fictional entries', hint: 'Add one to begin.' })));

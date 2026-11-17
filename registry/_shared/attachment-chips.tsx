@@ -2,7 +2,8 @@
 
 import type { ComponentProps, ReactNode } from 'react';
 import { AlertCircleIcon, FileTextIcon, Loader2Icon, XIcon } from './icons';
-import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentMedia, AttachmentTitle } from '@/components/ui/attachment';
+import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentDescription, AttachmentMedia, AttachmentTitle } from '@/components/ui/attachment';
+import { Badge } from '@/components/ui/badge';
 
 // The chips above a composer's text, shared by the `Composer` of `pi-chat` and the `AgentBar` of `agent-bar` (D-2084): one source for how an upload on its way,
 // a failed one and an attached file look and are removed. The words come from the caller (`ChipWords`), so each surface keeps its own labels.
@@ -34,10 +35,13 @@ export interface AttachedChip { readonly id: string; readonly name: string; read
  * One chip above the text (a mention, an upload, an attachment or the notes count) as the host's shadcn Attachment. The remove
  * buttons keep a 44px touch target on coarse pointers; negative margins let it extend beyond the chip instead of growing it.
  */
-export function Chip({ media, image = false, label, actions, ...props }: ComponentProps<typeof Attachment> & { readonly media: ReactNode; readonly image?: boolean; readonly label: ReactNode; readonly actions?: ReactNode }) {
+export function Chip({ media, image = false, label, badge, description, actions, ...props }: ComponentProps<typeof Attachment> & { readonly media: ReactNode; readonly image?: boolean; readonly label: ReactNode; readonly badge?: ReactNode; readonly description?: ReactNode; readonly actions?: ReactNode }) {
   return <Attachment size="xs" role="listitem" {...props}>
     <AttachmentMedia variant={image ? 'image' : 'icon'}>{media}</AttachmentMedia>
-    <AttachmentContent><AttachmentTitle>{label}</AttachmentTitle></AttachmentContent>
+    <AttachmentContent>
+      {badge ? <div className="flex min-w-0 items-center gap-1.5"><AttachmentTitle>{label}</AttachmentTitle><Badge variant="secondary" className="shrink-0">{badge}</Badge></div> : <AttachmentTitle>{label}</AttachmentTitle>}
+      {description && <AttachmentDescription>{description}</AttachmentDescription>}
+    </AttachmentContent>
     {actions && <AttachmentActions className="max-md:-my-2.5 pointer-coarse:-my-2.5">{actions}</AttachmentActions>}
   </Attachment>;
 }

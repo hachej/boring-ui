@@ -369,8 +369,9 @@ export function Composer(props: ComposerProps) {
       {chips.map(path => {
         const registered = mentionKind(path, props.mentions);
         const label = registered ? registered.kind.label(registered.path) : props.mentions?.label?.(path) ?? (props.fileChips ? displayName(path) : path);
-        return <Chip key={path} data-testid="mention-chip" data-path={path} title={label} className="max-w-full md:max-w-[16rem]"
-          media={registered?.kind.icon ?? props.mentions?.icon ?? <FileTextIcon aria-hidden="true" />} label={registered?.kind.open ? <Button variant="link" size="sm" onClick={() => registered.kind.open?.(registered.path)} className="min-w-0 max-w-full justify-start truncate">{label}</Button> : label}
+        const view = registered?.kind.present?.(registered.path);
+        return <Chip key={path} data-testid="mention-chip" data-path={path} title={view ? [view.title, view.badge, view.description].filter(Boolean).join(' · ') : label} className="max-w-full md:max-w-[16rem]"
+          media={registered?.kind.icon ?? props.mentions?.icon ?? <FileTextIcon aria-hidden="true" />} badge={view?.badge} description={view?.description} label={view ? view.title : registered?.kind.open ? <Button variant="link" size="sm" onClick={() => registered.kind.open?.(registered.path)} className="min-w-0 max-w-full justify-start truncate">{label}</Button> : label}
           actions={<RemoveChip label={labels.remove(label)} onClick={() => props.onText(removeMention(props.text, path))} />} />;
       })}
     </div>}
