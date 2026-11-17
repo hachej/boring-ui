@@ -2,6 +2,8 @@ import * as Domain from '@alchemy.run/domain';
 import * as Effect from 'effect/Effect';
 import * as RpcMiddleware from 'effect/rpc/RpcMiddleware';
 import * as Schema from 'effect/Schema';
+import { refuse } from './op.js';
+import type { Refusal, Who } from './op.js';
 
 /** A role in one unit, ranked owner > editor > reader. Who holds which lives in the unit's own data (`units.members`). */
 export const Role = Schema.Literals(['owner', 'editor', 'reader']);
@@ -39,15 +41,29 @@ export const mustOwn = (key: string | { readonly id: string }) => Effect.gen(fun
 
 export type Member = { readonly userId: string; readonly role: Role };
 
-/** The one rule for every command and view: a scoped caller has exactly its scope; a person has the role the unit's data gives them, read now. */
+type Caller = { readonly person: string; readonly scope?: Scope | undefined };
+/**
+ * The one rule: a scoped caller has exactly its scope (so a scope never falls back to the caller's own empty unit); a person has the
+ * role the unit's data gives them, read now. `emptyByKey`: an empty unit belongs to the person whose id keys it (plain operations).
+ */
+const roleIn = (need: Role, unit: string, members: ReadonlyArray<Member>, op: string, caller: Caller, { emptyByKey }: { readonly emptyByKey: boolean }): Who | 'NotYours' | 'NotAllowed' => {
+  const role = caller.scope
+    ? (caller.scope.unit === unit && (!caller.scope.ops || caller.scope.ops.includes(op)) ? caller.scope.role : undefined)
+    : members.find((m) => m.userId === caller.person)?.role ?? (emptyByKey && members.length === 0 && unit === caller.person ? 'owner' : undefined);
+  if (!role) return 'NotYours';
+  return RANK[role] < RANK[need] ? 'NotAllowed' : { person: caller.person, role };
+};
+
+/** The rule for every Domain command and view. */
 export const must = (need: Role, unit: string, members: ReadonlyArray<Member>, op: string) => Effect.gen(function* () {
   const me = yield* CurrentUser;
-  if (me.scope) {
-    if (me.scope.unit !== unit || (me.scope.ops && !me.scope.ops.includes(op))) return yield* new NotYours();
-    if (RANK[me.scope.role] < RANK[need]) return yield* new NotAllowed({ need });
-    return;
-  }
-  const mine = members.find((m) => m.userId === me.userId)?.role;
-  if (!mine) return yield* new NotYours();
-  if (RANK[mine] < RANK[need]) return yield* new NotAllowed({ need });
+  const r = roleIn(need, unit, members, op, { person: me.userId, scope: me.scope }, { emptyByKey: false });
+  if (r === 'NotYours') return yield* new NotYours();
+  if (r === 'NotAllowed') return yield* new NotAllowed({ need });
 });
+
+/** The same rule for a plain operation: who may act, or the refusal. */
+export const admit = (need: Role, unit: string, members: ReadonlyArray<Member>, op: string, caller: Caller): Who | Refusal => {
+  const r = roleIn(need, unit, members, op, caller, { emptyByKey: true });
+  return r === 'NotYours' ? refuse('NotYours') : r === 'NotAllowed' ? refuse('NotAllowed', { need }) : r;
+};

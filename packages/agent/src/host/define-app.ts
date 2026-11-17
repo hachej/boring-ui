@@ -2,8 +2,9 @@ import type * as Layer from 'effect/Layer';
 import type { Extension, ToolRegistration } from '@earendil-works/pi-durable';
 import type { DefinedAgent, SkillSource } from '../agents.js';
 import type { Role } from './identity.js';
+import type { PlainOps } from './op.js';
 
-/** An operation as Alchemy Domain's `expose` spells it: a command name (`AddNote`) or a read (`Notes.get`). */
+/** An operation as `expose` spells it: Alchemy Domain's command name (`AddNote`) or read (`Notes.get`), or a plain operation's name (`addNote`). */
 export type Operation = string;
 /** A host capability, by name. Only `files` is built. */
 export type Need = 'files';
@@ -96,9 +97,12 @@ export interface Seed {
 export interface AppDefinition<W extends AppWords = AppWords> {
   name: string;
   languages: Languages<W>;
-  models: readonly { layer: (handlers: Layer.Layer<any, any, any>) => Layer.Layer<any, any, any> }[];
-  handlers: Layer.Layer<never, any, any>;
-  api: unknown;
+  /** The Alchemy Domain form: `models`, `handlers` and `api` come together, or none (an app of plain operations only). */
+  models?: readonly { layer: (handlers: Layer.Layer<any, any, any>) => Layer.Layer<any, any, any> }[];
+  handlers?: Layer.Layer<never, any, any>;
+  api?: unknown;
+  /** The plain form: TypeScript operations, each a tool of an agent. An app has `api`, `ops`, or both. */
+  ops?: PlainOps;
   /** One explicit list per audience: `page`, `mcp`, and the name of each agent that gets tools. */
   expose: { page: readonly Operation[]; mcp?: readonly Operation[]; [audience: string]: readonly Operation[] | undefined };
   views: readonly View[];
@@ -144,6 +148,10 @@ export const defineApp = <const A extends AppDefinition>(app: A): A => {
     for (const id of Object.keys(table.views ?? {})) if (!Object.hasOwn(base?.views ?? {}, id)) fail(`${at}.views.${id}: the base language has no such view`);
     for (const tag of Object.keys(table.refusals ?? {})) if (!Object.hasOwn(base?.refusals ?? {}, tag)) fail(`${at}.refusals.${tag}: the base language has no such refusal`);
   }
+  const forms = [['models', app.models], ['handlers', app.handlers], ['api', app.api]] as const;
+  if (!app.ops && forms.every(([, v]) => v === undefined)) fail('neither api nor ops: the app has no operation');
+  const missing = forms.filter(([, v]) => v === undefined).map(([k]) => k);
+  if (missing.length > 0 && missing.length < 3) fail(`${missing.join(', ')}: missing; models, handlers and api come together`);
   if (app.expose.page.length === 0) fail('expose.page is empty: a person has no button');
   for (const n of app.needs ?? []) if (!NEEDS.includes(n)) fail(`needs: unknown capability ${n}`);
   if (app.units && !app.expose.page.includes(app.units.view)) fail(`units.view ${app.units.view} is not in expose.page`);

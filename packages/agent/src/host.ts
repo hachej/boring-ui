@@ -13,7 +13,7 @@ const load = async (): Promise<typeof Host> => {
 };
 const host = await load();
 
-export const { KIT_LANGUAGES, checkAgents, defineApp, mustOwn, must } = host;
+export const { KIT_LANGUAGES, admit, checkAgents, defineApp, defineOp, isRefusal, mustOwn, must, refuse } = host;
 export const CurrentUser = host.CurrentUser;
 export type CurrentUser = Host.CurrentUser;
 export const NotAllowed = host.NotAllowed;
@@ -29,4 +29,5 @@ export type Session = Host.Session;
 export const Unauthorized = host.Unauthorized;
 export type Unauthorized = Host.Unauthorized;
 export type { AppHostProps, Assets, HostBuild, HostEntry, HostOptions, MountApp, MountOptions, OpenHarness, Person, ResolveLanguage, RouteName, SecretByName, WriteAttribution } from './host/contract.js';
+export type { CallOps, CapabilityMethods, CapNeed, Op, OpContext, PlainOps, Refusal, SqlValue, UnitStorage, Who } from './host/index.js';
 export type { AgentKit, AppDefinition, AppWords, Format, KitLanguage, Languages, Member, Need, Operation, Seed, View, ViewProps, Wake } from './host/index.js';
