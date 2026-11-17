@@ -48,7 +48,17 @@ export interface AgentBarChatOptions {
 export interface AgentBarChatStatus { readonly state: 'working' | 'done'; readonly text: string; readonly onCancel?: () => void }
 /** The agent's last reply after a run that ended: its text, what it used (file names and other hints of its tool calls) and the files it cites (`@path`). */
 export interface AgentBarChatReply { readonly key: string; readonly text: string; readonly used: readonly string[]; readonly files: readonly string[] }
+/** An approval that waits for the person: the gated tool, the one-line summary the host gave, its arguments, and the two ways to decide. */
+export interface AgentBarApproval {
+  readonly tool: string;
+  readonly summary: string;
+  readonly args: readonly { readonly name: string; readonly value: string }[];
+  /** `'Approve'` or `'Deny'`, the same words the chat's approval card sends. */
+  readonly decide: (value: 'Approve' | 'Deny') => void;
+}
 export interface AgentBarChat {
+  /** The pending approval of a gated tool call; undefined when none waits or no `actions.answer` was given. The folded card shows it as it shows `question`. */
+  readonly approval: AgentBarApproval | undefined;
   /** The pending `ask_user`; undefined when none waits or no `actions.answer` was given. Pass it to `AgentBar question`. A form comes one question at a time (`step` « 1 sur 2 »). */
   readonly question: AgentQuestionData | undefined;
   /** Spread into `AgentStatus`; undefined before any work. While working its text is the running tool's words (« Lecture releve.pdf · 12 lignes sur 40 »), else « En cours ». `done` follows a run that ended and stays until the next one. */
@@ -101,15 +111,16 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
   const turn = useMemo(() => lastTurn((state.view?.entries ?? []) as unknown as readonly Entry[]), [state.view]);
   const waiting = waitingPart(derived.rows);
   const asked = waiting?.kind === 'question' ? waiting : undefined;
+  const approving = waiting?.kind === 'approval' ? waiting : undefined;
   const sending = Boolean(state.echo?.some(item => item.state === 'sending'));
-  const working = (Boolean(derived.run) || sending) && !asked;
+  const working = (Boolean(derived.run) || sending) && !asked && !approving;
   const latest = useRef({ controller, actions, derived });
   useLayoutEffect(() => { latest.current = { controller, actions, derived }; });
 
   // Answered ids stay hidden until the controller's view shows the result, so a second tap cannot answer twice.
   const [settled, setSettled] = useState<string | undefined>();
   const answer = actions?.answer;
-  const questionId = asked?.questionId;
+  const questionId = (asked ?? approving)?.questionId;
   const onAnswer = useCallback(({ text: value }: AgentAnswer) => {
     const { controller: live, actions: current, derived: view } = latest.current;
     if (questionId === undefined || !current?.answer || live.getSnapshot().disposed) return;
@@ -120,6 +131,16 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
       return undefined;
     }).catch(() => { setSettled(undefined); });
   }, [questionId]);
+
+  // An approval waits like a question: the card holds the two choices; a decision is sent once (`settled`), as the chat's approval card sends it.
+  const approval = useMemo<AgentBarApproval | undefined>(() => {
+    if (!approving || !answer || questionId === undefined || settled === questionId) return undefined;
+    const args = Object.entries(approving.call.arguments as Record<string, unknown>).map(([name, value]) => {
+      const written = typeof value === 'string' ? value : JSON.stringify(value) ?? '';
+      return { name, value: written.length > 600 ? `${written.slice(0, 600)}…` : written };
+    });
+    return { tool: approving.call.name, summary: approving.summary, args, decide: value => { onAnswer({ text: value, source: 'choice' }); } };
+  }, [approving, answer, questionId, settled, onAnswer]);
 
   // A form is asked one question at a time; its answers are kept here and sent together, as PiChat's form sends them. None is ever skipped.
   const [form, setForm] = useState<{ readonly id: string | undefined; readonly answers: readonly string[] }>({ id: undefined, answers: [] });
@@ -149,8 +170,8 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
   // `done` after work ends, until the next work starts.
   // Derived while rendering (React's "adjust state on a prop change"), so no effect sets state.
   const [track, setTrack] = useState({ was: false, finished: false });
-  const finished = working ? false : track.was && !asked ? true : track.finished;
-  const was = working || (track.was && Boolean(asked));
+  const finished = working ? false : track.was && !asked && !approving ? true : track.finished;
+  const was = working || (track.was && Boolean(asked ?? approving));
   if (finished !== track.finished || was !== track.was) setTrack({ was, finished });
 
   // While working: the words of the tool that runs (the last call of this turn without a result), with what it published as `details.progress`.
@@ -184,5 +205,5 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
 
   const status = working ? { state: 'working' as const, text: doing, onCancel }
     : finished ? { state: 'done' as const, text: text.done } : undefined;
-  return { question, status, reply, failed, historyBadge: reply ? { label: text.unread } : undefined, markRead, onSend };
+  return { question, approval, status, reply, failed, historyBadge: reply ? { label: text.unread } : undefined, markRead, onSend };
 }

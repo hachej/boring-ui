@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, Loader2Icon, MicIcon, MaximizeIcon, PanelRightIcon, SquareIcon, XIcon } from '../_shared/icons';
+import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, Loader2Icon, MicIcon, MaximizeIcon, PanelRightIcon, ShieldAlertIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Separator } from '@/components/ui/separator';
@@ -16,6 +16,7 @@ import { useHoldToRecord } from '../pi-chat-voice/use-hold-to-record';
 import { voiceClock } from '../pi-chat/config';
 import { VoiceMessageButton } from '../pi-chat-voice/voice-message';
 import { cn } from '../utils/utils';
+import { chatTextFor } from '../pi-chat/locale';
 import { foldedCardKind } from '../agent-bar/folded-card';
 import type { AgentBarChat } from '../agent-bar/use-agent-bar-chat';
 import { composerLabels, shellWords, useInternal } from './layer-context';
@@ -292,12 +293,15 @@ export function SendProblem({ controller }: { readonly controller: NativeChatCon
 export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; readonly onOpenFile: ((path: string, files: readonly string[]) => void) | undefined }) {
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  const { question, status, reply, failed } = bar;
+  const { question, approval, status, reply, failed } = bar;
+  // An approval waits like a question: the same card, its choices Approve and Deny (the chat's own words), its arguments one tap away.
+  const decision = Boolean(question || approval);
+  const chat = { ...chatTextFor(layer.locale ?? layer.agent?.chatProps?.locale).labels, ...layer.agent?.chatProps?.labels };
   const controller = layer.agent!.controller;
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const running = Boolean(snapshot.view?.docs['pi.live']?.['run']);
   const stopped = snapshot.stop === 'confirmed';
-  const working = !stopped && !question && (running || status?.state === 'working');
+  const working = !stopped && !decision && (running || status?.state === 'working');
   const request = working && status?.state !== 'working'
     ? snapshot.view?.entries.flatMap(entry => entry.model ?? []).findLast(message => message.role === 'user') : undefined;
   const task = request?.role === 'user' ? withoutTarget(typeof request.content === 'string' ? request.content
@@ -311,9 +315,10 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
     ?? ((layer.locale ?? layer.agent?.chatProps?.locale) === 'fr' ? 'Envoyez un nouveau message pour continuer.' : 'Send a new message to continue.');
   const action = layer.agent?.replyAction;
   // One kind at a time: stopped, then the question, the work under way, a failed turn (it beats a reply), a reply.
-  const kind = stopped ? 'stopped' : foldedCardKind({ question: Boolean(question), working, failed: Boolean(failed), reply: Boolean(reply) });
+  const kind = stopped ? 'stopped' : foldedCardKind({ question: decision, working, failed: Boolean(failed), reply: Boolean(reply) });
   if (!kind) return null;
-  const header = stopped ? <><SquareIcon weight="fill" className="size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1 text-pretty wrap-anywhere"><span data-testid="agent-card-status">{labels.subagentStatus('cancelled')}</span>{' · '}{stoppedHint}</span></> : question ? undefined : working
+  const header = !stopped && approval ? <><ShieldAlertIcon className="size-4 shrink-0" aria-hidden="true" /><span data-testid="agent-card-status" className="min-w-0 flex-1 text-pretty wrap-anywhere">{chat.waitingForAnswer}</span></>
+    : stopped ? <><SquareIcon weight="fill" className="size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1 text-pretty wrap-anywhere"><span data-testid="agent-card-status">{labels.subagentStatus('cancelled')}</span>{' · '}{stoppedHint}</span></> : question ? undefined : working
     ? <><span className="shrink-0 text-primary"><Spinner aria-hidden="true" /></span><span data-testid="agent-card-status" className="min-w-0 flex-1 whitespace-normal text-pretty wrap-anywhere">{workingText}</span></>
     : kind === 'reply' && reply ? <><span className="flex size-4 shrink-0 items-center justify-center rounded-(--radius-3xl) bg-primary text-primary-foreground"><CheckIcon className="size-2.5" aria-hidden="true" /></span>
       <span data-testid="agent-card-status" className="min-w-0 flex-1 whitespace-normal wrap-anywhere md:truncate">{text.done}{text.done && reply.used.length > 0 ? ' · ' : ''}{reply.used.map((name, index) => {
@@ -338,6 +343,20 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
           (layer.host?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]'))?.focus({ preventScroll: true });
           question.onAnswer({ text: choice, source: 'choice' });
         }}>{choice}</Button>)}</div>
+      </div>}
+      {!stopped && approval && <div data-testid="agent-approval" aria-label={chat.approvalNeeded} className="flex flex-col gap-2">
+        <p data-testid="agent-approval-summary" className="m-0 text-base font-semibold wrap-anywhere">{approval.summary || <>{chat.wantsToRun} <code className="font-mono">{approval.tool}</code></>}</p>
+        {approval.summary && <p data-testid="agent-approval-tool" className="m-0 text-xs text-muted-foreground wrap-anywhere">{chat.wantsToRun} <code className="font-mono">{approval.tool}</code></p>}
+        {approval.args.length > 0 && <details data-testid="agent-approval-details" className="text-xs">
+          <summary className="inline-flex min-h-8 cursor-pointer items-center text-muted-foreground select-none max-md:min-h-11 pointer-coarse:min-h-11">{chat.arguments}</summary>
+          <dl data-testid="agent-approval-args" className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 max-md:grid-cols-1 max-md:gap-y-0.5">
+            {approval.args.map(item => [<dt key={`${item.name}:n`} className="text-muted-foreground">{item.name}</dt>, <dd data-mono-id key={`${item.name}:v`} className="m-0 font-mono whitespace-pre-wrap wrap-anywhere max-md:mb-1.5">{item.value}</dd>])}
+          </dl>
+        </details>}
+        <div role="group" aria-label={chat.decision} className="flex flex-wrap gap-2">
+          <Button type="button" data-testid="agent-approval-approve" onClick={() => { approval.decide('Approve'); }}><CheckIcon data-icon="inline-start" aria-hidden="true" />{chat.approve}</Button>
+          <Button type="button" variant="outline" data-testid="agent-approval-deny" onClick={() => { approval.decide('Deny'); }}><XIcon data-icon="inline-start" aria-hidden="true" />{chat.deny}</Button>
+        </div>
       </div>}
       {kind === 'reply' && reply && <>
         {/* A tap on the reply opens the conversation, as the chevron does (the chevron stays the way for a keyboard). */}

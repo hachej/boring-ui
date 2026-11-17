@@ -257,6 +257,39 @@ test('folded, 1280 and 390: a failed turn is one sentence on the card, in the ap
   }
 });
 
+// An approval is a decision like a question: it folds into the bar's card (Approve and Deny, the arguments one tap away) and never opens the conversation by itself.
+test('folded, 1280 and 390: an approval waits on the card with Approve and Deny, the arguments behind a disclosure, the conversation stays folded and the field keeps its focus', { skip, timeout: 120000 }, async () => {
+  for (const [width, query] of [[1280, ''], [390, 'tabs=1']]) {
+    await open(width, query);
+    await browser.evaluate(`window.__run('tool')`);
+    await browser.until('working card', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'working'`);
+    await browser.evaluate(`document.activeElement?.blur?.()`);
+    await browser.evaluate(`window.__run('approval')`);
+    await browser.until('approval card', `!!document.querySelector('[data-testid=agent-card] [data-testid=agent-approval]')`);
+    assert.equal(await count('[data-testid=agent-tray]') + (await browser.evaluate(`document.querySelector('[data-testid=agent-layer]')?.dataset.state`) === 'half' ? 1 : 0), 0, `${width}: the conversation stays folded`);
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]')?.getAttribute('aria-expanded')`), 'false', 'the chevron says folded');
+    assert.equal(await browser.evaluate(`document.activeElement?.dataset?.testid === 'composer-input'`), false, 'the card does not take the focus');
+    assert.equal(await count('[data-testid=agent-card] [data-testid=agent-question]'), 0, 'not a question');
+    assert.ok((await text('[data-testid=agent-card-status]')).includes('En attente de votre réponse'), 'a status line: waiting for the answer');
+    assert.ok((await text('[data-testid=agent-approval-summary]')).includes('relevé de décembre'), 'the host summary is the title');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-approval-details]').open`), false, 'the arguments are folded');
+    const buttons = await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-approval-approve], [data-testid=agent-approval-deny]')].map(e => [e.textContent.trim(), e.getBoundingClientRect().height])`);
+    assert.equal(buttons.length, 2, 'Approve and Deny');
+    if (width === 390) for (const [name, height] of buttons) assert.ok(height >= 43.5, `${name} is a 44px target (${height})`);
+    assert.equal(await browser.evaluate(`(r => r.bottom <= innerHeight && r.top >= 0)(document.querySelector('[data-testid=agent-approval]').getBoundingClientRect())`), true, 'on screen');
+    await browser.screenshot(`one-composer-${width}-light-collapsed-approval.png`);
+    await click('[data-testid=agent-approval-details] summary');
+    assert.ok((await text('[data-testid=agent-approval-args]')).includes('releve-decembre'), 'the arguments open in place');
+    assert.equal(await count('[data-testid=agent-tray]'), 0, 'still folded after the disclosure');
+    await click('[data-testid=agent-approval-approve]');
+    await browser.until('decided', `window.__answered.length === 1`);
+    assert.equal((await browser.evaluate('window.__answered'))[0].text, 'Approve');
+    await browser.until('done', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply'`);
+    assert.equal(await count('[data-testid=agent-approval]'), 0, 'the decision card is gone');
+    assert.ok((await text('[data-testid=agent-card-status]')).startsWith('Terminé'), 'the card folds to the Done reply');
+  }
+});
+
 // Julien: "not centered vertically". The bar's rule aligned its row to the end, so any slack between the row and the bar's minimum height put the controls low.
 const offsets = () => browser.evaluate(`(() => { const g = document.querySelector('[data-testid=composer] [data-slot=input-group]').getBoundingClientRect(); const mid = g.top + g.height / 2;
   return [...document.querySelectorAll('[data-testid=composer] [data-slot=input-group] button:not([data-testid=agent-bar-conversation]), [data-testid=composer] [data-slot=input-group] textarea')].filter(e => e.getClientRects().length > 0).map(e => { const r = e.getBoundingClientRect(); return Math.abs(r.top + r.height / 2 - mid); }); })()`);
