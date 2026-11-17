@@ -7,8 +7,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, PanelRightIcon } from '../_shared/icons';
-import { ControllerStrip } from '../_shared/controller-strip';
+import { MessageSquareIcon, PanelRightIcon } from '../_shared/icons';
+import { ControllerStrip, stripIcons } from '../_shared/controller-strip';
 import type { ControllerAction } from '../_shared/controller-strip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,8 +22,8 @@ import { cn } from '../utils/utils';
 
 /** 0 folded, 1 the small tray, 2 the whole chat. */
 export type AgentCardLevel = 0 | 1 | 2;
-export interface AgentCardLabels { readonly expand: string; readonly expandMore: string; readonly collapse: string; readonly dock: string; readonly undock: string; readonly docked: string; readonly unread: string }
-const WORDS: AgentCardLabels = { expand: 'Expand', expandMore: 'Expand more', collapse: 'Collapse', dock: 'Dock', undock: 'Undock', docked: 'Docked', unread: 'New reply' };
+export interface AgentCardLabels { readonly expand: string; readonly expandMore: string; readonly collapse: string; readonly dock: string; readonly undock: string; readonly docked: string; readonly unread: string; readonly chat: string }
+const WORDS: AgentCardLabels = { expand: 'Expand', expandMore: 'Expand more', collapse: 'Collapse', dock: 'Dock', undock: 'Undock', docked: 'Docked', unread: 'New reply', chat: 'Message the agent' };
 
 export interface AgentCardProps extends Pick<AgentChatProps, 'controller' | 'agent' | 'status' | 'chatProps'> {
   readonly title: string;
@@ -41,7 +41,7 @@ export interface AgentCardProps extends Pick<AgentChatProps, 'controller' | 'age
   readonly onDockedChange?: ((docked: boolean) => void) | undefined;
   readonly labels?: Partial<AgentCardLabels> | undefined;
   /** The height of the tray (level 1) and of the open chat (level 2), as CSS lengths. */
-  readonly heights?: { readonly tray?: string; readonly open?: string } | undefined;
+  readonly heights?: { readonly tray?: string; readonly open?: string; readonly composer?: string } | undefined;
   readonly className?: string | undefined;
 }
 
@@ -49,6 +49,7 @@ export function AgentCard({ controller, agent, title, status, activity, meta, le
   const words = { ...WORDS, ...labels };
   const [own, setOwn] = useState<AgentCardLevel>(defaultLevel);
   const [ownDocked, setOwnDocked] = useState(false);
+  const [composer, setComposer] = useState(false);
   const level = controlled ?? own, docked = Boolean(dockedControlled ?? ownDocked) && Boolean(dock);
   const locale = chatProps?.locale;
   const bar = useAgentBarChat(controller, { actions: chatProps?.actions as never, toolLabels: chatTextFor(locale).labels,
@@ -56,17 +57,18 @@ export function AgentCard({ controller, agent, title, status, activity, meta, le
   const header = useRef<HTMLButtonElement>(null);
   const setLevel = useCallback((next: AgentCardLevel, focus = false) => {
     setOwn(next); onLevelChange?.(next);
+    if (next > 0) setComposer(false);
     if (next > 0) bar.markRead();
     if (focus) requestAnimationFrame(() => header.current?.focus({ preventScroll: true }));
   }, [onLevelChange, bar]);
   const setDocked = (next: boolean) => { setOwnDocked(next); onDockedChange?.(next); if (next) bar.markRead(); };
   useEffect(() => { if (level > 0 && bar.reply) bar.markRead(); }, [level, bar]);
 
-  const icon = (node: ReactNode) => node;
-  const actions: ControllerAction[] = docked ? [{ id: 'undock', testId: 'agent-card-undock', label: words.undock, icon: icon(<PanelRightIcon aria-hidden="true" />), primary: true, on: true, onSelect: () => setDocked(false) }]
-    : [level === 0 ? { id: 'chevron', testId: 'agent-card-expand', label: words.expand, icon: <ChevronUpIcon aria-hidden="true" />, expanded: false, primary: true, onSelect: () => setLevel(1) }
-      : { id: 'chevron', testId: 'agent-card-collapse', label: words.collapse, icon: <ChevronDownIcon aria-hidden="true" />, expanded: true, primary: true, onSelect: () => setLevel(0, true) },
-    ...(level === 1 ? [{ id: 'more', testId: 'agent-card-expand-more', label: words.expandMore, icon: <ChevronsUpIcon aria-hidden="true" />, onSelect: () => setLevel(2) }] : []),
+  const arrows = stripIcons('bottom');
+  const actions: ControllerAction[] = docked ? [{ id: 'undock', testId: 'agent-card-undock', label: words.undock, icon: <PanelRightIcon aria-hidden="true" />, primary: true, on: true, onSelect: () => setDocked(false) }]
+    : [...(level === 0 ? [{ id: 'chat', testId: 'agent-card-chat', label: words.chat, icon: <MessageSquareIcon aria-hidden="true" />, primary: true, on: composer, onSelect: () => setComposer(now => !now) },
+      { id: 'chevron', testId: 'agent-card-expand', label: words.expand, icon: arrows.expand, expanded: false, onSelect: () => setLevel(1) }] : [{ id: 'chevron', testId: 'agent-card-collapse', label: words.collapse, icon: arrows.collapse, expanded: true, primary: true, onSelect: () => setLevel(0, true) }]),
+    ...(level === 1 ? [{ id: 'more', testId: 'agent-card-expand-more', label: words.expandMore, icon: arrows.more, onSelect: () => setLevel(2) }] : []),
     ...(dock ? [{ id: 'dock', testId: 'agent-card-dock', label: words.dock, icon: <PanelRightIcon aria-hidden="true" />, onSelect: () => setDocked(true) }] : [])];
 
   const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented && level > 0 && !docked) { event.preventDefault(); setLevel(0, true); } };
@@ -101,6 +103,7 @@ export function AgentCard({ controller, agent, title, status, activity, meta, le
             <div className="flex flex-wrap gap-2">{bar.question.choices.map(choice => <Button key={choice} type="button" variant="outline" onClick={() => bar.question?.onAnswer({ text: choice, source: 'choice' })}>{choice}</Button>)}</div>
           </div>}
         </div>}
+        {level === 0 && composer && !docked && <><Separator className="mt-1" /><div data-testid="agent-card-composer" style={{ height: heights?.composer ?? '10.5rem' }} className="min-h-0">{chat({ header: false, chatProps: { ...chatProps, hideLine: () => true, emptyState: <span /> } })}</div></>}
         {level === 1 && !docked && <><Separator className="mt-1" /><div style={{ height: heights?.tray ?? '16rem' }} className="min-h-0">{chat({ header: false })}</div></>}
       </>}
     <ControllerStrip edge="bottom" actions={actions} unread={bar.historyBadge} />

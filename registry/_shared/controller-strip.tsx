@@ -1,11 +1,21 @@
 'use client';
 
 import type { CSSProperties, ReactNode } from 'react';
+import { ChevronDownIcon, ChevronUpIcon, ChevronsDownIcon, ChevronsUpIcon } from './icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '../utils/utils';
 
 /** One action of a controller strip: its name (aria-label and tooltip), icon and what it does; `primary` is the chevron, always shown. */
 export interface ControllerAction { readonly id: string; readonly testId: string; readonly label: string; readonly icon: ReactNode; readonly onSelect: () => void; readonly primary?: boolean; readonly expanded?: boolean; readonly on?: boolean }
+
+/**
+ * The arrows of a strip point the way the container grows: on a top border (the composer) expanding is up, on a bottom border (the agent card) it is down.
+ * `expand` and `collapse` are the chevron, `more` the double chevron of the next size.
+ */
+export function stripIcons(edge: 'top' | 'bottom'): { readonly expand: ReactNode; readonly collapse: ReactNode; readonly more: ReactNode } {
+  const top = edge === 'top';
+  return { expand: top ? <ChevronUpIcon aria-hidden="true" /> : <ChevronDownIcon aria-hidden="true" />, collapse: top ? <ChevronDownIcon aria-hidden="true" /> : <ChevronUpIcon aria-hidden="true" />, more: top ? <ChevronsUpIcon aria-hidden="true" /> : <ChevronsDownIcon aria-hidden="true" /> };
+}
 
 /** One cell of the controller notch: a plain 16 px high button (no chip, no circle: a hover fill only) whose 44 px hit area is its invisible ::before. `extra` cells start closed (0 wide). */
 function ControllerCell({ action, extra, round, dot, ...rest }: { readonly action: ControllerAction; readonly extra: boolean; readonly round: boolean; readonly dot: { readonly label: string } | undefined } & Record<string, unknown>) {

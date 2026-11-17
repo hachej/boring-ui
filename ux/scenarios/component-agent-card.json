@@ -107,6 +107,32 @@
    "steps": [
     {
      "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-chat]",
+     "say": "Tap the chat bubble",
+     "until": "visible:[data-task=done] [data-testid=agent-card-composer] & gone:[data-task=done] [data-testid=agent-chat-header]",
+     "expect": "Only the composer opens on the folded card."
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-chat]",
+     "say": "Tap it again",
+     "until": "gone:[data-task=done] [data-testid=agent-card-composer]",
+     "expect": "The composer hides."
+    },
+    {
+     "do": "press",
+     "key": "Shift",
+     "say": "Press a key (focus then shows as a keyboard focus)",
+     "only": "1440"
+    },
+    {
+     "do": "focus",
+     "target": "[data-task=done] [data-testid=agent-card-chat]",
+     "say": "Focus the chat bubble (it reveals the chevron and Dock)",
+     "only": "1440"
+    },
+    {
+     "do": "tap",
      "target": "[data-task=done] [data-testid=agent-card-expand]",
      "say": "Expand the finished run",
      "until": "visible:[data-task=done] [data-testid=agent-chat] & gone:[data-task=done] [data-testid=agent-chat-header]",
@@ -202,8 +228,8 @@
     },
     {
      "do": "focus",
-     "target": "[data-task=done] [data-testid=agent-card-expand]",
-     "say": "Focus the chevron (it reveals the controller)",
+     "target": "[data-task=done] [data-testid=agent-card-chat]",
+     "say": "Focus the chat bubble (it reveals the controller)",
      "only": "1440"
     },
     {

@@ -47,9 +47,23 @@ test('the agent card: levels, background work, a decision on the folded card, do
 
     // Levels through the strip, and the keyboard.
     const expand = page.locator(task('done', 'agent-card-expand'));
-    if (name === '1440') { await page.keyboard.press('Shift'); await expand.focus(); }
+    // The strip is on the card's lower border and the card grows downwards: expand points down, collapse up (Phosphor's caret paths: the tip at 164.69 is down, 91.31 up).
+    const arrow = testid => page.locator(task('done', testid)).evaluate(node => node.querySelector('svg').innerHTML);
+    assert.match(await arrow('agent-card-expand'), /164\.69/, label('folded: the chevron points down'));
+    // The chat bubble opens the composer alone on the folded card (no tray, no chat); a second tap hides it.
+    await page.locator(task('done', 'agent-card-chat')).click();
+    await page.locator(task('done', 'agent-card-composer')).waitFor();
+    assert.equal(await page.locator(task('done', 'agent-chat-header')).count(), 0, label('only the composer opened'));
+    assert.equal(await page.locator(task('done', 'agent-card')).getAttribute('data-level'), '0');
+    await page.locator(task('done', 'agent-card-chat')).click();
+    await page.locator(task('done', 'agent-card-composer')).waitFor({ state: 'detached' });
+    if (name === '1440') { await page.keyboard.press('Shift'); await page.locator(task('done', 'agent-card-chat')).focus(); }
     await expand.click();
     await page.locator(task('done', 'agent-chat')).waitFor();
+    const collapseArrow = await arrow('agent-card-collapse');
+    assert.match(collapseArrow, /91\.31/, label('level 1: the chevron points up'));
+    if (name === '1440') { await page.keyboard.press('Shift'); await page.locator(task('done', 'agent-card-collapse')).focus(); }
+    assert.notEqual(await arrow('agent-card-expand-more'), collapseArrow, label('level 1: Expand more is the double chevron'));
     assert.equal(await page.locator(task('done', 'agent-chat-header')).count(), 0, label('level 1 is the tray, without the chat header'));
     assert.equal(await page.locator(task('done', 'agent-card')).getAttribute('data-level'), '1');
     if (name === '1440') { await page.keyboard.press('Shift'); await page.locator(task('done', 'agent-card-collapse')).focus(); }
@@ -71,7 +85,7 @@ test('the agent card: levels, background work, a decision on the folded card, do
     assert.equal(await page.locator(task('needs', 'approval-card')).count(), 0, label('the decision left the card'));
 
     // Dock and undock: the chat goes to the column, the card stays in the list, marked docked.
-    if (name === '1440') { await page.keyboard.press('Shift'); await page.locator(task('done', 'agent-card-expand')).focus(); }
+    if (name === '1440') { await page.keyboard.press('Shift'); await page.locator(task('done', 'agent-card-chat')).focus(); }
     await page.locator(task('done', 'agent-card-dock')).click();
     await page.locator('[data-testid=dock] [data-testid=agent-chat-header]').waitFor();
     assert.equal(await page.locator(task('done', 'agent-card')).getAttribute('data-level'), 'docked');
@@ -114,6 +128,6 @@ test('the showcase site lists Agent cards and plays the page', { skip, timeout: 
   assert.ok((await page.locator('#pages option').allTextContents()).includes('Agent cards'), 'the top bar menu lists Agent cards');
   const demo = page.frameLocator('#demo');
   await demo.locator(task('needs', 'approval-card')).waitFor({ timeout: 30000 });
-  await demo.locator(task('done', 'agent-card-expand')).click();
-  await demo.locator(task('done', 'agent-chat')).waitFor();
+  await demo.locator(task('done', 'agent-card-chat')).click();
+  await demo.locator(task('done', 'agent-card-composer')).waitFor();
 });
