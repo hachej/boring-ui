@@ -36,7 +36,7 @@ function sink(refuse) {
 const sse = (text) => [['message_start', { message: { id: 'm1', type: 'message', role: 'assistant', model: 'claude-sonnet-5-5', content: [], usage: { input_tokens: 1000, output_tokens: 0 } } }],
   ['content_block_start', { index: 0, content_block: { type: 'text', text: '' } }], ['content_block_delta', { index: 0, delta: { type: 'text_delta', text } }], ['content_block_stop', { index: 0 }],
   ['message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 500 } }], ['message_stop', {}]].map(([e, d]) => `event: ${e}\ndata: ${JSON.stringify({ type: e, ...d })}\n\n`).join('');
-const anthropic = (statuses, answer = { heard: ['ok'] }) => { const seen = []; return { seen, fetch: async (url, init) => { seen.push(init); const status = statuses[Math.min(seen.length - 1, statuses.length - 1)]; return status === 200 ? new Response(sse(JSON.stringify({ answer })), { headers: { 'content-type': 'text/event-stream' } }) : new Response('{"type":"error","error":{"type":"overloaded_error","message":"busy"}}', { status, headers: { 'retry-after-ms': '1' } }); } }; };
+const anthropic = (statuses, answer = { heard: ['ok'] }) => { const seen = []; return { seen, fetch: async (url, init) => { seen.push(init); const status = statuses[Math.min(seen.length - 1, statuses.length - 1)]; return status === 200 ? new Response(sse(JSON.stringify(answer)), { headers: { 'content-type': 'text/event-stream' } }) : new Response('{"type":"error","error":{"type":"overloaded_error","message":"busy"}}', { status, headers: { 'retry-after-ms': '1' } }); } }; };
 const ANTHROPIC = ['anthropic:claude-sonnet-5-5'];
 
 test('llm plain import: the fake answers with no host, no key, no network', async () => {
@@ -85,7 +85,7 @@ test('llm limits: each refused before anything is sent, a model maximum caps the
     'llm-chars:200000': [ask({ messages: [{ role: 'user', content: 'x'.repeat(200_001) }] })], 'llm-max-tokens:32000': [ask({ maxTokens: 0 }), ask({ maxTokens: 32_001 })], 'llm-field': [ask({ temperature: 0 })] };
   for (const [kind, inputs] of Object.entries(cases)) for (const input of inputs) assert.deepEqual(await structured(input, options), { ok: false, kind, retryable: false }, kind);
   assert.equal((await complete({ purpose: 'say', messages: [user], schema: SCHEMA }, options)).kind, 'llm-field');
-  assert.deepEqual(await structured(ask(), { ...options, timeoutMs: 300_001 }), { ok: false, kind: 'llm-timeout:300000', retryable: false });
+  assert.deepEqual(await structured(ask(), { ...options, timeoutMs: 600_001 }), { ok: false, kind: 'llm-timeout:600000', retryable: false });
   assert.deepEqual([w.calls('faux'), sent.calls.length], [0, 0]);
   let maxTokens;
   w.faux.setResponses([(c, o) => { maxTokens = o.maxTokens; return reply({ heard: [] }); }]);
