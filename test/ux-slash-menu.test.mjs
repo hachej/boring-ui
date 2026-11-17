@@ -103,3 +103,38 @@ for (const [label, viewport, touch] of [['1440', { width: 1440, height: 900 }, f
     }
   });
 }
+
+// The same menu in the other places the one composer lives: the docked column and the full screen. One composer, so one menu, not a copy.
+for (const [place, control, host] of [['docked column', 'agent-tray-dock', '[data-one-dock]'], ['full screen', 'agent-tray-full', '[data-testid=agent-full]']]) {
+  test(`1440, ${place}: « / » opens the same grouped menu`, { skip, timeout: 240000 }, async t => {
+    const dir = mkdtempSync(join(tmpdir(), 'ux-slash-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const scenario = loadAll().find(s => s.target === 'component:design-system');
+    await buildPage(scenario.fixture.entry, join(dir, 'index.html'));
+    const server = createServer((req, res) => {
+      const file = join(dir, decodeURIComponent(req.url.split('?')[0]).replace(/\/$/, '/index.html'));
+      if (!existsSync(file) || !extname(file)) { res.statusCode = 404; res.end(); return; }
+      res.setHeader('content-type', extname(file) === '.js' ? 'text/javascript' : extname(file) === '.css' ? 'text/css' : 'text/html'); res.end(readFileSync(file));
+    }).listen(0);
+    t.after(() => server.close());
+    const browser = await playwright.chromium.launch({ executablePath: process.env.CHROMIUM, args: ['--no-sandbox'] });
+    t.after(() => browser.close());
+    const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+    await page.goto(`http://127.0.0.1:${server.address().port}/index.html?pace=instant`);
+    await page.locator('[data-testid=composer-input]').waitFor({ timeout: 30000 });
+    await page.locator('[data-testid=agent-bar-conversation]').click({ force: true });
+    await page.locator('[data-testid=agent-tray]').waitFor({ timeout: 10000 });
+    await page.locator(`[data-testid=${control}]`).evaluate(element => element.click());
+    await page.locator(host).first().waitFor({ timeout: 10000 });
+    const input = page.locator('[data-testid=composer-input]:visible').first();
+    await input.waitFor();
+    await input.focus(); await page.keyboard.type('/');
+    await page.locator('[role=listbox]').waitFor();
+    assert.deepEqual(await page.locator('[data-testid=slash-heading]').allTextContents(), ['Commands', 'Skills', 'Actions'], `${place}: the same three groups`);
+    assert.equal(await page.locator('[data-testid=slash-item]').count(), 9);
+    await page.keyboard.type('exp');
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid=slash-item]').length === 1);
+    assert.deepEqual(await page.locator('[data-testid=slash-item]').evaluateAll(items => items.map(e => e.dataset.name)), ['export-gaps'], `${place}: /exp finds the action`);
+    await page.screenshot({ path: join(root, '.cache/evidence', `slash-menu-${place.replace(' ', '-')}.png`) });
+  });
+}

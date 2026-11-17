@@ -75,8 +75,12 @@ export interface AppShellText {
   /** A file the kit opens in its viewer, while it is read, and when it cannot be read. */
   readonly fileLoading: string;
   readonly fileUnavailable: string;
-  /** A table's row action: puts the row in the assistant's field as an @ mention (the row's number follows). */
-  readonly referenceRow: string;
+  /** A table row's action (tooltip and name), its state once the row is in the field, and the multi-row bar (`{n}` is the count). */
+  readonly referenceInAgent: string;
+  readonly referencedInAgent: string;
+  readonly referenceRows: string;
+  readonly selectRow: string;
+  readonly clearSelection: string;
   /** The update notice (`AppShell update`): the sentence, its Reload action and the name of its dismiss button. */
   readonly updateAvailable: string;
   readonly updateReload: string;
@@ -128,7 +132,11 @@ const en: AppShellText = {
   nextFile: 'Next file',
   fileLoading: 'Opening…',
   fileUnavailable: 'This file cannot be opened.',
-  referenceRow: 'Reference in the assistant, row',
+  referenceInAgent: 'Reference in agent',
+  referencedInAgent: 'Referenced',
+  referenceRows: 'Reference {n} rows in agent',
+  selectRow: 'Select row',
+  clearSelection: 'Clear selection',
   updateAvailable: 'An update is available.',
   updateReload: 'Reload',
   updateDismiss: 'Dismiss the update notice',
@@ -179,7 +187,11 @@ const fr: AppShellText = {
   nextFile: 'Fichier suivant',
   fileLoading: 'Ouverture…',
   fileUnavailable: 'Ce fichier ne peut pas être ouvert.',
-  referenceRow: 'Citer dans l’assistant, ligne',
+  referenceInAgent: 'Citer dans l’assistant',
+  referencedInAgent: 'Cité',
+  referenceRows: 'Citer {n} lignes dans l’assistant',
+  selectRow: 'Sélectionner la ligne',
+  clearSelection: 'Effacer la sélection',
   updateAvailable: 'Une mise à jour est disponible.',
   updateReload: 'Recharger',
   updateDismiss: 'Masquer l’avis de mise à jour',

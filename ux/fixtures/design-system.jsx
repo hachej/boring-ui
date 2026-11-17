@@ -87,7 +87,7 @@ installFakeMic();
 const TABLE = 'samples/open-gaps.csv';
 const tableRows = async () => {
   const [head = [], ...rows] = csvRows(await (await demoFiles.read(TABLE)).blob.text()), names = columnNames(head);
-  return rows.map((row, at) => rowMentionPath({ path: TABLE, row: at + 1, cells: Object.fromEntries(names.map((name, j) => [name, row[j] ?? ''])) }));
+  return rows.map((row, at) => rowMentionPath({ path: TABLE, rows: [{ row: at + 1, cells: Object.fromEntries(names.map((name, j) => [name, row[j] ?? ''])) }] }));
 };
 const mentions = { listLabel: 'Files and rows', search: async query => {
   const needle = query.toLowerCase();

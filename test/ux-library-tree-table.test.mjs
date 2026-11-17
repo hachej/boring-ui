@@ -89,8 +89,9 @@ test('the file tree lines files up with folders, stays compact and has no second
       assert.equal(await action.evaluate(element => getComputedStyle(element).opacity), '1', `${label}: hovering the row shows its action`);
     }
     await action.click();
-    const chip = tab.getByText('open-gaps.csv row 3: Card Harbor Garage, Jan 09').first();
+    const chip = tab.locator('[data-testid=mention-chip]').first();
     await chip.waitFor({ timeout: 8000 });
+    assert.match(await chip.innerText(), /open-gaps\.csv\s+row 3\s+Card Harbor Garage · Jan 09 · \$12\.00/, `${label}: the chip is the file, a row badge and the cells' summary`);
     await tab.locator('[data-testid=composer-input]').fill('Is this one still open?');
     await tab.locator('[data-testid=composer-submit]').click();
     await tab.getByText('Row 3 of').first().waitFor({ timeout: 20000 });
