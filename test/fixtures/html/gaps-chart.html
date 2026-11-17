@@ -1,0 +1,26 @@
+<!-- lib: d3 -->
+<style>
+  body { margin: 0; padding: 16px; font: 14px system-ui, sans-serif; color: #1f2937; background: #ffffff; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  p { margin: 0 0 12px; color: #6b7280; }
+  .bar { fill: #0c4a6e; }
+  .bar:hover { fill: #0369a1; }
+  text { font-size: 11px; fill: #374151; }
+  @media (prefers-color-scheme: dark) { body { background: #111827; color: #f9fafb; } text { fill: #d1d5db; } .bar { fill: #7dd3fc; } }
+</style>
+<h1>Open gaps by month</h1>
+<p id="note">Harbor Studio (fictional). Drawn with d3 from the kit's offline copy.</p>
+<svg id="chart" width="100%" viewBox="0 0 420 220" role="img" aria-label="Open gaps by month"></svg>
+<script>
+  const data = [{ month: 'Sep', gaps: 3 }, { month: 'Oct', gaps: 5 }, { month: 'Nov', gaps: 2 }, { month: 'Dec', gaps: 6 }, { month: 'Jan', gaps: 4 }];
+  if (typeof d3 === 'undefined') { document.getElementById('note').textContent = 'd3 did not load'; }
+  else {
+    const x = d3.scaleBand().domain(data.map(d => d.month)).range([30, 410]).padding(0.25);
+    const y = d3.scaleLinear().domain([0, 7]).range([190, 10]);
+    const svg = d3.select('#chart');
+    svg.selectAll('rect').data(data).join('rect').attr('class', 'bar').attr('x', d => x(d.month)).attr('y', d => y(d.gaps)).attr('width', x.bandwidth()).attr('height', d => 190 - y(d.gaps));
+    svg.selectAll('.label').data(data).join('text').attr('class', 'label').attr('x', d => x(d.month) + x.bandwidth() / 2).attr('y', 208).attr('text-anchor', 'middle').text(d => d.month);
+    svg.selectAll('.count').data(data).join('text').attr('x', d => x(d.month) + x.bandwidth() / 2).attr('y', d => y(d.gaps) - 4).attr('text-anchor', 'middle').text(d => d.gaps);
+    document.documentElement.setAttribute('data-d3', d3.version);
+  }
+</script>

@@ -12,13 +12,13 @@ import type { MockupComments } from '../mockup-viewer/mockup-viewer';
 import { createRecordsKind } from '../record-viewer/records-kind';
 import { markdownKind } from '../viewer-markdown/markdown-kind';
 import { htmlKind } from '../viewer-html/html-kind';
-import { csvKind, svgKind } from '../viewer-code/code-kinds';
+import { codeKind, csvKind, svgKind } from '../viewer-code/code-kinds';
 import { imageKind } from '../viewer-image/image-kind';
 import { pdfKind } from '../viewer-pdf/pdf-kind';
 import type { PanelKind } from '../pi-app/viewer-kinds';
 
 /** The document kinds: each is a host's default for its type, so a `viewers` entry for that type wins over it. */
-export const documentKinds: readonly PanelKind[] = [markdownKind, htmlKind, svgKind, csvKind, imageKind, pdfKind];
+export const documentKinds: readonly PanelKind[] = [markdownKind, htmlKind, svgKind, csvKind, codeKind, imageKind, pdfKind];
 
 export interface DefaultKindsOptions {
   /** The language of the domain kinds' names and viewers (a `.maquette.json` card says « Maquette » in French). Default English. */

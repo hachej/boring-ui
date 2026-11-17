@@ -214,6 +214,9 @@ export interface Internal extends Omit<AgentLayerApi, 'agent'> {
   /** How much of the screen the conversation takes: `open` (the tray, the phone's half), `grown` (Agrandir: the tray fills the main column) and `full` (the whole viewport over the nav and the right pane; the phone's full snap is this same state). */
   readonly size: ConversationSize;
   readonly setSize: (size: ConversationSize) => void;
+  /** Go full screen, remembering the origin: `folded` (the collapsed bar) and `dock` (the docked column) are where `leaveFull` goes back to; no origin goes back to the grown tray. */
+  readonly enterFull: (from?: 'folded' | 'dock') => void;
+  readonly leaveFull: () => void;
   /** Where the one composer is drawn while the conversation is full screen (set by that surface, null otherwise). */
   readonly setFullField: (element: HTMLElement | null) => void;
   /** The thread is on show in the tray above the field. */
@@ -287,7 +290,8 @@ export const FOLDED_FIELD = '[&_[data-testid=preparing]]:hidden [&_[data-testid=
 /** An artifact kind as the pane's file viewer uses it: structurally the `match` and `renderer` of a diagram, drawing, mock-up, records or maquette kind. */
 export interface FileKind {
   readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;
-  readonly renderer: (props: { readonly text: string }) => ReactNode;
+  /** `title`: the file's name (the last path segment), for a kind that reads its siblings. */
+  readonly renderer: (props: { readonly text: string; readonly title?: string | undefined }) => ReactNode;
   /** The kind's name (« Diagram ») and icon: the file card and the file chips use them, as the Library does. */
   readonly label?: string | undefined;
   readonly icon?: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }> | undefined;

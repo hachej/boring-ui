@@ -387,7 +387,7 @@ test('1440: the docked conversation has one surface, a pane-height header and it
   })()`);
   assert.equal(seen.header, seen.body, 'the header and the body are on one surface');
   assert.equal(seen.headerHeight, seen.bar, 'the header is as tall as the pane headers');
-  assert.deepEqual(seen.names, ['history-open', 'agent-layer-library', 'agent-layer-undock', 'agent-layer-close'], 'the docked header is the title, History, Library, then undock and collapse (no strip on a docked column)');
+  assert.deepEqual(seen.names, ['history-open', 'agent-layer-library', 'agent-layer-full', 'agent-layer-undock', 'agent-layer-close'], 'the docked header is the title, History, Library, Full screen, then undock and collapse last (no strip on a docked column)');
   assert.equal(seen.divider, false, 'no divider before Close');
   assert.equal(new Set(seen.size).size, 1, `the icon buttons share one size (${seen.size})`);
 });
@@ -466,6 +466,63 @@ test('1440: the controller straddles the top of the bar in every state, rests as
   await browser.until('folded again', `!document.querySelector('[data-testid=agent-tray]')`);
   a = await strip(); assert.deepEqual(a.actions, ['chevron', 'full'], 'folded again: the chevron and full screen');
   assert.ok(before.w > 0);
+});
+
+const sameRect = (a, b, what) => { for (const key of ['x', 'y', 'w', 'h']) assert.ok(Math.abs(a[key] - b[key]) <= 1.5, `${what}: ${key} ${a[key]} vs ${b[key]}`); };
+const focused = () => browser.evaluate(`document.activeElement?.dataset?.testid ?? document.activeElement?.tagName`);
+
+// Julien: full screen from the docked column. The docked header has a Full screen icon; the conversation fills the main area (nav and right pane stay), back returns to docked.
+test('1440: the docked header has Full screen: the main area fills, back and Esc return to the docked column, focus on the opener', { skip, timeout: 120000 }, async () => {
+  await open(1440, 'demo=1&single=1');
+  await click('[data-testid=agent-bar-conversation]');
+  await browser.until('the tray', `!!document.querySelector('[data-testid=agent-tray-dock]')`);
+  await click('[data-testid=agent-tray-dock]');
+  await browser.until('docked', `!!document.querySelector('[data-testid=agent-layer-undock]')`); await wait(400);
+  assert.equal(await count('[data-testid=composer-controller]'), 0, 'docked: no strip');
+  const ids = await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer-header] button')].filter(e => e.getClientRects().length).map(e => e.dataset.testid)`);
+  assert.ok(ids.includes('agent-layer-full') && ids.indexOf('agent-layer-full') < ids.indexOf('agent-layer-undock'), `the docked header has Full screen before undock (${ids})`);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-layer-undock]').getAttribute('aria-pressed')`), 'true', 'undock stays the pressed split');
+  await click('[data-testid=agent-layer-full]');
+  await browser.until('full screen', `!!document.querySelector('[data-testid=agent-full]')`); await wait(500);
+  sameRect(await rect('[data-testid=agent-full]'), await rect('[data-boring=dock-main]'), 'the host is the main area');
+  assert.equal(await count('[data-testid=composer-controller] button'), 1, 'full screen: the strip is the back chevron alone');
+  await browser.screenshot('one-composer-1440-light-docked-full.png');
+  await click('[data-testid=agent-full-back]');
+  await browser.until('back to the docked column', `!document.querySelector('[data-testid=agent-full]') && !!document.querySelector('[data-testid=agent-layer-undock]')`); await wait(500);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-layer]').dataset.placement`), 'docked', 'back is the docked column, not the tray');
+  assert.equal(await count('[data-testid=agent-tray]'), 0, 'not the tray');
+  await wait(200);
+  assert.equal(await focused(), 'agent-layer-full', 'focus is back on the opener');
+  // Esc does the same.
+  await click('[data-testid=agent-layer-full]');
+  await browser.until('full again', `!!document.querySelector('[data-testid=agent-full]')`); await wait(400);
+  await browser.press('Escape');
+  await browser.until('docked again', `!document.querySelector('[data-testid=agent-full]') && !!document.querySelector('[data-testid=agent-layer-undock]')`);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-layer]').dataset.placement`), 'docked', 'Esc returns to the docked column');
+});
+
+// The collapsed bar's own full-screen action: hover or focus reveals it, it fills the main area, and back returns to the collapsed bar (not to the grown tray).
+test('1440: the collapsed bar\'s full screen: revealed by focus, fills the main area, back and Esc return to the collapsed bar with focus on the opener', { skip, timeout: 120000 }, async () => {
+  await open(1440, 'demo=1&single=1');
+  const reveal = () => browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=agent-tray-full]').parentElement).opacity + '|' + document.querySelector('[data-testid=agent-tray-full]').getBoundingClientRect().width`);
+  await browser.evaluate(`document.querySelector('[data-action=chevron]').blur()`); await wait(300);
+  const rest = await reveal();
+  await browser.press('Shift'); await browser.evaluate(`document.querySelector('[data-action=chevron]').focus()`); await wait(400);
+  const shown = await reveal();
+  assert.notEqual(shown, rest, `focus reveals the Full screen action (${rest} -> ${shown})`);
+  await click('[data-testid=agent-tray-full]');
+  await browser.until('full screen', `!!document.querySelector('[data-testid=agent-full]')`); await wait(500);
+  sameRect(await rect('[data-testid=agent-full]'), await rect('[data-boring=dock-main]'), 'the host is the main area');
+  await click('[data-testid=agent-full-back]');
+  await browser.until('the collapsed bar', `!document.querySelector('[data-testid=agent-full]') && !document.querySelector('[data-testid=agent-tray]')`); await wait(500);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]').getAttribute('aria-expanded')`), 'false', 'back is the collapsed bar, not the grown tray');
+  await wait(200);
+  assert.equal(await focused(), 'agent-tray-full', 'focus is back on the opener');
+  await click('[data-testid=agent-tray-full]');
+  await browser.until('full again', `!!document.querySelector('[data-testid=agent-full]')`); await wait(400);
+  await browser.press('Escape');
+  await browser.until('collapsed again', `!document.querySelector('[data-testid=agent-full]') && !document.querySelector('[data-testid=agent-tray]')`);
+  assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]').getAttribute('aria-expanded')`), 'false', 'Esc returns to the collapsed bar');
 });
 
 // Julien: docking while a file is open in the right pane left the conversation behind the pane. Docking replaces the pane: the file closes and the column takes its place.

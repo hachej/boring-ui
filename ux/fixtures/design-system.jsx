@@ -12,7 +12,7 @@ import { columnNames, rowMentionPath, rowReferenceLabel } from '../../registry/v
 import { createDemoController } from './demo-controller.mjs';
 import { installFakeMic } from './fake-mic.mjs';
 import script from '../scenarios/scripts/design-system.json';
-import { SlashPicker } from '../../registry/pi-chat-slash/slash-menu.tsx';
+import { demoSlash } from './demo-slash.jsx';
 import { UpdateNotice } from '../../registry/app-shell/update-notice.tsx';
 import { appShellText } from '../../registry/app-shell/text.ts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -67,7 +67,7 @@ function Page() {
       <Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader><TableBody><TableRow><TableCell>Jan 02</TableCell><TableCell className="text-right tabular-nums">$12.00</TableCell></TableRow></TableBody></Table>
       <Card><CardHeader><CardTitle>A card</CardTitle><CardDescription>Flat, one border.</CardDescription></CardHeader><CardContent>Content</CardContent></Card>
     </Section>
-    <Section id="files" title="File tree: every viewer"><div className="rounded-lg border"><FileTreeView controller={demoTree()} variant="plain" locale="en" upload={false} history={false} refresh={false} onOpen={path => layer.pane.push({ file: path })} /></div></Section>
+    <Section id="files" title="File tree: every viewer"><div className="rounded-lg border"><FileTreeView controller={demoTree()} variant="plain" locale="en" upload={false} history={false} refresh={false} onOpen={path => layer.pane.push({ file: path })} /></div><p data-testid="ds-files-note" className="m-0 text-sm text-muted-foreground">Boards and canvases (tldraw) are not in this public demo: tldraw needs a licence key for production use (docs/architecture/CANVAS.md). They are checked by their own journeys (npm run board:journey).</p></Section>
     <Section id="navigation" title="Tabs, dialog, empty, loading">
       <Tabs defaultValue="a"><TabsList><TabsTrigger value="a">All</TabsTrigger><TabsTrigger value="b">Gaps</TabsTrigger></TabsList><TabsContent value="a">Everything</TabsContent><TabsContent value="b">Only gaps</TabsContent></Tabs>
       <Dialog><DialogTrigger render={<Button variant="outline" className="self-start">Open a dialog</Button>} /><DialogContent><DialogHeader><DialogTitle>A dialog</DialogTitle><DialogDescription>Kit defaults.</DialogDescription></DialogHeader></DialogContent></Dialog>
@@ -95,23 +95,7 @@ const mentions = { listLabel: 'Files and rows', search: async query => {
   const rows = (await tableRows()).map(path => ({ path, label: rowReferenceLabel(path.slice(4)) })).filter(row => row.label.toLowerCase().includes(needle) || TABLE.includes(needle));
   return [...files, ...rows];
 } };
-// The `/` menu. The app's provider is one list (`id`, `kind`, `label`, `description`, `argumentHint`); the kit takes it as `slash.commands`, `slash.skills` and `slash.actions`.
-// A command acts on the page, a skill is text for the assistant (`/summarize <file>`), an action asks the assistant to do something for the person.
-const ask = text => controller.send('followUp', { text, attachments: [], restore: { text: '', attachments: [] } });
-const PROVIDER = [
-  { id: 'clear', kind: 'command', label: 'clear', description: 'Start a fresh conversation', run: () => reset() },
-  { id: 'help', kind: 'command', label: 'help', description: 'Ask what the assistant can do', run: api => api.setText('What can you do here?') },
-  { id: 'shortcuts', kind: 'command', label: 'shortcuts', description: 'List the keyboard shortcuts', run: api => api.setText('Which keyboard shortcuts are there?') },
-  { id: 'summarize', kind: 'skill', label: 'summarize', description: 'Summarize a table in a few lines', argumentHint: '<file>' },
-  { id: 'draft-reminder', kind: 'skill', label: 'draft-reminder', description: 'Write a polite payment reminder', argumentHint: '<customer>' },
-  { id: 'review-entries', kind: 'skill', label: 'review-entries', description: 'Look for errors in the entries' },
-  { id: 'export-gaps', kind: 'action', label: 'export-gaps', description: 'Save the open gaps as a CSV file', run: () => ask('Export the open gaps') },
-  { id: 'archive-draft', kind: 'action', label: 'archive-draft', description: 'Move the old draft to the archive', run: () => ask('Archive the old draft') },
-  { id: 'new-entry', kind: 'action', label: 'new-entry', description: 'Add an entry to the journal', argumentHint: '<amount>', run: api => api.setText(`New entry ${api.text}`.trim()) },
-];
-const toSlash = list => ({ Picker: SlashPicker, ...Object.fromEntries([['commands', 'command'], ['skills', 'skill'], ['actions', 'action']].map(([key, kind]) => [key,
-  list.filter(item => item.kind === kind).map(({ label, description, argumentHint, run }) => ({ name: label, description, ...(argumentHint ? { argumentHint } : {}), ...(run ? { run } : {}) }))])) });
-const slash = toSlash(PROVIDER);
+const slash = demoSlash({ controller, reset });
 const attachments = { upload: async files => files.map(file => ({ name: file.name, path: `uploads/${file.name}` })) };
 const nav = [
   { id: 'design', label: 'Design system', icon: FileTextIcon, render: () => <ScreenBody><Page /></ScreenBody> },

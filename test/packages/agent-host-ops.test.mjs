@@ -14,7 +14,7 @@ import { defineAgent } from '@hachej/boring-agent/agents';
 import { APPROVE, DENIED_PREFIX, DENY, isApprovalGated } from '@hachej/boring-agent/approval';
 import { answerUserQuestion } from '@hachej/boring-agent/ask-user';
 import { CurrentUser, admit, defineApp, defineOp, isRefusal, must, refuse } from '@hachej/boring-agent/host';
-import { SenderUnknown, appTools, checkAgentTools, checkExpose, runOp } from '@hachej/boring-agent/host-runtime';
+import { SenderUnknown, appTools, checkAgentTools, checkExpose, createSession, runOp } from '@hachej/boring-agent/host-runtime';
 import notesPlain from '../../fixtures/host-apps/notes-plain/app.ts';
 import { agents as plainAgents } from '../../fixtures/host-apps/notes-plain/agents.ts';
 import { addNote, createNotebook, listNotes, recordGist, setMember } from '../../fixtures/host-apps/notes-plain/ops.ts';
@@ -469,6 +469,31 @@ test('mapping (declaration): defineOp returns the same object, and the built op.
   assert.equal(isRefusal({ kind: 'K' }), false);
   const built = readFileSync(new URL('packages/agent/dist/host/op.js', root), 'utf8');
   assert.doesNotMatch(built, /^\s*import\s/m, 'a type-only import leaves no import behind');
+});
+
+test('session (unitStorage): a personal session hands its plain tools the unit storage, with no tools override', async () => {
+  const w = world(notesPlain);
+  const faux = fauxProvider({ provider: model.provider, models: [{ id: model.modelId }] });
+  faux.setResponses([
+    () => fauxAssistantMessage([fauxToolCall('addNote', { text: 'Depuis la session' }, { id: 'c1' })], { stopReason: 'toolUse' }),
+    () => fauxAssistantMessage([fauxText('Fait.')]),
+  ]);
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const harnesses = [];
+  const session = createSession({
+    id: 'me:camille', def: notesPlain, storage: new MemoryStorage(), unitStorage: w.storage, models, model,
+    openHarness: async (storage, options, ctx) => { const harness = await Harness.open(storage, options, ctx); harnesses.push(harness); return harness; },
+    budget: { reserveRun: async (i) => ({ reservationId: i.runId }), recordUsage: async () => ({ billedMicros: 0 }), settleRun: async () => undefined, releaseRun: async () => undefined },
+    skills: () => ({ list: async () => [], version: async () => '1' }),
+    kv: { get: async () => undefined, put: async () => undefined }, wake: { arm: async () => undefined }, language: async () => 'fr',
+  });
+  try {
+    const request = new Request('http://host.test/session?op=submit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: 'r1', content: 'note' }) });
+    assert.equal((await session.fetch(request, { id: 'camille', language: 'fr' })).status, 200);
+    for (const end = Date.now() + 15_000; w.opened.length === 0 || w.rows('camille', 'notes').length === 0; await new Promise((r) => setTimeout(r, 25))) assert.ok(Date.now() < end, 'the note was written');
+    assert.deepEqual(w.rows('camille', 'notes').map((n) => [n.text, n.by]), [['Depuis la session', 'camille']]);
+  } finally { for (const harness of harnesses) await harness.close(context).catch(() => undefined); }
 });
 
 test('no field (unknown role): a role that is not owner, editor or reader is never admitted', async () => {

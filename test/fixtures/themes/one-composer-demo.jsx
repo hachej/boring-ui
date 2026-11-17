@@ -6,23 +6,31 @@ import { Label } from '@/components/ui/label';
 import { Table as KitTable, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { createFileTreeController } from '@hachej/boring-ui-kit/file-tree';
 import { FileTreeView } from '../../../registry/file-tree/file-tree.tsx';
-import { ATTACHMENTS, DEMO_FILES } from './one-composer-files.js';
+import { ATTACHMENTS, DEMO_FILES, demoFiles } from './one-composer-files.js';
 import { diagramKind } from '../../../registry/diagram-viewer/diagram-kind.tsx';
 import { drawingKind } from '../../../registry/drawing-viewer/drawing-kind.tsx';
 import { mockupKind } from '../../../registry/mockup-viewer/mockup-kind.tsx';
 import { recordsKind } from '../../../registry/record-viewer/records-kind.tsx';
 import { maquetteKind } from '../../../registry/maquette-viewer/maquette-kind.tsx';
+import { LooksViewer } from '../../../registry/looks-viewer/looks-viewer.tsx';
+import { isLooksPath } from '../../../registry/looks-viewer/looks.ts';
+import { InteractiveFrame } from '../../../registry/viewer-frame/interactive-html.tsx';
 
 // The UX demo layer (`?demo=1`, UX loop): what a person does with the one composer, over invented English bookkeeping content:
 // a library (the kit's FileTreeView over an in-memory provider), earlier conversations (the chat's History list), a long conversation,
 // a record opened from a page row, a quote from the page. Nothing here changes the default fixture page.
-/** The artifact kinds the demo's pane draws (`agent.fileKinds`): diagram, drawing (Excalidraw and draw.io), mock-up, records and maquette. The board needs a workspace client and the looks a reader for its screens: neither is here. */
-export const DEMO_KINDS = [diagramKind, drawingKind, mockupKind, recordsKind, maquetteKind];
+/** An HTML page the pane runs in the kit's sandboxed frame (no scripts' network, no storage): a host's opt-in, here for the demo's own invented pages. A `*.mockup.html` goes to the mock-up kind first. */
+const htmlKind = { match: target => /\.html?$/i.test(target.resource.path), label: 'HTML', renderer: ({ text }) => <div className="flex h-96 flex-col" data-testid="demo-html"><InteractiveFrame text={text} sources={[]} testId="demo-html" title="HTML page (running)" /></div> };
+/** A `*.looks.json` reads its sibling screens through the same demo files; the pane hands a renderer the file's name, the folder is the demo's one `samples/looks`. */
+const looksKind = { match: target => isLooksPath(target.resource.path), label: 'Looks', renderer: ({ text, title }) => <LooksViewer key={title} text={text} path={`samples/looks/${title}`} read={async path => (await demoFiles.read(path).catch(() => undefined))?.blob.text()} /> };
+/** The artifact kinds the demo's pane draws (`agent.fileKinds`): diagram, drawing (Excalidraw and draw.io), mock-up, records, maquette, looks and a sandboxed HTML page. The board and canvas need a tldraw bundle, its assets and a workspace client: they have their own journeys. */
+export const DEMO_KINDS = [diagramKind, drawingKind, mockupKind, recordsKind, maquetteKind, looksKind, htmlKind];
 export const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 
 const TREE = {
   '': [['uploads', 'directory'], ['invoices', 'directory'], ['receipts', 'directory'], ['exports', 'directory'], ['videos', 'directory'], ['samples', 'directory'], ['closing-notes.md', 'file', 2400]],
-  samples: [['archive', 'directory'], ...DEMO_FILES.filter(path => path.startsWith('samples/') && !path.startsWith('samples/archive/')).map(path => [path.slice(8), 'file', 2000])],
+  samples: [['archive', 'directory'], ['looks', 'directory'], ...DEMO_FILES.filter(path => path.startsWith('samples/') && !path.startsWith('samples/archive/') && !path.startsWith('samples/looks/')).map(path => [path.slice(8), 'file', 2000])],
+  'samples/looks': DEMO_FILES.filter(path => path.startsWith('samples/looks/')).map(path => [path.slice(14), 'file', 3000]),
   'samples/archive': DEMO_FILES.filter(path => path.startsWith('samples/archive/')).map(path => [path.slice(16), 'file', 800]),
   receipts: [['receipt-harbor-garage-0109.pdf', 'file', 2100], ['note-gap-0109.md', 'file', 300], ['ticket-harbor-garage-0109.png', 'file', 18000]],
   exports: [['entries-january.json', 'file', 400], ['reminder-delmore.txt', 'file', 200]],
