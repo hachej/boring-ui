@@ -28,6 +28,10 @@ export function auditDesign({ groups, palette, radiusBindings }) {
     const value = root.getPropertyValue(`--${name}`).trim() ? `var(--${name})` : radiusBindings[name];
     if (value) radii.push(resolve('border-radius', value));
   }
+  // A composer's round action buttons (attach, commands, dictate, send, stop, found by their kit test ids) may be circles: the kit's own round token, nothing else.
+  // Any other element, or a button that sets a radius by hand, still has to take a theme radius.
+  const COMPOSER_ACTIONS = "[data-testid=\"composer-bar-attach\"], [data-testid=\"composer-bar-commands\"], [data-testid=\"composer-plus\"], [data-testid=\"composer-submit\"], [data-testid=\"composer-queue\"], [data-testid=\"voice-message-record\"], [data-testid=\"agent-talk\"]";
+  const round = resolve('border-radius', 'var(--pm-radius-round)');
   const fonts = ['sans', 'mono', 'display', 'heading'].filter(name => root.getPropertyValue(`--font-${name}`).trim()).map(name => resolve('font-family', `var(--font-${name})`));
   // A border width computes to zero with border-style:none; resolve the token as a length.
   const borderWidth = resolve('width', root.getPropertyValue('--border-width').trim() || '1px');
@@ -52,7 +56,10 @@ export function auditDesign({ groups, palette, radiusBindings }) {
     let index = legacy ? groups.findIndex(group => group.id === legacy) : -1;
     for (let at = element; at && index < 0; at = at.parentElement) index = groups.findIndex(group => (at === element || group.id !== '1') && at.matches(group.selector));
     if (index < 0) continue;
+    // A composer action's radius is read at rest: a transition from the theme radius to the round token would otherwise be read half way.
+    const resting = element.matches(COMPOSER_ACTIONS) && element.style.transition === '' ? (element.style.transition = 'none', true) : false;
     const result = results[index], style = getComputedStyle(element);
+    if (resting) { void style.borderTopLeftRadius; queueMicrotask(() => { element.style.transition = ''; }); }
     result.elements++;
     const target = `${element.tagName.toLowerCase()}${element.dataset.testid ? `[data-testid=${element.dataset.testid}]` : element.dataset.slot ? `[data-slot=${element.dataset.slot}]` : ''}`;
     const check = (family, actual, expected, passed) => {
@@ -79,7 +86,8 @@ export function auditDesign({ groups, palette, radiusBindings }) {
       check('border-width', style[`border${edge}Width`], expected, expected.includes(style[`border${edge}Width`]));
     }
     for (const corner of ['TopLeft', 'TopRight', 'BottomLeft', 'BottomRight']) {
-      const expected = part ? [...radii, host[`border${corner}Radius`]] : host ? [host[`border${corner}Radius`]] : radii;
+      const action = element.matches(COMPOSER_ACTIONS);
+      const expected = [...(part ? [...radii, host[`border${corner}Radius`]] : host ? [host[`border${corner}Radius`]] : radii), ...(action ? [round] : [])];
       check('radius', style[`border${corner}Radius`], expected, expected.includes(style[`border${corner}Radius`]));
     }
     // Native focus rings are focus indicators, not elevation shadows; a shadcn popup's `ring-1` is its stock hairline edge (zero offset and blur), also not elevation.
