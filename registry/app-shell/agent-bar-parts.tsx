@@ -10,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
-import { MENTION_TOKEN } from '@hachej/boring-ui-kit/chat-text';
+import { MENTION_TOKEN, plainText } from '@hachej/boring-ui-kit/chat-text';
 import { isFileBlock, withoutTarget } from '@hachej/boring-ui-kit/chat-view';
 import { useHoldToRecord } from '../pi-chat-voice/use-hold-to-record';
 import { voiceClock } from '../pi-chat/config';
@@ -181,11 +181,14 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
   const overlay = layer.trayOpen && !layer.anchored;
   const [first, ...rest] = actions;
   if (!first) return null;
+  // A phone has no strip: the size is the sheet's grabber (tap for the next snap, drag for any). This control is the grabber's keyboard and screen reader twin: invisible and out of the pointer's way until focused.
+  if (!layer.expanded) return <button type="button" data-testid={first.testId} data-action="chevron" aria-label={first.label} aria-expanded={first.expanded} onClick={first.onSelect}
+    className="pointer-events-none absolute top-0 left-1/2 z-30 size-11 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 outline-ring focus-visible:opacity-100 focus-visible:outline-2" />;
   // One small notch (mockup 6): cells of 32 and 28 by 16 px with 11 px icons, no chip or circle behind an icon (a hover fill only), 1 px hairlines between cells. The 44 px
   // hit area is the ::before of each cell, never visible. The chevron is the anchor (the strip's left edge is half a cell from the middle): the other cells open to its right,
   // inside the same container, which widens (hover or focus within; always on a touch screen).
   const cell = (action: ControllerAction, extra: boolean, last: boolean) => <Tooltip key={action.id}>
-    <TooltipTrigger render={<ControllerCell action={action} extra={extra} round={extra ? last : rest.length === 0} dot={action.primary ? unread : undefined} />} />
+    <TooltipTrigger render={<ControllerCell action={action} extra={extra} round={extra ? last : rest.length === 0} dot={undefined} />} />
     <TooltipContent side="top">{action.label}</TooltipContent></Tooltip>;
   const strip = <span data-testid="composer-controller" style={box && overlay ? { top: 'calc(0px - var(--app-shell-bar-tray-size))' } : undefined}
     className="group/ctl absolute top-0 left-1/2 z-30 -translate-x-4 -translate-y-1/2 max-md:-translate-x-5.5 pointer-coarse:-translate-x-5.5">
@@ -193,6 +196,7 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
     <span className="relative flex items-center">
       <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-4 -translate-y-1/2 rounded-full bg-card ring-4 ring-card outline-1 outline-offset-4 outline-border/70" />
       {cell(first, false, false)}
+      {unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-1/2 -right-3 size-1.5 -translate-y-1/2 rounded-(--radius-3xl) bg-primary group-hover/ctl:opacity-0 group-has-[:focus-visible]/ctl:opacity-0" />}
       {rest.map((action, i) => cell(action, true, i === rest.length - 1))}
     </span>
   </span>;
@@ -210,7 +214,7 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
  */
 /** The folded excerpt names files and ends omitted source lines with one ellipsis. */
 const replyExcerpt = (text: string) => {
-  const lines = text.replace(MENTION_TOKEN, (_match, before: string, quoted: string | undefined, bare: string | undefined) => {
+  const lines = plainText(text).replace(MENTION_TOKEN, (_match, before: string, quoted: string | undefined, bare: string | undefined) => {
     const trail = quoted === undefined ? (bare ?? '').match(/[.,;:!?)\]}'"]+$/)?.[0] ?? '' : '';
     const path = quoted ?? (bare ?? '').slice(0, (bare ?? '').length - trail.length);
     return `${before}${path.split('/').at(-1) ?? path}${trail}`;

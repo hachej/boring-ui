@@ -243,3 +243,33 @@ export function pieces(text: string, options: { readonly mentions: boolean; read
 export const voiceRefusalLabel = {
   denied: 'voiceDenied', 'no-microphone': 'voiceNoMicrophone', busy: 'voiceBusy', insecure: 'voiceInsecure', unsupported: 'voiceUnsupported', failed: 'voiceStartFailed',
 } as const satisfies Readonly<Record<import('./voice-capture.js').VoiceRefusal, string>>;
+
+/**
+ * A Markdown reply as plain reading text, for a one-line or three-line excerpt (the folded reply card): headings lose their `#`, bold, italic, strikethrough and inline
+ * code lose their markers, a link keeps its label and an image its description, a quote loses its `>`, a bullet becomes `· `, a code fence collapses to its first line,
+ * a table row reads as its cells joined by ` · ` (its separator row goes), a rule goes, and blank lines go. The text itself is not shortened or reworded.
+ */
+export function plainText(markdown: string): string {
+  const lines: string[] = [];
+  let fence: string | undefined;
+  let first = true;
+  for (const raw of markdown.replace(/\r\n?/g, '\n').split('\n')) {
+    const marker = /^\s*(`{3,}|~{3,})/.exec(raw)?.[1];
+    if (fence === undefined && marker) { fence = marker[0]; first = true; continue; }
+    if (fence !== undefined) {
+      if (marker && marker[0] === fence) fence = undefined;
+      else if (first && raw.trim()) { lines.push(raw.trim()); first = false; }
+      continue;
+    }
+    let line = raw;
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line) || /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line) && line.includes('|')) continue;
+    line = line.replace(/^\s{0,3}#{1,6}\s+/, '').replace(/\s+#+\s*$/, '').replace(/^\s*(?:>\s?)+/, '');
+    line = line.replace(/^(\s*)[-*+]\s+/, '$1· ');
+    if (/^\s*\|.*\|\s*$/.test(line)) line = line.trim().slice(1, -1).split('|').map(cell => cell.trim()).filter(Boolean).join(' · ');
+    line = line.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/<((?:https?|mailto):[^>]+)>/g, '$1')
+      .replace(/(\*\*|__)(.+?)\1/g, '$2').replace(/~~(.+?)~~/g, '$1').replace(/(^|[^\w*])\*([^*\s](?:[^*]*[^*\s])?)\*(?!\w)/g, '$1$2').replace(/(^|[^\w_])_([^_\s](?:[^_]*[^_\s])?)_(?!\w)/g, '$1$2')
+      .replace(/`+([^`]+)`+/g, '$1');
+    if (line.trim()) lines.push(line.trim());
+  }
+  return lines.join('\n');
+}

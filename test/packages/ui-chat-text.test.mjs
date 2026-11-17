@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { appendToDraft, displayName, fileKind, hasMention, isLongPaste, isVoicePath, kindMentionDraft, looksLikeMarkdown, mentionedPaths, mentionKind, mentionToken, mentionTrigger, pieces, prependToDraft, removeMention, slashGroup, slashItems, slashQuery, visibleParts, withoutKindMentions, withoutMentions, writeKindMentionDraft } from '@hachej/boring-ui-kit/chat-text';
+import { plainText, appendToDraft, displayName, fileKind, hasMention, isLongPaste, isVoicePath, kindMentionDraft, looksLikeMarkdown, mentionedPaths, mentionKind, mentionToken, mentionTrigger, pieces, prependToDraft, removeMention, slashGroup, slashItems, slashQuery, visibleParts, withoutKindMentions, withoutMentions, writeKindMentionDraft } from '@hachej/boring-ui-kit/chat-text';
 import { memberMention } from '@hachej/boring-ui-kit/shared-chat';
 import { mentionedPaths as agentMentionedPaths } from '@hachej/boring-agent/mentions';
 
@@ -98,4 +98,14 @@ test('slash, mention triggers, pieces and file rules', () => {
   assert.equal(isLongPaste('short'), false);
   assert.equal(looksLikeMarkdown('# Title'), true);
   assert.equal(looksLikeMarkdown('plain words'), false);
+});
+
+// The folded reply card reads a Markdown reply as plain text.
+test('plainText drops Markdown markers and keeps the words', () => {
+  const sample = '## A Markdown answer\n\nText with **bold**, *italic* and `inline code`.\n\n1. A numbered step\n2. Another step\n\n- A bullet\n- Another bullet\n\n> A short quote.\n\n```\nconst total = 3 + 4;\n```';
+  assert.equal(plainText(sample), 'A Markdown answer\nText with bold, italic and inline code.\n1. A numbered step\n2. Another step\n· A bullet\n· Another bullet\nA short quote.\nconst total = 3 + 4;');
+  assert.equal(plainText('See [the docs](https://example.test/a_b) and ![a logo](x.png), ~~old~~ <https://example.test>.'), 'See the docs and a logo, old https://example.test.');
+  assert.equal(plainText('| Date | Amount |\n| --- | ---: |\n| Jan 02 | $12.00 |\n\n---\nDone'), 'Date · Amount\nJan 02 · $12.00\nDone');
+  assert.equal(plainText('snake_case_name and 2*3*4 stay'), 'snake_case_name and 2*3*4 stay');
+  assert.equal(plainText('Plain text, no markers.'), 'Plain text, no markers.');
 });
