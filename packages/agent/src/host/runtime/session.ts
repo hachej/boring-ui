@@ -1,7 +1,7 @@
 // The neutral session: one conversation for one id, `me:<person>` or `reader:<unit>`. Opening, waking, alarms, watching and recovery are
 // pi-durable's; the host hands in the Harness factory (BORING-PI-2) and the ports. This file joins them: nothing here is a second lifecycle.
 import { BACKGROUND_CONTEXT as ctx } from '@earendil-works/chord/context';
-import { createRegistry } from '@earendil-works/pi-durable';
+import { createRegistry, defineExtension } from '@earendil-works/pi-durable';
 import type { Harness, Wake } from '@earendil-works/pi-durable';
 import { createEditTool, createReadTool, createWriteTool } from '@earendil-works/pi-durable/tools';
 import { answerUserQuestion, createAskUserTool } from '../../ask-user.js';
@@ -26,8 +26,11 @@ export const createSession: CreateSession = options => {
   const kind = id.startsWith('me:') ? 'me' : id.startsWith('reader:') ? 'reader' : undefined;
   const owner = id.slice(id.indexOf(':') + 1);
   if (!kind || !owner) throw new Error(`createSession(${id}): a session id is me:<person> or reader:<unit>; a shared session comes with host-session-access`);
-  const readerAgent = def.wakes?.[0]?.agent;
+  const readers = [...new Set((def.wakes ?? []).map(w => w.agent))];
+  if (readers.length > 1) throw new Error(`createSession(${id}): ${def.name} has wakes for more than one agent (${readers.join(', ')}); one reader per app until a later card designs several`);
+  const readerAgent = readers[0];
   if (kind === 'reader' && !readerAgent) throw new Error(`createSession(${id}): ${def.name} has no wakes, so it has no reader`);
+  const declared = (def.wakes ?? []).map(w => (w.policy as { name?: string }).name); // the host names an event by its policy
   const scope: Scope | undefined = kind === 'reader' ? { kind: 'reader', unit: owner, role: 'editor', ops: [...(def.expose[readerAgent!] ?? [])] } : undefined;
   const hostFiles = kind === 'me' && def.needs?.includes('files') === true ? options.files : undefined; // files only where the app asks, and only for one person
   const tools = options.tools ?? appTools;
@@ -50,17 +53,24 @@ export const createSession: CreateSession = options => {
     const timer = setTimeout(() => finish(), ALARM_WAIT_MS);
     const finish = () => { clearTimeout(timer); resolve(); };
     idle.push(finish);
+    void harness.closed.then(finish); // a Harness the host closed under this wait leaves no timer behind
+
   });
+
+  const kitOf = (toolsOf: AgentKit['tools']): AgentKit => ({
+    person: owner, model: options.model, skills: options.skills, ask: createAskUserTool(), tools: toolsOf,
+    files: hostFiles ? [createReadTool(), createWriteTool(), createEditTool()] as AgentKit['files'] : [],
+  });
+  // The agent this session talks to must exist: said now, not as a failed open on the first request.
+  const talksTo = kind === 'me' ? 'assistant' : readerAgent!;
+  if (!Object.hasOwn(def.agents?.(kitOf(agent => defineExtension({ name: `host.tools.${agent}` }))) ?? {}, talksTo)) {
+    throw new Error(`createSession(${id}): ${def.name} declares no agent a person can talk to: no agent named ${talksTo}`);
+  }
+  let openError: string | undefined;
 
   const build = async () => {
     await options.wake.arm(Date.now() + HEARTBEAT_MS); // before anything can throw: an object whose open fails is started again
-    const kit: AgentKit = {
-      person: owner, model: options.model, skills: options.skills, ask: createAskUserTool(),
-      files: hostFiles ? [createReadTool(), createWriteTool(), createEditTool()] as AgentKit['files'] : [],
-      tools: agent => tools({ def, api, agent, scope, services: options.services, attribution }),
-    };
-    const agents = def.agents?.(kit);
-    if (!agents) throw new Error(`createSession(${id}): ${def.name} defines no agents`);
+    const agents = def.agents!(kitOf(agent => tools({ def, api, agent, scope, services: options.services, attribution })));
     checkAgents(def, agents);
     const registry = createRegistry();
     for (const agent of Object.values(agents)) agent.install(registry);
@@ -86,12 +96,12 @@ export const createSession: CreateSession = options => {
   const fetch: ReturnType<CreateSession>['fetch'] = async (request, sender) => {
     if (kind !== 'me' || sender.id !== owner) return answer(404, 'unknown');
     let session: Awaited<ReturnType<typeof build>>;
-    try { session = await open(); } catch { return answer(503, 'unavailable'); }
+    try { session = await open(); } catch (error) { openError = error instanceof Error ? error.message : String(error); return answer(503, 'unavailable'); } // the cause stays on the host: `info()`
     const operation = new URL(request.url).searchParams.get('op');
     if (operation === 'submit' || operation === 'abort' || operation === 'answer') await armActive(session.harness); // before any call that can start work
     return createChatTransportHandler({
       authenticate: async () => {
-        const language = operation === 'submit' ? await options.language(sender.id) : undefined; // the app's record, never the request
+        const language = operation === 'submit' ? (await options.language(sender.id)) ?? def.languages.base : undefined; // the app's record, never the request
         return {
           conversation: session.meter.conversation(session.root, { userId: sender.id }), context: ctx,
           answer: (questionId, text) => answerUserQuestion(session.root, questionId, text, ctx),
@@ -109,7 +119,7 @@ export const createSession: CreateSession = options => {
     fetch,
     ...(hostFiles ? { upload: async (request, sender) => (sender.id === owner ? hostFiles.upload(request, sender) : answer(404, 'unknown')) } : {}),
     wake: async (unit, event, key, text) => {
-      if (kind !== 'reader' || unit !== owner) return;
+      if (kind !== 'reader' || unit !== owner || !declared.includes(event)) return;
       const { harness, root, meter } = await open();
       await armActive(harness);
       await meter.conversation(root, { userId: id }).submit({ type: 'input', content: text, requestId: `${event}-${key}` }, ctx);
@@ -120,6 +130,6 @@ export const createSession: CreateSession = options => {
       harness.resume(); // due sleeps and work a lost instance left
       await untilIdle(harness);
     },
-    info: async () => ({ id, scope, wake: await opened?.then(({ harness }) => harness.wake(), () => undefined) }),
+    info: async () => ({ id, scope, openError, wake: await opened?.then(({ harness }) => harness.wake(), () => undefined) }),
   };
 };

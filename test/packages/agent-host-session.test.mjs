@@ -4,13 +4,13 @@
 // The tools of host-session-tools are stubs here (the `tools` option).
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
+import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as Domain from '@alchemy.run/domain';
 import * as Effect from 'effect/Effect';
-import * as Exit from 'effect/Exit';
 import * as Layer from 'effect/Layer';
 import * as Scope from 'effect/Scope';
 import { BACKGROUND_CONTEXT as ctx } from '@earendil-works/chord/context';
@@ -19,10 +19,12 @@ import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite
 import { createModels } from '@earendil-works/pi-ai/models';
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { getCurrentSystemPrompt, getCurrentTools } from '@earendil-works/pi-ai/utils/transcript';
+import { defineAgent } from '@hachej/boring-agent/agents';
 import { CurrentUser, Session, defineApp } from '@hachej/boring-agent/host';
 import { createSession } from '@hachej/boring-agent/host-runtime';
 import { checkSource } from '../../scripts/pi-policy.mjs';
 import notes from '../../fixtures/host-apps/notes/app.ts';
+import todo from '../../fixtures/host-apps/todo/app.ts';
 import { Notebook, NotebookHandlers, ReaderOnDeposit } from '../../fixtures/host-apps/notes/models/Notebook.model.ts';
 import { NotebookApi } from '../../fixtures/host-apps/notes/models/NotebookApi.api.ts';
 
@@ -41,7 +43,6 @@ const deferred = () => { let resolve; const promise = new Promise((r) => { resol
 const World = Notebook.layer(Layer.mergeAll(NotebookHandlers, ReaderOnDeposit.toLayer(Effect.succeed(() => Effect.void)))).pipe(Layer.provide(Domain.InMemory));
 const worldScope = await Effect.runPromise(Scope.make());
 const world = await Effect.runPromise(Layer.buildWithScope(World, worldScope));
-cleanups.push(() => Effect.runPromise(Scope.close(worldScope, Exit.void)));
 const as = (userId) => NotebookApi.clientInProcess.pipe(Effect.provide(Layer.succeed(Session, (effect) => Effect.provideService(effect, CurrentUser, { userId }))));
 const app = (userId, f) => Effect.runPromise(Effect.scoped(Effect.flatMap(as(userId), f)).pipe(Effect.provideContext(world)));
 await app('camille', (c) => c.CreateNotebook('camille', { name: 'Carnet' }));
@@ -77,18 +78,19 @@ const storageFile = () => join(tmp, `s${++storages}.sqlite`);
 /** One session over a temporary SQLite file. `openHarness` is counted and its Harnesses are kept, so a test can close one (an eviction). */
 const make = async ({ id = 'me:camille', def = notes, respond = ack, tools = noTools, language = async () => 'fr', file = storageFile(), failFirstOpen = false, files } = {}) => {
   const storage = await openNodeSqliteStorage(file);
-  const m = scripted(respond);
-  const state = { opens: 0, harnesses: [], armed: [], seen: m.seen, kvWrites: 0, languageCalls: 0 };
+  const log = [];
+  const m = scripted((r) => { log.push('model'); return respond(r); });
+  const state = { log, opens: 0, harnesses: [], armed: [], seen: m.seen, kvWrites: 0, languageCalls: 0 };
   let failed = !failFirstOpen;
   state.session = createSession({
     id, def, api: def.api, storage, services: () => world, models: m.models, model: m.model, tools, budget: sink,
     skills: () => ({ list: async () => [], version: async () => '1' }),
     kv: { get: async () => undefined, put: async () => { state.kvWrites++; } },
-    wake: { arm: async (at) => { state.armed.push(at); } },
+    wake: { arm: async (at) => { state.armed.push(at); log.push(typeof at === 'number' ? 'arm' : 'clear'); } },
     language: async (person) => { state.languageCalls++; return language(person); },
     ...(files ? { files } : {}),
     openHarness: async (s, options, context) => {
-      state.opens++;
+      state.opens++; log.push('open');
       if (!failed) { failed = true; throw new Error('storage unavailable'); }
       const harness = await Harness.open(s, options, context);
       state.harnesses.push(harness);
@@ -179,7 +181,7 @@ test('failed open: a rejected openHarness is not kept; 503 once, then the next r
   await answered(h.session, camille, '[language: fr] bonjour');
 });
 
-test('outlives: a turn finishes with no request open, after an eviction, woken by the alarm alone', async () => {
+test('survit à sa requête (outlives): a turn finishes with no request open, after an eviction, woken by the alarm alone', async () => {
   const file = storageFile();
   const gate = deferred(), started = deferred();
   let runs = 0;
@@ -210,7 +212,7 @@ test('outlives: a turn finishes with no request open, after an eviction, woken b
   assert.deepEqual(await notesOf('camille'), ['Appeler le garage'], 'the app operation ran once');
 });
 
-test('model fails: both open watches get the failure, stay open, and the next message is answered', async () => {
+test('le modèle échoue (model fails): both open watches get the failure, stay open, and the next message is answered', async () => {
   let n = 0;
   const h = await make({ respond: (r) => (++n === 1 ? fauxAssistantMessage([], { stopReason: 'error', errorMessage: 'the scripted model fails' }) : ack(r)) });
   const a = watch(h.session, camille), b = watch(h.session, camille);
@@ -226,7 +228,7 @@ test('model fails: both open watches get the failure, stay open, and the next me
   console.log('model fails: frames', a.lines.length, b.lines.length, '| both carry runFailure model_error | next message answered');
 });
 
-test('language: every message carries its sender\'s language, resolved at the request, never read from the request', async () => {
+test('langue (language): every message carries its sender\'s language, resolved at the request, never read from the request', async () => {
   const records = { camille: 'fr', dominique: 'en' };
   const language = async (id) => records[id];
   const c = await make({ id: 'me:camille', language });
@@ -268,13 +270,13 @@ test('files: only an app that asks for them has upload and the file tools', asyn
 
 test('reader wake: only wake(unit, event, key, text) on its own reader session; a repeated event is one submission', async () => {
   const reader = await make({ id: 'reader:camille' });
-  await reader.session.wake('dominique', 'Deposit', '1', 'Document n°1');
+  await reader.session.wake('dominique', 'ReaderOnDeposit', '1', 'Document n°1');
   assert.deepEqual([reader.opens, reader.seen.length, reader.kvWrites], [0, 0, 0], 'another unit: no Harness, no model request, no key written');
   const personal = await make({ id: 'me:camille' });
-  await personal.session.wake('camille', 'Deposit', '1', 'Document n°1');
+  await personal.session.wake('camille', 'ReaderOnDeposit', '1', 'Document n°1');
   assert.deepEqual([personal.opens, personal.seen.length, personal.kvWrites], [0, 0, 0]);
-  await reader.session.wake('camille', 'Deposit', '2', 'Document n°2 « Facture »');
-  await reader.session.wake('camille', 'Deposit', '2', 'Document n°2 « Facture »');
+  await reader.session.wake('camille', 'ReaderOnDeposit', '2', 'Document n°2 « Facture »');
+  await reader.session.wake('camille', 'ReaderOnDeposit', '2', 'Document n°2 « Facture »');
   await until(() => reader.seen.length >= 1);
   await sleep(300);
   assert.equal(reader.seen.length, 1, 'two wakes, one submission, one model request');
@@ -323,7 +325,7 @@ test('who is acting: the record is the session\'s own, written once per call, re
 
   const theirs = [];
   const reader = await make({ id: 'reader:camille', tools: toolsFor(theirs), respond: callThen('who_reader', {}) });
-  await reader.session.wake('camille', 'Deposit', '9', 'Document n°9');
+  await reader.session.wake('camille', 'ReaderOnDeposit', '9', 'Document n°9');
   await until(() => theirs.length > 0);
   assert.deepEqual(theirs[0].actor, { requestedBy: 'reader:camille' });
   assert.deepEqual(theirs[0].scope, { kind: 'reader', unit: 'camille', role: 'editor', ops: ['RecordGist'] }, 'derived from the id and the app\'s expose list');
@@ -339,4 +341,89 @@ test('who is acting: the record is the session\'s own, written once per call, re
   await after.session.alarm();
   console.log('who is acting:', JSON.stringify(reported.map((r) => r.actor)), '(first run, then the run after the eviction in a session that would say reader:camille)');
   assert.deepEqual(reported.map((r) => r.actor), [{ requestedBy: 'camille' }, { requestedBy: 'camille' }]);
+});
+
+test('un seul lecteur: wakes naming two agents are refused in one sentence, and an event the app never declared wakes nothing', async () => {
+  const two = defineApp({ ...notes, wakes: [...notes.wakes, { ...notes.wakes[0], agent: 'researcher' }] });
+  await assert.rejects(make({ id: 'reader:camille', def: two }), /notes has wakes for more than one agent \(reader, researcher\); one reader per app until a later card designs several/);
+  const reader = await make({ id: 'reader:camille' });
+  await reader.session.wake('camille', 'NeverDeclared', '1', 'Document n°1');
+  assert.deepEqual([reader.opens, reader.seen.length], [0, 0]);
+});
+
+test('no assistant: an app with no agent a person can talk to is refused when the session is made, with the cause', async () => {
+  const helper = defineApp({ ...todo, agents: () => ({ helper: defineAgent({ id: 'helper', model: { provider: 'fictional-faux', modelId: 'main' }, struggle: false }) }) });
+  await assert.rejects(make({ def: helper }), /createSession\(me:camille\): todo declares no agent a person can talk to: no agent named assistant/);
+});
+
+test('language: a resolver that answers nothing falls back to the app\'s base language', async () => {
+  const h = await make({ language: async () => undefined });
+  await submit(h.session, camille, 'rien');
+  await answered(h.session, camille, '[language: fr] rien');
+});
+
+test('alarm: a Harness the host closes under a waiting alarm() ends the wait and leaves no timer', async () => {
+  const started = deferred();
+  const tools = ({ agent }) => defineExtension({ name: `host.tools.${agent}`, tools: agent !== 'assistant' ? [] : [defineTool({
+    name: 'stuck', description: 'Never finishes.', parameters: { type: 'object', properties: {} }, replay: 'safe',
+    execute: async (_args, _api, context) => { started.resolve(); await new Promise((_, reject) => context.abortSignal?.addEventListener('abort', () => reject(new Error('closed')), { once: true })); },
+  })] });
+  const h = await make({ tools, respond: callThen('stuck', {}) });
+  await submit(h.session, camille, 'bloque');
+  await started.promise;
+  const waiting = h.session.alarm();
+  assert.equal(await Promise.race([waiting.then(() => 'returned'), sleep(500).then(() => 'waiting')]), 'waiting', 'the alarm waits while the turn runs');
+  await h.harnesses[0].close(ctx);
+  assert.equal(await Promise.race([waiting.then(() => 'returned'), sleep(3_000).then(() => 'stuck')]), 'returned');
+});
+
+test('order of calls: a time is armed before every open, submit, answer, abort and wake', async () => {
+  const armedBetween = (h, mark, stopAt) => { const after = h.log.slice(mark + 1); const end = stopAt && after.includes(stopAt) ? after.indexOf(stopAt) : after.length; return after.slice(0, end).includes('arm'); };
+  const h = await make();
+  h.log.push('call:submit');
+  await submit(h.session, camille, 'ordre');
+  await answered(h.session, camille, '[language: fr] ordre');
+  assert.ok(h.log.indexOf('arm') < h.log.indexOf('open'), 'a time is armed before the Harness is opened');
+  assert.ok(h.log.indexOf('arm', h.log.indexOf('open')) < h.log.indexOf('model'), 'and armed again after the open, before the model is asked');
+  for (const op of ['submit', 'answer', 'abort']) {
+    h.log.push(`call:${op}`);
+    const mark = h.log.length - 1;
+    const body = op === 'submit' ? { requestId: `o${++requests}`, content: `ordre ${op}` } : op === 'answer' ? { callId: 'none', answer: 'x' } : {};
+    await h.session.fetch(new Request(url(op), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }), camille);
+    assert.ok(armedBetween(h, mark, 'model'), `${op}: a time was armed before the work started`);
+  }
+  const reader = await make({ id: 'reader:camille' });
+  await reader.session.wake('camille', 'ReaderOnDeposit', '5', 'Document n°5');
+  await until(() => reader.log.includes('model'));
+  assert.ok(reader.log.indexOf('arm') < reader.log.indexOf('open') && reader.log.indexOf('arm', reader.log.indexOf('open')) < reader.log.indexOf('model'), 'wake: armed before the open and again before the model');
+  console.log('order of calls:', h.log.slice(0, 8).join(' > '), '| reader:', reader.log.slice(0, 6).join(' > '));
+});
+
+test('le processus tué (crash): a process killed mid-turn is resumed by alarm() alone, and the restart limit ends as a failure the person sees', async () => {
+  const file = storageFile();
+  const child = join(root, 'test/helpers/host-session-child.mjs');
+  const run = (mode) => new Promise((resolve, reject) => {
+    const p = spawn(process.execPath, ['--no-warnings', child, file, mode], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '', err = '', killed = false;
+    const timer = setTimeout(() => { p.kill('SIGKILL'); reject(new Error(`child ${mode} timed out: ${out} ${err}`)); }, 40_000);
+    p.stdout.on('data', (d) => { out += d; if (!killed && out.includes('waiting')) { killed = true; p.kill('SIGKILL'); } });
+    p.stderr.on('data', (d) => { err += d; });
+    p.on('exit', () => { clearTimeout(timer); resolve({ killed, out, err }); });
+  });
+  let last = await run('submit');
+  assert.ok(last.killed, `the first process was killed mid-turn: ${last.out} ${last.err}`);
+  let kills = 1;
+  while (last.killed && kills < 8) { last = await run('alarm'); if (last.killed) kills++; }
+  assert.ok(last.out.includes('alarm-returned'), `the last alarm() returned by itself: ${last.out} ${last.err}`);
+  const h = await make({ file });
+  const seen = await entries(h.session, camille);
+  const w = watch(h.session, camille);
+  await until(() => w.lines.length > 0);
+  console.log('crash: killed', kills, 'times | restart_limit in entries', seen.includes('restart_limit'), '| in a new watch\'s first frame', w.lines[0].includes('restart_limit'));
+  assert.equal(kills, 5, 'pi ends the run when the fifth process is cut off');
+  assert.ok(seen.includes('restart_limit'), 'the failure is visible in entries');
+  assert.ok(w.lines[0].includes('restart_limit'), 'and in a new watch');
+  await w.stop();
+  await submit(h.session, camille, 'suite');
+  await answered(h.session, camille, '[language: fr] suite');
 });
