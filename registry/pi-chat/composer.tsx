@@ -184,14 +184,14 @@ function useCoarsePointer(): boolean {
 /** `barActions`: Attach files as a direct bar button, first in the bar row (label and icon from the app). */
 function BarAttach({ disabled, onAttach, quiet = false }: { readonly disabled: boolean; readonly onAttach: () => void; readonly quiet?: boolean }) {
   const { labels, icons } = useChatText();
-  return <Button type="button" variant={quiet ? 'secondary' : 'outline'} size="icon" data-testid="composer-bar-attach" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
+  return <Button type="button" variant={quiet ? 'secondary' : 'outline'} size="icon" data-testid="composer-bar-attach" data-composer-action="" aria-label={labels.attachFiles} title={labels.attachFiles} disabled={disabled} onClick={onAttach} className="shrink-0">
     <icons.attach data-icon="inline-start" aria-hidden="true" /></Button>;
 }
 
 /** `barActions`: Commands as a labelled bar button at the end of the bar, right before the voice and send controls. */
 function BarCommands({ disabled, onCommands }: { readonly disabled: boolean; readonly onCommands: () => void }) {
   const { labels, icons } = useChatText();
-  return <Button type="button" variant="outline" size="sm" data-testid="composer-bar-commands" aria-label={labels.commands} title={labels.commands} disabled={disabled} onClick={onCommands} className="shrink-0">
+  return <Button type="button" variant="outline" size="sm" data-testid="composer-bar-commands" data-composer-action="" aria-label={labels.commands} title={labels.commands} disabled={disabled} onClick={onCommands} className="shrink-0">
     <icons.commands data-icon="inline-start" aria-hidden="true" />{labels.commands}</Button>;
 }
 
@@ -204,7 +204,7 @@ function PlusActions({ disabled, onAttach, onTakePhoto, onCommands, textarea }: 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- a menu left open when the composer gets disabled closes once, after commit
   useEffect(() => { if (disabled) setOpen(false); }, [disabled]);
   return <DropdownMenu open={open} onOpenChange={setOpen}>
-    <DropdownMenuTrigger render={<Button variant="ghost" size="icon" />} data-testid="composer-plus" aria-label={labels.add} title={labels.add} disabled={disabled}>
+    <DropdownMenuTrigger render={<Button variant="ghost" size="icon" />} data-testid="composer-plus" data-composer-action="" aria-label={labels.add} title={labels.add} disabled={disabled}>
       <icons.add data-icon="inline-start" aria-hidden="true" /></DropdownMenuTrigger>
     <DropdownMenuContent side="top" align="start" aria-label={labels.add} data-testid="composer-plus-menu" className="pi-chat w-52"
       finalFocus={() => { const text = toText.current; toText.current = false; return text ? textarea.current : true; }}>
@@ -405,10 +405,10 @@ export function Composer(props: ComposerProps) {
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
   const send = working
-    ? <Button variant={props.barActions === 'attach' ? 'outline' : 'default'} size="icon" data-testid="composer-submit" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={(disabled && !props.stopOpen) || stopRequested} onClick={() => { props.onStop(); if (props.barActions === 'attach') requestAnimationFrame(() => inner.current?.focus({ preventScroll: true })); }} className="shrink-0">
+    ? <Button variant={props.barActions === 'attach' ? 'outline' : 'default'} size="icon" data-testid="composer-submit" data-composer-action="" data-state="stop" aria-label={labels.stop} title={labels.stop} disabled={(disabled && !props.stopOpen) || stopRequested} onClick={() => { props.onStop(); if (props.barActions === 'attach') requestAnimationFrame(() => inner.current?.focus({ preventScroll: true })); }} className="shrink-0">
       {stopRequested ? <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <icons.stop data-icon="inline-start" aria-hidden="true" />}</Button>
     : props.whenEmpty && (!hasContent || slots) ? <div data-testid="composer-when-empty" className="flex shrink-0 items-center">{slots ? props.recordingStop : props.whenEmpty}</div>
-    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="shrink-0">
+    : <Button variant="default" size="icon" type="submit" data-testid="composer-submit" data-composer-action="" data-state="send" aria-label={labels.send} title={labels.sendHint} disabled={!canSubmit} className="shrink-0">
       <icons.send data-icon="inline-start" aria-hidden="true" /></Button>;
   // While recording, the stop takes the microphone's place: Send's slot when the microphone stands in for Send, else the tools slot.
   // It stays there for the whole capture, even if a file or text arrives meanwhile (`hasContent` would move it).
@@ -421,11 +421,11 @@ export function Composer(props: ComposerProps) {
     {!pill && <span className="min-w-0 flex-1" />}
     {!slots && props.barActions === true && items.length > 0 && <BarCommands disabled={disabled || recording} onCommands={openCommands} />}
     {/* The bar's slash menu has no keyboard on a phone: a Commands button at the end of the bar opens it (touch screens only). */}
-    {!slots && (props.barActions === 'attach' || props.slashList) && items.length > 0 && <Button type="button" variant="secondary" size="icon" data-testid="composer-bar-commands" aria-label={labels.commands} title={labels.commands} disabled={disabled || recording} onClick={openCommands} className="hidden shrink-0 max-md:inline-flex pointer-coarse:inline-flex">
+    {!slots && (props.barActions === 'attach' || props.slashList) && items.length > 0 && <Button type="button" variant="secondary" size="icon" data-testid="composer-bar-commands" data-composer-action="" aria-label={labels.commands} title={labels.commands} disabled={disabled || recording} onClick={openCommands} className="hidden shrink-0 max-md:inline-flex pointer-coarse:inline-flex">
       <icons.commands data-icon="inline-start" aria-hidden="true" /></Button>}
     {slots ? !stopInSend && props.recordingStop !== undefined && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.recordingStop}</div>
       : props.barEnd && <div data-testid="composer-tools" className="flex min-w-0 items-center gap-2">{props.barEnd}</div>}
-    {!slots && working && hasContent && <Button variant="ghost" size="icon" data-testid="composer-queue" aria-label={labels.queue} title={labels.queue} disabled={!canSubmit} onClick={props.onSend} className="shrink-0">
+    {!slots && working && hasContent && <Button variant="ghost" size="icon" data-testid="composer-queue" data-composer-action="" aria-label={labels.queue} title={labels.queue} disabled={!canSubmit} onClick={props.onSend} className="shrink-0">
       <icons.queue data-icon="inline-start" aria-hidden="true" /></Button>}
     {send}
   </>;
