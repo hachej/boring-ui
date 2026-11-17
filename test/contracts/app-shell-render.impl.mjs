@@ -1492,3 +1492,43 @@ test('notices: the @ reference shows on a warning and an error only, and only wh
   assert.equal(withMentions.container.querySelector('[data-testid=notice-reference]'), null, 'an info notice has none');
   await withMentions.unmount();
 });
+
+// composer="bar": the content column is there from the first frame, so a screen mounts once when the agent arrives later (it used to be
+// wrapped only then, which remounted the whole screen: every screen loaded twice when its chat connected).
+for (const composer of ['content', 'bar']) test(`composer="${composer}": a screen mounts once when the agent arrives after the first frame`, async t => {
+  const { createElement: h, useEffect, act } = await import('react');
+  const { AppShell } = await bundle('app-shell.tsx');
+  const { createRoot } = await import('react-dom/client');
+  const window = dom(t, 1280);
+  const container = window.document.createElement('div');
+  window.document.body.append(container);
+  const reactRoot = createRoot(container);
+  t.after(() => act(async () => reactRoot.unmount()));
+  let mounts = 0;
+  const Screen = () => { useEffect(() => { mounts += 1; }, []); return h('p', null, 'Jour'); };
+  const draw = agent => act(async () => reactRoot.render(h(AppShell, { layout: 'screen', title: 'Forme', nav: [{ id: 'Jour', label: 'Jour', icon: Icon, render: () => h(Screen) }], route: { id: 'Jour', onChange() {} }, composer, locale: 'fr', ...(agent ? { agent } : {}) })));
+  await draw();
+  assert.equal(mounts, 1, 'the screen mounts with no agent');
+  await draw(agentWith());
+  await act(async () => new Promise(done => setTimeout(done, 50)));
+  assert.equal(mounts, 1, 'the agent arriving does not remount the screen');
+});
+
+// open('agent', 'dock'): the conversation in the right column, as the tray's Dock does; a phone has no dock and opens it at half.
+test('open("agent", "dock") docks the conversation on a wide screen (composer="bar") and opens at half on a phone', async t => {
+  for (const [width, state] of [[1280, 'open'], [390, 'half']]) {
+    const opened = await openedLayer(t, width, { agent: agentWith(), composer: 'bar' });
+    await opened.act(async () => opened.latest().open('agent', 'dock'));
+    await opened.act(async () => new Promise(done => setTimeout(done, 100)));
+    assert.equal(opened.latest().state, state, `state at ${width}`);
+    assert.equal(opened.latest().showing, 'agent');
+    const column = () => opened.window.document.querySelector('[data-testid=agent-layer]')?.dataset.state;
+    if (width === 1280) assert.equal(column(), 'open', 'the docked column is open');
+    if (width === 1280) { // the control: open at half is the tray, the dock stays closed
+      await opened.act(async () => opened.latest().close());
+      await opened.act(async () => opened.latest().open('agent', 'half'));
+      assert.notEqual(column(), 'open', 'half is the tray, not the dock');
+    }
+    await opened.unmount();
+  }
+});

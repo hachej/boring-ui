@@ -87,8 +87,9 @@ export interface AgentLayerApi {
   readonly agent: NativeChatController | undefined;
   readonly state: AgentLayerState;
   readonly showing: Which | null;
-  /** Opens the assistant or the PM. Below `TOGETHER_FROM` (and on a phone) it closes the other; from it, the PM opens beside the assistant. */
-  open(which?: Which, at?: 'peek' | 'half' | 'full'): void;
+  /** Opens the assistant or the PM. Below `TOGETHER_FROM` (and on a phone) it closes the other; from it, the PM opens beside the assistant.
+   * `at: 'dock'` opens the agent's conversation docked in the side column on a wide screen (what the tray's Dock does); on a phone it is `half`, and for the PM it is `half`. */
+  open(which?: Which, at?: 'peek' | 'half' | 'full' | 'dock'): void;
   /** Closes what `showing` names: with both open, the assistant (a second call closes the PM). */
   close(): void;
   /** Open the real chat with one card mention. Call directly from a click or swipe release to grant microphone permission. False without an agent. */
