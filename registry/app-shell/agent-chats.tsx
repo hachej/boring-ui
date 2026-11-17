@@ -4,7 +4,7 @@
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { HTMLAttributes, ReactElement, ReactNode, Ref } from 'react';
-import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, Maximize2Icon, Minimize2Icon, XIcon } from '../_shared/icons';
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { InputGroup } from '@/components/ui/input-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -247,17 +247,10 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
     <HistoryButton />
     <LibraryButton open={library} text={text} testId="agent-layer-library" />
     {actions.length > 0 && <HeaderActions actions={actions} compact={compactSnap !== undefined} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
-    {layer.bar && (compactSnap === 'half' || compactSnap === 'full') && <HeaderHint label={compactSnap === 'full' ? text.collapse : text.expand}>
-      <Button variant="ghost" size="icon" data-testid={compactSnap === 'full' ? 'agent-layer-collapse' : 'agent-layer-expand'}
-        aria-label={compactSnap === 'full' ? text.collapse : text.expand} title={compactSnap === 'full' ? text.collapse : text.expand}
-        onClick={event => { event.currentTarget.focus({ preventScroll: true }); layer.setSnap(compactSnap === 'full' ? 'half' : 'full'); }}>
-        {compactSnap === 'full' ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <Maximize2Icon className="size-4" aria-hidden="true" />}
-      </Button>
-    </HeaderHint>}
     {!layer.bar && compactSnap === 'half' && <HeaderHint label={text.expand}><Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {!layer.bar && compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {controls}
-    {!layer.bar && <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+    {(!layer.bar || compactSnap !== undefined) && <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
   </div>;
 }
 
