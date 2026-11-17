@@ -267,6 +267,48 @@ test('folded, 1280 and 390: one reply is a dot, two are a count pill beside the 
   }
 });
 
+// Notices at the composer (AC-5, AC-7): in the real shell a notice appears above the bar without opening the conversation or moving focus, and on a phone its buttons are 44 px.
+const NOTICES = `[{ id: 'e1', kind: 'error', text: 'Fictional: the export failed.', action: { label: 'Retry', onSelect() { window.__retried = true; } }, reference: '@task:t1' },
+  { id: 'w1', kind: 'warning', text: 'Fictional: the daily limit is near.' }, { id: 's1', kind: 'success', text: 'Fictional: statement saved.' }, { id: 'i1', kind: 'info', text: 'Fictional: a new version.' }]`;
+test('1440, 390 and 360: a notice appears above the bar, one at a time, without opening the conversation or moving focus; its actions are 44 px on a phone (AC-5, AC-7)', { skip, timeout: 120000 }, async () => {
+  for (const width of [1440, 390, 360]) {
+    await open(width);
+    await browser.evaluate(`document.querySelector('[data-testid=composer-input]')?.blur(); document.body.focus()`);
+    const active = await browser.evaluate(`document.activeElement?.tagName`);
+    const expanded = await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]')?.getAttribute('aria-expanded')`);
+    await browser.evaluate(`window.__notices(${NOTICES})`);
+    await browser.until('a notice', `!!document.querySelector('[data-testid=notice]')`);
+    assert.equal(await count('[data-notice-kind]'), 1, `one notice at ${width}`);
+    assert.equal(await text('[data-testid=notice-more]'), '3 en attente');
+    assert.equal(await browser.evaluate(`document.activeElement?.tagName`), active, 'focus did not move');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]')?.getAttribute('aria-expanded')`), expanded, 'the conversation did not open');
+    assert.ok(['closed', 'peek'].includes(await dockState()), 'no tray');
+    assert.equal(await count('[data-testid=agent-tray]'), 0);
+    const notice = await rect('[data-testid=notice]'), bar = await rect('[data-testid=composer]');
+    assert.ok(notice.bottom <= bar.y + 1 || width < 768, `above the bar at ${width} (${notice.bottom} vs ${bar.y})`);
+    assert.ok(notice.bottom <= (await browser.evaluate('innerHeight')), 'on screen');
+    if (width < 768) {
+      const tabs = await rect('[data-testid=tabbar]');
+      if (tabs) assert.ok(notice.bottom <= tabs.y + 1, 'not under the tab bar');
+      for (const id of ['notice-action', 'notice-dismiss', 'notice-reference']) assert.ok((await rect(`[data-testid=${id}]`)).h >= 44, `${id} is at least 44 px high at ${width}`);
+      assert.ok((await rect('[data-testid=notice-dismiss]')).w >= 44, 'the dismiss is 44 px wide');
+    }
+    await browser.screenshot(`notifications-notice-error-${width}-light.png`);
+    await click('[data-testid=notice-action]');
+    assert.equal(await browser.evaluate('window.__retried'), true, 'the action ran in place');
+  }
+});
+
+test('folded, 1280: a warning notice holds a chip in the field when its @ is used, and a dismiss shows the next notice', { skip, timeout: 120000 }, async () => {
+  await open(1280);
+  await browser.evaluate(`window.__notices(${NOTICES})`);
+  await browser.until('a notice', `!!document.querySelector('[data-testid=notice-reference]')`);
+  await click('[data-testid=notice-reference]');
+  await browser.until('the mention is in the draft', `window.__draft().includes('@task:t1')`);
+  await click('[data-testid=notice-dismiss]');
+  assert.equal(await text('[data-testid=notice-text]'), 'Fictional: the daily limit is near.');
+});
+
 test('folded, 1280 and 390: a failed turn is one sentence on the card, in the app\'s words when it gives replyError, and the next turn clears it', { skip, timeout: 120000 }, async () => {
   for (const [width, query] of [[1280, ''], [390, 'tabs=1'], [1280, 'replyError=1']]) {
     await open(width, query);

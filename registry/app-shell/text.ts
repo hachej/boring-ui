@@ -85,6 +85,9 @@ export interface AppShellText {
   readonly updateAvailable: string;
   readonly updateReload: string;
   readonly updateDismiss: string;
+  /** A notice (`AppShell notices`): the name of its dismiss button, and the count of those waiting behind it (`{n}`). */
+  readonly noticeDismiss: string;
+  readonly noticeMore: string;
 }
 
 const en: AppShellText = {
@@ -140,6 +143,8 @@ const en: AppShellText = {
   updateAvailable: 'An update is available.',
   updateReload: 'Reload',
   updateDismiss: 'Dismiss the update notice',
+  noticeDismiss: 'Dismiss',
+  noticeMore: '{n} more waiting',
 };
 
 const fr: AppShellText = {
@@ -195,6 +200,8 @@ const fr: AppShellText = {
   updateAvailable: 'Une mise à jour est disponible.',
   updateReload: 'Recharger',
   updateDismiss: 'Masquer l’avis de mise à jour',
+  noticeDismiss: 'Masquer',
+  noticeMore: '{n} en attente',
 };
 
 const TEXT: Readonly<Record<AppShellLocale, AppShellText>> = { en, fr };
