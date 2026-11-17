@@ -35,6 +35,8 @@ test('cited files are chips that open each file, a missing one is text, the card
     await page.locator('[data-testid=composer-input]').waitFor({ timeout: 30000 });
     await send('files');
     const at = `at ${width}`;
+    // A phone opens the conversation from the sheet's grabber (a tap goes to the next snap); a wide screen from the chevron.
+    const openTray = () => (phone ? page.locator('[data-slot=drawer-swipe-handle]') : page.locator('[data-testid=agent-bar-conversation]')).click();
 
     // Folded: the cited files are chips with their kind's icon, and the app's action is a button with an svg.
     const folded = page.locator('[data-testid=agent-card]');
@@ -46,7 +48,7 @@ test('cited files are chips that open each file, a missing one is text, the card
     await folder.click();
     assert.equal(await page.evaluate(() => window.__undone), 1, `${at}: the folded action fires`);
 
-    await page.locator('[data-testid=agent-bar-conversation]').click();
+    await openTray();
     const tray = page.locator('[data-testid=conversation-content]');
     await tray.locator('[data-testid=message-mention][data-file-chip]').first().waitFor({ timeout: 15000 });
     const inline = tray.locator('[data-testid=message-mention][data-file-chip]');
@@ -72,7 +74,7 @@ test('cited files are chips that open each file, a missing one is text, the card
     const opened = [];
     for (const path of order) {
       const chip = tray.locator(`[data-testid=message-mention][data-path="${path}"]`);
-      if (!(await chip.isVisible())) await page.locator('[data-testid=agent-bar-conversation]').click();
+      if (!(await chip.isVisible())) await openTray();
       await chip.waitFor({ state: 'visible', timeout: 10000 });
       if (phone) assert.ok((await chip.boundingBox()).height >= 44, `${at}: a 44 px chip`);
       await chip.click();
@@ -85,14 +87,14 @@ test('cited files are chips that open each file, a missing one is text, the card
 
     // Keyboard: Enter on a chip opens it too.
     const first = tray.locator(`[data-testid=message-mention][data-path="${order[0]}"]`);
-    if (!(await first.isVisible())) await page.locator('[data-testid=agent-bar-conversation]').click();
+    if (!(await first.isVisible())) await openTray();
     await first.focus();
     await page.keyboard.press('Enter');
     await page.waitForFunction(expected => document.querySelector('[data-testid=agent-preview] [data-pane-top] [data-testid=agent-preview-title]')?.textContent === expected, name(order[0]), { timeout: 15000 });
     if (phone) await page.locator('[data-testid=agent-preview-back], [data-testid=agent-preview-close]').first().click();
 
     // A mention of a file the workspace does not have is plain text; the file it does have is a chip.
-    if (!(await page.locator('[data-testid=composer-input]').isVisible())) await page.locator('[data-testid=agent-bar-conversation]').click();
+    if (!(await page.locator('[data-testid=composer-input]').isVisible())) await openTray();
     await page.fill('[data-testid=composer-input]', 'missing file');
     await page.locator('[data-testid=composer-submit]').click();
     await page.getByText('Not written yet').first().waitFor({ timeout: 30000 });
