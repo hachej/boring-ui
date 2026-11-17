@@ -116,6 +116,7 @@ export {
   SparkleIcon,
   SparkleIcon as SparklesIcon,
   SquareIcon,
+  TableIcon,
   NotePencilIcon as SquarePenIcon,
   NoteIcon as StickyNoteIcon,
   ThumbsDownIcon,
