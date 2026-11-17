@@ -30,7 +30,6 @@ test('entries: the built host-runtime and host-build entries export functions an
   const build = await import(entry('host-build.js'));
   assert.equal(typeof build.hostBuild, 'function');
   assert.equal(typeof runtime.toolableApi, 'function');
-  await assert.rejects(build.hostBuild('app', { options: './options.ts' }), /not built/);
   for (const file of ['host-runtime.js', 'host-build.js']) {
     const child = node(`await import(${JSON.stringify(entry(file))}); console.log('loaded')`);
     assert.equal(child.status, 0, `${file}: ${child.stderr}`);

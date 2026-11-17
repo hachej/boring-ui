@@ -6,6 +6,7 @@ An app is one `defineApp` definition: its models, handlers, exposed operations, 
 
 - `host-contract` `defineApp` and `checkAgents` refuse a malformed definition at definition time and at mount, naming the app and the field: name, views, `expose`, needs, `units`, wakes, agent names, and the languages (a base the kit speaks, its words, `app.title` and one name per view). `packages/agent/src/host/define-app.ts`.
 - `host-identity` `CurrentUser` (the person, and the scope an agent session carries), `Session`, `NotYours`, `NotAllowed`, `mustOwn` and `must`: the one rights rule over a unit's members, with roles ranked owner, editor, reader. `packages/agent/src/host/identity.ts`.
+- `host-build` `npx boring-host-build <app dir> --options <module> [--shell <module>] [--page <html file>] [--stack <module>]` reads the app's `app.ts` and writes `.gen/server.ts` (the Worker entry, the only `Harness.open`), `.gen/assets.ts` (the page text and the skills as text), `.gen/page.tsx` (the shell and each view's module) and, with `--stack`, `.gen/alchemy.run.ts`. The same app gives the same text in any folder. A broken app folder is refused in one line and `.gen/` is left as it was. `packages/agent/src/host-build.ts`, `host-build-cli.ts`, `host-cloudflare/entry.ts` (the Worker entry's text, which imports nothing).
 
 ## How to get to it (user POV)
 
@@ -16,9 +17,12 @@ An app is one `defineApp` definition: its models, handlers, exposed operations, 
 Preconditions: `npm run build`; Domain, effect and alchemy installed (root dev dependencies); fictional data only.
 
 - **Contract.** `host-contract`: `node --test test/packages/agent-host-contract.test.mjs` defines the two fixture apps (`fixtures/host-apps/`), prints one `caught:` line per planted fault and a `units:` line, and reads the built `dist/host.js` import graph. `npm run typecheck` compiles both apps and the closed shapes (`test/types/host-contract.ts`). `npm run test:host-consumer` installs the packed packages in a fresh folder.
+- **Build.** `host-build`: `npm run build && node --test --test-name-pattern "build|broken folder" test/packages/agent-host-mount.test.mjs` runs the built command on copies of both fixture apps (two runs, two folders, byte-identical; the same `server.ts` for both apps; one line and an untouched `.gen/` for a broken folder). `npm run test:host-consumer` runs it from a packed install.
 - **Identity.** `host-identity`: the same test prints the twelve `must:` rows (no scope, a scope, a scope with `ops`).
 
 ## Gotchas
+
+- `boring-host-build` writes text only: `--options` is required, a module written `./x` is relative to the app folder (the generated files say `../x`), a package name is kept, `--page` is read relative to where the command runs, and bundling `.gen/page.tsx` is the caller's. It loads `app.ts` with one `import()`, the one SELF-2 exception, so it must only be run on an app's own reviewed folder. `.gen/` is ignored by git.
 
 - `./host` imports only Domain, effect and type-only pi; `cloudflare:*`, `node:*` and `alchemy` are forbidden in `src/host/` and `src/host.ts` (`ARCHITECTURE.json` `pathRules`).
 - `defineApp` cannot see agent names; `checkAgents(def, agents)` runs at mount.
