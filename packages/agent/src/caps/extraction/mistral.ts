@@ -52,13 +52,13 @@ function fieldsOf(response: { document_annotation?: unknown }, input: Admitted, 
 }
 
 /** One reading. A failed request throws (`key` when Mistral refused the key), so the next listed provider is tried; an answer that is not Mistral's JSON is a refusal. */
-export async function mistral(input: Admitted, key: string, signal: AbortSignal, fetch: typeof globalThis.fetch, charged: () => Promise<void>): Promise<{ pages: Page[]; said?: Said[] } | Refusal> {
+export async function mistral(input: Admitted, key: string, signal: AbortSignal, fetch: typeof globalThis.fetch, charge: (micros: number) => Promise<void>): Promise<{ pages: Page[]; said?: Said[] } | Refusal> {
   const response = await fetch(ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` }, body: JSON.stringify(bodyOf(input)), signal });
   if (!response.ok) {
     await response.body?.cancel().catch(() => {});
     throw new Error(response.status === 401 || response.status === 403 ? 'key' : 'down');
   }
-  await charged();
+  await charge(Math.round(input.count * PAGE_USD[input.schema ? 'fields' : 'text'] * 1_000_000));
   let json: any;
   try { json = await response.json(); } catch { json = undefined; }
   if (!json || typeof json !== 'object' || !Array.isArray(json.pages)) return { ok: false, kind: 'extraction-invalid-answer', retryable: false };

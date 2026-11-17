@@ -8,7 +8,8 @@ import { call, refusedText, toolKey, usageOf } from '../shared.js';
 import type { Answered, CapOptions, Provider, Refusal } from '../shared.js';
 import { fake } from './fake.js';
 import type { Readings } from './fake.js';
-import { mistral, PAGE_USD } from './mistral.js';
+import { mistral } from './mistral.js';
+import { openai } from './openai.js';
 import { admit, checkFields, pageOf, THRESHOLD } from './port.js';
 import type { Doc, Field, FieldSchema, Page } from './port.js';
 
@@ -16,32 +17,36 @@ export { checkFields };
 export type { Doc, Field, FieldSchema, Page, Readings };
 export type { Reading } from './fake.js';
 export type { Said } from './port.js';
-/** `providers`: in order, among `mistral` and `fake`. `fetch` is required for `mistral`; `fixtures` are the fake's readings by sha256. */
+/** `providers`: in order, among `mistral`, `openai` and `fake`. `fetch` is required for a real provider; `fixtures` are the fake's readings by sha256. */
 export type ExtractionOptions = CapOptions & { fixtures?: Readings };
 type Read = { pages: Page[]; uncertain: boolean; untrusted: true };
 
-const TABLE: Record<string, Provider> = { mistral: { name: 'mistral', region: 'eu', key: 'MISTRAL_API_KEY' }, fake: { name: 'fake', region: 'none' } };
+const TABLE: Record<string, Provider> = {
+  mistral: { name: 'mistral', region: 'eu', key: 'MISTRAL_API_KEY' }, openai: { name: 'openai', region: 'us', key: 'OPENAI_API_KEY' }, fake: { name: 'fake', region: 'none' },
+};
+const SEND = { mistral, openai } as const;
 const refusal = (kind: string): Refusal => ({ ok: false, kind, retryable: false });
 
 async function exec(doc: Doc, schema: FieldSchema | undefined, options: ExtractionOptions, tool?: string): Promise<(Read & { fields?: Field[]; amountMicros: number } & Answered) | Refusal> {
   const input = await admit(doc, schema);
   if ('ok' in input) return input;
-  if (options.providers.includes('mistral') && typeof options.fetch !== 'function') return refusal('extraction-fetch');
-  const kind = input.schema ? 'fields' : 'text', amountMicros = Math.round(input.count * PAGE_USD[kind] * 1_000_000);
+  if (options.providers.some((name) => Object.hasOwn(SEND, name)) && typeof options.fetch !== 'function') return refusal('extraction-fetch');
   const failures: string[] = [];
   const result = await call<Read & { fields?: Field[]; amountMicros: number }>('extraction', { doc, schema: schema ?? null }, { ...options, timeoutMs: options.timeoutMs ?? 90_000 }, TABLE, async (provider, key, signal, record) => {
-    let said;
+    let said, amountMicros = 0;
     if (provider.name === 'fake') said = await fake(input.bytes, options.fixtures);
     else {
-      const charge = () => record({ bucket: 'tool:extract', usage: usageOf(amountMicros / 1_000_000), amountMicros });
-      try { said = await mistral(input, key!, signal, options.fetch!, charge); } catch (error) { failures.push(error instanceof Error && error.message === 'key' ? 'key' : 'down'); throw error; }
+      // Each provider prices its own answer: Mistral by the pages read, OpenAI by the tokens of the whole document.
+      const charge = async (micros: number) => { amountMicros = micros; await record({ bucket: 'tool:extract', usage: usageOf(micros / 1_000_000), amountMicros: micros }); };
+      try { said = await SEND[provider.name as keyof typeof SEND](input, key!, signal, options.fetch!, charge); } catch (error) { failures.push(error instanceof Error && error.message === 'key' ? 'key' : 'down'); throw error; }
       if ('ok' in said) return said;
     }
-    const seen = new Set<number>();
-    const pages = said.pages.map((p) => pageOf(p, input.total)).filter((p): p is Page => !!p && !seen.has(p.n) && !!seen.add(p.n)).sort((a, b) => a.n - b.n);
+    const seen = new Set<number>(), asked = input.read && new Set(input.read);
+    // Only the pages asked: a provider that read the whole document (OpenAI) or renumbered it never adds another page.
+    const pages = said.pages.map((p) => pageOf(p, input.total)).filter((p): p is Page => !!p && (!asked || asked.has(p.n)) && !seen.has(p.n) && !!seen.add(p.n)).sort((a, b) => a.n - b.n);
     const fields = schema && checkFields(schema, pages, said.said ?? []);
     const uncertain = !pages.length || pages.some((p) => p.confidence < THRESHOLD) || !!fields?.some((f) => f.value === null);
-    return { pages, ...(fields && { fields }), uncertain, untrusted: true, amountMicros: provider.name === 'fake' ? 0 : amountMicros };
+    return { pages, ...(fields && { fields }), uncertain, untrusted: true, amountMicros };
   }, tool);
   return !result.ok && result.kind === 'unavailable' && failures.length && failures.every((f) => f === 'key') ? refusal('extraction-failed') : result;
 }

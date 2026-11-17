@@ -1,5 +1,6 @@
 # Unreleased
 
+- **`@hachej/boring-agent/caps/extraction`: OpenAI as a second provider (additive).** An app may list `openai` after `mistral` (`OPENAI_API_KEY`, region `us`): when Mistral is down, OpenAI's Responses API (`store: false`) reads the document, the whole file sent and billed in tokens, only the asked pages kept. Its fields always come back `uncertain` (no calibrated confidence). A list without `openai` is unchanged.
 - **`@hachej/boring-agent/caps/extraction`: a PDF or a photo as text and checked fields (new entry; additive).** `readText(doc, options)` and `readFields(doc, schema, options)` read a document through Mistral OCR (EU, the app's `fetch` and `MISTRAL_API_KEY`) or the `fake`, and resolve `{ ok: true, pages, fields?, uncertain, untrusted: true, provider, region, counted }` or `{ ok: false, kind, retryable }`; a field is kept only when its quote is on its page. `checkFields` is the check alone; `ocrFor(options)` is the `documents` OCR callback, so `read_pdf` reads scanned pages; `extractionTool` is the pi-durable tool `extract_fields`. `@hachej/boring-agent/documents` is unchanged. An app that does not import the entry is unchanged; nothing to migrate.
 
 # Migrating to 0.5.3
