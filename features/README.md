@@ -36,3 +36,4 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Conversation log | ConversationLog, the sheet of the bar's history arrow (entries, labels, focus) | [conversation-log.md](conversation-log.md) |
 | Atlas | the screens-and-states manifest, its schema and `atlas --check` | [atlas.md](atlas.md) |
 | One model call | `complete`, `structured` and the `llm_structured` tool as a plain import | [cap-llm.md](cap-llm.md) |
+| Transcription | `transcribe`, the `transcribeHandler` route, the kit's `transcribeClient` and the `transcribe` tool, as a plain import | [cap-transcription.md](cap-transcription.md) |

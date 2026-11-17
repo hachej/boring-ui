@@ -238,3 +238,42 @@ for (const mode of ['draft', 'auto', 'message']) test(`chat voice ${mode} uses t
   if (mode === 'draft') assert.equal(native.controller.getSnapshot().draft.text, 'later typed draft fictional spoken text');
   else assert.equal(native.sent[0].mode, mode === 'message' ? 'followUp' : undefined);
 });
+
+// cap-transcription AC-13 (owned by that card): the kit's microphone over transcribeClient and transcribeHandler, the client's fetch routed
+// to the handler in memory; the providers are a fake and a Mistral double behind the handler's own `fetch` option.
+test('transcription kit: the text lands without sending, cancelling aborts the provider, failures use the kit labels', async t => {
+  const { transcribeClient } = await import('@hachej/boring-agent/caps/transcription-client');
+  const { transcribeHandler } = await import('@hachej/boring-agent/caps/transcription');
+  const webm = Uint8Array.from([0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x86, 0x81]);
+  let mistral = 'fake', providerSignal;
+  const double = async (url, init) => {
+    providerSignal = init.signal;
+    if (mistral === 'hang') return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new Error('aborted'))));
+    return mistral === 'down' ? new Response('busy', { status: 503 }) : Response.json({ text: '', usage: { prompt_audio_seconds: 1 } });
+  };
+  const handler = transcribeHandler(() => ({ providers: [mistral === 'fake' ? 'fake' : 'mistral'], keys: { MISTRAL_API_KEY: 'fictional-key' }, fetch: double }));
+  const saved = globalThis.fetch;
+  globalThis.fetch = (url, init) => handler(new Request(new URL(url, 'https://fictional.invalid'), init));
+  t.after(() => { globalThis.fetch = saved; });
+  const delivered = [];
+  const page = await mount(t, useDictation, { labels: words, transcribe: transcribeClient('/api/transcribe?language=fr'), onText: text => delivered.push(text) });
+  const Base = globalThis.MediaRecorder;
+  globalThis.MediaRecorder = class extends Base {
+    stop() { this.state = 'inactive'; const event = new Event('dataavailable'); event.data = new Blob([webm], { type: 'audio/webm' }); this.dispatchEvent(event); this.dispatchEvent(new Event('stop')); }
+  };
+  // The round trip (request, digest, provider) spans several macrotasks: wait for the outcome, not for one tick.
+  const until = async (done) => { for (let i = 0; i < 200 && !done(); i++) await flush(); };
+  const speak = async (done) => { await act(async () => page.api.start()); await act(async () => page.api.finish()); await until(done); };
+  await speak(() => delivered.length > 0);
+  assert.deepEqual([delivered, page.api.phase], [['fake transcript (8 bytes, fr)'], 'idle']);
+  mistral = 'hang'; providerSignal = undefined;
+  await speak(() => providerSignal !== undefined);
+  assert.equal(page.api.phase, 'transcribing');
+  await act(async () => page.api.cancel()); await until(() => providerSignal.aborted);
+  assert.equal(providerSignal.aborted, true, 'cancelling the dictation aborts the provider request');
+  mistral = 'down'; await speak(() => page.api.problem !== undefined);
+  assert.equal(page.api.problem, words.voiceTranscribeFailed);
+  mistral = 'empty'; await speak(() => page.api.problem !== undefined && page.api.problem !== words.voiceTranscribeFailed);
+  assert.equal(page.api.problem, words.voiceNothingHeard);
+  assert.equal(delivered.length, 1);
+});
