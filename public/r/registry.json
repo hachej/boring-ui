@@ -1132,6 +1132,53 @@
       ]
     },
     {
+      "name": "agent-chat",
+      "type": "registry:block",
+      "title": "Agent chat",
+      "description": "The default chat as one piece that goes anywhere (a right pane, a card on a screen, a page, a dialog): it fills its container, the header is the only thing that changes, tinted with the agent's colour (one of the theme's chart tokens) with the title, a status chip and close or back. The conversation, the composer and the approval card are the kit's own.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.2/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.2/r/pi-chat-plugins.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.2/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.2/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "registry/agent-chat/agent-chat.tsx",
+          "type": "registry:component",
+          "target": "components/agent-chat/agent-chat.tsx"
+        }
+      ]
+    },
+    {
+      "name": "agent-card",
+      "type": "registry:block",
+      "title": "Agent card",
+      "description": "One unit of agent work (a run, a task, a job) as a collapsible card that keeps working in the background: a header with the agent's colour dot, a title, a status chip and one line of activity, an optional `meta` for a task's fields, a decision the agent waits for on the folded card, and the composer's levels (folded, a small tray, the whole chat, docked) on a controller strip on its lower border.",
+      "dependencies": [
+        "react@^19.0.0",
+        "react-dom@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.2/r/agent-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.2/r/agent-bar.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.2/r/pi-chat.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.2/r/pi-chat-approval.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.2/r/_shared.json",
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.2/r/utils.json"
+      ],
+      "files": [
+        {
+          "path": "registry/agent-card/agent-card.tsx",
+          "type": "registry:component",
+          "target": "components/agent-card/agent-card.tsx"
+        }
+      ]
+    },
+    {
       "name": "pi-chat-subagent",
       "type": "registry:block",
       "title": "Pi chat sub-agent card",

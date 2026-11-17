@@ -1,0 +1,15 @@
+{
+  "fallback": "This is a demo: the agent is scripted. Try “Retry” on the failed export.",
+  "turns": [
+    { "match": "^go$", "steps": [
+      { "tool": "read", "path": "invoices/invoice-delmore-0112.pdf", "progress": "invoice 4 of 12", "ms": 1500, "result": "Invoice 0112, $1,368.00 incl. tax" },
+      { "tool": "grep", "arguments": { "pattern": "Delmore House", "path": "invoices/" }, "progress": "7 of 12 files", "ms": 3600000 } ] },
+    { "match": "^approve$", "steps": [
+      { "tool": "send_email", "arguments": { "to": "accounts@example.test", "subject": "Open invoice 0121" }, "result": "Sent to 3 clients", "ms": 900 },
+      { "text": "Done. Three reminders went out; the list is in @reminders/sent-february.csv.", "stream": true } ] },
+    { "match": "^deny$", "steps": [ { "text": "Understood, I did not send anything. The drafts stay in @reminders/drafts-february.csv.", "stream": true } ] },
+    { "match": "retry", "steps": [
+      { "tool": "bash", "arguments": { "command": "export-vat --period 2026-Q1 --retry" }, "result": "Exported 1 file", "ms": 900 },
+      { "text": "The export worked on the second try. The return is in @reports/vat-2026-q1.csv.", "stream": true } ] }
+  ]
+}

@@ -1,0 +1,252 @@
+{
+ "target": "component:agent-card",
+ "title": "Agent cards",
+ "summary": "One unit of agent work (a run, a task, a job) as a card that keeps working while folded: a status chip, one line of activity, a decision on the card, and the composer's levels on a strip.",
+ "purpose": "AgentCard and AgentChat over a scripted agent: one card per state (queued, running, needs you, done, failed) with three agents in three colours, plus a task card (the same card with a meta). Folded, a card shows the agent's colour dot, a title, a status chip and one line; a decision the agent waits for shows on the folded card. The strip on its lower border goes folded, a small tray (the conversation and its field), the whole chat, or docks it into a side column.",
+ "try": [
+  {
+   "label": "Expand a finished run",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-expand]",
+     "until": "visible:[data-task=done] [data-testid=agent-chat]"
+    }
+   ]
+  },
+  {
+   "label": "Approve on the folded card",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "[data-task=needs] [data-testid=approval-approve]",
+     "until": "text:[data-task=needs] [data-testid=agent-card-status]~Done",
+     "timeout": 9000
+    }
+   ]
+  },
+  {
+   "label": "Dock the chat",
+   "flow": "F4"
+  }
+ ],
+ "fixture": {
+  "entry": "ux/fixtures/component-agent-card.jsx",
+  "query": "",
+  "ready": "[data-testid=cards] [data-testid=agent-card]",
+  "install": "npx shadcn@4.23.0 add agent-card",
+  "usage": "<AgentCard controller={controller} agent={{ name: 'Ledger', color: 'chart-1' }} title=\"Match the January payments\" status={{ label: 'Done', tone: 'success' }} meta={<>Assignee, due date…</>} dock={dockElement} />"
+ },
+ "viewports": [
+  {
+   "name": "390",
+   "width": 390,
+   "height": 844,
+   "touch": true
+  },
+  {
+   "name": "1440",
+   "width": 1440,
+   "height": 900
+  }
+ ],
+ "watch": [
+  [
+   "cards",
+   "[data-testid=cards]"
+  ]
+ ],
+ "thresholds": {
+  "cls": 0.2,
+  "settledMs": 1500,
+  "touchTarget": 44
+ },
+ "notes": "The cards stay mounted while folded: the running card keeps updating its line, and the needs-you card shows the kit's approval card on the folded card, with a warning ring and no auto-expand. The colour of an agent is one of the theme's chart tokens; the header is tinted from it. The strip is the composer's own.",
+ "states": [
+  {
+   "id": "01",
+   "name": "folded",
+   "steps": []
+  },
+  {
+   "id": "02",
+   "name": "tray",
+   "query": "at=running:1",
+   "steps": []
+  },
+  {
+   "id": "03",
+   "name": "open",
+   "query": "at=done:2",
+   "steps": []
+  },
+  {
+   "id": "04",
+   "name": "failed-open",
+   "query": "at=failed:2",
+   "steps": []
+  },
+  {
+   "id": "05",
+   "name": "task-tray",
+   "query": "at=task:1",
+   "steps": []
+  },
+  {
+   "id": "06",
+   "name": "docked",
+   "query": "at=done:d",
+   "only": "1440",
+   "steps": []
+  }
+ ],
+ "flows": [
+  {
+   "id": "F1",
+   "name": "Levels by the strip, back with Esc",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-chat]",
+     "say": "Tap the chat bubble",
+     "until": "visible:[data-task=done] [data-testid=agent-card-composer] & gone:[data-task=done] [data-testid=agent-chat-header]",
+     "expect": "Only the composer opens on the folded card."
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-chat]",
+     "say": "Tap it again",
+     "until": "gone:[data-task=done] [data-testid=agent-card-composer]",
+     "expect": "The composer hides."
+    },
+    {
+     "do": "press",
+     "key": "Shift",
+     "say": "Press a key (focus then shows as a keyboard focus)",
+     "only": "1440"
+    },
+    {
+     "do": "focus",
+     "target": "[data-task=done] [data-testid=agent-card-chat]",
+     "say": "Focus the chat bubble (it reveals the chevron and Dock)",
+     "only": "1440"
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-expand]",
+     "say": "Expand the finished run",
+     "until": "visible:[data-task=done] [data-testid=agent-chat] & gone:[data-task=done] [data-testid=agent-chat-header]",
+     "expect": "The small tray opens: the conversation and its field."
+    },
+    {
+     "do": "press",
+     "key": "Shift",
+     "say": "Press a key (focus then shows as a keyboard focus)",
+     "only": "1440"
+    },
+    {
+     "do": "focus",
+     "target": "[data-task=done] [data-testid=agent-card-collapse]",
+     "say": "Focus the chevron (it reveals the controller)",
+     "only": "1440"
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-expand-more]",
+     "say": "Expand more",
+     "until": "visible:[data-task=done] [data-testid=agent-chat-header]",
+     "expect": "The whole chat opens with its header in the agent's colour."
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-collapse]",
+     "say": "Collapse",
+     "until": "gone:[data-task=done] [data-testid=agent-chat] & focus:agent-card-header",
+     "focus": "agent-card-header",
+     "expect": "The card folds and focus returns to its header."
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-header]",
+     "say": "Tap the header",
+     "until": "visible:[data-task=done] [data-testid=agent-chat]",
+     "expect": "A tap on the header expands it."
+    },
+    {
+     "do": "press",
+     "key": "Escape",
+     "say": "Press Esc",
+     "until": "gone:[data-task=done] [data-testid=agent-chat] & focus:agent-card-header",
+     "expect": "Esc folds the card; focus is on its header."
+    }
+   ]
+  },
+  {
+   "id": "F2",
+   "name": "A decision on the folded card",
+   "steps": [
+    {
+     "do": "wait",
+     "ms": 300,
+     "say": "Look at the card that needs you",
+     "until": "visible:[data-task=needs] [data-testid=approval-card] & gone:[data-task=needs] [data-testid=agent-chat]",
+     "expect": "The approval is on the folded card; nothing opened by itself."
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=needs] [data-testid=approval-approve]",
+     "say": "Approve",
+     "until": "text:[data-task=needs] [data-testid=agent-card-status]~Done & eval:window.__ux.answered().includes('Approve')",
+     "timeout": 12000,
+     "expect": "The agent carries on and the card says Done."
+    }
+   ]
+  },
+  {
+   "id": "F3",
+   "name": "A folded run keeps working",
+   "steps": [
+    {
+     "do": "wait",
+     "ms": 300,
+     "say": "Look at the running card",
+     "until": "text:[data-task=running] [data-testid=agent-card-status]~Running & text:[data-task=running] [data-testid=agent-card-activity]~Reader",
+     "timeout": 9000,
+     "expect": "The card says Running and what the agent does, without opening."
+    }
+   ]
+  },
+  {
+   "id": "F4",
+   "name": "Dock the chat in the side column",
+   "steps": [
+    {
+     "do": "press",
+     "key": "Shift",
+     "say": "Press a key (focus then shows as a keyboard focus)",
+     "only": "1440"
+    },
+    {
+     "do": "focus",
+     "target": "[data-task=done] [data-testid=agent-card-chat]",
+     "say": "Focus the chat bubble (it reveals the controller)",
+     "only": "1440"
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-dock]",
+     "say": "Dock",
+     "until": "visible:[data-testid=dock] [data-testid=agent-chat-header] & visible:[data-task=done] [data-testid=agent-card-undock]",
+     "expect": "The chat moves to the column; the card stays in the list, marked docked."
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-undock]",
+     "say": "Undock",
+     "until": "gone:[data-testid=dock] [data-testid=agent-chat]",
+     "expect": "The chat goes back to the card."
+    }
+   ]
+  }
+ ]
+}

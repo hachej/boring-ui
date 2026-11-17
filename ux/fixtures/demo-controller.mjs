@@ -1,10 +1,10 @@
 import { createScriptedAgent } from './scripted-agent.mjs';
 
 // A chat controller (the native shape the shell reads) over the scripted assistant: what the person sends plays the script's matching turn, its tool steps,
-// questions, streamed text and errors; the page's answers and file acknowledgements go back to the script. No model, no network.
-export function createDemoController({ script, pace = 1 }) {
+// questions, streamed text and errors (`seed`: a history to start from; `play(text)`: plays a turn without adding a message of the person); the page's answers and file acknowledgements go back to the script. No model, no network.
+export function createDemoController({ script, pace = 1, seed }) {
   let snapshot = { identity: { runtimeId: 'fictional', scopeId: 'demo', principalId: 'fictional-reader' }, conversationId: 'demo', connection: { kind: 'connected' },
-    view: { entries: [], docs: {} }, draft: { text: '', attachments: [], version: 0 }, outbox: [], echo: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
+    view: { entries: seed?.entries ?? [], docs: seed?.docs ?? {} }, draft: { text: '', attachments: [], version: 0 }, outbox: [], echo: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
   const listeners = new Set();
   const change = patch => { snapshot = { ...snapshot, ...patch }; for (const listener of listeners) listener(); };
   const scripted = createScriptedAgent({ script, pace, entries: () => snapshot.view.entries, show: (entries, docs) => change({ view: { entries, docs } }) });
@@ -26,5 +26,5 @@ export function createDemoController({ script, pace = 1 }) {
   };
   // `chatProps.actions`: the answers of the question card, and the pane's acknowledgement of a file the agent opened.
   const actions = { answer: async (_questionId, text) => { if (/^\{"kind":"(opened|refused)"/.test(text)) scripted.presented(); else scripted.answer(text); return { kind: 'answered' }; } };
-  return { controller, actions, reset: () => { scripted.stop(); change({ stop: 'idle', send: { kind: 'idle' }, view: { entries: [], docs: {} }, draft: { ...bumped(), text: '', attachments: [] } }); } };
+  return { controller, actions, play: text => scripted.say(text), reset: () => { scripted.stop(); change({ stop: 'idle', send: { kind: 'idle' }, view: { entries: [], docs: {} }, draft: { ...bumped(), text: '', attachments: [] } }); } };
 }
