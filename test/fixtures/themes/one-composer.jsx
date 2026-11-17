@@ -68,12 +68,16 @@ const readDone = { id: 12, kind: 'message', byTaskId: 8, model: [{ role: 'toolRe
 const FORM = EN ? { question: 'Two details', questions: [{ question: 'Which year?', options: ['2025', '2026'] }, { question: 'Which journal?', options: ['Purchases', 'Sales'] }] }
   : { question: 'Deux précisions', questions: [{ question: 'Quel exercice ?', options: ['2025', '2026'] }, { question: 'Quel journal ?', options: ['Achats', 'Ventes'] }] };
 const form = entry(13, assistant([{ type: 'toolCall', id: 'q1', name: 'ask_user', arguments: FORM }]));
+// A gated call that waits for the person: the host's wrapper published its summary in the call's details (`boring.approval`).
+const gated = entry(16, assistant([{ type: 'toolCall', id: 'a1', name: 'delete_file', arguments: { path: T('uploads/releve-decembre.pdf', 'uploads/statement-december.pdf'), reason: T('doublon', 'duplicate') } }], 'toolUse'));
+const APPROVAL = T('Supprimer le relevé de décembre ?', 'Delete the December statement?');
 const REPLY = EN ? 'The January statement has 40 lines, all reconciled.\nTwo discrepancies are noted in @uploads/discrepancies-january.csv.\nNothing else to do for January.\nA fourth line that the card folds.'
   : 'Le relevé de janvier compte 40 lignes, toutes rapprochées.\nDeux écarts sont notés dans @uploads/ecarts-janvier.csv.\nRien d’autre à faire pour janvier.\nUne quatrième ligne que la carte coupe.';
 const runs = {
   // `think`: the agent works with no tool running (the card has only its fallback words).
   think: () => ({ entries: [...history, ask], docs: live() }),
   tool: () => ({ entries: [...history, ask, read], docs: live([{ callId: 'c1', taskId: 8, status: 'running', details: { progress: T('12 lignes sur 40', '12 of 40 lines') } }]) }),
+  approval: () => ({ entries: [...history, ask, read, readDone, gated], docs: live([{ callId: 'a1', taskId: 8, details: { 'boring.approval': { summary: APPROVAL } } }]) }),
   form: () => ({ entries: [...history, ask, read, readDone, form], docs: live() }),
   reply: () => ({ entries: [...history, ask, read, readDone, entry(14, assistant([{ type: 'text', text: REPLY }]))], docs: {} }),
   // The turn ends in an error: an assistant message with stopReason `error` and no text.
@@ -86,7 +90,7 @@ const actions = {
   answer: async (questionId, text) => {
     // The pane's acknowledgement of a `present` (opened, or refused on a phone): the scripted agent's call ends with it, as the server's does.
     if (DEMO && /^\{"kind":"(opened|refused)"/.test(text)) { window.__presented.push(JSON.parse(text)); scripted.presented(); return { kind: 'answered' }; }
-    window.__answered.push({ questionId, text }); if (DEMO) scripted.answer(text); else change({ view: runs.tool() }); return { kind: 'answered' };
+    window.__answered.push({ questionId, text }); if (DEMO) scripted.answer(text); else change({ view: /^(Approve|Deny)$/.test(text) ? runs.reply() : runs.tool() }); return { kind: 'answered' };
   },
 };
 window.__library = 0;
