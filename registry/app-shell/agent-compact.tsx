@@ -283,7 +283,7 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
         // The field counter-translates the snap offset; tap changes need no layout animation.
         layer.bar && 'transition-opacity duration-(--duration-fast) motion-reduce:transition-none',
         // A decision waits on the folded card: the sheet takes the bar's warning border and ring.
-        layer.bar && [NEEDS_YOU, 'has-[[data-needs-you]]:border-warning'],
+        layer.bar && NEEDS_YOU,
         // A nested History drawer must not scale or resize the sheet that anchors the one field.
         layer.bar && '[--stack-step:0] [--peek:0px] [--stack-height:var(--drawer-content-height)]',
         // The peek is the top PEEK_REM of the popup; the part that overlaps the tab bar is clipped away, so the tabs stay visible and tappable.

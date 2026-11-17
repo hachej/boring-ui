@@ -3710,7 +3710,15 @@
           "path": "registry/_shared/attachment-chips.tsx",
           "type": "registry:component",
           "target": "components/_shared/attachment-chips.tsx"
+        },
+        {
+          "path": "registry/_shared/controller-strip.tsx",
+          "type": "registry:component",
+          "target": "components/_shared/controller-strip.tsx"
         }
+      ],
+      "registryDependencies": [
+        "@boring-ui/utils"
       ]
     },
     {
