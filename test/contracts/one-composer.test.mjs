@@ -106,7 +106,7 @@ test('1280: Ambiant, send, Ouvert, Ancré, Détacher, Fermer: one field at every
   assert.equal(await count('[data-testid=agent-tray]'), 0);
   assert.equal(await inside('[data-testid=agent-bar-conversation]', '[data-testid=agent-composer-box]'), true, 'the chevron is the controller on the bar\'s frame, not a button of the row');
   assert.equal(await count('[data-testid=composer-bar-attach]'), 1, 'attach is a bar button');
-  assert.equal(await count('[data-testid=composer-bar-commands]') + await count('[data-testid=composer-plus]'), 0, 'no Actions button and no + menu');
+  assert.equal(await browser.evaluate(`[...document.querySelectorAll('[data-testid=composer-bar-commands], [data-testid=composer-plus]')].filter(e => e.getClientRects().length > 0).length`), 0, 'no visible Actions button and no + menu (the Commands button is for touch screens)');
   assert.equal(await actionName(), 'Dicter', 'empty field: the one action button dictates');
   assert.deepEqual(await rowControls(), ['composer-bar-attach', 'composer-input', 'agent-talk'], 'one row: attach, field, one action (AC-2); the chevron is the controller');
   assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector('[data-testid=composer-input]')).whiteSpace`), 'nowrap', 'an empty field is one line: the placeholder never wraps (AC-2)');
@@ -933,7 +933,7 @@ test('390: the one field rests above the tabs; the chevron opens half with the t
   assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer]').dataset.layout`), 'pill', 'the same one-row field as on a computer');
   assert.equal(await count('[data-testid=agent-bar-conversation]'), 1, 'with the chevron');
   assert.equal(await actionName(), 'Dicter');
-  assert.deepEqual(await rowControls(), ['composer-bar-attach', 'composer-input', 'agent-talk'], 'the phone row is the same one row: one microphone (AC-2, AC-20)');
+  assert.deepEqual(await rowControls(), ['composer-bar-attach', 'composer-input', 'composer-bar-commands', 'agent-talk'], 'the phone row is the same one row: attach, field, the Commands button of touch screens, one microphone (AC-2, AC-20)');
   const field = await rect('[data-testid=composer]');
   assert.ok(field.bottom <= tabbar.y + 1, `the field sits above the tabs (${field.bottom} <= ${tabbar.y})`);
   const tabHit = () => browser.evaluate(`(() => { const e = document.elementFromPoint(${tabbar.x}, ${tabbar.y + tabbar.h / 2}); return !!e && !!e.closest(${js(tabs)}); })()`);

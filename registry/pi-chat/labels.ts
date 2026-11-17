@@ -137,6 +137,8 @@ export const defaultChatLabels = {
   noCommands: 'No matching commands.',
   /** A `/` menu filter chip: `skills`, `built-in` or a plugin's name. */
   slashGroup: (group: string) => group,
+  /** The heading over a group of the bar's `/` menu. */
+  slashHeading: (group: string) => group === 'built-in' ? 'Commands' : group === 'skills' ? 'Skills' : group === 'actions' ? 'Actions' : group,
   skillBadge: 'skill',
   workspaceFiles: 'Workspace files',
   searchFailed: 'Search failed. Try again.',

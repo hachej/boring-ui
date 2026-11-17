@@ -252,7 +252,7 @@ export function AgentBar({ onSend, transcribe, stream, quoted, question, onHisto
   const pickSlash = (item: SlashItem) => {
     const rest = text.slice(caret).replace(/^\s+/, '');
     if (item.source === 'skill') { edit(`/${item.name} ${rest}`); focusField(); return; }
-    const command = slash?.commands?.find(candidate => candidate.name === item.name);
+    const command = (item.source === 'action' ? slash?.actions : slash?.commands)?.find(candidate => candidate.name === item.name);
     edit(rest); focusField();
     if (command) void Promise.resolve(command.run({ text: rest, setText: value => edit(value) })).catch(() => undefined);
   };
