@@ -1,4 +1,4 @@
-import { toToolkit, toolName } from '@alchemy.run/domain/Ai';
+import { toToolkit } from '@alchemy.run/domain/Ai';
 import type { Toolable } from '@alchemy.run/domain/Ai';
 import { defineExtension, defineTool } from '@earendil-works/pi-durable';
 import { Tool } from 'effect/ai';
@@ -19,20 +19,17 @@ const REFUSED = 'refused: sender-unknown. Stop and tell the person.';
 const exposing = (names: readonly string[]) => ({ expose: names as never });
 const toolsOf = (api: Toolable, names: readonly string[]) => toToolkit(api, exposing(names)).toolkit.tools;
 
-const MAX_TOOL_NAME = 64;
-/** The tool names Domain would give an operation: a read `Name.op` has one, a command or query `Name` has `send` or `ask`. */
-const toolNamesOf = (api: Toolable, operation: string): string[] => {
-  const [name = operation, read] = operation.split('.');
-  return (read ? [read] : ['send', 'ask']).map((op) => toolName({ api: api.apiName, name, operation: op }));
-};
-
-/** Every name of one audience gives a tool: Domain keeps none for an unknown name, a stream or a tool name past 64 characters. */
+/**
+ * Every name of one audience gives a tool: Domain keeps none for an unknown name, a stream or a tool name past 64 characters. The
+ * reason is told by what the Api serves (`group.requests` lists every call, streams included) and by the same Api under a short name.
+ */
 function checkAudience(def: AppDefinition, audience: string, api: Toolable): void {
-  const fail = (operation: string, why: string): never => { throw new Error(`checkExpose(${def.name}): expose.${audience} lists ${operation}, ${why}`); };
+  const fail = (operation: string, why: string): never => { throw new Error(`checkExpose(${def.name}): expose.${audience} lists ${operation}, which gives no tool: ${why}`); };
+  const shortNamed: Toolable = { apiName: 'x', serves: api.serves, group: api.group, clientInProcess: api.clientInProcess };
   for (const name of new Set(def.expose[audience] ?? [])) {
     if (Object.keys(toolsOf(api, [name])).length > 0) continue;
-    const long = toolNamesOf(api, name).find((tool) => tool.length > MAX_TOOL_NAME);
-    fail(name, long ? `which gives no tool: its tool name ${long} passes ${MAX_TOOL_NAME} characters` : 'which gives no tool: not an operation of the api that returns once');
+    if (!api.group.requests.has(name)) fail(name, 'not an operation of the api');
+    fail(name, Object.keys(toolsOf(shortNamed, [name])).length > 0 ? `the tool name of the api ${api.apiName} passes 64 characters` : 'it is a stream (watch or events), not one tool result');
   }
 }
 
@@ -47,23 +44,24 @@ export const checkAgentTools: CheckAgentTools = (def, agents) => {
     for (const { name } of agent.extensions) if (name.startsWith(PREFIX) && name !== `${PREFIX}${id}`) fail(id, `holds ${name}, the tools of another agent`);
   }
   type Defined = (typeof agents)[string];
-  const toolNames = (agent: Defined, skipOwn: boolean) => agent.extensions.filter((_, i) => !(skipOwn && i === 0)).flatMap((extension) => (extension.tools ?? []).map((tool) => tool.name));
+  /** The `delegate` and `delegate_*` tools of an agent that has delegates are the hand-over itself, not something a caller must hold. */
+  const toolNames = (agent: Defined) => agent.extensions.flatMap((extension) => (extension.tools ?? []).map((tool) => tool.name))
+    .filter((name) => agent.delegates.length === 0 || !/^delegate(_|$)/.test(name));
   /**
    * A delegate holds only what its caller holds: its exposed operations, and every tool its extensions carry, whatever they are
-   * named. A delegate with delegates of its own has a delegate tool in its own (first) extension, which no caller lists, so that
-   * extension is skipped for it. A tool an app extension builds by hand that calls the domain itself cannot be seen here.
+   * named. A tool an app extension builds by hand that calls the domain itself cannot be seen here.
    */
   const walk = (caller: Defined, visited: Set<string>): void => {
     if (visited.has(caller.id)) return;
     visited.add(caller.id);
     const held = new Set(def.expose[caller.id] ?? []);
-    const heldTools = new Set(toolNames(caller, false));
+    const heldTools = new Set(toolNames(caller));
     const domainTools = (agent: Defined) => new Set(agent.extensions.filter((e) => e.name === `${PREFIX}${agent.id}`).flatMap((e) => (e.tools ?? []).map((tool) => tool.name)));
     const callerDomain = domainTools(caller);
     for (const delegate of caller.delegates) {
       for (const operation of def.expose[delegate.id] ?? []) if (!held.has(operation)) fail(delegate.id, `exposes ${operation}, which its caller ${caller.id} does not hold`);
       const ownDomain = domainTools(delegate);
-      for (const tool of toolNames(delegate, delegate.delegates.length > 0)) {
+      for (const tool of toolNames(delegate)) {
         if (callerDomain.has(tool) && !ownDomain.has(tool)) fail(delegate.id, `holds the tool ${tool} of its caller ${caller.id}, outside its own list`);
         if (!heldTools.has(tool)) fail(delegate.id, `holds the tool ${tool}, which its caller ${caller.id} does not hold`);
       }
@@ -76,17 +74,24 @@ export const checkAgentTools: CheckAgentTools = (def, agents) => {
 /** pi validated the arguments against the tool's JSON schema before `execute`, so they are JSON; the one place that says so. */
 const argsOf = (args: unknown) => args as Record<string, Schema.Json>;
 
-/** What the model sees of a command: Domain offers it a `commandId`, which would let it replay another command's stored reply past the scope. */
+/**
+ * What the model sees of a tool. Domain offers a command a `commandId`, which would let the model replay another command's stored
+ * reply past the scope; it offers a read `atLeast`, which makes the read wait (about 11 s) for a stream version the model names. The
+ * card needs neither: the host chooses the command id, and nothing in an agent's turn waits for its own write to reach a view.
+ */
+const withheld = (write: boolean) => (write ? 'commandId' : 'atLeast');
 const offered = (tool: Tool.Any, write: boolean) => {
   const schema = Tool.getJsonSchema(tool);
-  if (!write || !schema.properties) return schema;
-  const properties = Object.fromEntries(Object.entries(schema.properties).filter(([key]) => key !== 'commandId'));
-  return { ...schema, properties,...(Array.isArray(schema.required) ? { required: schema.required.filter((key) => key !== 'commandId') } : {}) };
+  if (!schema.properties) return schema;
+  const properties = Object.fromEntries(Object.entries(schema.properties).filter(([key]) => key !== withheld(write)));
+  return { ...schema, properties, ...(Array.isArray(schema.required) ? { required: schema.required.filter((key) => key !== withheld(write)) } : {}) };
 };
 
-/** A command goes to Domain as its target and input and the host's own command id: never an id the model chose. A read passes as given. */
-const payloadOf = (args: Record<string, Schema.Json>, write: boolean, id: string | undefined): Record<string, Schema.Json> =>
-  write ? { target: args.target ?? null, input: args.input ?? null, ...(id === undefined ? {} : { commandId: id }) } : args;
+/** A command goes to Domain as its target and input and the host's own command id: never an id the model chose. A read goes without `atLeast`. */
+const payloadOf = (args: Record<string, Schema.Json>, write: boolean, id: string | undefined): Record<string, Schema.Json> => {
+  if (write) return { target: args.target ?? null, input: args.input ?? null, ...(id === undefined ? {} : { commandId: id }) };
+  return Object.fromEntries(Object.entries(args).filter(([key]) => key !== withheld(false)));
+};
 
 /** One agent's tools as one Extension. Built once; everything that changes per call (who, which scope, the Layer) is read inside the call. */
 export const appTools: AppTools = ({ def, api, agent, scope, services, attribution, commandId }) => {

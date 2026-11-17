@@ -153,9 +153,15 @@ test('exposure (définition refusée): a name that gives no tool, or a tool name
   refuses(() => appTools({ def: withExpose(notes, { assistant: ['DeleteEverything'] }), api, agent: 'assistant', scope: undefined, services: () => world, attribution: acting('camille') }), 'notes', 'assistant', 'DeleteEverything');
 
   // A real operation (AddNote) on an Api whose long name puts the tool name past 64 characters: Domain keeps no tool, and the reason says length.
-  class LongApi extends Domain.Api('L'.repeat(60), { model: Notebook, commands: ['AddNote'], views: [], streams: [], queries: [] }, { description: 'Scratch.' }) {}
-  refuses(() => checkExpose({ name: 'scratch', api: LongApi, expose: { page: ['AddNote'] } }), 'scratch', 'page', 'AddNote', 'passes 64 characters');
-  assert.throws(() => checkExpose(withExpose(notes, { page: [...notes.expose.page, 'Nope.get'] })), (error) => !/passes 64/.test(error.message));
+  // On that same long Api, an unknown name and a stream each get their own reason, not the length.
+  class LongApi extends Domain.Api('L'.repeat(60), { model: Notebook, commands: ['AddNote'], views: ['Notes'], streams: [], queries: [] }, { description: 'Scratch.' }) {}
+  const onLong = (operation) => () => checkExpose({ name: 'scratch', api: LongApi, expose: { page: [operation] } });
+  refuses(onLong('AddNote'), 'scratch', 'page', 'AddNote', 'passes 64 characters');
+  refuses(onLong('Nope'), 'Nope', 'not an operation');
+  refuses(onLong('Notes.watch'), 'Notes.watch', 'stream');
+  assert.throws(onLong('Nope'), (error) => !/passes 64/.test(error.message));
+  assert.throws(onLong('Notes.watch'), (error) => !/passes 64/.test(error.message));
+  refuses(() => checkExpose(withExpose(notes, { mcp: ['Notes.watch'] })), 'Notes.watch', 'stream');
 });
 
 const check = (def, agents) => () => checkAgentTools(def, agents);
@@ -194,6 +200,20 @@ test('one extension per agent (un agent, une extension): each agent has its own 
   checkAgentTools(notes, { ...agents, assistant: own });
   refuses(check(notes, { ...agents, assistant: lead, researcher: smuggler }), 'notes', 'researcher', 'NotebookApi_AddNote_send');
 
+  // Three levels: the top agent does not hold Deposit, so the middle agent may not get it through `tools:`, from appTools or by hand.
+  const wide = withExpose(notes, { middle: ['Notes.get'], leaf: ['Notes.get'], other: ['Deposit'] });
+  const deposit = tools(wide, 'other').tools[0];
+  const handMade = { name: 'hand_made', description: 'Calls the domain itself.', parameters: { type: 'object', properties: {} }, execute: async () => ({ output: [] }) };
+  const chain = (extra) => {
+    const leaf = defineAgent({ id: 'leaf', ...plain, extensions: [tools(wide, 'leaf')] });
+    const middle = defineAgent({ id: 'middle', ...plain, extensions: [tools(wide, 'middle')], tools: extra, delegates: [{ agent: leaf, name: 'delegate_leaf', description: 'Reads.' }] });
+    const top = defineAgent({ id: 'assistant', ...plain, extensions: [tools(wide, 'assistant')], delegates: [{ agent: middle, name: 'delegate_middle', description: 'Reads.' }] });
+    return { ...agents, assistant: top, middle, leaf };
+  };
+  checkAgentTools(wide, chain([]));
+  refuses(check(wide, chain([deposit])), 'middle', deposit.name);
+  refuses(check(wide, chain([handMade])), 'middle', 'hand_made');
+
   // A reader conversation is offered only its own extension's tools, whatever else is installed.
   const { offered, results } = await drive(agents, 'reader', [send('AddNote', 'camille', { text: 'Non' })]);
   assert.ok(offered.includes('NotebookApi_RecordGist_send'));
@@ -229,4 +249,14 @@ test('tools: a command id the model chooses never reaches Domain, and the model 
   const same = await drive(mine, 'assistant', [['NotebookApi_AddNote_send', { target: 'camille', input: { text: 'Second' }, commandId: 'cmd-A-1' }]]);
   assert.equal(same.results[0].isError, false, same.results[0].text);
   assert.ok((await read('camille', 'camille')).notes.some((n) => n.text === 'Second'), 'the reused id did not turn the write into a no-op');
+});
+
+test('tools: a read the model makes cannot be made to wait on a stream version (atLeast)', async () => {
+  const agents = build(notes, notesAgents, { attribution: acting('camille') });
+  const getTool = agents.assistant.extensions.flatMap((e) => e.tools ?? []).find((t) => t.name === 'NotebookApi_Notes_get');
+  assert.ok(!('atLeast' in getTool.parameters.properties), 'no atLeast offered');
+  const started = Date.now();
+  const { results } = await drive(agents, 'assistant', [['NotebookApi_Notes_get', { key: 'camille', atLeast: { stream: 'Notebook/dominique', version: 999 } }]]);
+  assert.equal(results[0].isError, false, results[0].text);
+  assert.ok(Date.now() - started < 5000, 'the read did not wait');
 });
