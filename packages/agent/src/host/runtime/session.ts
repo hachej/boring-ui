@@ -74,7 +74,7 @@ export const createSession: CreateSession = options => {
 
   const build = async () => {
     await options.wake.arm(Date.now() + HEARTBEAT_MS); // before anything can throw: an object whose open fails is started again
-    const agents = def.agents!(kitOf(agent => tools({ def, api, agent, scope, services: options.services, attribution })));
+    const agents = def.agents!(kitOf(agent => tools({ def, api, agent, scope, services: options.services, storage: options.unitStorage, attribution })));
     checkAgents(def, agents);
     const registry = createRegistry();
     for (const agent of Object.values(agents)) agent.install(registry);

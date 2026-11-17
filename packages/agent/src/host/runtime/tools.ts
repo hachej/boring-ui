@@ -11,6 +11,8 @@ import { CurrentUser, Session } from '../identity.js';
 import type { AppDefinition } from '../index.js';
 import { SenderUnknown, toolableApi } from './contract.js';
 import type { AppTools, CheckAgentTools, CheckExpose } from './contract.js';
+import { checkOps } from './check-ops.js';
+import { domainNames, plainTools } from './ops.js';
 
 const PREFIX = 'host.tools.';
 const REFUSED = 'refused: sender-unknown. Stop and tell the person.';
@@ -26,7 +28,7 @@ const toolsOf = (api: Toolable, names: readonly string[]) => toToolkit(api, expo
 function checkAudience(def: AppDefinition, audience: string, api: Toolable): void {
   const fail = (operation: string, why: string): never => { throw new Error(`checkExpose(${def.name}): expose.${audience} lists ${operation}, which gives no tool: ${why}`); };
   const shortNamed: Toolable = { apiName: 'x', serves: api.serves, group: api.group, clientInProcess: api.clientInProcess };
-  for (const name of new Set(def.expose[audience] ?? [])) {
+  for (const name of new Set(domainNames(def, audience))) {
     if (Object.keys(toolsOf(api, [name])).length > 0) continue;
     if (!api.group.requests.has(name)) fail(name, 'not an operation of the api');
     fail(name, Object.keys(toolsOf(shortNamed, [name])).length > 0 ? `the tool name of the api ${api.apiName} passes 64 characters` : 'it is a stream (watch or events), not one tool result');
@@ -34,14 +36,17 @@ function checkAudience(def: AppDefinition, audience: string, api: Toolable): voi
 }
 
 export const checkExpose: CheckExpose = (def) => {
+  checkOps(def);
   const api = toolableApi(def);
-  for (const audience of Object.keys(def.expose)) checkAudience(def, audience, api);
+  for (const audience of Object.keys(def.expose)) if (api) checkAudience(def, audience, api);
 };
 
 export const checkAgentTools: CheckAgentTools = (def, agents) => {
   const fail = (agent: string, why: string): never => { throw new Error(`checkAgentTools(${def.name}): agent ${agent} ${why}`); };
   for (const [id, agent] of Object.entries(agents)) {
     for (const { name } of agent.extensions) if (name.startsWith(PREFIX) && name !== `${PREFIX}${id}`) fail(id, `holds ${name}, the tools of another agent`);
+    const held = agent.extensions.flatMap((extension) => (extension.tools ?? []).map((tool) => tool.name));
+    held.forEach((name, i) => held.indexOf(name) !== i && fail(id, `holds two tools named ${name}`));
   }
   type Defined = (typeof agents)[string];
   /** The `delegate` and `delegate_*` tools of an agent that has delegates are the hand-over itself, not something a caller must hold. */
@@ -94,12 +99,14 @@ const payloadOf = (args: Record<string, Schema.Json>, write: boolean, id: string
 };
 
 /** One agent's tools as one Extension. Built once; everything that changes per call (who, which scope, the Layer) is read inside the call. */
-export const appTools: AppTools = ({ def, api, agent, scope, services, attribution, commandId }) => {
-  checkAudience(def, agent, api);
-  const toolkit = toToolkit(api, exposing(def.expose[agent] ?? []));
+export const appTools: AppTools = ({ def, api, agent, scope, services = () => { throw new Error(`appTools(${def.name}): no services for ${agent}`); }, attribution, commandId, storage, caps }) => {
+  const plain = plainTools({ def, api, agent, scope, attribution, commandId, storage, caps });
+  if (domainNames(def, agent).length === 0) return defineExtension({ name: `${PREFIX}${agent}`, tools: plain });
+  checkAudience(def, agent, api!);
+  const toolkit = toToolkit(api!, exposing(domainNames(def, agent)));
   return defineExtension({
     name: `${PREFIX}${agent}`,
-    tools: Object.values(toolkit.toolkit.tools).map((tool) => {
+    tools: [...Object.values(toolkit.toolkit.tools).map((tool) => {
       const readonly = Context.get(tool.annotations, Tool.Readonly);
       return defineTool({
         name: tool.name,
@@ -125,6 +132,6 @@ export const appTools: AppTools = ({ def, api, agent, scope, services, attributi
           return { output: [{ type: 'text', text: JSON.stringify(handled.encodedResult) }], isError: handled.isFailure };
         },
       });
-    }),
+    }), ...plain],
   });
 };
