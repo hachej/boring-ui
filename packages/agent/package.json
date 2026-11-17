@@ -133,6 +133,10 @@
       "types": "./dist/approval.d.ts",
       "import": "./dist/approval.js"
     },
+    "./caps/decision": {
+      "types": "./dist/caps/decision/index.d.ts",
+      "import": "./dist/caps/decision/index.js"
+    },
     "./memory/optchat": {
       "types": "./dist/memory/optchat.d.ts",
       "import": "./dist/memory/optchat.js"
