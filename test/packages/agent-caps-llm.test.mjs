@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import test from 'node:test';
+import baseTest from 'node:test';
 import { Harness, MemoryStorage, createRegistry } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
@@ -12,9 +12,13 @@ import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
 import { defineAgent } from '@hachej/boring-agent/agents';
 import { complete, llmTool, structured } from '@hachej/boring-agent/caps/llm';
 
-const reached = [];
-globalThis.fetch = (...args) => { reached.push(args); throw new Error('the network is off'); };
-test.after(() => assert.deepEqual(reached, [], 'the global fetch was never called'));
+// The suite shares one process with other files, so the throwing `fetch` is installed for each of these tests only.
+const test = (name, body) => baseTest(name, async (t) => {
+  const saved = globalThis.fetch, reached = [];
+  globalThis.fetch = (...args) => { reached.push(args); throw new Error('the network is off'); };
+  try { await body(t); } finally { globalThis.fetch = saved; }
+  assert.deepEqual(reached, [], 'the global fetch was never called');
+});
 
 const SCHEMA = { type: 'object', additionalProperties: false, required: ['heard'], properties: { heard: { type: 'array', items: { type: 'string' } } } };
 const ask = (extra = {}) => ({ purpose: 'read', messages: [{ role: 'user', content: 'deux tartines' }], schema: SCHEMA, ...extra });
