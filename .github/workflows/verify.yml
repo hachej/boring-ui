@@ -60,11 +60,11 @@ jobs:
   tests-shard:
     # The suite is one serial Node process of 25 minutes (D-1937). Five runners each take every fifth test file (scripts/run-tests.mjs --shard=i/5), so the job takes about a fifth plus its install.
     # The check named `tests` below is the join of the five: release admission and `verify` read that one name.
-    name: Tests (${{ matrix.shard }} of 5)
+    name: Tests (${{ matrix.part }} of 5)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        part: [1, 2, 3, 4, 5]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     # The browser contract tests (compact-primitives, touch-target-dense) read CHROMIUM; with CI set they fail instead of skipping when it is missing.
@@ -89,7 +89,7 @@ jobs:
         run: bash scripts/install-ci-chromium.sh 1.63.0
       - name: Allow the Chromium sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: npm test -- --exclude-registered --shard=${{ matrix.shard }}/5
+      - run: npm test -- --exclude-registered --shard=${{ matrix.part }}/5
         env:
           SIDEBAR_RESIZE_EVIDENCE: ${{ runner.temp }}/evidence/sidebar-resize
           SIDEBAR_OPEN_EVIDENCE: ${{ runner.temp }}/evidence/sidebar-open
@@ -105,7 +105,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: test-evidence-shots-${{ matrix.shard }}
+          name: test-evidence-shots-${{ matrix.part }}
           path: |
             ${{ runner.temp }}/evidence
             .cache/evidence
@@ -244,7 +244,7 @@ jobs:
   ci-ok:
     name: verify
     if: always()
-    needs: [verify, tests, release-gate, isolated-consumers, isolated-consumers-ok, demo-worker]
+    needs: [verify, tests-shard, tests, release-gate, isolated-consumers, isolated-consumers-ok, demo-worker]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to succeed
