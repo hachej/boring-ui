@@ -183,7 +183,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
       // « / » is only mentioned when the app has slash actions, and only in the two languages the kit has words for; any other app or locale keeps the chat's own default.
       ...(spec.chatProps?.slash && (locale === 'fr' || locale === 'en' || locale === undefined) ? { emptyDescription: locale === 'fr' ? 'Écrivez votre demande ci-dessous, ou « / » pour choisir une action.' : 'Write your request below, or type “/” to choose an action.' } : {}),
       ...chatWordLabels(spec.words), ...spec.chatProps?.labels,
-      ...(barChat.question ? { placeholder: words.answerHere } : {}),
+      ...(barChat.question ? { placeholder: words.answerHere } : layer.fieldStatus ? { placeholder: layer.fieldStatus } : {}),
     },
     ...(spec.voice ? { composerWhenEmpty: <BarMicButton mic={mic} label={words.dictate} />,
       ...(capturing ? { composerRecordingSlots: { status: <BarMicStatus mic={mic} />, stop: <BarMicButton mic={mic} label={words.dictate} />, keepField: true } } : {}) } : {}),

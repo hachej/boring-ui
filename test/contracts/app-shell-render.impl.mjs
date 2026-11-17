@@ -1375,3 +1375,120 @@ test('update: without a version a dismiss holds until the update is no longer av
   assert.ok(container.querySelector('[data-testid=update-notice]'), 'announced again after it went away');
   await unmount();
 });
+
+// Notices at the composer (`AppShell notices`): one at a time, the rest behind a count, a cap, a fade with a fake clock, and the phone's swipe.
+const notice = (id, kind, extra) => ({ id, kind, text: `Fictional ${kind} ${id}`, ...extra });
+const FOUR = [notice('a', 'info'), notice('b', 'success'), notice('c', 'warning'), notice('d', 'error')];
+const shownNotices = container => [...container.querySelectorAll('[data-notice-kind]')];
+const clickOn = (window, element) => element.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+
+test('notices: four notices of four kinds show ONE role=status notice and "3 more waiting"; dismissing steps to the next, never two bars (AC-2)', async t => {
+  const dismissed = [];
+  const { container, window, rerender, unmount } = await render(t, { notices: FOUR.map(n => ({ ...n, onDismiss: () => dismissed.push(n.id) })) });
+  const { act } = await import('react');
+  const status = () => [...container.querySelectorAll('[data-testid=notice] [role=status]')];
+  assert.equal(shownNotices(container).length, 1, 'one notice in the DOM');
+  assert.equal(status().length, 1, 'exactly one role=status notice');
+  assert.equal(container.querySelector('[data-testid=notice-text]').textContent, 'Fictional info a', 'the first of the list shows');
+  assert.equal(container.querySelector('[data-testid=notice-more]').textContent, '3 more waiting');
+  assert.equal(container.querySelector('[data-testid=notice]').querySelector('[role=status]').getAttribute('aria-live'), 'polite');
+  const order = [];
+  for (const more of ['2 more waiting', '1 more waiting', null]) {
+    await act(async () => clickOn(window, container.querySelector('[data-testid=notice-dismiss]')));
+    order.push(container.querySelector('[data-testid=notice-text]')?.textContent);
+    assert.equal(shownNotices(container).length, 1, 'still one notice');
+    assert.equal(container.querySelector('[data-testid=notice-more]')?.textContent ?? null, more);
+  }
+  assert.deepEqual(order, ['Fictional success b', 'Fictional warning c', 'Fictional error d']);
+  assert.deepEqual(dismissed, ['a', 'b', 'c'], 'the host hears each dismiss');
+  await act(async () => clickOn(window, container.querySelector('[data-testid=notice-dismiss]')));
+  assert.equal(shownNotices(container).length, 0, 'nothing left');
+  await rerender({ notices: [] });
+  await rerender({ notices: [notice('a', 'info')] });
+  assert.equal(shownNotices(container).length, 1, 'an id that left the list shows again');
+  await unmount();
+});
+
+test('notices: the update joins the queue instead of stacking, and the shell\'s own words name the count and the dismiss', async t => {
+  const { container, window, unmount } = await render(t, { locale: 'fr', notices: [notice('a', 'warning')], update: { available: true, version: 'v2' } });
+  const { act } = await import('react');
+  assert.equal(shownNotices(container).length, 1);
+  assert.equal(container.querySelector('[data-testid=notice-more]').textContent, '1 en attente');
+  assert.equal(container.querySelector('[data-testid=notice-dismiss]').getAttribute('aria-label'), 'Masquer');
+  await act(async () => clickOn(window, container.querySelector('[data-testid=notice-dismiss]')));
+  assert.ok(container.querySelector('[data-testid=update-notice]'), 'the update shows once the host\'s notice is gone');
+  assert.equal(container.querySelector('[data-testid=notice-more]'), null);
+  await unmount();
+});
+
+test('notices: at most 5 wait; past that the oldest info or success go, and a warning or an error is never dropped', async t => {
+  const { capNotices } = await bundle('shell-notice.tsx');
+  const ids = list => capNotices(list).map(n => n.id).join('');
+  assert.equal(ids([notice('1', 'info'), notice('2', 'info'), notice('3', 'info'), notice('4', 'info'), notice('5', 'info'), notice('6', 'info')]), '12345', 'a sixth replaces the oldest (last) info');
+  assert.equal(ids([notice('1', 'error'), notice('2', 'info'), notice('3', 'success'), notice('4', 'warning'), notice('5', 'info'), notice('6', 'info'), notice('7', 'info')]), '12345', 'the newest-listed infos go first from the end, the error and the warning stay');
+  assert.equal(ids([notice('1', 'warning'), notice('2', 'info'), notice('3', 'warning'), notice('4', 'error'), notice('5', 'warning'), notice('6', 'error')]), '13456', 'the info goes, six warnings and errors would all stay');
+  assert.equal(ids(['1', '2', '3', '4', '5', '6', '7'].map(id => notice(id, 'warning'))), '1234567', 'no warning is ever dropped');
+  const { container, unmount } = await render(t, { notices: ['1', '2', '3', '4', '5', '6', '7'].map(id => notice(id, 'info')) });
+  assert.equal(container.querySelector('[data-testid=notice-more]').textContent, '4 more waiting', 'seven infos show one and wait five at most');
+  await unmount();
+});
+
+test('notices: info and success fade after 8 s and stay while hovered or focused; a warning and an error stay (AC-3, fake clock)', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { container, window, rerender, unmount } = await render(t, { notices: [notice('i', 'info')] });
+  const { act } = await import('react');
+  const tick = ms => act(async () => { t.mock.timers.tick(ms); });
+  await tick(7900);
+  assert.equal(shownNotices(container).length, 1, 'still there at 7.9 s');
+  await tick(200);
+  assert.equal(shownNotices(container).length, 0, 'gone after 8 s');
+  await rerender({ notices: [notice('s', 'success')] });
+  const el = () => container.querySelector('[data-testid=notice]');
+  await act(async () => el().dispatchEvent(new window.PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' })));
+  await tick(30000);
+  assert.equal(shownNotices(container).length, 1, 'hovered: it stays');
+  await act(async () => el().dispatchEvent(new window.PointerEvent('pointerout', { bubbles: true, pointerType: 'mouse', relatedTarget: window.document.body })));
+  await tick(8100);
+  assert.equal(shownNotices(container).length, 0, 'released: it goes after 8 s');
+  await rerender({ notices: [notice('f', 'info')] });
+  await act(async () => el().dispatchEvent(new window.FocusEvent('focusin', { bubbles: true })));
+  await tick(30000);
+  assert.equal(shownNotices(container).length, 1, 'focused: it stays');
+  await rerender({ notices: [notice('w', 'warning'), notice('e', 'error')] });
+  await tick(60000);
+  assert.equal(container.querySelector('[data-testid=notice-text]').textContent, 'Fictional warning w', 'a warning stays');
+  await rerender({ notices: [notice('e', 'error')] });
+  await tick(60000);
+  assert.equal(shownNotices(container).length, 1, 'an error stays');
+  await unmount();
+});
+
+test('notices: nothing takes focus, and a swipe left on a phone dismisses (a right swipe, a short one and a vertical one do not)', async t => {
+  const { container, window, unmount } = await render(t, { notices: [notice('a', 'warning'), notice('b', 'info')] });
+  const { act } = await import('react');
+  assert.equal(window.document.activeElement, window.document.body, 'a notice appeared and focus did not move');
+  const swipe = async (dx, dy = 0, pointerType = 'touch') => {
+    const el = container.querySelector('[data-testid=notice]');
+    await act(async () => el.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, pointerType, clientX: 200, clientY: 300 })));
+    await act(async () => el.dispatchEvent(new window.PointerEvent('pointerup', { bubbles: true, pointerType, clientX: 200 + dx, clientY: 300 + dy })));
+  };
+  for (const [dx, dy, type] of [[60, 0], [-20, 0], [-80, 60], [-80, 0, 'mouse']]) { await swipe(dx, dy, type); assert.equal(container.querySelector('[data-testid=notice-text]').textContent, 'Fictional warning a', `no dismiss for ${dx},${dy},${type ?? 'touch'}`); }
+  await swipe(-80);
+  assert.equal(container.querySelector('[data-testid=notice-text]').textContent, 'Fictional info b', 'a swipe left shows the next notice');
+  assert.equal(window.document.activeElement, window.document.body, 'focus never moved');
+  assert.equal(/swipe|glisser/i.test(container.querySelector('[data-testid=notice]').textContent), false, 'no hint text');
+  await unmount();
+});
+
+test('notices: the @ reference shows on a warning and an error only, and only when the agent has mentions', async t => {
+  const warn = notice('w', 'warning', { reference: '@notice:w' });
+  const plain = await render(t, { notices: [warn, notice('i', 'info', { reference: '@notice:i' })] });
+  assert.equal(plain.container.querySelector('[data-testid=notice-reference]'), null, 'no mentions, no button');
+  await plain.unmount();
+  const withMentions = await render(t, { agent: agentWith({ mentions: { kinds: {} } }), notices: [warn, notice('i', 'info', { reference: '@notice:i' })] });
+  const { act } = await import('react');
+  assert.equal(withMentions.container.querySelector('[data-testid=notice-reference]')?.getAttribute('aria-label'), 'Reference in agent');
+  await act(async () => clickOn(withMentions.window, withMentions.container.querySelector('[data-testid=notice-dismiss]')));
+  assert.equal(withMentions.container.querySelector('[data-testid=notice-reference]'), null, 'an info notice has none');
+  await withMentions.unmount();
+});

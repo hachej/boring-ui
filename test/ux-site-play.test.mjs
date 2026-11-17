@@ -14,7 +14,8 @@ const require = createRequire(join(root, 'package.json'));
 let playwright; try { playwright = require('playwright-core'); } catch { /* not installed */ }
 const skip = !process.env.CHROMIUM || !playwright;
 
-test('the Play menu plays a response into the design system page, and the demo has the attach and dictation buttons', { skip, timeout: 180000 }, async t => {
+/** The design system page of the site, served and open in Chromium: `page` is the site, `demo` its embedded demo frame. */
+async function openSite(t, viewport = { width: 1280, height: 800 }) {
   const dir = mkdtempSync(join(tmpdir(), 'ux-play-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const scenario = loadAll().find(s => s.target === 'component:design-system'), name = 'component-design-system', from = join(dir, 'cap'), out = join(dir, 'site');
@@ -33,10 +34,15 @@ test('the Play menu plays a response into the design system page, and the demo h
   t.after(() => server.close());
   const browser = await playwright.chromium.launch({ executablePath: process.env.CHROMIUM, args: ['--no-sandbox'] });
   t.after(() => browser.close());
-  const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
+  const page = await (await browser.newContext({ viewport })).newPage();
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
   const demo = page.frameLocator('#demo');
   await demo.locator('[data-testid=composer-input]').waitFor({ timeout: 30000 });
+  return { page, demo };
+}
+
+test('the Play menu plays a response into the design system page, and the demo has the attach and dictation buttons', { skip, timeout: 180000 }, async t => {
+  const { page, demo } = await openSite(t);
   assert.equal(await demo.locator('[data-testid=composer-bar-attach]').count(), 1, 'the bar has the attach button');
   assert.equal(await demo.locator('[data-testid=agent-talk]').count(), 1, 'the bar has the dictation button');
   const items = await page.locator('#play option').allTextContents();
@@ -56,4 +62,33 @@ test('the Play menu plays a response into the design system page, and the demo h
   await page.selectOption('#play', { label: 'Reset the conversation' });
   await demo.locator('[data-testid=composer-input]').waitFor();
   assert.equal(await demo.getByText('A Markdown answer').count(), 0, 'Reset starts a fresh conversation');
+});
+
+// AC-8 (notifications): the Play menu has a Notifications group; each item shows its pattern in the demo, light and dark, at 1440 and 390.
+test('the Play menu has a Notifications group: info, success, warning, error and needs you each show their pattern, light and dark, at 1440 and 390', { skip, timeout: 300000 }, async t => {
+  const shots = join(root, '.cache/evidence/composer-content');
+  mkdirSync(shots, { recursive: true });
+  for (const [width, height, label] of [[1440, 900, 'desktop'], [390, 844, 'phone']]) {
+    const { page, demo } = await openSite(t, { width, height });
+    if (label === 'phone') await page.locator('[data-vp]').filter({ hasText: 'Phone' }).first().click().catch(() => {});
+    const group = await page.locator('#play optgroup[label=Notifications] option').allTextContents();
+    assert.deepEqual(group, ['Notification: info', 'Notification: success', 'Notification: warning', 'Notification: error', 'Notification: needs you'], 'the group lists the five patterns');
+    for (const theme of ['light', 'dark']) {
+      if ((await page.evaluate(() => document.documentElement.dataset.theme)) !== theme) { await page.locator('#theme').click(); await page.waitForFunction(value => document.documentElement.dataset.theme === value, theme); }
+      for (const kind of ['info', 'success', 'warning', 'error']) {
+        await page.selectOption('#play', { label: `Notification: ${kind}` });
+        await demo.locator(`[data-testid=notice][data-notice-kind=${kind}]`).waitFor({ timeout: 20000 });
+        assert.equal(await demo.locator('[data-testid=notice]').count(), 1, 'one notice at the composer (the page\'s own sample is the update notice)');
+        assert.equal(await demo.locator('[data-testid=agent-tray]').count(), 0, 'no tray opened');
+        await page.screenshot({ path: join(shots, `notifications-play-${kind}-${label}-${theme}.png`) });
+        if (kind === 'warning' || kind === 'error') assert.equal(await demo.locator('[data-testid=notice-reference]').count(), 1, 'the @ is there');
+      }
+      await page.selectOption('#play', { label: 'Notification: needs you' });
+      await demo.locator('[data-testid=agent-card][data-needs-you]').waitFor({ timeout: 40000 });
+      assert.equal(await demo.locator('[data-testid=agent-tray]').count(), 0, 'no tray for a decision');
+      await page.screenshot({ path: join(shots, `notifications-play-needs-you-${label}-${theme}.png`) });
+      await page.selectOption('#play', { label: 'Reset the conversation' });
+      await demo.locator('[data-testid=composer-input]').waitFor();
+    }
+  }
 });

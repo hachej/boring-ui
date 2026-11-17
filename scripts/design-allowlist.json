@@ -27,6 +27,8 @@
     { "file": "packages/ui/src/vendor/drawio-viewer-static.ts", "rules": ["shadow", "radius", "border-width", "color", "font", "motion", "primitive"], "pattern": ".*", "exception": "drawing-document" },
     { "file": "registry/pi-chat-markdown/markdown.tsx", "rules": ["design-no-x-scroll"], "pattern": "^overflow-x-auto$", "exception": "editor-document" },
     { "file": "registry/app-shell/agent-bar-parts.tsx", "rules": ["primitive"], "pattern": "^<button", "exception": "controller-notch" },
-    { "file": "registry/app-shell/agent-bar-parts.tsx", "rules": ["radius"], "pattern": "^rounded-(?:full|l-full|r-full)$", "exception": "controller-notch" }
+    { "file": "registry/app-shell/agent-bar-parts.tsx", "rules": ["radius"], "pattern": "^rounded-(?:full|l-full|r-full)$", "exception": "controller-notch" },
+    { "file": "registry/_shared/controller-strip.tsx", "rules": ["primitive"], "pattern": "^<button", "exception": "controller-notch" },
+    { "file": "registry/_shared/controller-strip.tsx", "rules": ["radius"], "pattern": "^rounded-(?:full|l-full|r-full)$", "exception": "controller-notch" }
   ]
 }

@@ -6,7 +6,6 @@ import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, Loader2Icon, MicIcon, MaximizeIcon, PanelRightIcon, ShieldAlertIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
@@ -19,6 +18,9 @@ import { cn } from '../utils/utils';
 import { chatTextFor } from '../pi-chat/locale';
 import { foldedCardKind } from '../agent-bar/folded-card';
 import type { AgentBarChat } from '../agent-bar/use-agent-bar-chat';
+import { ControllerStrip } from '../_shared/controller-strip';
+import { UnreadMark } from '../_shared/controller-strip';
+import type { ControllerAction, Unread } from '../_shared/controller-strip';
 import { composerLabels, shellWords, useInternal } from './layer-context';
 import { FileChip, isCitedFile, ReplyActionButton } from './file-chip';
 
@@ -130,9 +132,6 @@ export function VoiceProblem() {
   return voice.problem ? <p role="alert" data-testid="agent-voice-problem" className="m-0 shrink-0 px-3 pb-1 text-xs leading-4 text-destructive">{voice.problem}</p> : null;
 }
 
-/** One action of the composer controller: its name (aria-label and tooltip), icon and what it does; `primary` is the chevron, always shown. */
-interface ControllerAction { readonly id: string; readonly testId: string; readonly label: string; readonly icon: ReactNode; readonly onSelect: () => void; readonly primary?: boolean; readonly expanded?: boolean; readonly on?: boolean }
-
 /** The actions of the conversation's layout in the state it is in: the chevron (expand or collapse) first, then what the state offers (expand more, split or undock). */
 function useControllerActions(): readonly ControllerAction[] {
   const layer = useInternal();
@@ -158,50 +157,28 @@ function useControllerActions(): readonly ControllerAction[] {
     { ...full, onSelect: () => layer.enterFull('folded') }];
 }
 
-/** One cell of the controller notch: a plain 16 px high button (no chip, no circle: a hover fill only) whose 44 px hit area is its invisible ::before. `extra` cells start closed (0 wide). */
-function ControllerCell({ action, extra, round, dot, ...rest }: { readonly action: ControllerAction; readonly extra: boolean; readonly round: boolean; readonly dot: { readonly label: string } | undefined } & Record<string, unknown>) {
-  return <button type="button" {...rest} data-testid={action.testId} data-action={action.id} aria-label={action.label} onClick={action.onSelect}
-    {...(action.expanded !== undefined ? { 'aria-expanded': action.expanded } : {})} {...(action.on ? { 'aria-pressed': true } : {})}
-    className={cn('relative inline-flex h-4 shrink-0 items-center justify-center text-muted-foreground transition-colors duration-(--duration-fast) pointer-fine:hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground aria-pressed:text-foreground motion-reduce:transition-none max-md:h-11 pointer-coarse:h-11',
-      'md:before:absolute md:before:-inset-y-3.5 md:before:inset-x-0 md:before:content-[""] [&_svg]:size-[11px]',
-      extra ? 'w-0 overflow-hidden opacity-0 group-hover/ctl:w-7 group-hover/ctl:opacity-100 group-has-[:focus-visible]/ctl:w-7 group-has-[:focus-visible]/ctl:opacity-100 max-md:w-11 max-md:opacity-100 pointer-coarse:w-11 pointer-coarse:opacity-100' : 'w-8 rounded-l-full max-md:w-11 pointer-coarse:w-11', round && 'rounded-r-full')}>
-    {action.icon}
-    {dot && <span role="img" aria-label={dot.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-0 right-1 size-1.5 rounded-(--radius-3xl) bg-primary" />}
-  </button>;
-}
-
 /**
  * `composer: 'bar'`: ONE controller for the conversation's layout, a strip centred on the top border of the container (half above, half below). At rest only the
  * chevron shows (expand or collapse); the other actions of the state (split, undock) open on hover and on focus within, and stay shown on a touch screen. A dot on the
  * chevron while a reply is unread. Desktop: the strip is portalled into the bar's box (its frame) and rides the box's top edge, or the open tray's; on a phone and in
  * the docked column it sits on the field's own border. Each action is a kit Button (the touch floor gives the 44 px hit area), named by aria-label and title.
  */
-export function ConversationChevron({ unread }: { readonly unread: { readonly label: string } | undefined }) {
+export function ConversationChevron({ unread }: { readonly unread: Unread | undefined }) {
   const layer = useInternal();
   const actions = useControllerActions();
   const [box, setBox] = useState<HTMLElement | null>(null);
+  const [handle, setHandle] = useState<HTMLElement | null>(null);
   const overlay = layer.trayOpen && !layer.anchored;
-  const [first, ...rest] = actions;
+  const first = actions[0];
   if (!first) return null;
   // A phone has no strip: the size is the sheet's grabber (tap for the next snap, drag for any). This control is the grabber's keyboard and screen reader twin: invisible and out of the pointer's way until focused.
-  if (!layer.expanded) return <button type="button" data-testid={first.testId} data-action="chevron" aria-label={first.label} aria-expanded={first.expanded} onClick={first.onSelect}
-    className="pointer-events-none absolute top-0 left-1/2 z-30 size-11 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 outline-ring focus-visible:opacity-100 focus-visible:outline-2" />;
-  // One small notch (mockup 6): cells of 32 and 28 by 16 px with 11 px icons, no chip or circle behind an icon (a hover fill only), 1 px hairlines between cells. The 44 px
-  // hit area is the ::before of each cell, never visible. The chevron is the anchor (the strip's left edge is half a cell from the middle): the other cells open to its right,
-  // inside the same container, which widens (hover or focus within; always on a touch screen).
-  const cell = (action: ControllerAction, extra: boolean, last: boolean) => <Tooltip key={action.id}>
-    <TooltipTrigger render={<ControllerCell action={action} extra={extra} round={extra ? last : rest.length === 0} dot={undefined} />} />
-    <TooltipContent side="top">{action.label}</TooltipContent></Tooltip>;
-  const strip = <span data-testid="composer-controller" style={box && overlay ? { top: 'calc(0px - var(--app-shell-bar-tray-size))' } : undefined}
-    className="group/ctl absolute top-0 left-1/2 z-30 -translate-x-4 -translate-y-1/2 max-md:-translate-x-5.5 pointer-coarse:-translate-x-5.5">
-    {/* The notch is drawn 16 px high behind the cells; on touch the cells themselves are 44 px boxes (no overlap), so the hit areas are real. */}
-    <span className="relative flex items-center">
-      <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-4 -translate-y-1/2 rounded-full bg-card ring-4 ring-card outline-1 outline-offset-4 outline-border/70" />
-      {cell(first, false, false)}
-      {unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-1/2 -right-3 size-1.5 -translate-y-1/2 rounded-(--radius-3xl) bg-primary group-hover/ctl:opacity-0 group-has-[:focus-visible]/ctl:opacity-0" />}
-      {rest.map((action, i) => cell(action, true, i === rest.length - 1))}
-    </span>
-  </span>;
+  // The unread mark sits beside the grabber's pill: portalled into the drawer's swipe handle, which is that pill.
+  if (!layer.expanded) return <>
+    <button ref={node => setHandle(node?.closest('[data-slot=drawer-popup]')?.querySelector<HTMLElement>('[data-slot=drawer-swipe-handle]') ?? null)} type="button" data-testid={first.testId} data-action="chevron" aria-label={first.label} aria-expanded={first.expanded} onClick={first.onSelect}
+      className="pointer-events-none absolute top-0 left-1/2 z-30 size-11 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 outline-ring focus-visible:opacity-100 focus-visible:outline-2" />
+    {handle && unread && createPortal(<UnreadMark unread={unread} dot="top-1/2 left-1/2 ml-8 -translate-y-1/2" pill="top-1/2 left-1/2 ml-9 -translate-y-1/2" />, handle)}
+  </>;
+  const strip = <ControllerStrip actions={actions} unread={unread} style={box && overlay ? { top: 'calc(0px - var(--app-shell-bar-tray-size))' } : undefined} />;
   return <>
     <span ref={node => setBox(node?.closest<HTMLElement>('[data-one-composer]') ?? null)} hidden />
     {box ? createPortal(strip, box) : strip}
@@ -329,7 +306,7 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
         </span></span>;
       })}</span></> : undefined;
   return <>
-    <section data-testid="agent-card" data-state={kind} aria-label={text.assistant}
+    <section data-testid="agent-card" data-state={kind} data-needs-you={kind === 'question' || undefined} aria-label={text.assistant}
       className="flex flex-col gap-2 px-3 pt-2.5 pb-3 text-sm text-card-foreground md:data-[state=working]:pb-2">
       {kind === 'failed' && failed && <p role="alert" className="m-0 flex min-w-0 items-start gap-2 text-sm text-destructive">
         <AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -370,13 +347,16 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
     <Separator />
   </>;
 }
+/** The bar while the agent waits for a decision (an approval or a question on the folded card): a warning border and a soft ring around the whole bar. No tray opens. */
+export const NEEDS_YOU = 'has-[[data-needs-you]]:ring-1 has-[[data-needs-you]]:ring-warning has-[[data-needs-you]]:outline-3 has-[[data-needs-you]]:outline-warning/25';
+
 /** `composer: 'bar'`: the thread (Ouvert), the folded card and the field in one frame at the field's width, never the page's (AC-16). The inner input group's own frame is cleared by the block's CSS (`.app-shell [data-one-composer]`). */
 export function OneBox({ children }: { readonly children: ReactNode }) {
   // Docked (AC-17) the field and the thread are in the right column: the box stays mounted, empty and out of sight, so nothing stays at the bottom.
   const { dockOpen, anchored, folded, trayOpen } = useInternal();
   const overlay = trayOpen && !anchored;
   return <div className={cn('shrink-0 bg-card px-6 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]', dockOpen && 'hidden')}>
-    <div data-one-composer="" data-folded={folded || undefined} data-testid="agent-composer-box" style={anchored ? undefined : { marginInlineStart: 'clamp(0px, calc((100cqw - var(--app-shell-composer-max)) / 2 - var(--spacing) * 6), max(0px, calc(100% - var(--container-xs, 20rem))))', marginInlineEnd: 0, width: 'auto' }} className={cn('group/one-box mx-auto flex w-full max-w-[720px] min-w-0 flex-col rounded-(--radius-3xl) bg-card text-card-foreground', !anchored && 'relative', 'overflow-visible', !overlay && 'ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring')}>
+    <div data-one-composer="" data-folded={folded || undefined} data-testid="agent-composer-box" style={anchored ? undefined : { marginInlineStart: 'clamp(0px, calc((100cqw - var(--app-shell-composer-max)) / 2 - var(--spacing) * 6), max(0px, calc(100% - var(--container-xs, 20rem))))', marginInlineEnd: 0, width: 'auto' }} className={cn('group/one-box mx-auto flex w-full max-w-[720px] min-w-0 flex-col rounded-(--radius-3xl) bg-card text-card-foreground', !anchored && 'relative', 'overflow-visible', !overlay && 'ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring', NEEDS_YOU)}>
       <div className={cn('flex min-w-0 flex-col rounded-(--radius-3xl)', !overlay && 'overflow-hidden')}>{children}</div>
       {overlay && <>
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-1/2 z-20 overflow-hidden" style={{ top: 'calc(0px - var(--app-shell-bar-tray-expanded))' }}>

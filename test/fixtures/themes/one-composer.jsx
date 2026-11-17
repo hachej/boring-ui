@@ -1,4 +1,4 @@
-import { useLayoutEffect } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -80,12 +80,15 @@ const runs = {
   approval: () => ({ entries: [...history, ask, read, readDone, gated], docs: live([{ callId: 'a1', taskId: 8, details: { 'boring.approval': { summary: APPROVAL } } }]) }),
   form: () => ({ entries: [...history, ask, read, readDone, form], docs: live() }),
   reply: () => ({ entries: [...history, ask, read, readDone, entry(14, assistant([{ type: 'text', text: REPLY }]))], docs: {} }),
+  // A second turn that ends with its own reply (`think`, then this): two replies came while folded.
+  reply2: () => ({ entries: [...history, ask, read, readDone, entry(14, assistant([{ type: 'text', text: REPLY }])), say(17, T('Et pour février ?', 'And for February?')), entry(18, assistant([{ type: 'text', text: T('Février compte 12 lignes, toutes rapprochées.', 'February has 12 lines, all reconciled.') }]))], docs: {} }),
   // The turn ends in an error: an assistant message with stopReason `error` and no text.
   failed: () => ({ entries: [...history, ask, read, readDone, entry(15, assistant([], 'error'))], docs: {} }),
 };
 window.__ux = { failNext: () => { window.__failNext = true; }, setText: text => controller.setText(text) };
 window.__run = kind => change({ view: runs[kind]() });
 window.__setText = text => controller.setText(text);
+window.__draft = () => snapshot.draft.text;
 const actions = {
   answer: async (questionId, text) => {
     // The pane's acknowledgement of a `present` (opened, or refused on a phone): the scripted agent's call ends with it, as the server's does.
@@ -161,7 +164,8 @@ const agent = { controller, icon: DEMO ? SparklesIcon : Icon, label: 'Assistant'
   chatProps: { ...(params.get('enter') === 'always' ? { enterSends: 'always' } : {}), ...(params.get('fork') === '1' ? { conversations: { items: [{ id: 'one-composer', title: 'Dossier Cèdre' }], activeId: 'one-composer', onSelect() {},
     onNew() { window.__new = (window.__new ?? 0) + 1; }, fork: async at => { (window.__forked ??= []).push(String(at)); } } } : {}), title: 'Assistant', locale: LOCALE, mentions: { kinds: { ecriture: { label: id => T(`Écriture ${id}`, `Entry ${id}`), icon: <Icon className="size-4" /> }, task: { label: id => id, icon: <Icon className="size-4" /> } } }, ...(params.get('replyError') === '1' ? { replyError: () => T('Le relevé n’a pas pu être lu (fictif).', 'The statement could not be read (fictional).') } : {}), labels: { ...(params.get('tu') === '1' ? {} : { placeholder: T('Demandez, ou « / » pour une action', 'Ask, or type /') }) }, actions, attachments, slash, ...(KIT ? {} : { onOpenFile }) } };
 const showEntries = entries => change({ view: { entries, docs: {} }, draft: { text: '', attachments: [], version: snapshot.draft.version + 1 } });
-const App = () => { const conv = useDemoConversations(showEntries, history); const shellAgent = { ...agent, chatProps: { ...agent.chatProps, ...conv } };
-  return <AppShell layout="screen" locale={LOCALE} title={DEMO ? 'Books · Harbor Studio' : T('Compta fictive', 'Demo books')} nav={nav} route={{ id: 'dossier', onChange(id) { window.__route = id; } }} composer={params.get('composer') ?? 'bar'} rail="icon" agent={shellAgent}
+// `window.__notices(list)`: the shell's `notices` (the notifications tests push their own, with their handlers).
+const App = () => { const conv = useDemoConversations(showEntries, history); const [notices, setNotices] = useState([]); window.__notices = setNotices; const shellAgent = { ...agent, chatProps: { ...agent.chatProps, ...conv } };
+  return <AppShell layout="screen" locale={LOCALE} title={DEMO ? 'Books · Harbor Studio' : T('Compta fictive', 'Demo books')} nav={nav} route={{ id: 'dossier', onChange(id) { window.__route = id; } }} composer={params.get('composer') ?? 'bar'} rail="icon" agent={shellAgent} notices={notices}
   {...(params.get('single') === '1' ? { sidebar: false, account: { name: DEMO ? 'Maya Collins' : 'Julie (fictive)', email: DEMO ? 'maya.collins@example.test' : 'julie.marchand@example.test', signOut() {}, menu: [] } } : {})} />; };
 createRoot(document.getElementById('root')).render(<App />);

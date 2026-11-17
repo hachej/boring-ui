@@ -13,7 +13,7 @@ import { useBackLayer } from '../utils/back';
 import { useVisualViewport } from './use-visual-viewport';
 import { FOLDED_FIELD, FULL, HALF, HOLD_MS, PEEK_BAR_REM, PEEK_REM, Z, useInternal } from './layer-context';
 import type { Snap } from './layer-context';
-import { VoiceProblem } from './agent-bar-parts';
+import { NEEDS_YOU, VoiceProblem } from './agent-bar-parts';
 import { ChatSlot, Header, useTitle } from './agent-chats';
 
 /**
@@ -282,6 +282,8 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
         layer.bar && 'data-[state=full]:data-[swipe-axis=y]:[--drawer-content-max-height:var(--app-shell-vv-height,100dvh)] data-[state=full]:[padding-top:env(safe-area-inset-top)]',
         // The field counter-translates the snap offset; tap changes need no layout animation.
         layer.bar && 'transition-opacity duration-(--duration-fast) motion-reduce:transition-none',
+        // A decision waits on the folded card: the sheet takes the bar's warning ring.
+        layer.bar && NEEDS_YOU,
         // A nested History drawer must not scale or resize the sheet that anchors the one field.
         layer.bar && '[--stack-step:0] [--peek:0px] [--stack-height:var(--drawer-content-height)]',
         // The peek is the top PEEK_REM of the popup; the part that overlaps the tab bar is clipped away, so the tabs stay visible and tappable.

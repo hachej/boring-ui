@@ -239,6 +239,120 @@ test('1280, folded: the card on the field says what the tool does, asks both que
   await oneField('reply read');
 });
 
+// AC-1 (notifications): a reply that ends while the conversation is folded puts a dot on the notch (the grabber's pill on a phone), a count pill beside the chevron from the second, and opening clears it.
+test('folded, 1280 and 390: one reply is a dot, two are a count pill beside the chevron (which does not move), and opening the conversation clears it (AC-1)', { skip, timeout: 120000 }, async () => {
+  for (const [width, query] of [[1280, ''], [390, 'tabs=1']]) {
+    await open(width, query);
+    const before = await rect('[data-testid=agent-bar-conversation]');
+    await browser.evaluate(`window.__run('tool')`);
+    await browser.evaluate(`window.__run('reply')`);
+    await browser.until('a dot', `!!document.querySelector('[data-testid=agent-bar-unread]')`);
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-unread]').dataset.count`), '1', `one reply is a dot at ${width}`);
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-unread]').textContent`), '', 'no number on a dot');
+    await browser.evaluate(`window.__run('think')`);
+    await browser.evaluate(`window.__run('reply2')`);
+    await browser.until('a count', `document.querySelector('[data-testid=agent-bar-unread]')?.dataset.count === '2'`);
+    assert.equal(await text('[data-testid=agent-bar-unread]'), '2', `two replies are a count at ${width}`);
+    assert.equal(await count('[data-testid=agent-bar-unread]'), 1, 'one mark, not a dot and a count');
+    if (width > 768) {
+      const pill = await rect('[data-testid=agent-bar-unread]');
+      assert.equal(Math.round(pill.w) + 'x' + Math.round(pill.h), '32x16', 'the pill is the chevron\'s size');
+      const chevron = await rect('[data-testid=agent-bar-conversation]');
+      assert.deepEqual([chevron.x, chevron.w, chevron.h], [before.x, before.w, before.h], 'the chevron did not move or change size');
+    }
+    assert.ok(['closed', 'peek'].includes(await dockState()), 'nothing opened by itself');
+    await browser.screenshot(`notifications-count-${width}-light.png`);
+    await click('[data-testid=agent-bar-conversation]');
+    await browser.until('cleared', `!document.querySelector('[data-testid=agent-bar-unread]')`);
+  }
+});
+
+// Notices at the composer (AC-5, AC-7): in the real shell a notice appears above the bar without opening the conversation or moving focus, and on a phone its buttons are 44 px.
+const NOTICES = `[{ id: 'e1', kind: 'error', text: 'Fictional: the export failed.', action: { label: 'Retry', onSelect() { window.__retried = true; } }, reference: '@task:t1' },
+  { id: 'w1', kind: 'warning', text: 'Fictional: the daily limit is near.' }, { id: 's1', kind: 'success', text: 'Fictional: statement saved.' }, { id: 'i1', kind: 'info', text: 'Fictional: a new version.' }]`;
+test('1440, 390 and 360: a notice appears above the bar, one at a time, without opening the conversation or moving focus; its actions are 44 px on a phone (AC-5, AC-7)', { skip, timeout: 120000 }, async () => {
+  for (const width of [1440, 390, 360]) {
+    await open(width);
+    await browser.evaluate(`document.querySelector('[data-testid=composer-input]')?.blur(); document.body.focus()`);
+    const active = await browser.evaluate(`document.activeElement?.tagName`);
+    const expanded = await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]')?.getAttribute('aria-expanded')`);
+    await browser.evaluate(`window.__notices(${NOTICES})`);
+    await browser.until('a notice', `!!document.querySelector('[data-testid=notice]')`);
+    assert.equal(await count('[data-notice-kind]'), 1, `one notice at ${width}`);
+    assert.equal(await text('[data-testid=notice-more]'), '3 en attente');
+    assert.equal(await browser.evaluate(`document.activeElement?.tagName`), active, 'focus did not move');
+    assert.equal(await browser.evaluate(`document.querySelector('[data-testid=agent-bar-conversation]')?.getAttribute('aria-expanded')`), expanded, 'the conversation did not open');
+    assert.ok(['closed', 'peek'].includes(await dockState()), 'no tray');
+    assert.equal(await count('[data-testid=agent-tray]'), 0);
+    const notice = await rect('[data-testid=notice]'), bar = await rect('[data-testid=composer]');
+    assert.ok(notice.bottom <= bar.y + 1 || width < 768, `above the bar at ${width} (${notice.bottom} vs ${bar.y})`);
+    assert.ok(notice.bottom <= (await browser.evaluate('innerHeight')), 'on screen');
+    if (width < 768) {
+      const tabs = await rect('[data-testid=tabbar]');
+      if (tabs) assert.ok(notice.bottom <= tabs.y + 1, 'not under the tab bar');
+      for (const id of ['notice-action', 'notice-dismiss', 'notice-reference']) assert.ok((await rect(`[data-testid=${id}]`)).h >= 44, `${id} is at least 44 px high at ${width}`);
+      assert.ok((await rect('[data-testid=notice-dismiss]')).w >= 44, 'the dismiss is 44 px wide');
+    }
+    await browser.screenshot(`notifications-notice-error-${width}-light.png`);
+    await click('[data-testid=notice-action]');
+    assert.equal(await browser.evaluate('window.__retried'), true, 'the action ran in place');
+  }
+});
+
+test('folded, 1280: a warning notice holds a chip in the field when its @ is used, and a dismiss shows the next notice', { skip, timeout: 120000 }, async () => {
+  await open(1280);
+  await browser.evaluate(`window.__notices(${NOTICES})`);
+  await browser.until('a notice', `!!document.querySelector('[data-testid=notice-reference]')`);
+  await click('[data-testid=notice-reference]');
+  await browser.until('the mention is in the draft', `window.__draft().includes('@task:t1')`);
+  await click('[data-testid=notice-dismiss]');
+  assert.equal(await text('[data-testid=notice-text]'), 'Fictional: the daily limit is near.');
+});
+
+// AC-6 (notifications): the bar itself says the agent waits: a warning border and a soft ring around the whole bar while a decision (an approval or a question) is on the folded card; no tray opens.
+test('folded, 1280 and 390: a decision on the card gives the bar a warning border and soft ring, and the ring goes with the decision (AC-6)', { skip, timeout: 120000 }, async () => {
+  for (const [width, query, bar] of [[1280, '', '[data-testid=agent-composer-box]'], [390, 'tabs=1', '[data-testid=agent-layer]']]) {
+    await open(width, query);
+    const shadow = () => browser.evaluate(`(s => s.boxShadow + ' ' + s.outlineWidth + ' ' + s.outlineColor)(getComputedStyle(document.querySelector(${js(bar)})))`);
+    await browser.evaluate(`window.__run('tool')`);
+    await browser.evaluate(`window.__run('reply')`);
+    await browser.until('reply card', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply'`);
+    const calm = await shadow();
+    for (const [kind, selector] of [['approval', '[data-testid=agent-approval]'], ['form', '[data-testid=agent-question]']]) {
+      await browser.evaluate(`window.__run('${kind}')`);
+      await browser.until(`${kind} card`, `!!document.querySelector('[data-testid=agent-card] ${selector}')`);
+      const ringed = await shadow();
+      assert.ok(ringed.includes(' 3px ') && ringed !== calm, `the ${kind} ring at ${width} (${ringed})`);
+      assert.equal(await browser.evaluate(`!!document.querySelector('[data-testid=agent-card][data-needs-you]')`), true);
+      assert.equal(await count('[data-testid=agent-tray]'), 0, 'no tray');
+      assert.ok(['closed', 'peek'].includes(await dockState()), 'the conversation stays folded');
+      await browser.screenshot(`notifications-needs-you-${kind}-${width}-light.png`);
+    }
+    await browser.evaluate(`window.__run('think')`);
+    await browser.evaluate(`window.__run('reply')`);
+    await browser.until('calm again', `document.querySelector('[data-testid=agent-card]')?.dataset.state === 'reply'`);
+    assert.equal(await shadow(), calm, 'the ring goes with the decision');
+  }
+});
+
+// Pattern 3 (notifications): a short status in the field in place of the placeholder; it goes after 3 s or when the person types.
+test('1280 and 390: a status replaces the placeholder in the field, and goes when the person types, or after 3 s', { skip, timeout: 120000 }, async () => {
+  for (const [width, query] of [[1280, ''], [390, 'tabs=1']]) {
+    await open(width, query);
+    const placeholder = () => browser.evaluate(`document.querySelector('[data-testid=composer-input]').placeholder`);
+    const normal = await placeholder();
+    await browser.evaluate(`window.__layer.status('Brouillon enregistré')`);
+    await browser.until('status', `document.querySelector('[data-testid=composer-input]').placeholder === 'Brouillon enregistré'`);
+    assert.equal(await placeholder(), 'Brouillon enregistré', `the status is the placeholder at ${width}`);
+    await browser.screenshot(`notifications-field-status-${width}-light.png`);
+    await type('a');
+    await browser.until('typing replaced it', `document.querySelector('[data-testid=composer-input]').placeholder !== 'Brouillon enregistré'`);
+    await browser.evaluate(`window.__setText('')`);
+    await browser.evaluate(`window.__layer.status('Copié')`);
+    await browser.until('it expires', `document.querySelector('[data-testid=composer-input]').placeholder === ${js(normal)}`);
+  }
+});
+
 test('folded, 1280 and 390: a failed turn is one sentence on the card, in the app\'s words when it gives replyError, and the next turn clears it', { skip, timeout: 120000 }, async () => {
   for (const [width, query] of [[1280, ''], [390, 'tabs=1'], [1280, 'replyError=1']]) {
     await open(width, query);

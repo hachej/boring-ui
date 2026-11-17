@@ -35,8 +35,8 @@ function tries(scenario) {
   for (const item of items) {
     const flow = scenario.flows.find(f => f.id === item.flow), steps = item.steps ?? flow?.steps ?? [];
     const byViewport = Object.fromEntries(scenario.viewports.map(vp => [vp.name, compile(scenario, steps, vp.name)]).filter(([, s]) => s));
-    if (Object.keys(byViewport).length) out.push({ label: item.label, query: item.query ?? flow?.query ?? '', steps: byViewport });
-    if (out.length === 12) break;
+    if (Object.keys(byViewport).length) out.push({ label: item.label, group: item.group, query: item.query ?? flow?.query ?? '', steps: byViewport });
+    if (out.length === 20) break;
   }
   return out;
 }
@@ -104,10 +104,16 @@ export function targetBody({ meta, scenario, result, home, demoBase = '', lead }
   return `${home ? '' : `<span class="badge">${meta.level === 'layout' ? 'Layout' : 'Component'}</span>`}<h1>${esc(home ?? meta.title)}</h1><p class="lead">${esc(lead ?? scenario?.summary ?? firstSentence(meta.purpose))}</p>
 ${scenario ? demoBlock(scenario, demoBase) : ''}${home ? '' : `${usage(fixture)}${status(scenario, result)}${flows(result, scenario)}`}`;
 }
+/** The Play menu's options: the ungrouped items, then one `<optgroup>` per `group`. The value is the item's index in the list. */
+const playOptions = list => {
+  const option = (t, i) => `<option value="${i}">${esc(t.label)}</option>`;
+  const groups = [...new Set(list.flatMap(t => t.group ? [t.group] : []))];
+  return list.map((t, i) => t.group ? '' : option(t, i)).join('') + groups.map(g => `<optgroup label="${esc(g)}">${list.map((t, i) => t.group === g ? option(t, i) : '').join('')}</optgroup>`).join('');
+};
 // A `fullscreen` scenario: the demo fills the page under the site's top bar, which carries the one Phone and Desktop switch. No headings, no usage, no status.
 export function frameBody(scenario, base) {
   const { views, list, data } = demoData(scenario, base);
-  const play = list.length ? `<select class="icon-btn" id="play" aria-label="Play"><option value="">Play…</option>${list.map((t, i) => `<option value="${i}">${esc(t.label)}</option>`).join('')}<option value="reset">Reset the conversation</option></select>` : '';
+  const play = list.length ? `<select class="icon-btn" id="play" aria-label="Play"><option value="">Play…</option>${playOptions(list)}<option value="reset">Reset the conversation</option></select>` : '';
   return { play, switcher: `<div class="seg" role="group" aria-label="Screen">${views.map((v, i) => `<button type="button" data-vp="${i}" aria-pressed="false">${v.label}</button>`).join('')}</div>`,
     stage: `<div class="stage" id="stage" data-full><iframe id="demo" title="Live demo"></iframe></div><script type="application/json" id="page-data">${data}</script>` };
 }
