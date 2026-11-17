@@ -13,7 +13,12 @@
   { "label": "Table: reference a row", "flow": "F01" },
   { "label": "Approval card", "steps": [{ "do": "type", "target": "composer-input", "text": "approval" }, { "do": "tap", "target": "composer-submit", "until": "visible:agent-card", "timeout": 14000 }, { "do": "tap", "target": "agent-bar-conversation", "until": "visible:approval-card", "timeout": 8000 }] },
   { "label": "Reply card with an action", "steps": [{ "do": "type", "target": "composer-input", "text": "answer" }, { "do": "tap", "target": "composer-submit", "until": "visible:agent-card-action", "timeout": 14000 }] },
-  { "label": "Typing", "steps": [{ "do": "type", "target": "composer-input", "text": "typing" }, { "do": "tap", "target": "composer-submit", "until": "text:conversation-content~That took a moment", "timeout": 14000 }] }],
+  { "label": "Typing", "steps": [{ "do": "type", "target": "composer-input", "text": "typing" }, { "do": "tap", "target": "composer-submit", "until": "text:conversation-content~That took a moment", "timeout": 14000 }] },
+  { "label": "Notification: info", "group": "Notifications", "steps": [{ "do": "fixture", "name": "notify", "arg": "info", "until": "visible:notice" }] },
+  { "label": "Notification: success", "group": "Notifications", "steps": [{ "do": "fixture", "name": "notify", "arg": "success", "until": "visible:notice" }] },
+  { "label": "Notification: warning", "group": "Notifications", "steps": [{ "do": "fixture", "name": "notify", "arg": "warning", "until": "visible:notice" }] },
+  { "label": "Notification: error", "group": "Notifications", "steps": [{ "do": "fixture", "name": "notify", "arg": "error", "until": "visible:notice" }] },
+  { "label": "Notification: needs you", "group": "Notifications", "steps": [{ "do": "type", "target": "composer-input", "text": "approval" }, { "do": "tap", "target": "composer-submit", "until": "visible:agent-card", "timeout": 14000 }] }],
  "purpose": "Every default kit part and token in one page, with no app styling, as the app view of the default AppShell layout, full screen. Built from kit parts and theme tokens only.",
  "fixture": {
   "entry": "ux/fixtures/design-system.jsx",
