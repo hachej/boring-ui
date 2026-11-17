@@ -493,6 +493,30 @@ test('1440 and 390: the controller is one small notch: one box, cells at most 34
   }
 });
 
+// Julien: "still a problem on mobile". A phone has no strip: the sheet's grabber is the size control (tap: next snap), the header is title, History, Library and one X, and the bar's buttons are circles.
+for (const width of [390, 360]) test(`${width}: no strip on a phone, the grabber taps through peek, half and full, round buttons on the bar's midline, the header has History, Library and an X`, { skip, timeout: 180000 }, async () => {
+  await open(width, 'tabs=1');
+  await browser.until('the bar', `!!document.querySelector('[data-testid=composer-input]')`);
+  assert.equal(await count('[data-testid=composer-controller]'), 0, 'no strip on a phone');
+  const state = () => browser.evaluate(`document.querySelector('[data-testid=agent-layer]')?.dataset.state`);
+  const look = () => browser.evaluate(`(() => { const g = document.querySelector('[data-testid=composer] [data-slot=input-group]').getBoundingClientRect(), mid = g.top + g.height / 2;
+    return [...document.querySelectorAll('[data-testid=composer-bar-attach], [data-testid=agent-talk], [data-testid=composer-submit]')].filter(e => e.getClientRects().length).map(e => { const r = e.getBoundingClientRect(), rad = parseFloat(getComputedStyle(e).borderTopLeftRadius); return { id: e.dataset.testid, circle: rad >= Math.min(r.width, r.height) / 2 - 1, w: Math.round(r.width), h: Math.round(r.height), off: Math.abs(r.top + r.height / 2 - mid) }; }); })()`);
+  for (const b of await look()) assert.ok(b.circle && b.w >= 40 && b.h >= 40 && b.off <= 1, `${b.id} is a circle of at least 40 px on the bar's midline (${JSON.stringify(b)})`);
+  assert.equal(await state(), 'peek');
+  const hit = await rect('[data-testid=agent-bar-conversation]');
+  assert.ok(hit.w >= 44 && hit.h >= 44, `the keyboard twin of the grabber is a 44 px box (${hit.w}x${hit.h})`);
+  const tap = async () => { const [x, y] = await center('[data-slot=drawer-swipe-handle]'); await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y); await wait(900); };
+  await tap(); assert.equal(await state(), 'half', 'a tap on the grabber goes from peek to half');
+  assert.equal(await count('[data-testid=composer-controller]'), 0, 'still no strip at half');
+  const header = await browser.evaluate(`[...document.querySelectorAll('[data-testid=agent-layer-header] button')].filter(e => e.getClientRects().length).map(e => [e.dataset.testid, Math.round(e.getBoundingClientRect().width), Math.round(e.getBoundingClientRect().height)])`);
+  assert.deepEqual(header.map(h => h[0]).filter(id => id !== 'history-open'), ['agent-layer-library', 'agent-layer-close'], `the header has (History when the app has conversations,) Library and one X, no size icon (${JSON.stringify(header)})`);
+  assert.ok(header.every(([, w, h]) => w >= 44 && h >= 44), 'each header control is a 44 px box');
+  await tap(); assert.equal(await state(), 'full', 'a tap goes from half to full');
+  await tap(); assert.equal(await state(), 'peek', 'a tap goes from full back to peek');
+  await tap(); await click('[data-testid=agent-layer-close]'); await wait(800);
+  assert.equal(await state(), 'peek', 'the X collapses to peek');
+});
+
 test('1280: typing grows the field;  a file is a name-only chip; « / » is filtered by the field; a question asks in the box (AC-4, AC-5, AC-6, AC-8)', { skip, timeout: 120000 }, async () => {
   await open(1280);
   await type('Prépare la relance du dossier Cèdre :');

@@ -181,6 +181,9 @@ export function ConversationChevron({ unread }: { readonly unread: { readonly la
   const overlay = layer.trayOpen && !layer.anchored;
   const [first, ...rest] = actions;
   if (!first) return null;
+  // A phone has no strip: the size is the sheet's grabber (tap for the next snap, drag for any). This control is the grabber's keyboard and screen reader twin: invisible and out of the pointer's way until focused.
+  if (!layer.expanded) return <button type="button" data-testid={first.testId} data-action="chevron" aria-label={first.label} aria-expanded={first.expanded} onClick={first.onSelect}
+    className="pointer-events-none absolute top-0 left-1/2 z-30 size-11 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 outline-ring focus-visible:opacity-100 focus-visible:outline-2" />;
   // One small notch (mockup 6): cells of 32 and 28 by 16 px with 11 px icons, no chip or circle behind an icon (a hover fill only), 1 px hairlines between cells. The 44 px
   // hit area is the ::before of each cell, never visible. The chevron is the anchor (the strip's left edge is half a cell from the middle): the other cells open to its right,
   // inside the same container, which widens (hover or focus within; always on a touch screen).
