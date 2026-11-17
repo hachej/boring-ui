@@ -3705,7 +3705,15 @@
           "path": "registry/_shared/attachment-chips.tsx",
           "type": "registry:component",
           "target": "components/_shared/attachment-chips.tsx"
+        },
+        {
+          "path": "registry/_shared/controller-strip.tsx",
+          "type": "registry:component",
+          "target": "components/_shared/controller-strip.tsx"
         }
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.2/r/utils.json"
       ]
     },
     {
