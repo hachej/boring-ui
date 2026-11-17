@@ -398,7 +398,7 @@ export function Composer(props: ComposerProps) {
     : <BarAttach disabled={disabled || recording} onAttach={() => fileInput.current?.click()} quiet={props.barActions === 'attach'} />;
   const plus = barActions && canAttach ? <>{attachButton}{plusButton}</> : plusButton;
   // One child slot either way, so a composer without `start` keeps its exact markup (React ids included).
-  const startAndPlus = props.start && (!recording || props.barActions === 'attach') ? <><div data-testid="composer-start" className="flex shrink-0 items-center gap-1">{props.start}</div>{plus}</> : plus;
+  const startAndPlus = props.start && (!recording || props.barActions === 'attach') ? <><div data-testid="composer-start" className={props.barActions === 'attach' ? 'contents' : 'flex shrink-0 items-center gap-1'}>{props.start}</div>{plus}</> : plus;
   const fileEl = canAttach && <Input ref={fileInput} type="file" multiple accept={props.fileAccept} disabled={disabled} tabIndex={-1} aria-hidden="true" className="sr-only" data-testid="composer-file" data-attach="true"
     onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; props.onPickFiles(files); }} />;
   const send = working
@@ -430,7 +430,7 @@ export function Composer(props: ComposerProps) {
     {fileEl}
     {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} {...(props.barActions === 'attach' ? { bare: true } : {})} />}
     {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} header={typeof mentions.pickerHeader === 'function' ? mentions.pickerHeader(trigger!.query) : mentions.pickerHeader} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
-    {pill && !props.recording && chipList && <div className="flex flex-wrap gap-2">{chipList}</div>}
+    {pill && !props.recording && chipList && <div className="flex flex-wrap gap-2 empty:hidden">{chipList}</div>}
     {slots ? pill ? <InputGroup className="h-auto">
       <InputGroupAddon>{startAndPlus}</InputGroupAddon>
       <div data-slot="composer-recording" data-testid="composer-recording" className="flex min-w-0 flex-1 items-center gap-2 self-stretch">{props.recordingStatus}

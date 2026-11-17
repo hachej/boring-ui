@@ -27,7 +27,7 @@ export async function buildPage(entry, outFile, { css: extraCss = [], title = 'b
     });
     b.onResolve({ filter: /^@hachej\/boring-feedback\/ui$/ }, () => ({ path: join(root, 'packages/feedback/src/ui/index.ts') }));
   } };
-  const bundle = await build({ entryPoints: [join(root, entry)], bundle: true, write: false, metafile: true, format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty' }, plugins: [kit], logLevel: 'silent', absWorkingDir: root, nodePaths: [join(root, 'node_modules')] });
+  const bundle = await build({ entryPoints: [join(root, entry)], bundle: true, write: false, metafile: true, format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty', '.excalidraw': 'text', '.drawio': 'text', '.html': 'text' }, plugins: [kit], logLevel: 'silent', absWorkingDir: root, nodePaths: [join(root, 'node_modules')] });
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(p => /\.(tsx?|jsx)$/.test(p) && !p.includes('node_modules')).map(p => readFileSync(join(root, p), 'utf8'));
   const vars = item('theme').cssVars;

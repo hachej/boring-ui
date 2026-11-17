@@ -1,0 +1,17 @@
+{
+ "fallback": "This is the design system's scripted assistant. Use the Play menu in the top bar to see each kind of response.",
+ "turns": [
+  { "match": "^answer$", "steps": [{ "text": "A plain answer in one sentence.", "stream": true }] },
+  { "match": "^markdown$", "steps": [{ "think": true, "ms": 500 }, { "text": "## A Markdown answer\n\nText with **bold**, *italic* and `inline code`.\n\n1. A numbered step\n2. Another step\n\n- A bullet\n- Another bullet\n\n> A short quote.\n\n```\nconst total = 3 + 4;\n```", "stream": true }] },
+  { "match": "^question$", "steps": [{ "ask": { "question": "Two details", "questions": [{ "question": "Which size?", "options": ["Small", "Large"] }, { "question": "Which colour?", "options": ["Blue", "Green", "Red"] }] }, "then": [{ "text": "Noted: your two answers are in.", "stream": true }] }] },
+  { "match": "^free text$", "steps": [{ "ask": { "question": "One detail", "questions": [{ "question": "What should the file be called?" }] }, "then": [{ "text": "Noted: I will use that name.", "stream": true }] }] },
+  { "match": "^tools$", "steps": [{ "tool": "read", "path": "samples/reconcile.ts", "progress": "12 of 40 lines", "ms": 1200 }, { "tool": "read", "path": "samples/entries.records.json", "progress": "2 of 2 rows", "ms": 900 }, { "text": "Both files were read.", "stream": true }] },
+  { "match": "^failed tool$", "steps": [{ "tool": "read", "path": "samples/missing-file.csv", "error": "File not found (fictional)", "ms": 900 }, { "text": "That file does not exist, so I stopped.", "stream": true }] },
+  { "match": "^error$", "steps": [{ "tool": "read", "path": "samples/reconcile.py", "progress": "3 of 8 lines", "ms": 700 }, { "fail": "Provider unavailable (fictional)" }] },
+  { "match": "^files$", "steps": [{ "think": true, "ms": 500 }, { "present": "samples/booking.diagram.json", "ms": 1500 }, { "text": "Opened on the right: @samples/booking.diagram.json.\nAlso see @samples/oakfield-garden.excalidraw.json, @samples/bakery-morning.drawio.xml and @samples/entries.records.json.", "stream": true }] },
+  { "match": "^approval$", "steps": [{ "approve": { "tool": "delete_file", "arguments": { "path": "samples/old-draft.md" }, "summary": "Delete the old draft?" }, "then": [{ "text": "Decision received.", "stream": true }] }] },
+  { "match": "open-gaps\\.csv#3 ", "steps": [{ "think": true, "ms": 500 }, { "text": "Row 3 of @samples/open-gaps.csv: Card Harbor Garage, Jan 09, $12.00, status Needs a receipt. I will ask for the receipt and add the line once it arrives.", "stream": true }] },
+  { "match": "open-gaps\\.csv#\\d+ ", "steps": [{ "text": "I have the row you referenced and its cells.", "stream": true }] },
+  { "match": "^typing$", "steps": [{ "think": true, "ms": 4000 }, { "text": "That took a moment.", "stream": true }] }
+ ]
+}

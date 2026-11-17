@@ -49,19 +49,26 @@
     });
     $$('[data-vp]').forEach(b => b.addEventListener('click', () => { vp = +b.dataset.vp; try { localStorage.setItem('ux-view', D.views[vp].phone ? 'phone' : 'desktop'); } catch { /* private mode */ } void load(); }));
     $$('[data-variant]').forEach(b => b.addEventListener('click', () => { const q = D.variants[+b.dataset.variant].query; extra = extra === q ? '' : q; void load(); }));
-    $$('[data-try]').forEach(b => b.addEventListener('click', async () => {
-      const item = D.tries[+b.dataset.try];
+    // The top bar's Play menu (and the page's own buttons): the scenario's "things to try", each reloads the demo and plays its steps in it.
+    const playTry = async index => {
+      const item = D.tries[index];
       $$('[data-try]').forEach(x => { x.disabled = true; });
-      status.textContent = 'Loading the demo…';
+      status && (status.textContent = 'Loading the demo…');
       extra = item.query || '';
       await load(); const mine = run; await ready(D.ready); await sleep(400);
       const steps = item.steps[D.views[vp].name];
-      if (!steps) { $$('[data-try]').forEach(x => { x.disabled = false; }); status.textContent = ''; return; }
-      status.textContent = 'Playing: ' + item.label;
+      if (!steps) { $$('[data-try]').forEach(x => { x.disabled = false; }); status && (status.textContent = ''); return; }
+      status && (status.textContent = 'Playing: ' + item.label);
       const ok = await play(steps, () => mine === run);
       $$('[data-try]').forEach(x => { x.disabled = false; });
-      status.textContent = mine !== run ? '' : ok ? 'Done. Keep going in the demo.' : 'Stopped: this step did not complete.';
-    }));
+      status && (status.textContent = mine !== run ? '' : ok ? 'Done. Keep going in the demo.' : 'Stopped: this step did not complete.');
+    };
+    $$('[data-try]').forEach(b => b.addEventListener('click', () => { void playTry(+b.dataset.try); }));
+    $('#play')?.addEventListener('change', event => {
+      const value = event.target.value; event.target.value = '';
+      if (value === 'reset') { void load(); return; }
+      if (value !== '') void playTry(+value);
+    });
     addEventListener('resize', size);
     void load();
   }

@@ -101,7 +101,11 @@ for (const [name, start, trigger] of [
         assert.ok(geometry.left >= 16 && geometry.right >= 16, `inset search: ${JSON.stringify(geometry)}`);
         assert.ok(geometry.rows.every(height => height >= 44 && height <= 48), JSON.stringify(geometry));
         assert.ok(geometry.indent >= 12 && geometry.indent <= 32, `nested files (the stock shadcn sidebar nesting) indent to the right of their folder: ${JSON.stringify(geometry)}`);
-        assert.equal(geometry.folderButton.children[0].w, 16, 'the consumer shadcn Button sizes its icon through its quoted nested selector');
+        // The button's children are the chevron slot, the kind icon, then the name: the kit's CSS sizes the chevron 14px and the kind icon 16px (a consumer Button's own svg size no longer decides).
+        assert.equal(geometry.folderButton.children[0].w, 14, 'the folder chevron is 14px');
+        assert.equal(geometry.folderButton.children[1].w, 16, 'the folder kind icon is 16px');
+        assert.equal(geometry.fileButton.children[0].w, geometry.folderButton.children[0].w, 'a file reserves the chevron slot');
+        assert.equal(geometry.fileButton.children[1].w, 16, 'the file kind icon is 16px');
         assert.equal(geometry.allMeta, true);
         assert.ok(['start', 'left'].includes(geometry.copyAlign), 'file names align to the start of their row');
         assert.ok(['rgba(0, 0, 0, 0)', 'transparent'].includes(geometry.ghostBackground), 'native shadcn ghost buttons use the host preflight, not browser default button chrome');

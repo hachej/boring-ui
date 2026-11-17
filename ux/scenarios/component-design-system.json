@@ -2,6 +2,18 @@
  "target": "component:design-system",
  "title": "Design system",
  "summary": "The kit's defaults, light and dark: colours, type, radius and shadow, buttons, form controls, status, the update notice, rows, tables, cards, tabs, a dialog, the empty state, and the default layout.",
+ "try": [{ "label": "Plain answer", "steps": [{ "do": "type", "target": "composer-input", "text": "answer" }, { "do": "tap", "target": "composer-submit", "until": "text:conversation-content~A plain answer", "timeout": 14000 }] },
+  { "label": "Markdown answer", "steps": [{ "do": "type", "target": "composer-input", "text": "markdown" }, { "do": "tap", "target": "composer-submit", "until": "text:conversation-content~A Markdown answer", "timeout": 14000 }] },
+  { "label": "Question card: choices", "steps": [{ "do": "type", "target": "composer-input", "text": "question" }, { "do": "tap", "target": "composer-submit", "until": "visible:question-card", "timeout": 14000 }] },
+  { "label": "Question card: free text", "steps": [{ "do": "type", "target": "composer-input", "text": "free text" }, { "do": "tap", "target": "composer-submit", "until": "visible:question-card", "timeout": 14000 }] },
+  { "label": "Tool steps: running then done", "steps": [{ "do": "type", "target": "composer-input", "text": "tools" }, { "do": "tap", "target": "composer-submit", "until": "text:conversation-content~Both files were read", "timeout": 14000 }] },
+  { "label": "Tool steps: failed", "steps": [{ "do": "type", "target": "composer-input", "text": "failed tool" }, { "do": "tap", "target": "composer-submit", "until": "text:conversation-content~does not exist", "timeout": 14000 }] },
+  { "label": "Error", "steps": [{ "do": "type", "target": "composer-input", "text": "error" }, { "do": "tap", "target": "composer-submit", "until": "visible:agent-card-failed|text:conversation-content~Provider unavailable", "timeout": 14000 }] },
+  { "label": "Files: chips and open", "steps": [{ "do": "type", "target": "composer-input", "text": "files" }, { "do": "tap", "target": "composer-submit", "until": "text:conversation-content~Opened on the right", "timeout": 14000 }] },
+  { "label": "Table: reference a row", "flow": "F01" },
+  { "label": "Approval card", "steps": [{ "do": "type", "target": "composer-input", "text": "approval" }, { "do": "tap", "target": "composer-submit", "until": "visible:agent-card", "timeout": 14000 }, { "do": "tap", "target": "agent-bar-conversation", "until": "visible:approval-card", "timeout": 8000 }] },
+  { "label": "Reply card with an action", "steps": [{ "do": "type", "target": "composer-input", "text": "answer" }, { "do": "tap", "target": "composer-submit", "until": "visible:agent-card-action", "timeout": 14000 }] },
+  { "label": "Typing", "steps": [{ "do": "type", "target": "composer-input", "text": "typing" }, { "do": "tap", "target": "composer-submit", "until": "text:conversation-content~That took a moment", "timeout": 14000 }] }],
  "purpose": "Every default kit part and token in one page, with no app styling, as the app view of the default AppShell layout, full screen. Built from kit parts and theme tokens only.",
  "fixture": {
   "entry": "ux/fixtures/design-system.jsx",
@@ -20,5 +32,11 @@
   { "id": "01", "name": "rest", "steps": [] },
   { "id": "02", "name": "dark", "query": "dark=1", "steps": [] }
  ],
- "flows": []
+ "flows": [
+  { "id": "F01", "name": "Reference a table row in the assistant", "steps": [
+   { "do": "tap", "target": "[data-testid=ds-files] [data-path=\"samples\"] .file-tree-row-button", "say": "Open the samples folder", "expect": "The folder lists its files" },
+   { "do": "tap", "target": "[data-testid=ds-files] [data-path=\"samples/open-gaps.csv\"] .file-tree-row-button", "say": "Open the table", "expect": "The table opens in the viewer, each row with an @ action", "until": "visible:csv-row-reference", "timeout": 4000 },
+   { "do": "tap", "target": "[data-row=\"3\"] [data-testid=csv-row-reference]", "say": "Tap @ on row 3", "expect": "A chip for the row appears in the composer", "until": "eval:document.body.textContent.includes('open-gaps.csv row 3: Card Harbor Garage, Jan 09')", "timeout": 3000 },
+   { "do": "tap", "target": "composer-submit", "say": "Send it", "expect": "The assistant answers about that row", "until": "text:conversation-content~Row 3 of", "timeout": 14000 }] }
+ ]
 }

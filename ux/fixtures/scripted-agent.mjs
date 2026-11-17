@@ -7,6 +7,7 @@
 //   { "text": "the answer, \n for lines, @path cites a file", "stream": true }               the answer; streamed word by word when `stream`
 //   { "fail": "detail" }                                                                     the turn ends in an error (an assistant message with stopReason "error", `detail` is its errorMessage)
 //   { "ask": { "question": "...", "questions": [ { "question": "...", "options": ["a", "b"] } ] }, "then": [ steps ] }   a question; `then` plays after the answer
+//   { "approve": { "tool": "delete_file", "arguments": { "path": "x" }, "summary": "Delete the file?" }, "then": [ steps ] }   an approval card (Approve, Deny); `then` plays after the decision
 //   { "present": "uploads/x.csv", "ms": 1500 }                                              the agent shows a file (the `present` tool): the call waits for the page's
 //                                                                                           acknowledgement (`presented()`), at most `ms`, then its result carries the file
 // Pace: `pace` is 1 for the live demo and the videos (steps wait their `ms`, text streams); 0.15 for check mode (steps last a fifth of their time, at least 200 ms, no streaming).
@@ -53,6 +54,15 @@ export function createScriptedAgent({ script, pace = 1, entries, show }) {
         list = [...list, asked, result]; show(list, live());
       } else if (step.fail !== undefined) {
         list = [...list, entry(assistant([], 'error', typeof step.fail === 'string' ? step.fail : 'The model could not answer'))]; show(list, {});
+        return list;
+      } else if (step.approve) {
+        const call = `a${++id}`, { tool, arguments: args, summary } = step.approve;
+        const asked = entry(assistant([{ type: 'toolCall', id: call, name: tool, arguments: args ?? {} }], 'toolUse'));
+        list = [...list, asked]; show(list, live([{ callId: call, taskId: 8, details: { 'boring.approval': { summary } } }]));
+        await new Promise(resolve => { pendingAsk = resolve; });
+        pendingAsk = undefined;
+        if (cancelled(token)) return list;
+        list = await play(step.then ?? [], list, token, id);
         return list;
       } else if (step.ask) {
         const asked = entry(assistant([{ type: 'toolCall', id: `q${++id}`, name: 'ask_user', arguments: step.ask }], 'toolUse'));
