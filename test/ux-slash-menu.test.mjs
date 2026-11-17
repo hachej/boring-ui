@@ -34,6 +34,12 @@ for (const [label, viewport, touch] of [['1440', { width: 1440, height: 900 }, f
     await input.waitFor({ timeout: 30000 });
     assert.match(await input.getAttribute('placeholder') ?? '', /type \//i, 'the field says it takes « / »');
 
+    // A phone opens the conversation with the sheet's grabber (a tap); a wide screen with the chevron.
+    const openConversation = async () => {
+      if (!touch) { await page.locator('[data-testid=agent-bar-conversation]').click({ force: true }); return; }
+      const box = await page.locator('[data-slot=drawer-swipe-handle]').boundingBox();
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    };
     const clear = async () => { await input.fill(''); };
     const open = async () => { await clear(); await input.focus(); await page.keyboard.type('/'); await page.locator('[role=listbox]').waitFor(); };
     await open();
@@ -78,7 +84,7 @@ for (const [label, viewport, touch] of [['1440', { width: 1440, height: 900 }, f
     await clear(); await input.focus(); await page.keyboard.type('/exp'); await page.keyboard.press('Enter');
     // The folded card carries the approval (`agent-approval`); where it does not yet, the open conversation does.
     await page.locator('[data-testid=agent-approval-approve], [data-testid=approval-approve]').first().waitFor({ state: 'attached', timeout: 30000 });
-    if (await page.locator('[data-testid=agent-approval-approve]').count() === 0) await page.locator('[data-testid=agent-bar-conversation]').click({ force: true });
+    if (await page.locator('[data-testid=agent-approval-approve]').count() === 0) await openConversation();
     const approve = page.locator('[data-testid=agent-approval-approve], [data-testid=approval-approve]').first();
     await approve.waitFor({ timeout: 30000 });
     await approve.click();
@@ -86,7 +92,7 @@ for (const [label, viewport, touch] of [['1440', { width: 1440, height: 900 }, f
 
     // The same composer in the open conversation: the same menu, not a copy.
     await clear(); await page.keyboard.press('Escape');
-    await page.locator('[data-testid=agent-bar-conversation]').click({ force: true });
+    await openConversation();
     await page.locator('[data-testid=agent-tray], [data-testid=agent-layer-sheet][data-state=half], [data-testid=agent-layer][data-state=half]').first().waitFor({ timeout: 10000 });
     await open();
     assert.deepEqual(await page.locator('[data-testid=slash-heading]').allTextContents(), ['Commands', 'Skills', 'Actions'], 'the open conversation has the same menu');
