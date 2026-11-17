@@ -53,6 +53,9 @@ export function scanHostExecution(file, source) {
   const literal = (node) => ts.isStringLiteralLike(node);
   const packageTemplate = (node) => ts.isTemplateExpression(node) && /^(?:@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*\//.test(node.head.text);
   const ownUrl = (node) => ts.isNewExpression(node) && node.expression.getText(sf) === 'URL' && node.arguments?.length === 2 && node.arguments[1].getText(sf) === 'import.meta.url';
+  // The one named exception: host-build.ts loads the app's own reviewed `app.ts` with one computed import() (host-contract-freeze AC-15).
+  // A second computed import(), require() of a computed name, eval, Function and node:vm stay refused there.
+  let allowedComputed = file === 'packages/agent/src/host-build.ts' ? 1 : 0;
   const visit = (node) => {
     if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
       const callee = node.expression.getText(sf);
@@ -60,7 +63,9 @@ export function scanHostExecution(file, source) {
     }
     if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword || node.expression.getText(sf) === 'require')) {
       const [specifier] = node.arguments;
-      if (!specifier || !(literal(specifier) || packageTemplate(specifier) || (node.expression.kind === ts.SyntaxKind.ImportKeyword && ownUrl(specifier)))) add(node, `${node.expression.getText(sf)}() of a computed module could load workspace content`);
+      const computedImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
+      const spent = specifier && computedImport && !(literal(specifier) || packageTemplate(specifier) || ownUrl(specifier)) && allowedComputed-- > 0;
+      if (!spent && (!specifier || !(literal(specifier) || packageTemplate(specifier) || (node.expression.kind === ts.SyntaxKind.ImportKeyword && ownUrl(specifier))))) add(node, `${node.expression.getText(sf)}() of a computed module could load workspace content`);
     }
     if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && literal(node.moduleSpecifier) && /^(?:node:)?vm$/.test(node.moduleSpecifier.text)) add(node, 'node:vm evaluates code in the host');
     ts.forEachChild(node, visit);

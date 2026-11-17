@@ -1,5 +1,5 @@
 // What a consumer installs: a plain `npm install` (no flag, no override) of the packed agent and files packages next to pi 1.5.2.
-// One folder also installs Domain, effect and alchemy and uses `@hachej/boring-agent/host`; the other has none of the three and uses `/agents`.
+// One folder also installs Domain, effect and alchemy and uses `@hachej/boring-agent/host` and `/host-runtime`; the other has none of the three and uses `/agents`.
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -58,4 +58,10 @@ if (typeof checkAgents !== 'function') throw new Error('checkAgents missing');
 console.log('caught: needs mail ->', message);
 `);
 console.log(withHost.trim());
+const withRuntime = consumer('host-runtime', HOST_PEERS, `const runtime = await import('@hachej/boring-agent/host-runtime');
+for (const name of ['createSession', 'appTools', 'checkExpose', 'checkAgentTools', 'modelRoute']) if (typeof runtime[name] !== 'function') throw new Error(name + ' missing');
+if (typeof runtime.SenderUnknown !== 'function') throw new Error('SenderUnknown missing');
+console.log('host-runtime entry loads with Domain, effect and alchemy');
+`);
+console.log(withRuntime.trim());
 console.log('PASS: a plain npm install of the packed packages works with and without Domain, effect and alchemy');

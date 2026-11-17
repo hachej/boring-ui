@@ -66,6 +66,8 @@ export interface DefinedAgent {
   readonly id: string;
   /** Every native extension this agent selects, own extension first; with `selfEvolving` the per-workspace extension (as first defined) last. */
   readonly extensions: readonly Extension[];
+  /** The agents this one may hand a task to (`spec.delegates`, in order), so a host reads the edge from a public field. */
+  readonly delegates: readonly DefinedAgent[];
   /** Name and description of this agent's skills (an array given to `skills`), for hosts that offer them in a `/` menu. A source's skills are read at run time and not listed. */
   readonly skills: readonly Pick<Skill, 'name' | 'description'>[];
   /** Native per-conversation agent configuration. */
@@ -110,6 +112,7 @@ export function defineAgent(spec: AgentSpec): DefinedAgent {
     : [liveSkills(spec.skills, { name: skillsName }).extension];
   const listed = (skills: readonly Skill[]) => Object.freeze(skills.map(skill => Object.freeze({ name: skill.name, description: skill.description.trim() })));
   const hostTools = [...tools, ...(spec.extensions ?? []).flatMap(extension => extension.tools ?? [])].map(tool => tool.name);
+  const delegates: readonly DefinedAgent[] = Object.freeze((spec.delegates ?? []).map(delegate => delegate.agent));
   const reports = spec.struggle !== false;
   // A self-evolving agent may already keep its own `.agent/tools/report_bug.json`: it gets the automatic events and no tool of ours.
   if (reports) own.push(createStruggleExtension({ ...(spec.struggle || {}), agent: spec.id, tool: !spec.selfEvolving && !hostTools.includes(REPORT_BUG_TOOL) }));
@@ -128,7 +131,7 @@ export function defineAgent(spec: AgentSpec): DefinedAgent {
     });
     const fixedSkills = listed(fixed);
     return Object.freeze({
-      id: spec.id, extensions, agent,
+      id: spec.id, extensions, agent, delegates,
       get skills() { return evolution ? listed(evolution.skills()) : fixedSkills; },
       install: (registry: Registry) => {
         for (const delegate of spec.delegates ?? []) delegate.agent.install(registry);

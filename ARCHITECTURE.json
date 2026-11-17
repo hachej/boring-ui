@@ -68,7 +68,11 @@
     "@fontsource-variable/inter": "5.3.0",
     "@alchemy.run/domain": "2.0.0-beta.87",
     "alchemy": "2.0.0-beta.87",
-    "effect": "4.1.4"
+    "effect": "4.1.4",
+    "@alchemy.run/cloudflare": "2.0.0-beta.87",
+    "@alchemy.run/better-auth": "2.0.0-beta.87",
+    "better-auth": "1.7.7",
+    "@effect/platform-node": "4.1.4"
   },
   "packages": {
     "files": {
@@ -117,7 +121,27 @@
         "@alchemy.run/domain",
         "effect",
         "effect/*",
-        "alchemy"
+        "alchemy",
+        "alchemy/*",
+        "cloudflare:*",
+        "@alchemy.run/domain/*",
+        "@alchemy.run/cloudflare",
+        "@alchemy.run/better-auth",
+        "@alchemy.run/better-auth/*",
+        "better-auth",
+        "better-auth/*",
+        "node:fs",
+        "node:fs/promises",
+        "node:path",
+        "node:url"
+      ],
+      "onlyIn": [
+        { "names": ["@alchemy.run/domain/Ai"], "prefixes": ["src/host/runtime/", "src/host-cloudflare"] },
+        { "names": ["node:fs", "node:fs/promises", "node:path", "node:url"], "prefixes": ["src/host-build"] },
+        {
+          "names": ["@alchemy.run/domain/Cloudflare", "@alchemy.run/domain/Http", "cloudflare:*", "alchemy", "alchemy/*", "@alchemy.run/cloudflare", "@alchemy.run/better-auth*", "better-auth*"],
+          "prefixes": ["src/host-cloudflare"]
+        }
       ],
       "typeOnlyExternal": [],
       "pathRules": [
@@ -183,6 +207,17 @@
         },
         {
           "prefix": "src/host.ts",
+          "forbidden": [
+            "cloudflare:*",
+            "@alchemy.run/cloudflare*",
+            "alchemy",
+            "alchemy/*",
+            "node:*",
+            "@hachej/boring-ui-kit*"
+          ]
+        },
+        {
+          "prefix": "src/host-runtime.ts",
           "forbidden": [
             "cloudflare:*",
             "@alchemy.run/cloudflare*",
@@ -564,6 +599,7 @@
       "./storage/jsonl/node",
       "./storage/sqlite",
       "./storage/sqlite/node",
+      "./storage/sqlite/cloudflare",
       "./testing",
       "./package.json"
     ],

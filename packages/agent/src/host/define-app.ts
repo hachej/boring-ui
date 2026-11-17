@@ -1,5 +1,5 @@
 import type * as Layer from 'effect/Layer';
-import type { ToolRegistration } from '@earendil-works/pi-durable';
+import type { Extension, ToolRegistration } from '@earendil-works/pi-durable';
 import type { DefinedAgent, SkillSource } from '../agents.js';
 import type { Role } from './identity.js';
 
@@ -64,11 +64,12 @@ export interface View {
   rightPane?: never;
 }
 
-/** The host's hand to the agents factory: this person's tools for one audience, skills, ask and files tools, the model route. */
+/** The host's hand to the agents factory: one agent's tools as one Extension, skills, ask and files tools, the model route. */
 export interface AgentKit {
+  /** The session's unit key: the person's id on `me:<id>`, the unit on `reader:<unit>` and on a shared session. */
   person: string;
   model: { provider: string; modelId: string };
-  tools(audience: string): ToolRegistration[];
+  tools(agent: string): Extension;
   skills(agent: string): SkillSource;
   ask: ToolRegistration;
   files: ToolRegistration[];
@@ -82,6 +83,10 @@ export interface Wake<E = any> {
   message(event: E): string;
 }
 
+/**
+ * The seed's rule, the same for every runner of it: an operation carries no target, so each one is applied as its person
+ * (`as`, by e-mail) on that person's own id as the target key. A person's first notebook is therefore keyed by their own id.
+ */
 export interface Seed {
   /** `language` is a BCP 47 tag. */
   people: { name: string; email: string; language?: string }[];
