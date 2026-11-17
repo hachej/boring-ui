@@ -25,7 +25,7 @@ export function RecordingBar({ voice, testId = 'voice-message-record' }: Pick<Vo
       </div>}
     </div>
     {voice.pause && voice.resume && <Button variant="ghost" size="icon" data-testid="voice-pause" aria-label={voice.paused ? labels.voiceResumeRecording : labels.voicePauseRecording} title={voice.paused ? labels.voiceResumeRecording : labels.voicePauseRecording} onClick={voice.paused ? voice.resume : voice.pause} className="shrink-0">{voice.paused ? <PlayIcon aria-hidden="true" /> : <PauseIcon aria-hidden="true" />}</Button>}
-    <Button variant="default" size="icon" data-testid={testId} data-composer-action="" data-state={voice.phase} aria-label={labels.send} title={labels.send} onClick={voice.finish} disabled={voice.phase === 'starting'} className="shrink-0"><icons.send aria-hidden="true" /></Button>
+    <Button variant="default" size="icon" data-testid={testId} data-state={voice.phase} aria-label={labels.send} title={labels.send} onClick={voice.finish} disabled={voice.phase === 'starting'} className="shrink-0"><icons.send aria-hidden="true" /></Button>
   </div>;
 }
 
@@ -51,13 +51,13 @@ export function RecordingStatus({ voice }: { readonly voice: VoiceMessageHandle 
 /** The filled stop in the microphone's place; it finishes the message, as Send did. Waits (disabled, same box) until the microphone is open. */
 export function RecordingStop({ voice, testId = 'voice-message-record' }: Pick<VoiceMessageButtonProps, 'voice' | 'testId'>) {
   const { labels } = useChatText();
-  return <Button variant="default" size="icon" data-testid={testId} data-composer-action="" data-state={voice.phase} aria-label={labels.voiceStop} title={labels.voiceStop} onClick={voice.finish} disabled={voice.phase === 'starting'} className="shrink-0"><SquareIcon weight="fill" aria-hidden="true" /></Button>;
+  return <Button variant="default" size="icon" data-testid={testId} data-state={voice.phase} aria-label={labels.voiceStop} title={labels.voiceStop} onClick={voice.finish} disabled={voice.phase === 'starting'} className="shrink-0"><SquareIcon weight="fill" aria-hidden="true" /></Button>;
 }
 
 export function VoiceMessageButton({ voice, disabled, primary = false, testId = 'voice-message-record', label }: VoiceMessageButtonProps) {
   const { labels } = useChatText();
   if (voice.phase === 'starting' || voice.phase === 'recording') return <RecordingBar voice={voice} testId={testId} />;
-  return <Button onClick={voice.start} variant={primary ? 'default' : 'ghost'} size="icon" className="shrink-0" data-testid={testId} data-composer-action="" data-state={voice.phase} disabled={disabled || !voice.canStart || voice.phase !== 'idle'} aria-label={label ?? labels.voiceRecord} title={label ?? labels.voiceRecord}><MicIcon aria-hidden="true" /></Button>;
+  return <Button onClick={voice.start} variant={primary ? 'default' : 'ghost'} size="icon" className="shrink-0" data-testid={testId} data-state={voice.phase} disabled={disabled || !voice.canStart || voice.phase !== 'idle'} aria-label={label ?? labels.voiceRecord} title={label ?? labels.voiceRecord}><MicIcon aria-hidden="true" /></Button>;
 }
 
 export function PendingVoiceBubble({ pending }: PendingVoiceBubbleProps) {

@@ -8,7 +8,7 @@ import test from 'node:test';
 import { buildPage, root } from '../ux/runner/build.mjs';
 
 // The ambient bar (`AmbientChat`) on a phone behaves as the app shell's bar does: no strip, the grabber on the top edge is the size control (a tap
-// opens the full window, whose minimize goes back), 44px hit areas, round composer actions (`data-composer-action`); and its `/` menu is the same grouped menu with a Commands button on touch.
+// opens the full window, whose minimize goes back), 44px hit areas, round composer actions (by their test ids); and its `/` menu is the same grouped menu with a Commands button on touch.
 const require = createRequire(join(root, 'package.json'));
 let playwright; try { playwright = require('playwright-core'); } catch { /* not installed */ }
 const skip = !process.env.CHROMIUM || !playwright;
@@ -43,7 +43,7 @@ for (const [width, height] of [[390, 844], [360, 740]]) {
     // Every control of the bar is a 44px target.
     const buttons = await page.locator('[data-testid=ambient-header] button:visible, [data-testid=composer] button:visible, [data-slot=input-group] button:visible').evaluateAll(list => [...new Set(list)].map(b => {
       const r = b.getBoundingClientRect(), radius = parseFloat(getComputedStyle(b).borderTopLeftRadius);
-      return { id: b.dataset.testid ?? b.getAttribute('aria-label'), w: r.width, h: r.height, round: radius >= Math.min(r.width, r.height) / 2 - 0.5, label: b.textContent.trim(), action: b.hasAttribute('data-composer-action') };
+      return { id: b.dataset.testid ?? b.getAttribute('aria-label'), w: r.width, h: r.height, round: radius >= Math.min(r.width, r.height) / 2 - 0.5, label: b.textContent.trim(), action: /^(composer-(bar-attach|bar-commands|plus|submit|queue)|agent-talk|voice-message-record)$/.test(b.dataset.testid ?? '') };
     }));
     assert.ok(buttons.length >= 3, `the bar has its buttons (${JSON.stringify(buttons)})`);
     for (const b of buttons) { assert.ok(b.w >= 43.5 && b.h >= 43.5, `${b.id} is 44px (${b.w}x${b.h})`); if (b.action) assert.ok(b.round, `${b.id} is a circle`); }
@@ -93,7 +93,7 @@ test('1440: the ambient bar\'s composer actions are circles on the bar\'s midlin
   const page = await launch(t, { width: 1440, height: 900 }, false);
   await page.locator('[data-testid=composer-submit]').waitFor();
   const seen = await page.evaluate(() => { const box = document.querySelector('[data-testid=composer-input]').closest('[data-slot=input-group]') ?? document.querySelector('[data-testid=composer]'); const g = box.getBoundingClientRect(), mid = g.top + g.height / 2;
-    return [...document.querySelectorAll('[data-composer-action]')].filter(b => b.getClientRects().length).map(b => { const r = b.getBoundingClientRect(); return { id: b.dataset.testid, round: parseFloat(getComputedStyle(b).borderTopLeftRadius) >= Math.min(r.width, r.height) / 2 - 0.5, off: Math.abs(r.top + r.height / 2 - mid), w: r.width, h: r.height }; }); });
+    return [...document.querySelectorAll('[data-testid=composer-submit], [data-testid=composer-plus], [data-testid=composer-bar-commands], [data-testid=composer-bar-attach]')].filter(b => b.getClientRects().length).map(b => { const r = b.getBoundingClientRect(); return { id: b.dataset.testid, round: parseFloat(getComputedStyle(b).borderTopLeftRadius) >= Math.min(r.width, r.height) / 2 - 0.5, off: Math.abs(r.top + r.height / 2 - mid), w: r.width, h: r.height }; }); });
   assert.ok(seen.length >= 2, JSON.stringify(seen));
   for (const b of seen) { assert.ok(b.round, `${b.id} is a circle`); assert.ok(b.w === b.h, `${b.id} is square (${b.w}x${b.h})`); }
   await page.screenshot({ path: join(root, '.cache/evidence', 'ambient-1440-round.png') });

@@ -1221,7 +1221,7 @@
       "description": "AmbientChat, a compact floating agent bar that grows into a chat window over an existing page, and AgentNotifications, toasts over the kit's shared chat-react run notifications (with the one guarded browser Notification helper). A block over the pi-chat item; its in-window artifact panel uses the pi-workspace layout.",
       "css": {
         "@layer utilities": {
-          ".pi-chat.pi-ambient [data-composer-action]": {
+          ".pi-chat.pi-ambient :is([data-testid=\"composer-bar-attach\"], [data-testid=\"composer-bar-commands\"], [data-testid=\"composer-plus\"], [data-testid=\"composer-submit\"], [data-testid=\"composer-queue\"], [data-testid=\"voice-message-record\"], [data-testid=\"agent-talk\"])": {
             "border-radius": "var(--pm-radius-round)"
           }
         }

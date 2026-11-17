@@ -117,7 +117,7 @@ the file. Put the change in a prop or a theme token, or restore the file with
 | `design-color` | No hex, rgb, hsl, oklch or palette class (`bg-red-500`) outside the theme files: use a semantic class |
 | `design-tokens-only` | No arbitrary value (`text-[13px]`, `max-h-[85dvh]`): a scale step, a knob, or a new token |
 | `design-literal-value` | No literal radius, shadow, font size or letter spacing: the theme utility (`rounded-md`, `shadow-md`, `text-sm`) |
-| (browser audit, `test:design`) radius | A button takes a theme radius (`--radius`, `--radius-*`). The one exception is the composer's own action buttons (attach, commands, dictate, send, stop: `data-composer-action`, set by `Composer` and `VoiceMessageButton`), which may be circles with the kit's `--pm-radius-round`. A circle set by hand on any other button, or any other radius on a composer action, still fails |
+| (browser audit, `test:design`) radius | A button takes a theme radius (`--radius`, `--radius-*`). The one exception is the composer's own action buttons (attach, commands, `+`, send, stop, queue, dictate: found by their kit test ids, so the composer's markup is unchanged), which may be circles with the kit's `--pm-radius-round`. A circle set by hand on any other button, or any other radius on a composer action, still fails |
 | `design-font-tokens` | No `font-family` literal or `@font-face` outside `theme.core.css`: `font-sans` / `var(--font-sans)` |
 | `design-border-width` | No literal border width: the `border` utility (the theme sets `--border-width`); a heavier mark is an app token or an SVG |
 | `design-dark-variant`, `design-no-dark-overrides` | No `dark:` colour: set the dark value in `.dark` |
