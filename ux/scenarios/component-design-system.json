@@ -42,6 +42,10 @@
    { "do": "tap", "target": "[data-testid=ds-files] [data-path=\"samples\"] .file-tree-row-button", "say": "Open the samples folder", "expect": "The folder lists its files" },
    { "do": "tap", "target": "[data-testid=ds-files] [data-path=\"samples/open-gaps.csv\"] .file-tree-row-button", "say": "Open the table", "expect": "The table opens in the viewer, each row with an @ action", "until": "visible:csv-row-reference", "timeout": 4000 },
    { "do": "tap", "target": "[data-row=\"3\"] [data-testid=csv-row-reference]", "say": "Tap @ on row 3", "expect": "A chip for the row appears in the composer", "until": "eval:document.querySelector('[data-testid=mention-chip]')?.textContent.includes('Card Harbor Garage')", "timeout": 3000 },
-   { "do": "tap", "target": "composer-submit", "say": "Send it", "expect": "The assistant answers about that row", "until": "text:conversation-content~Row 3 of", "timeout": 14000 }] }
+   { "do": "tap", "target": "composer-submit", "say": "Send it", "expect": "The assistant answers about that row", "until": "text:conversation-content~Row 3 of", "timeout": 14000 }] },
+  { "id": "F02", "name": "Fire a notification from the page", "steps": [
+    { "do": "tap", "target": "ds-notify-warning", "say": "Tap “Warning” in the Notifications section", "until": "visible:notice", "expect": "One notice appears above the assistant bar, with its action." } ] },
+  { "id": "F03", "name": "A reply arrives while the conversation is folded", "steps": [
+    { "do": "tap", "target": "ds-notify-reply", "say": "Tap “A reply arrives while folded”", "until": "visible:agent-card", "timeout": 14000, "expect": "The folded card shows the reply and the notch counts it." } ] }
  ]
 }
