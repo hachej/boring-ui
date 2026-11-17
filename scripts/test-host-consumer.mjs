@@ -64,12 +64,13 @@ if (typeof runtime.SenderUnknown !== 'function') throw new Error('SenderUnknown 
 console.log('host-runtime entry loads with Domain, effect and alchemy');
 `);
 console.log(withRuntime.trim());
-const withBuild = consumer('host-build', HOST_PEERS, `import { cpSync, existsSync } from 'node:fs';
+const withBuild = consumer('host-build', HOST_PEERS, `import { cpSync, existsSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 const host = await import('@hachej/boring-agent/host');
 const build = await import('@hachej/boring-agent/host-build');
 if (typeof host.defineApp !== 'function' || typeof build.hostBuild !== 'function') throw new Error('host or host-build entry incomplete');
 cpSync(${JSON.stringify(join(root, 'fixtures/host-apps/todo'))}, 'todo', { recursive: true });
+writeFileSync('todo/options.ts', 'export default {};');
 const run = spawnSync('node_modules/.bin/boring-host-build', ['todo', '--options', './options.ts'], { encoding: 'utf8' });
 if (run.status !== 0) throw new Error('boring-host-build failed: ' + run.stderr);
 for (const file of ['server.ts', 'assets.ts', 'page.tsx']) if (!existsSync('todo/.gen/' + file)) throw new Error(file + ' not written');

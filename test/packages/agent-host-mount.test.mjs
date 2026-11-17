@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -15,8 +15,8 @@ mkdirSync(cache, { recursive: true });
 const scratch = mkdtempSync(join(cache, 'host-mount-build-'));
 test.after(() => rmSync(scratch, { recursive: true, force: true }));
 
-const copy = (app, at) => { const dir = join(scratch, at, app); cpSync(join(root, 'fixtures/host-apps', app), dir, { recursive: true }); return dir; };
-const build = (dir, ...flags) => spawnSync(process.execPath, [cli, dir, ...flags], { encoding: 'utf8', cwd: dir });
+const copy = (app, at) => { const dir = join(scratch, at, app); cpSync(join(root, 'fixtures/host-apps', app), dir, { recursive: true }); writeFileSync(join(dir, 'options.ts'), 'export default {};\n'); return dir; };
+const build = (dir, ...flags) => spawnSync(process.execPath, [cli, dir, ...flags], { encoding: 'utf8', cwd: scratch });
 const gen = (dir) => Object.fromEntries(readdirSync(join(dir, '.gen')).sort().map((f) => [f, readFileSync(join(dir, '.gen', f), 'utf8')]));
 const full = ['--shell', '@/components/app-host', '--options', './options.ts', '--stack', '@boring/stack'];
 
@@ -75,6 +75,93 @@ test('build: --options is required, and nothing is written without it', () => {
   assert.equal(r.status, 1);
   assert.equal(r.stderr, 'boring-host-build: --options <module> is required (the mount options of the stack)\n');
   assert.equal(existsSync(join(dir, '.gen')), false);
+});
+
+const refused = (dir, flags, wanted, label) => {
+  const r = build(dir, ...flags);
+  assert.equal(r.status, 1, label);
+  assert.match(r.stderr, /^boring-host-build: .*\n$/, label);
+  assert.match(r.stderr, wanted, label);
+  return r;
+};
+
+test('paths: one rule for every path flag, relative to the app folder, absolute ones rewritten, packages and aliases kept', () => {
+  const dir = copy('todo', 'paths');
+  for (const f of ['options.ts', 'stack.ts', 'web/app-host.tsx']) { mkdirSync(join(dir, f, '..'), { recursive: true }); writeFileSync(join(dir, f), 'export default {};\n'); }
+  const relative = ['--options', './options.ts', '--stack', './stack.ts', '--shell', './web/app-host.tsx'];
+  const r = build(dir, ...relative); assert.equal(r.status, 0, r.stderr);
+  const files = gen(dir);
+  assert.match(files['page.tsx'], /import \{ AppHost \} from "\.\.\/web\/app-host\.tsx";/);
+  assert.match(files['server.ts'], /import options from "\.\.\/options\.ts";/);
+  assert.match(files['alchemy.run.ts'], /from "\.\.\/stack\.ts";/);
+  const absolute = ['--options', join(dir, 'options.ts'), '--stack', join(dir, 'stack.ts'), '--shell', join(dir, 'web/app-host.tsx')];
+  assert.equal(build(dir, ...absolute).status, 0);
+  assert.deepEqual(gen(dir), files, 'an absolute path gives the same text as the relative one');
+  for (const text of Object.values(gen(dir))) assert.ok(!text.includes(scratch), 'no machine path');
+  assert.equal(build(dir, '--options', '@acme/options', '--stack', '@acme/stack', '--shell', '@/shell').status, 0);
+  assert.match(gen(dir)['page.tsx'], /from "@\/shell"/);
+  assert.match(gen(dir)['server.ts'], /from "@acme\/options"/);
+});
+
+test('paths: a flag naming a file that does not exist is refused and .gen stays as it was', () => {
+  const dir = copy('todo', 'missing-flag');
+  mkdirSync(join(dir, '.gen')); writeFileSync(join(dir, '.gen/server.ts'), 'old\n'); writeFileSync(join(dir, 'options.ts'), 'export default {};\n');
+  refused(dir, ['--options', './nope.ts'], /--options: \.\/nope\.ts is not a file/, 'options');
+  refused(dir, ['--options', './options.ts', '--stack', '../nope.ts'], /--stack: \.\.\/nope\.ts is not a file/, 'stack');
+  refused(dir, ['--options', './options.ts', '--shell', './nope.tsx'], /--shell: \.\/nope\.tsx is not a file/, 'shell');
+  refused(dir, ['--options', './options.ts', '--page', 'nope.html'], /--page: nope\.html is not a file/, 'page');
+  assert.deepEqual(gen(dir), { 'server.ts': 'old\n' });
+});
+
+test('write: a build replaces .gen whole, drops a stale stack entry, and a failure leaves the previous .gen complete', () => {
+  const dir = copy('todo', 'whole');
+  assert.equal(build(dir, ...full.slice(2, 4), '--stack', '@boring/stack').status, 0);
+  assert.ok(existsSync(join(dir, '.gen/alchemy.run.ts')));
+  const before = gen(dir);
+  assert.equal(build(dir, '--options', './options.ts').status, 0);
+  assert.deepEqual(Object.keys(gen(dir)), ['assets.ts', 'page.tsx', 'server.ts'], 'no stale alchemy.run.ts');
+  assert.equal(readdirSync(dir).filter((f) => f.startsWith('.gen')).length, 1, 'no temporary folder left');
+  const again = build(dir, '--options', './options.ts', '--stack', '@boring/stack');
+  assert.equal(again.status, 0); assert.deepEqual(gen(dir), before);
+  chmodSync(dir, 0o555);
+  try { assert.equal(build(dir, '--options', './options.ts').status, 1); } finally { chmodSync(dir, 0o755); }
+  assert.deepEqual(gen(dir), before, 'a failed build leaves the previous .gen');
+});
+
+test('skills: a path that leaves the app folder is refused, also through a link', () => {
+  const outside = join(scratch, 'outside-skills');
+  mkdirSync(join(outside, 'assistant/leak'), { recursive: true }); writeFileSync(join(outside, 'assistant/leak/SKILL.md'), 'secret\n');
+  const viaPath = copy('todo', 'skills-path');
+  writeFileSync(join(viaPath, 'app.ts'), readFileSync(join(viaPath, 'app.ts'), 'utf8').replace('skills: "./skills"', 'skills: "../../outside-skills"'));
+  refused(viaPath, ['--options', './options.ts'], /skills: \.\.\/\.\.\/outside-skills is outside the app folder/, 'path');
+  const viaLink = copy('todo', 'skills-link');
+  rmSync(join(viaLink, 'skills'), { recursive: true }); symlinkSync(outside, join(viaLink, 'skills'));
+  refused(viaLink, ['--options', './options.ts'], /skills: \.\/skills is outside the app folder/, 'link');
+  for (const d of [viaPath, viaLink]) assert.equal(existsSync(join(d, '.gen')), false);
+});
+
+test('messages: a build says what it wrote, and a missing folder is a missing folder', () => {
+  const dir = copy('todo', 'say');
+  const ok = build(dir, '--options', './options.ts', '--stack', '@boring/stack');
+  assert.equal(ok.stdout, `boring-host-build: wrote ${dir}/.gen: server.ts, assets.ts, page.tsx, alchemy.run.ts\n`);
+  refused(join(scratch, 'no-such-folder'), ['--options', './o.ts'], /no-such-folder: no such folder/, 'folder');
+});
+
+test('exit: an app.ts that exits before the build wrote anything never gives exit 0', () => {
+  const exits = {
+    'at the top': 'process.exit(0);\n',
+    'from a timer after the import': 'setTimeout(() => process.exit(0), 1);\n',
+    'with exit replaced': 'process.exit = () => process.reallyExit(0);\nprocess.exit(0);\n',
+  };
+  for (const [name, code] of Object.entries(exits)) {
+    const dir = copy('todo', `exit/${name.replace(/\W/g, '-')}`);
+    mkdirSync(join(dir, '.gen')); writeFileSync(join(dir, '.gen/server.ts'), 'old\n');
+    writeFileSync(join(dir, 'app.ts'), readFileSync(join(dir, 'app.ts'), 'utf8') + code);
+    const r = build(dir, '--options', './options.ts');
+    if (r.status === 0) assert.deepEqual(Object.keys(gen(dir)), ['assets.ts', 'page.tsx', 'server.ts'], `${name}: exit 0 only with a full build`);
+    else assert.deepEqual(gen(dir), { 'server.ts': 'old\n' }, `${name}: the previous .gen stays`);
+    if (name !== 'from a timer after the import') assert.notEqual(r.status, 0, name);
+  }
 });
 
 test('broken folder: a refused app is one line, exit 1, and .gen stays as it was', () => {
