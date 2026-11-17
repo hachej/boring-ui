@@ -63,6 +63,7 @@ test('a table row is referenced in the assistant: tooltip, chips that add up, mu
     }
 
     await action(3).click();
+    assert.equal(await tab.locator('[data-testid=composer-input]').getAttribute('placeholder'), '1 referenced', `${label}: the field says so for a moment`);
     await action(4).click();
     await action(5).click();
     await action(3).click();

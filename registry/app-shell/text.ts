@@ -79,12 +79,17 @@ export interface AppShellText {
   readonly referenceInAgent: string;
   readonly referencedInAgent: string;
   readonly referenceRows: string;
+  /** The field's status after rows were referenced (`{n}` is the count). */
+  readonly rowsReferenced: string;
   readonly selectRow: string;
   readonly clearSelection: string;
   /** The update notice (`AppShell update`): the sentence, its Reload action and the name of its dismiss button. */
   readonly updateAvailable: string;
   readonly updateReload: string;
   readonly updateDismiss: string;
+  /** A notice (`AppShell notices`): the name of its dismiss button, and the count of those waiting behind it (`{n}`). */
+  readonly noticeDismiss: string;
+  readonly noticeMore: string;
 }
 
 const en: AppShellText = {
@@ -135,11 +140,14 @@ const en: AppShellText = {
   referenceInAgent: 'Reference in agent',
   referencedInAgent: 'Referenced',
   referenceRows: 'Reference {n} rows in agent',
+  rowsReferenced: '{n} referenced',
   selectRow: 'Select row',
   clearSelection: 'Clear selection',
   updateAvailable: 'An update is available.',
   updateReload: 'Reload',
   updateDismiss: 'Dismiss the update notice',
+  noticeDismiss: 'Dismiss',
+  noticeMore: '{n} more waiting',
 };
 
 const fr: AppShellText = {
@@ -190,11 +198,14 @@ const fr: AppShellText = {
   referenceInAgent: 'Citer dans l’assistant',
   referencedInAgent: 'Cité',
   referenceRows: 'Citer {n} lignes dans l’assistant',
+  rowsReferenced: '{n} cité(s)',
   selectRow: 'Sélectionner la ligne',
   clearSelection: 'Effacer la sélection',
   updateAvailable: 'Une mise à jour est disponible.',
   updateReload: 'Recharger',
   updateDismiss: 'Masquer l’avis de mise à jour',
+  noticeDismiss: 'Masquer',
+  noticeMore: '{n} en attente',
 };
 
 const TEXT: Readonly<Record<AppShellLocale, AppShellText>> = { en, fr };

@@ -93,6 +93,10 @@ export interface AgentLayerApi {
   close(): void;
   /** Open the real chat with one card mention. Call directly from a click or swipe release to grant microphone permission. False without an agent. */
   readonly talkAbout: (mention: string, options?: { readonly voice?: boolean; readonly at?: 'half' | 'full'; readonly add?: boolean }) => boolean;
+  /** A short status in the field in place of the placeholder (« Draft saved », « 3 rows referenced »): it goes after 3 s or when the person types. Composer `bar`. */
+  readonly status: (text: string) => void;
+  /** The status on show, if any. */
+  readonly fieldStatus: string | undefined;
   readonly expanded: boolean;
   /**
    * `composer: 'bar'` (D-2198): shows the app's preview of a file (dropped, attached or cited) in the right column, or full screen on a phone. The column holds one

@@ -15,6 +15,7 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | --- | --- | --- |
 | Feedback | comment mode, pins, reports | [feedback.md](feedback.md) |
 | App shell | layouts, navigation, headers, list and detail, account | [app-shell.md](app-shell.md) |
+| Notifications | the notch's dot and count, one notice above the bar, the field's status, the bar that needs the person | [notifications.md](notifications.md) |
 | Agent layer | the shell's agent drawer and dock, voice, launch links, context | [agent-layer.md](agent-layer.md) |
 | UX harness | scenarios, capture, check, judge, loop and showcase for layouts and components | [ux-harness.md](ux-harness.md) |
 | Chat | `pi-chat`, composer features, cards, mentions, conversations | [chat.md](chat.md) |
@@ -34,3 +35,4 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Agent card | `AgentCard` (one unit of agent work as a folding card with the composer's levels, dock, a decision on the folded card) and `AgentChat` (the default chat that fits any place) | [agent-card.md](agent-card.md) |
 | Conversation log | ConversationLog, the sheet of the bar's history arrow (entries, labels, focus) | [conversation-log.md](conversation-log.md) |
 | Atlas | the screens-and-states manifest, its schema and `atlas --check` | [atlas.md](atlas.md) |
+| One model call | `complete`, `structured` and the `llm_structured` tool as a plain import | [cap-llm.md](cap-llm.md) |

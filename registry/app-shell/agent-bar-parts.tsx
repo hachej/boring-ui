@@ -19,7 +19,8 @@ import { chatTextFor } from '../pi-chat/locale';
 import { foldedCardKind } from '../agent-bar/folded-card';
 import type { AgentBarChat } from '../agent-bar/use-agent-bar-chat';
 import { ControllerStrip } from '../_shared/controller-strip';
-import type { ControllerAction } from '../_shared/controller-strip';
+import { UnreadMark } from '../_shared/controller-strip';
+import type { ControllerAction, Unread } from '../_shared/controller-strip';
 import { composerLabels, shellWords, useInternal } from './layer-context';
 import { FileChip, isCitedFile, ReplyActionButton } from './file-chip';
 
@@ -162,16 +163,21 @@ function useControllerActions(): readonly ControllerAction[] {
  * chevron while a reply is unread. Desktop: the strip is portalled into the bar's box (its frame) and rides the box's top edge, or the open tray's; on a phone and in
  * the docked column it sits on the field's own border. Each action is a kit Button (the touch floor gives the 44 px hit area), named by aria-label and title.
  */
-export function ConversationChevron({ unread }: { readonly unread: { readonly label: string } | undefined }) {
+export function ConversationChevron({ unread }: { readonly unread: Unread | undefined }) {
   const layer = useInternal();
   const actions = useControllerActions();
   const [box, setBox] = useState<HTMLElement | null>(null);
+  const [handle, setHandle] = useState<HTMLElement | null>(null);
   const overlay = layer.trayOpen && !layer.anchored;
   const first = actions[0];
   if (!first) return null;
   // A phone has no strip: the size is the sheet's grabber (tap for the next snap, drag for any). This control is the grabber's keyboard and screen reader twin: invisible and out of the pointer's way until focused.
-  if (!layer.expanded) return <button type="button" data-testid={first.testId} data-action="chevron" aria-label={first.label} aria-expanded={first.expanded} onClick={first.onSelect}
-    className="pointer-events-none absolute top-0 left-1/2 z-30 size-11 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 outline-ring focus-visible:opacity-100 focus-visible:outline-2" />;
+  // The unread mark sits beside the grabber's pill: portalled into the drawer's swipe handle, which is that pill.
+  if (!layer.expanded) return <>
+    <button ref={node => setHandle(node?.closest('[data-slot=drawer-popup]')?.querySelector<HTMLElement>('[data-slot=drawer-swipe-handle]') ?? null)} type="button" data-testid={first.testId} data-action="chevron" aria-label={first.label} aria-expanded={first.expanded} onClick={first.onSelect}
+      className="pointer-events-none absolute top-0 left-1/2 z-30 size-11 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 outline-ring focus-visible:opacity-100 focus-visible:outline-2" />
+    {handle && unread && createPortal(<UnreadMark unread={unread} dot="top-1/2 left-1/2 ml-8 -translate-y-1/2" pill="top-1/2 left-1/2 ml-9 -translate-y-1/2" />, handle)}
+  </>;
   const strip = <ControllerStrip actions={actions} unread={unread} style={box && overlay ? { top: 'calc(0px - var(--app-shell-bar-tray-size))' } : undefined} />;
   return <>
     <span ref={node => setBox(node?.closest<HTMLElement>('[data-one-composer]') ?? null)} hidden />
@@ -300,7 +306,7 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
         </span></span>;
       })}</span></> : undefined;
   return <>
-    <section data-testid="agent-card" data-state={kind} aria-label={text.assistant}
+    <section data-testid="agent-card" data-state={kind} data-needs-you={kind === 'question' || undefined} aria-label={text.assistant}
       className="flex flex-col gap-2 px-3 pt-2.5 pb-3 text-sm text-card-foreground md:data-[state=working]:pb-2">
       {kind === 'failed' && failed && <p role="alert" className="m-0 flex min-w-0 items-start gap-2 text-sm text-destructive">
         <AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -341,13 +347,16 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
     <Separator />
   </>;
 }
+/** The bar while the agent waits for a decision (an approval or a question on the folded card): a warning border and a soft ring around the whole bar. No tray opens. */
+export const NEEDS_YOU = 'has-[[data-needs-you]]:ring-1 has-[[data-needs-you]]:ring-warning has-[[data-needs-you]]:outline-3 has-[[data-needs-you]]:outline-warning/25';
+
 /** `composer: 'bar'`: the thread (Ouvert), the folded card and the field in one frame at the field's width, never the page's (AC-16). The inner input group's own frame is cleared by the block's CSS (`.app-shell [data-one-composer]`). */
 export function OneBox({ children }: { readonly children: ReactNode }) {
   // Docked (AC-17) the field and the thread are in the right column: the box stays mounted, empty and out of sight, so nothing stays at the bottom.
   const { dockOpen, anchored, folded, trayOpen } = useInternal();
   const overlay = trayOpen && !anchored;
   return <div className={cn('shrink-0 bg-card px-6 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]', dockOpen && 'hidden')}>
-    <div data-one-composer="" data-folded={folded || undefined} data-testid="agent-composer-box" style={anchored ? undefined : { marginInlineStart: 'clamp(0px, calc((100cqw - var(--app-shell-composer-max)) / 2 - var(--spacing) * 6), max(0px, calc(100% - var(--container-xs, 20rem))))', marginInlineEnd: 0, width: 'auto' }} className={cn('group/one-box mx-auto flex w-full max-w-[720px] min-w-0 flex-col rounded-(--radius-3xl) bg-card text-card-foreground', !anchored && 'relative', 'overflow-visible', !overlay && 'ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring')}>
+    <div data-one-composer="" data-folded={folded || undefined} data-testid="agent-composer-box" style={anchored ? undefined : { marginInlineStart: 'clamp(0px, calc((100cqw - var(--app-shell-composer-max)) / 2 - var(--spacing) * 6), max(0px, calc(100% - var(--container-xs, 20rem))))', marginInlineEnd: 0, width: 'auto' }} className={cn('group/one-box mx-auto flex w-full max-w-[720px] min-w-0 flex-col rounded-(--radius-3xl) bg-card text-card-foreground', !anchored && 'relative', 'overflow-visible', !overlay && 'ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring', NEEDS_YOU)}>
       <div className={cn('flex min-w-0 flex-col rounded-(--radius-3xl)', !overlay && 'overflow-hidden')}>{children}</div>
       {overlay && <>
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-1/2 z-20 overflow-hidden" style={{ top: 'calc(0px - var(--app-shell-bar-tray-expanded))' }}>

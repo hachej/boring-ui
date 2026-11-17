@@ -27,7 +27,9 @@ import { useSidebarOpen } from './sidebar-open';
 import type { NavItem } from './nav';
 import { AppSheet } from './app-sheet';
 import { appShellText } from './text';
-import { UpdateNotice } from './update-notice';
+import { NoticeHost } from './shell-notice';
+import type { AppShellNotice } from './shell-notice';
+import { updateNotice } from './update-notice';
 import type { AppShellUpdate } from './update-notice';
 import { ScreenHeaderSlotContext } from '../utils/screen-header-slot';
 import type { AppShellLocale, AppShellText } from './text';
@@ -83,6 +85,12 @@ export interface AppShellProps {
    * A dismiss holds for `version` only. Default: no notice.
    */
   readonly update?: AppShellUpdate;
+  /**
+   * Things to tell the person at the composer, newest first. ONE shows at a time, above the bar (in the screen column, as the update notice does): `{ id, kind: 'info' | 'success' | 'warning' | 'error', text, action?, onDismiss?, reference? }`.
+   * The others wait behind it as « N more waiting », and the next shows when it is dismissed. At most 5 wait: past that the oldest info or success notices go, a warning or an error never. Info and success fade after 8 s unless hovered or
+   * focused; warnings and errors stay until dismissed. A notice never opens the conversation and never takes focus; a swipe left dismisses it on a phone. `update` is the last of the queue. Default: none.
+   */
+  readonly notices?: readonly AppShellNotice[];
 }
 
 /** The shells that ask for the blur now, and what `<html data-overlay-blur>` held before the first of them (the app's own HTML may set it). */
@@ -124,10 +132,11 @@ function Screens({ items, activeId, scrolls, slot, centred, bar }: { readonly it
   </div>;
 }
 
-function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title, nav, agent, panel, account, route, text, update }: { readonly update: AppShellUpdate | undefined; readonly single: boolean; readonly bar: boolean; readonly resizable: AppShellProps['resizable']; readonly appId: string | undefined; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
+function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title, nav, agent, panel, account, route, text, update, notices }: { readonly update: AppShellUpdate | undefined; readonly notices: readonly AppShellNotice[]; readonly single: boolean; readonly bar: boolean; readonly resizable: AppShellProps['resizable']; readonly appId: string | undefined; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
   const improve = panel && panel.menu !== false ? panel.label ?? text.improve : undefined;
   const Layout = panel?.Layout ?? NoPanelLayout;
   const compact = useIsCompact();
+  const own = updateNotice(update, text);
   const sheet = compact && compactNav === 'sheet' && !single;
   const [accountOpen, setAccountOpen] = useState(false);
   // The header's slot for the screen on show (an embedded AgentWorkspace puts its bar's controls there).
@@ -156,7 +165,7 @@ function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title,
         <ShellContext name={active.label} />
         <ScreenHeader fallbackTitle={single ? title : active.label} compact={compact} leadingAvatar={single} trigger={!(single && bar)} avatar={avatar} menu={sheet} screenSidebar={compact && !sheet && active.sidebar ? <ScreenSidebarSheet key={active.id} item={active} text={text} /> : undefined} text={text} slotRef={setSlot} />
         <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} centred={single} bar={bar} />
-        {update && <UpdateNotice update={update} text={text} compact={compact} />}
+        <NoticeHost notices={own ? [...notices, own] : notices} text={text} compact={compact} />
       </Layout>
       </div>
     </AgentDockLayout>
@@ -165,6 +174,7 @@ function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title,
 }
 
 const never = () => () => {};
+const NONE: readonly AppShellNotice[] = [];
 
 export function AppShell(props: AppShellProps) {
   const { layout, rail = 'icon', compactNav = 'tabs', agent, panel, title, nav, account, route } = props;
@@ -174,6 +184,6 @@ export function AppShell(props: AppShellProps) {
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;
   return <AgentLayerProvider agent={agent} composer={props.composer} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title} modeIdentity={{ app: props.appId || title, person: account?.email, screen: layout === 'screen' }}>
-    <HeaderProvider><Shell single={props.sidebar === false} bar={props.composer === 'bar'} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} update={props.update} /></HeaderProvider>
+    <HeaderProvider><Shell single={props.sidebar === false} bar={props.composer === 'bar'} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} update={props.update} notices={props.notices ?? NONE} /></HeaderProvider>
   </AgentLayerProvider>;
 }

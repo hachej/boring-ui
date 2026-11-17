@@ -29,12 +29,22 @@ function ControllerCell({ action, extra, round, dot, ...rest }: { readonly actio
   </button>;
 }
 
+/** What is unread: its accessible name and, from two, how many. */
+export interface Unread { readonly label: string; readonly count?: number | undefined }
+
+/** The unread mark: a dot, or from two a pill as wide and high as the chevron (so the chevron never moves). `dot` and `pill` place each (classes); `className` is for both. */
+export function UnreadMark({ unread, dot, pill, className }: { readonly unread: Unread; readonly dot: string; readonly pill: string; readonly className?: string }) {
+  const several = (unread.count ?? 1) > 1;
+  return <span role="img" aria-label={several ? `${unread.label} (${unread.count})` : unread.label} data-testid="agent-bar-unread" data-count={unread.count}
+    className={cn('pointer-events-none absolute', className, several ? `${pill} flex h-4 w-8 items-center justify-center rounded-full bg-info text-[10px] font-semibold tabular-nums text-background ring-2 ring-card` : `${dot} size-1.5 rounded-(--radius-3xl) bg-primary`)}>{several ? unread.count : null}</span>;
+}
+
 /**
  * The controller notch shared by the composer bar and the agent card: a strip centred on a container's border (`edge` says which: half outside, half inside).
  * At rest only the first action (the chevron) shows; the others open to its right on hover and on focus within, and stay shown on a touch screen. A dot beside the
  * chevron while something is unread. Each action is a button named by aria-label and tooltip. The parent must be `relative`.
  */
-export function ControllerStrip({ actions, unread, edge = 'top', style }: { readonly actions: readonly ControllerAction[]; readonly unread?: { readonly label: string } | undefined; readonly edge?: 'top' | 'bottom'; readonly style?: CSSProperties | undefined }) {
+export function ControllerStrip({ actions, unread, edge = 'top', style }: { readonly actions: readonly ControllerAction[]; readonly unread?: Unread | undefined; readonly edge?: 'top' | 'bottom'; readonly style?: CSSProperties | undefined }) {
   const [first, ...rest] = actions;
   if (!first) return null;
   // The chevron is the anchor (the strip's left edge is half a cell from the middle): the other cells open to its right, inside the same container, which widens.
@@ -47,7 +57,7 @@ export function ControllerStrip({ actions, unread, edge = 'top', style }: { read
     <span className="relative flex items-center">
       <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-4 -translate-y-1/2 rounded-full bg-card ring-4 ring-card outline-1 outline-offset-4 outline-border/70" />
       {cell(first, false, false)}
-      {unread && <span role="img" aria-label={unread.label} data-testid="agent-bar-unread" className="pointer-events-none absolute top-1/2 -right-3 size-1.5 -translate-y-1/2 rounded-(--radius-3xl) bg-primary group-hover/ctl:opacity-0 group-has-[:focus-visible]/ctl:opacity-0" />}
+      {unread && <UnreadMark unread={unread} dot="top-1/2 -right-3 -translate-y-1/2" pill="top-0 left-full ml-1.5" className="group-hover/ctl:opacity-0 group-has-[:focus-visible]/ctl:opacity-0" />}
       {rest.map((action, i) => cell(action, true, i === rest.length - 1))}
     </span>
   </span>;

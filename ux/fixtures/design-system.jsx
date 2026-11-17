@@ -13,7 +13,8 @@ import { createDemoController } from './demo-controller.mjs';
 import { installFakeMic } from './fake-mic.mjs';
 import script from '../scenarios/scripts/design-system.json';
 import { demoSlash } from './demo-slash.jsx';
-import { UpdateNotice } from '../../registry/app-shell/update-notice.tsx';
+import { NoticeHost } from '../../registry/app-shell/shell-notice.tsx';
+import { updateNotice } from '../../registry/app-shell/update-notice.tsx';
 import { appShellText } from '../../registry/app-shell/text.ts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -61,7 +62,7 @@ function Page() {
     </Section>
     <Section id="status" title="Status and notices"><Row><Badge>Default</Badge><Badge variant="success">Reconciled</Badge><Badge variant="warning">Gap</Badge><Badge variant="info">Info</Badge><Badge variant="destructive">Failed</Badge></Row>
       <Alert><AlertTitle>A notice</AlertTitle><AlertDescription>One status row, in the kit's words.</AlertDescription></Alert>
-      <UpdateNotice update={{ available: true, version: 'v2', onReload() {} }} text={appShellText('en')} compact={false} /></Section>
+      <NoticeHost notices={[updateNotice({ available: true, version: 'v2', onReload() {} }, appShellText('en'))]} text={appShellText('en')} compact={false} /></Section>
     <Section id="lists" title="Rows, table, card">
       <ItemGroup className="gap-1">{['First row', 'Second row'].map(name => <Item key={name} variant="outline" size="sm"><ItemContent><ItemTitle>{name}</ItemTitle><ItemDescription>A description</ItemDescription></ItemContent></Item>)}</ItemGroup>
       <Table><TableHeader><TableRow><TableHead>Date</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader><TableBody><TableRow><TableCell>Jan 02</TableCell><TableCell className="text-right tabular-nums">$12.00</TableCell></TableRow></TableBody></Table>
@@ -81,7 +82,15 @@ const { controller, actions, reset } = createDemoController({ script, pace: new 
 // What the assistant received, for a test: the text of each send, mention tokens included.
 const deliver = controller.send;
 controller.send = async (kind, content) => { (window.__sent ??= []).push({ kind, text: content?.text ?? controller.getSnapshot().draft.text }); return deliver(kind, content); };
-window.__ux = { reset };
+// The Play menu's Notifications group: `window.__ux.notify(kind)` shows one of the shell's notices (the person's own dismiss or the fade removes it).
+const NOTICES = {
+  info: { kind: 'info', text: 'Harbor Garage synced 12 new entries.', action: { label: 'View', onSelect() {} } },
+  success: { kind: 'success', text: 'The January statement is saved.', action: { label: 'Undo', onSelect() {} } },
+  warning: { kind: 'warning', text: 'Two rows of open-gaps.csv have no amount.', action: { label: 'Review', onSelect() {} }, reference: '@samples/open-gaps.csv' },
+  error: { kind: 'error', text: 'The export of open-gaps.csv failed.', action: { label: 'Retry', onSelect() {} }, reference: '@samples/open-gaps.csv' },
+};
+let notify = () => {};
+window.__ux = { reset, notify: kind => notify(kind) };
 installFakeMic();
 // The `@` picker lists the workspace's files and the rows of the sample table (`@open-gaps`): a row is the same `row` mention the table's « @ » action inserts.
 const TABLE = 'samples/open-gaps.csv';
@@ -103,8 +112,9 @@ const nav = [
 ];
 const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the change', icon: <Undo2Icon />, onSelect() { window.__undone = (window.__undone ?? 0) + 1; } }, voice: { transcribe: async () => 'Dictated text (fictional)' }, files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en', actions, attachments, mentions, slash, labels: { placeholder: 'Ask, or type /' } } };
 function App() {
-  const [route, setRoute] = useState('design'), [theme, setTheme] = useState(initial);
-  return <AppShell layout="screen" locale="en" title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" agent={agent}
+  const [route, setRoute] = useState('design'), [theme, setTheme] = useState(initial), [notices, setNotices] = useState([]);
+  notify = kind => { const id = `${kind}-${Date.now()}`; setNotices([{ ...NOTICES[kind], id, onDismiss: () => setNotices(list => list.filter(n => n.id !== id)) }]); };
+  return <AppShell layout="screen" locale="en" title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" agent={agent} notices={notices}
     account={{ name: 'Visitor', menu: [], theme: { value: theme, onChange: value => { applyTheme(value); setTheme(value); } } }} />;
 }
 createRoot(document.getElementById('root')).render(<App />);

@@ -1,5 +1,6 @@
 import { ToolTask, defineExtension, hook } from '@earendil-works/pi-durable';
-import type { ConversationId, Extension, ToolExecutionResult, ToolRegistration, Wrap } from '@earendil-works/pi-durable';
+import type { ConversationId, Extension, ToolExecutionApi, ToolExecutionResult, ToolRegistration, Wrap } from '@earendil-works/pi-durable';
+import type { Context } from '@earendil-works/chord/context';
 import type { JsonValue } from '@earendil-works/chord/json';
 import type { Static } from '@earendil-works/pi-schema';
 import { askPerson } from './ask-user.js';
@@ -32,6 +33,8 @@ export interface RequireApprovalOptions<TParameters extends object = object> {
   readonly summarize: (args: Static<TParameters>, call: ApprovalCall) => string;
   /** Ask only when this returns true (for example any HTTP method but GET); other calls run at once. Default: always ask. */
   readonly when?: (args: Static<TParameters>, call: ApprovalCall) => boolean;
+  /** Runs before the person is asked: a result it returns ends the call, so nobody approves what would be refused anyway. */
+  readonly precheck?: (args: Static<TParameters>, api: ToolExecutionApi, context: Context) => Promise<ToolExecutionResult<JsonValue> | undefined>;
 }
 
 const text = (value: string, isError: boolean) => ({ isError, output: [{ type: 'text' as const, text: value }] });
@@ -78,6 +81,8 @@ export function requireApproval<TParameters extends object, TDetails extends Jso
         const result = await tool.execute(args, api, context) as ToolExecutionResult<JsonValue>;
         return result.details === undefined ? result : { ...result, details: withRecord(result.details)! };
       };
+      const refused = await options.precheck?.(args, outerApi, context);
+      if (refused) return refused;
       let ask = true;
       const call: ApprovalCall = { conversationId: outerApi.conversationId, callId: outerApi.callId, toolName: tool.name };
       try { ask = options.when ? options.when(args, call) : true; } catch { ask = true; } // a broken rule asks rather than skipping the person

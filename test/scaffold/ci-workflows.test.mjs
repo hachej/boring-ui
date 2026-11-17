@@ -168,7 +168,8 @@ test('verification jobs separate checks, unregistered tests and strict registere
   assert.match(all.verify, /npm run typecheck/);
   assert.match(all.verify, /npm run test:design/);
   assert.doesNotMatch(all.verify, /npm (?:test|run verify)(?:\s|$)/);
-  assert.match(all.tests, /npm test -- --exclude-registered/);
+  assert.match(all['tests-shard'], /npm test -- --exclude-registered --shard=\$\{\{ matrix.part \}\}\/5/);
+  assert.match(all.tests, /needs: \[tests-shard\]/);
   assert.match(all['release-gate'], /node scripts\/verify-invariants\.mjs --release/);
   assert.match(all['release-gate'], /Runtime verification INCOMPLETE: \$pending deferred proofs/);
   assert.match(all['release-gate'], /node scripts\/probe-vfs-git\.mjs/);
@@ -188,6 +189,7 @@ test('release admission names every current main-push job, including every matri
     const actual = Object.entries(jobs(source)).flatMap(([id, job]) => {
       const name = /^    name: (.+)$/m.exec(job)?.[1] ?? id;
       if (name.includes('${{ matrix.shard }}')) return ['studio-1', 'studio-2', 'design', 'workspace', 'documents'].map(value => name.replace('${{ matrix.shard }}', value));
+      if (name.includes('${{ matrix.part }}')) return job.match(/part: \[([^\]]+)\]/)[1].split(',').map(value => name.replace('${{ matrix.part }}', value.trim()));
       if (name.includes('${{ matrix.kind }}')) return [...job.matchAll(/- kind: (.+)/g)].map(match => name.replace('${{ matrix.kind }}', match[1]));
       return name;
     });

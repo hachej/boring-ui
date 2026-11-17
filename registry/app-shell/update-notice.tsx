@@ -1,13 +1,7 @@
-'use client';
-
-// The update notice (`AppShell update`): a newer version of the app is online while the page is open. One kit-drawn status row at the foot of the screen
-// column, in the flow above the phone's tab bar (so it takes room instead of covering the screen's last control), with a Reload action and a dismiss that
-// holds for the version named. It takes no focus. Host concern: Pi has no layout; the host decides when `available` is true (a version poll, a service worker).
-import { useState } from 'react';
-import { Alert } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { InfoIcon, XIcon } from '../_shared/icons';
-import { useInternal } from './layer-context';
+// The update notice (`AppShell update`): a newer version of the app is online while the page is open. It is one `AppShellNotice` (an info notice that stays until dismissed) drawn
+// by the shell's notice host, with a Reload action and a dismiss that holds for the version named. Host concern: Pi has no layout; the host decides when `available` is true
+// (a version poll, a service worker).
+import type { AppShellNotice } from './shell-notice';
 import type { AppShellText } from './text';
 
 export interface AppShellUpdate {
@@ -19,26 +13,9 @@ export interface AppShellUpdate {
   readonly onReload?: () => void;
 }
 
-/** Whether the notice shows: available, and not dismissed for this version (`dismissed` is the version last dismissed, `''` when it had none). */
-export const updateShown = (update: AppShellUpdate, dismissed: string | undefined): boolean => update.available && dismissed !== (update.version ?? '');
-
-export function UpdateNotice({ update, text, compact }: { readonly update: AppShellUpdate; readonly text: AppShellText; readonly compact: boolean }) {
-  // Read here, not in the shell: only a shell with a notice follows the layer's snaps (a shell that reads the layer re-renders its screens with it).
-  const layer = useInternal();
-  // A phone's peek (the one composer's field, or a parked drawer) sits over the foot of the screen, above the tabs: the notice rises above it.
-  const lift = compact && layer.snap === 'peek' ? `calc(${layer.peekPoint} - ${layer.tabbar}px)` : undefined;
-  const [dismissed, setDismissed] = useState<string | undefined>();
-  const { available, version, onReload } = update;
-  // A dismiss ends with the availability (`available` false): reset while rendering, not in an effect.
-  if (!available && dismissed !== undefined) setDismissed(undefined);
-  if (!updateShown(update, dismissed)) return null;
-  return <div data-testid="update-notice" data-version={version} data-feedback-ignore="" style={lift ? { marginBottom: lift } : undefined} className="shrink-0 px-[var(--screen-gutter,1rem)] py-2">
-    {/* The default Alert: the kit's `info` variant is not in shadcn's own Alert, and an Alert's className never changes its look (`shadcn-restyle`). */}
-    <Alert role="status" className="flex items-center gap-2">
-      <InfoIcon />
-      <span data-testid="update-notice-text" className="min-w-0 flex-1">{text.updateAvailable}</span>
-      <Button variant="outline" size="sm" data-testid="update-reload" onClick={() => (onReload ?? (() => globalThis.location?.reload()))()}>{text.updateReload}</Button>
-      <Button variant="ghost" size="icon-sm" data-testid="update-dismiss" aria-label={text.updateDismiss} onClick={() => setDismissed(version ?? '')}><XIcon /></Button>
-    </Alert>
-  </div>;
+/** The update as a notice, or none while no update is available. */
+export function updateNotice(update: AppShellUpdate | undefined, text: AppShellText): AppShellNotice | undefined {
+  if (!update?.available) return undefined;
+  return { id: `update:${update.version ?? ''}`, kind: 'info', text: text.updateAvailable, action: { label: text.updateReload, onSelect: update.onReload ?? (() => globalThis.location?.reload()) },
+    own: { version: update.version, dismissLabel: text.updateDismiss, ids: { root: 'update-notice', text: 'update-notice-text', action: 'update-reload', dismiss: 'update-dismiss' } } };
 }
