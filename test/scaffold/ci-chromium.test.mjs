@@ -191,7 +191,7 @@ test('ldd inspection errors and unresolved libraries fail instead of silently ac
 
 test('the tests job (browser contract tests) sets CHROMIUM and installs the same pinned browser', () => {
   const workflow = readFileSync(new URL('.github/workflows/verify.yml', root), 'utf8');
-  const job = /^  tests:\n([\s\S]*?)(?=^  [a-z-]+:\n)/m.exec(workflow)?.[1] ?? '';
+  const job = /^  tests-shard:\n([\s\S]*?)(?=^  [a-z-]+:\n)/m.exec(workflow)?.[1] ?? '';
   const chromium = /CHROMIUM: (.+)/.exec(job)?.[1];
   assert.ok(chromium, 'tests job sets CHROMIUM');
   assert.equal(chromium, /CHROMIUM: (.+)/.exec(workflow)?.[1], 'same CHROMIUM path as the verify job');

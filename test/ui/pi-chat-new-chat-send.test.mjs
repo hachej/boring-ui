@@ -25,7 +25,10 @@ test('a message sent right after New chat does not reach the conversation being 
   await build({ stdin: { contents: `export { PiChat } from './pi-chat/pi-chat.tsx'; export { AmbientChat } from './pi-ambient/ambient.tsx';`, resolveDir: new URL('../../registry/', import.meta.url).pathname, loader: 'ts' }, outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', loader: { '.css': 'empty' }, plugins: [{ name: 'file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
   const { PiChat, AmbientChat } = await import(output.href);
   const element = document.createElement('div'); document.body.append(element); const root = createRoot(element);
+  // A lagging select (selectLag: 5000) must not fire after the file's window is gone: "window is not defined" outside any test failed the whole run once the file ended early.
+  const lagTimers = new Set();
   t.after(async () => {
+    for (const timer of lagTimers) clearTimeout(timer);
     await act(async () => root.unmount()); await window.happyDOM.close();
     for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
   });
@@ -71,7 +74,7 @@ test('a message sent right after New chat does not reach the conversation being 
       page.endpoint = setEndpoint;
       page.go = setId;
       page.selected = id;
-      page.client = useConversationsClient({ endpoint, fetch, activeId: id, onSelect: selected => { if (selectLag) setTimeout(() => setId(selected), selectLag); else setId(selected); }, pollMs: 1000000, ...(change ? { onChange: () => change.promise } : {}), ...options });
+      page.client = useConversationsClient({ endpoint, fetch, activeId: id, onSelect: selected => { if (selectLag) lagTimers.add(setTimeout(() => setId(selected), selectLag)); else setId(selected); }, pollMs: 1000000, ...(change ? { onChange: () => change.promise } : {}), ...options });
       // As the example apps do: a selection the list does not hold yet goes back to the first row.
       const items = page.client?.items;
       useEffect(() => { if (items?.length && !items.some(item => item.id === id)) setId(items[0].id); }, [items, id]);

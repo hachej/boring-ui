@@ -8,7 +8,7 @@ import { runCaptured as spawnSync } from '../../scripts/run-captured.mjs';
 import test from 'node:test';
 import { isContractOnly } from '../../scripts/is-contract-only.mjs';
 import { loadBoundary } from '../../scripts/check-pi-boundary.mjs';
-import { testFiles } from '../../scripts/run-tests.mjs';
+import { shardOf, testFiles } from '../../scripts/run-tests.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -80,6 +80,16 @@ test('nested tests are discovered deterministically', () => {
     writeFileSync(join(dir, 'not-a-test.mjs'), '');
     assert.deepEqual(testFiles(dir), [join(dir, 'nested/fails.test.mjs')]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('shards together run every test file exactly once', () => {
+  const files = Array.from({ length: 23 }, (_, n) => `t${n}.test.mjs`);
+  const shards = [1, 2, 3, 4, 5].map(index => shardOf(files, index, 5));
+  assert.deepEqual(shards.flat().sort(), [...files].sort());
+  assert.ok(shards.every(shard => shard.length >= 4 && shard.length <= 5));
+  const weighted = [1, 2, 3].map(index => shardOf(['a/big.test.mjs', ...files.slice(0, 7)], index, 3, { big: 100 }));
+  assert.deepEqual(weighted[0], ['a/big.test.mjs'], 'a very heavy file gets a shard to itself');
+  assert.deepEqual(weighted.flat().sort(), ['a/big.test.mjs', ...files.slice(0, 7)].sort());
 });
 
 test('a failing nested test makes the actual discovery runner fail', () => {
