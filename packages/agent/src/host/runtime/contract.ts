@@ -6,7 +6,7 @@ import type { Models } from '@earendil-works/pi-ai';
 import type { Toolable } from '@alchemy.run/domain/Ai';
 import type * as EffectContext from 'effect/Context';
 import type { DefinedAgent, SkillSource } from '../../agents.js';
-import type { AppDefinition, Role, Scope } from '../index.js';
+import type { AppDefinition, CapabilityMethods, Role, Scope, UnitStorage } from '../index.js';
 import type { OpenHarness, Person, ResolveLanguage, RouteName, SecretByName } from '../contract.js';
 import type { MeteringSink } from '../../metering.js';
 
@@ -25,12 +25,13 @@ export type HostSession = {
 export type CreateSession = (options: {
   readonly id: string;
   readonly def: AppDefinition;
-  readonly api: Toolable;
+  readonly api?: Toolable | undefined;
   readonly storage: Storage;
+  readonly unitStorage?: ((unit: string) => UnitStorage) | undefined;
   readonly openHarness: OpenHarness;
   readonly models: Models | (() => Models);
   readonly model: { readonly provider: string; readonly modelId: string };
-  readonly services: () => EffectContext.Context<any>;
+  readonly services?: (() => EffectContext.Context<any>) | undefined;
   readonly skills: (agent: string) => SkillSource;
   readonly tools?: AppTools;
   readonly kv: { readonly get: (key: string) => Promise<string | undefined>; readonly put: (key: string, value: string) => Promise<void> };
@@ -61,10 +62,13 @@ export type Acting = (call: ToolExecutionApi, context: Context) => Promise<Actor
 /** Item 7. One agent's Domain tools, as one Extension named `host.tools.<agent>`. */
 export type AppTools = (input: {
   readonly def: AppDefinition;
-  readonly api: Toolable;
+  readonly api?: Toolable | undefined;
   readonly agent: string;
   readonly scope: Scope | undefined;
-  readonly services: () => EffectContext.Context<any>;
+  readonly services?: (() => EffectContext.Context<any>) | undefined;
+  /** The plain operations' storage: one unit's own, by unit key. Required when the agent lists a plain operation. */
+  readonly storage?: ((unit: string) => UnitStorage) | undefined;
+  readonly caps?: Partial<CapabilityMethods> | undefined;
   readonly attribution: Acting;
   readonly commandId?: (call: ToolExecutionApi, context: Context) => Promise<string>;
 }) => Extension;

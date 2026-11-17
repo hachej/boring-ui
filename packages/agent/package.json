@@ -181,6 +181,10 @@
       "types": "./dist/actions.d.ts",
       "import": "./dist/actions.js"
     },
+    "./caps/llm": {
+      "types": "./dist/caps/llm/index.d.ts",
+      "import": "./dist/caps/llm/index.js"
+    },
     "./host": {
       "types": "./dist/host.d.ts",
       "import": "./dist/host.js"

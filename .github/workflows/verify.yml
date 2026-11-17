@@ -57,11 +57,16 @@ jobs:
           path: .cache/evidence/shadcn-first
           retention-days: 7
           if-no-files-found: ignore
-  tests:
+  tests-shard:
+    # The suite is one serial Node process of 25 minutes (D-1937). Five runners each take every fifth test file (scripts/run-tests.mjs --shard=i/5), so the job takes about a fifth plus its install.
+    # The check named `tests` below is the join of the five: release admission and `verify` read that one name.
+    name: Tests (${{ matrix.part }} of 5)
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3, 4, 5]
     runs-on: ubuntu-latest
-    # 30, not 20 (D-1937): the suite takes 15-19 min on main and a slow runner crossed 20 (run 42577021357, 20m25s) and cancelled a green release. Splitting the suite is the follow-up.
-    # Temporary: 45 while the suite is being made faster; goes back down with that work.
-    timeout-minutes: 45
+    timeout-minutes: 25
     # The browser contract tests (compact-primitives, touch-target-dense) read CHROMIUM; with CI set they fail instead of skipping when it is missing.
     env:
       CHROMIUM: ${{ github.workspace }}/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
@@ -84,7 +89,7 @@ jobs:
         run: bash scripts/install-ci-chromium.sh 1.63.0
       - name: Allow the Chromium sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: npm test -- --exclude-registered
+      - run: npm test -- --exclude-registered --shard=${{ matrix.part }}/5
         env:
           SIDEBAR_RESIZE_EVIDENCE: ${{ runner.temp }}/evidence/sidebar-resize
           SIDEBAR_OPEN_EVIDENCE: ${{ runner.temp }}/evidence/sidebar-open
@@ -93,142 +98,34 @@ jobs:
           SCREEN_GUTTER_EVIDENCE: ${{ runner.temp }}/evidence/screen-gutter
           COMPOSER_BAR_EVIDENCE: ${{ runner.temp }}/evidence/composer-bar-actions
           AGENT_BAR_FILES_EVIDENCE: ${{ runner.temp }}/evidence/agent-bar-files-actions
-      - name: Composer bar buttons shots (1280 and 390, light and dark)
+      # One artifact per shard (names must be unique per run): the shots of every test that ran in this shard, in the same folders as before.
+      # Composer bar buttons, agent bar files and actions, resizable left pane, note bubble, hover rail pin, screen gutter and left pane open shots are under evidence/.
+      # AppShell locale, screen sidebar sheet, composer content and anchor, agent bar, conversation log, nav sheet layer, chat text, sidebar action and kit 0.4.73 sign-off shots are under .cache/evidence/.
+      - name: Test evidence shots
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: composer-bar-actions-shots
-          path: ${{ runner.temp }}/evidence/composer-bar-actions
-          retention-days: 7
-          if-no-files-found: warn
-      - name: Agent bar files and actions shots (1280 and 390, light and dark)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: agent-bar-files-actions-shots
-          path: ${{ runner.temp }}/evidence/agent-bar-files-actions
-          retention-days: 7
-          if-no-files-found: warn
-      - name: Resizable left pane shots (1280, light and dark)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sidebar-resize-shots
-          path: ${{ runner.temp }}/evidence/sidebar-resize
-          retention-days: 7
-          if-no-files-found: warn
-      - name: Note bubble shots (1280 and 390, light and dark, edge flips)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: note-bubble-shots
-          path: ${{ runner.temp }}/evidence/note-bubble
-          retention-days: 7
-          if-no-files-found: warn
-      - name: Hover rail pin shots (1280, light and dark)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sidebar-pin-shots
-          path: ${{ runner.temp }}/evidence/sidebar-pin
-          retention-days: 7
-          if-no-files-found: warn
-      - name: Screen gutter shots (1280 and 390, light and dark)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: screen-gutter-shots
-          path: ${{ runner.temp }}/evidence/screen-gutter
-          retention-days: 7
-          if-no-files-found: warn
-      - name: Left pane open on a first visit shots (1280, light and dark)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sidebar-open-shots
-          path: ${{ runner.temp }}/evidence/sidebar-open
-          retention-days: 7
-          if-no-files-found: warn
-      - name: AppShell locale shots (390 and 1280, en and fr)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: app-shell-locale-shots
-          path: .cache/evidence/app-shell-locale
-          retention-days: 7
-          if-no-files-found: ignore
-      - name: Screen sidebar sheet shots (390, light and dark, closed and open)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: screen-sidebar-shots
-          path: .cache/evidence/screen-sidebar
+          name: test-evidence-shots-${{ matrix.part }}
+          path: |
+            ${{ runner.temp }}/evidence
+            .cache/evidence
           retention-days: 14
           if-no-files-found: ignore
-      - name: Composer under the content shots (1280 dock closed and open, 390 peek, light and dark)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: composer-content-shots
-          path: .cache/evidence/composer-content
-          retention-days: 14
-          if-no-files-found: ignore
-      - name: Composer anchor shots (1280, light and dark)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: composer-anchor-shots
-          path: .cache/evidence/composer-content/composer-anchor-*.png
-          retention-days: 14
-          if-no-files-found: ignore
-      - name: Agent bar shots (390 touch, 1280 fine, light and dark)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: agent-bar-shots
-          path: .cache/evidence/agent-bar
-          retention-days: 14
-          if-no-files-found: ignore
-      - name: Conversation log shots (390 touch, 1280 fine, light and dark)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: conversation-log-shots
-          path: .cache/evidence/conversation-log
-          retention-days: 14
-          if-no-files-found: ignore
-      - name: Nav sheet layer shots (390, touch)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: nav-sheet-layer-shots
-          path: .cache/evidence/nav-sheet-layer
-          retention-days: 14
-          if-no-files-found: ignore
-      - name: Chat text shots (390 and 1280, light and dark)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: chat-text-shots
-          path: .cache/evidence/chat-text
-          retention-days: 14
-          if-no-files-found: ignore
-      - name: Sidebar action shots (390 touch and 1280, light and dark)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sidebar-action-shots
-          path: .cache/evidence/sidebar-action
-          retention-days: 14
-          if-no-files-found: ignore
-      - name: Kit 0.4.73 sign-off shots (WorkspaceBar panel, resize handle, phone menu)
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: shots-0473-signoff
-          path: .cache/evidence/shots-0473
-          retention-days: 7
-          if-no-files-found: warn
+  tests:
+    name: tests
+    if: always()
+    needs: [tests-shard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every shard to succeed
+        env:
+          NEEDS_RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          test -n "$NEEDS_RESULTS"
+          for result in $NEEDS_RESULTS; do
+            test "$result" = success || exit 1
+          done
   release-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -347,7 +244,7 @@ jobs:
   ci-ok:
     name: verify
     if: always()
-    needs: [verify, tests, release-gate, isolated-consumers, isolated-consumers-ok, demo-worker]
+    needs: [verify, tests-shard, tests, release-gate, isolated-consumers, isolated-consumers-ok, demo-worker]
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to succeed

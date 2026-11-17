@@ -325,7 +325,9 @@ test('an agent write seen by both the watcher and record is one change event', a
   const events = [];
   const done = (async () => { for await (const event of f.provider.changes({ signal: abort.signal }, access)) events.push(event); })();
   await new Promise(resolve => setTimeout(resolve, 30));
-  await f.provider.queue.run(async () => { await f.write('once.md', 'agent text'); await f.provider.record({ path: 'once.md', after: await revisionOf('agent text'), source: 'agent' }, access); });
+  // The revision is computed before the write: the real guard records right after its write, and an await in between lets a loaded runner deliver the watcher's event first (CI run 44123269019).
+  const after = await revisionOf('agent text');
+  await f.provider.queue.run(async () => { await f.write('once.md', 'agent text'); await f.provider.record({ path: 'once.md', after, source: 'agent' }, access); });
   await new Promise(resolve => setTimeout(resolve, 200));
   abort.abort();
   await done;

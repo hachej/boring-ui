@@ -39,7 +39,7 @@ test('fixture main commit admits only the complete named verify and browser suit
   assert.ok(f.calls.every(url => !new URL(url).searchParams.has('page')), 'omit explicit page=1, which GitHub can mis-handle with head_sha');
   const verify = readFileSync(new URL('../../.github/workflows/verify.yml', import.meta.url), 'utf8');
   const browser = readFileSync(new URL('../../.github/workflows/studio-scripted.yml', import.meta.url), 'utf8');
-  for (const name of REQUIRED_CHECKS['verify.yml']) assert.ok(verify.includes(name) || ['tests', 'release-gate'].includes(name) || name.startsWith('Isolated package consumers ('), name);
+  for (const name of REQUIRED_CHECKS['verify.yml']) assert.ok(verify.includes(name) || ['tests', 'release-gate'].includes(name) || name.startsWith('Isolated package consumers (') || name.startsWith('Tests ('), name);
   for (const name of REQUIRED_CHECKS['studio-scripted.yml']) assert.ok(browser.includes(name) || name.startsWith('Studio scripted journeys ('), name);
 });
 
