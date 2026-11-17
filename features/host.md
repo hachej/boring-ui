@@ -6,6 +6,7 @@ An app is one `defineApp` definition: its models, handlers, exposed operations, 
 
 - `host-contract` `defineApp` and `checkAgents` refuse a malformed definition at definition time and at mount, naming the app and the field: name, views, `expose`, needs, `units`, wakes, agent names, and the languages (a base the kit speaks, its words, `app.title` and one name per view). `packages/agent/src/host/define-app.ts`.
 - `host-identity` `CurrentUser` (the person, and the scope an agent session carries), `Session`, `NotYours`, `NotAllowed`, `mustOwn` and `must`: the one rights rule over a unit's members, with roles ranked owner, editor, reader. `packages/agent/src/host/identity.ts`.
+- `host-tools` `appTools` builds one agent's Domain operations (`expose[<agent>]`, through Domain's `toToolkit`) as one pi-durable Extension named `host.tools.<agent>`; each call builds the Domain Layer on the session's scope and the caller from `attribution(call, context)`, never from the model's arguments, and an unknown sender is refused without running anything. `checkExpose` refuses an exposed name that gives no tool, in any audience; `checkAgentTools` refuses an agent holding another agent's tools and a delegate holding an operation its caller does not. `packages/agent/src/host/runtime/tools.ts`.
 
 ## How to get to it (user POV)
 
@@ -16,6 +17,7 @@ An app is one `defineApp` definition: its models, handlers, exposed operations, 
 Preconditions: `npm run build`; Domain, effect and alchemy installed (root dev dependencies); fictional data only.
 
 - **Contract.** `host-contract`: `node --test test/packages/agent-host-contract.test.mjs` defines the two fixture apps (`fixtures/host-apps/`), prints one `caught:` line per planted fault and a `units:` line, and reads the built `dist/host.js` import graph. `npm run typecheck` compiles both apps and the closed shapes (`test/types/host-contract.ts`). `npm run test:host-consumer` installs the packed packages in a fresh folder.
+- **Tools.** `host-tools`: `npm run build && node --test test/packages/agent-host-tools.test.mjs` opens a Harness on a scripted model with Domain in memory, calls each agent's tools as a person, and plants the faults (another notebook in seven spellings, an unknown sender, an operation that does not exist, a reader holding the assistant's tools, a delegate holding a write its caller lacks).
 - **Identity.** `host-identity`: the same test prints the twelve `must:` rows (no scope, a scope, a scope with `ops`).
 
 ## Gotchas
