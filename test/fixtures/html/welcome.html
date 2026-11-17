@@ -1,0 +1,13 @@
+<style>
+  body { margin: 0; padding: 24px; font: 15px/1.5 system-ui, sans-serif; color: #1f2937; background: #ffffff; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #0c4a6e; background: #0c4a6e; color: #fff; }
+  @media (prefers-color-scheme: dark) { body { background: #111827; color: #f9fafb; } button { background: #7dd3fc; color: #082f49; border-color: #7dd3fc; } }
+</style>
+<h1>Welcome to Harbor Studio</h1>
+<p>A plain HTML page (fictional). It runs in a sandbox: no network, no storage.</p>
+<button id="count" type="button">Pressed 0 times</button>
+<script>
+  let n = 0;
+  document.getElementById('count').addEventListener('click', () => { n += 1; document.getElementById('count').textContent = 'Pressed ' + n + (n === 1 ? ' time' : ' times'); });
+</script>

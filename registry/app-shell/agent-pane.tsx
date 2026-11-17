@@ -16,7 +16,7 @@ import { Dock } from '../dock/dock';
 import { ViewerFrame, ViewerWindowProvider } from '../viewer-frame/viewer-frame';
 import { frenchViewerLabels } from '../viewer-frame/viewer-labels-fr';
 import type { LocalTextKind } from '../viewer-pdf/local-file-viewer';
-import { csvKind, svgKind } from '../viewer-code/code-kinds';
+import { codeKind, csvKind, svgKind } from '../viewer-code/code-kinds';
 import { GROUP_AFTER, RowReferenceContext, referencedRows, rowKey, rowMentionPath } from '../viewer-code/row-reference';
 import type { RowReferenceTarget } from '../viewer-code/row-reference';
 import { StepButtons, stepIndex, stepOffset } from '../pi-chat/image-viewer';
@@ -39,10 +39,10 @@ const markdownKind: LocalTextKind = {
   match: (_target, artifact) => artifact.type === 'markdown',
   load: () => import('../pi-chat-markdown/markdown').then(module => ({ default: ({ text }: { readonly text: string }) => <div data-testid="pane-markdown" className="pi-chat text-sm"><module.Markdown text={text} /></div> })),
 };
-const TEXT_KINDS: readonly LocalTextKind[] = [csvKind, svgKind, markdownKind];
+const TEXT_KINDS: readonly LocalTextKind[] = [csvKind, svgKind, codeKind, markdownKind];
 /** The host's artifact kinds as text kinds of the file viewer, ahead of the pane's own (a `.diagram.json` is JSON text, a `.mockup.html` HTML text). */
 const withKinds = (kinds: readonly FileKind[] | undefined): readonly LocalTextKind[] => [
-  ...(kinds ?? []).map(kind => ({ match: (target: { readonly resource: { readonly path: string } }) => kind.match(target), load: async () => ({ default: ({ text }: { readonly text: string }) => <>{kind.renderer({ text })}</> }) })), ...TEXT_KINDS];
+  ...(kinds ?? []).map(kind => ({ match: (target: { readonly resource: { readonly path: string } }) => kind.match(target), load: async () => ({ default: ({ text, artifact }: { readonly text: string; readonly artifact: { readonly title: string } }) => <>{kind.renderer({ text, title: artifact.title })}</> }) })), ...TEXT_KINDS];
 let readyFileViewer: typeof import('../viewer-pdf/local-file-viewer').LocalFileViewer | undefined;
 const loadFileViewer = () => import('../viewer-pdf/local-file-viewer').then(module => {
   readyFileViewer = module.LocalFileViewer;
