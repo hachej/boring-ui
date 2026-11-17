@@ -335,6 +335,24 @@ test('folded, 1280 and 390: a decision on the card gives the bar a warning borde
   }
 });
 
+// Pattern 3 (notifications): a short status in the field in place of the placeholder; it goes after 3 s or when the person types.
+test('1280 and 390: a status replaces the placeholder in the field, and goes when the person types, or after 3 s', { skip, timeout: 120000 }, async () => {
+  for (const [width, query] of [[1280, ''], [390, 'tabs=1']]) {
+    await open(width, query);
+    const placeholder = () => browser.evaluate(`document.querySelector('[data-testid=composer-input]').placeholder`);
+    const normal = await placeholder();
+    await browser.evaluate(`window.__layer.status('Brouillon enregistré')`);
+    await browser.until('status', `document.querySelector('[data-testid=composer-input]').placeholder === 'Brouillon enregistré'`);
+    assert.equal(await placeholder(), 'Brouillon enregistré', `the status is the placeholder at ${width}`);
+    await browser.screenshot(`notifications-field-status-${width}-light.png`);
+    await type('a');
+    await browser.until('typing replaced it', `document.querySelector('[data-testid=composer-input]').placeholder !== 'Brouillon enregistré'`);
+    await browser.evaluate(`window.__setText('')`);
+    await browser.evaluate(`window.__layer.status('Copié')`);
+    await browser.until('it expires', `document.querySelector('[data-testid=composer-input]').placeholder === ${js(normal)}`);
+  }
+});
+
 test('folded, 1280 and 390: a failed turn is one sentence on the card, in the app\'s words when it gives replyError, and the next turn clears it', { skip, timeout: 120000 }, async () => {
   for (const [width, query] of [[1280, ''], [390, 'tabs=1'], [1280, 'replyError=1']]) {
     await open(width, query);

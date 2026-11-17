@@ -338,8 +338,9 @@ function EntryView({ entry, below, top, placement, assistant }: { readonly entry
       const fresh = chosen.filter(item => !referenced.has(rowKey(filePath, item.row)));
       const groups = fresh.length > GROUP_AFTER ? [fresh] : fresh.map(item => [item]);
       for (const group of groups) talkAbout(mentionToken(rowMentionPath({ path: filePath, rows: group })), { add: true });
+      if (fresh.length) layer.status(text.rowsReferenced.replace('{n}', String(fresh.length)));
     },
-  } : null, [hasMentions, filePath, referenced, talkAbout, text]);
+  } : null, [hasMentions, filePath, referenced, talkAbout, layer.status, text]);
   const library = entry.kind === 'view' && layer.openLibrary ? [{ id: 'library', label: text.library, icon: LibraryIcon, onSelect: layer.openLibrary, placement: 'header' as const }] : undefined;
   if (entry.kind === 'file' && layer.agent?.files) {
     // A phone folds a frame's controls into its « … » menu: there previous and next sit under the file instead.

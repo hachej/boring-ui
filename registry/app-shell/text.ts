@@ -79,6 +79,8 @@ export interface AppShellText {
   readonly referenceInAgent: string;
   readonly referencedInAgent: string;
   readonly referenceRows: string;
+  /** The field's status after rows were referenced (`{n}` is the count). */
+  readonly rowsReferenced: string;
   readonly selectRow: string;
   readonly clearSelection: string;
   /** The update notice (`AppShell update`): the sentence, its Reload action and the name of its dismiss button. */
@@ -138,6 +140,7 @@ const en: AppShellText = {
   referenceInAgent: 'Reference in agent',
   referencedInAgent: 'Referenced',
   referenceRows: 'Reference {n} rows in agent',
+  rowsReferenced: '{n} referenced',
   selectRow: 'Select row',
   clearSelection: 'Clear selection',
   updateAvailable: 'An update is available.',
@@ -195,6 +198,7 @@ const fr: AppShellText = {
   referenceInAgent: 'Citer dans l’assistant',
   referencedInAgent: 'Cité',
   referenceRows: 'Citer {n} lignes dans l’assistant',
+  rowsReferenced: '{n} cité(s)',
   selectRow: 'Sélectionner la ligne',
   clearSelection: 'Effacer la sélection',
   updateAvailable: 'Une mise à jour est disponible.',
