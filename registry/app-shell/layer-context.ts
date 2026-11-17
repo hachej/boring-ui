@@ -44,7 +44,9 @@ export interface AgentSpec {
    * chip, a library pick and the agent's `present` open there; `chatProps.onOpenFile` and `pane.push({ title, content })` stay the app's override.
    * Resolve `{ blob, revision }` to let the pane acknowledge a `present` of that revision once its viewer shows it.
    */
-  readonly files?: { readonly read: (path: string) => Promise<Blob | { readonly blob: Blob; readonly revision: string }> } | undefined;
+  readonly files?: { readonly read: (path: string) => Promise<Blob | { readonly blob: Blob; readonly revision: string }>;
+    /** Optional cheap check that a cited file is there (a stat, not a read). Without it the kit tries `read`. A cited file that is not there stays plain text. */
+    readonly exists?: ((path: string) => Promise<boolean>) | undefined } | undefined;
   /** With `files`: the artifact kinds that draw a file in the pane (a diagram, a drawing, a mock-up, records, a maquette): the kinds of `pi-app-kinds`, tried before the pane's own CSV, Markdown and SVG. */
   readonly fileKinds?: readonly FileKind[] | undefined;
   /** `composer: 'bar'` (AC-13): the person may only read (a role without writing, an assistant switched off). The box stays in place with this
@@ -55,7 +57,7 @@ export interface AgentSpec {
   readonly words?: AgentWords | undefined;
   /** `composer: 'bar'` (kit 0.4.85): one app action on the folded reply card, beside the files it cites (for example « Annuler » to undo what the agent just did). The app
    * shows it by giving it and takes it away by passing nothing; `onSelect` runs when it is pressed and the conversation stays folded. */
-  readonly replyAction?: { readonly label: string; readonly onSelect: () => void } | undefined;
+  readonly replyAction?: { readonly label: string; readonly onSelect: () => void; /** A leading icon (for example the kit's `Undo2Icon`); none by default. The accessible name stays the label. */ readonly icon?: ReactNode | undefined } | undefined;
   /** `composer: 'bar'` (kit 0.4.85): the app's words on the working card, per phase. `tool` is the tool that runs (absent while the agent thinks), `text` the default words.
    * Return the words, or nothing to keep the default. */
   readonly workingWords?: ((phase: { readonly tool?: string; readonly stage?: string; readonly text: string }) => string | undefined) | undefined;
@@ -90,7 +92,7 @@ export interface AgentLayerApi {
   /** Closes what `showing` names: with both open, the assistant (a second call closes the PM). */
   close(): void;
   /** Open the real chat with one card mention. Call directly from a click or swipe release to grant microphone permission. False without an agent. */
-  readonly talkAbout: (mention: string, options?: { readonly voice?: boolean; readonly at?: 'half' | 'full' }) => boolean;
+  readonly talkAbout: (mention: string, options?: { readonly voice?: boolean; readonly at?: 'half' | 'full'; readonly add?: boolean }) => boolean;
   readonly expanded: boolean;
   /**
    * `composer: 'bar'` (D-2198): shows the app's preview of a file (dropped, attached or cited) in the right column, or full screen on a phone. The column holds one
@@ -286,4 +288,7 @@ export const FOLDED_FIELD = '[&_[data-testid=preparing]]:hidden [&_[data-testid=
 export interface FileKind {
   readonly match: (target: { readonly resource: { readonly path: string } }) => boolean;
   readonly renderer: (props: { readonly text: string }) => ReactNode;
+  /** The kind's name (« Diagram ») and icon: the file card and the file chips use them, as the Library does. */
+  readonly label?: string | undefined;
+  readonly icon?: ComponentType<{ readonly className?: string; readonly 'aria-hidden'?: boolean | 'true' }> | undefined;
 }

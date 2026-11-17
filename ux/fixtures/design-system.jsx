@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppShell } from '../../registry/app-shell/app-shell.tsx';
 import { ScreenBody } from '../../registry/app-shell/screen-body.tsx';
-import { FileTextIcon, FolderIcon } from '../../registry/_shared/icons';
+import { FileTextIcon, FolderIcon, Undo2Icon } from '../../registry/_shared/icons';
 import { FileTreeView } from '../../registry/file-tree/file-tree.tsx';
 import { useAgentLayer } from '../../registry/app-shell/agent-layer.tsx';
 import { DEMO_KINDS, demoTree } from '../../test/fixtures/themes/one-composer-demo.jsx';
@@ -86,7 +86,7 @@ installFakeMic();
 const TABLE = 'samples/open-gaps.csv';
 const tableRows = async () => {
   const [head = [], ...rows] = csvRows(await (await demoFiles.read(TABLE)).blob.text()), names = columnNames(head);
-  return rows.map((row, at) => rowMentionPath({ path: TABLE, row: at + 1, cells: Object.fromEntries(names.map((name, j) => [name, row[j] ?? ''])) }));
+  return rows.map((row, at) => rowMentionPath({ path: TABLE, rows: [{ row: at + 1, cells: Object.fromEntries(names.map((name, j) => [name, row[j] ?? ''])) }] }));
 };
 const mentions = { listLabel: 'Files and rows', search: async query => {
   const needle = query.toLowerCase();
@@ -99,7 +99,7 @@ const nav = [
   { id: 'design', label: 'Design system', icon: FileTextIcon, render: () => <ScreenBody><Page /></ScreenBody> },
   { id: 'empty', label: 'Empty app view', icon: FolderIcon, render: () => <ScreenBody><Placeholder /></ScreenBody> },
 ];
-const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the change', onSelect() {} }, voice: { transcribe: async () => 'Dictated text (fictional)' }, files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en', actions, attachments, mentions } };
+const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the change', icon: <Undo2Icon />, onSelect() { window.__undone = (window.__undone ?? 0) + 1; } }, voice: { transcribe: async () => 'Dictated text (fictional)' }, files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en', actions, attachments, mentions } };
 function App() {
   const [route, setRoute] = useState('design'), [theme, setTheme] = useState(initial);
   return <AppShell layout="screen" locale="en" title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" agent={agent}

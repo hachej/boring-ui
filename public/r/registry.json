@@ -2475,7 +2475,7 @@
             "background-color": "var(--card)"
           },
           ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"input-group\"] [data-slot=\"button\"]": {
-            "border-radius": "var(--radius-3xl)"
+            "border-radius": "var(--pm-radius-round)"
           },
           ".app-shell :is([data-one-composer], [data-one-dock]) [data-slot=\"input-group\"]": {
             "align-items": "center",
@@ -2611,6 +2611,11 @@
           "path": "registry/app-shell/agent-chats.tsx",
           "type": "registry:component",
           "target": "components/app-shell/agent-chats.tsx"
+        },
+        {
+          "path": "registry/app-shell/file-chip.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/file-chip.tsx"
         },
         {
           "path": "registry/app-shell/agent-compact.tsx",
@@ -3315,7 +3320,8 @@
       "title": "Code viewers",
       "description": "The SVG and CSV kinds: `svgKind` (a preview from a blob URL, or its source) and `csvKind` (a table, with an « @ » action on each row where the shell offers one: `RowReferenceContext`), drawn inside the artifact panel's bar. Each view loads the first time its artifact opens; other code stays in the panel's code block.",
       "dependencies": [
-        "react@^19.0.0"
+        "react@^19.0.0",
+        "@hachej/boring-ui-kit@^0.5.1"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.1/r/viewer-frame.json",

@@ -4,7 +4,7 @@
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { HTMLAttributes, ReactElement, ReactNode, Ref } from 'react';
-import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, Maximize2Icon, Minimize2Icon, XIcon } from '../_shared/icons';
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, HistoryIcon, LibraryIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { InputGroup } from '@/components/ui/input-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -25,6 +25,8 @@ import { usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
 import { ROW_MENTION, rowMentionKind } from '../viewer-code/row-reference';
 import { useAgentBarChat } from '../agent-bar/use-agent-bar-chat';
+import type { ArtifactsConfig } from '../pi-artifacts/artifact';
+import { basename, FileChip, isCitedFile, ReplyActionButton } from './file-chip';
 import type { AppShellLocale, AppShellText } from './text';
 import { HeaderActions } from './header-actions';
 import { chatWordLabels, composerLabels, shellWords, useInternal } from './layer-context';
@@ -152,8 +154,18 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const presented = role === 'agent' && !spec.chatProps?.artifacts ? layer.presented : undefined;
   // An app with `@` mentions also takes the table row reference (`row`): the pane's row action puts a `row` mention in the field, and it shows as a chip.
   const mentions = role === 'agent' ? spec.chatProps?.mentions : undefined;
-  const rowMentions = useMemo(() => mentions && !mentions.kinds?.[ROW_MENTION] ? { ...mentions, kinds: { ...mentions.kinds, [ROW_MENTION]: rowMentionKind } } : undefined, [mentions]);
-  const chatProps = kitOpen || presented || rowMentions ? { ...spec.chatProps, ...(rowMentions ? { mentions: rowMentions } : {}), ...(kitOpen ? { onOpenFile: (path: string) => kitOpen(path) } : {}), ...(presented ? { artifacts: { open: presented.open, isOpen: presented.isOpen } } : {}) } : spec.chatProps;
+  const openLabel = chatTextFor(locale).labels.openFile;
+  // A cited file in a reply is a chip that opens the way the card's chip does (`openFile`); a file the workspace does not have stays text.
+  const fileChip = useCallback((path: string, text?: string) => !openFile || !isCitedFile(path) ? undefined
+    : <FileChip path={path} files={spec.files} kinds={spec.fileKinds} onOpen={target => openFile(target)} label={openLabel(basename(path))} inline testid="message-mention" {...(text ? { text } : {})} />, [openFile, spec.files, spec.fileKinds, openLabel]);
+  const shellMentions = useMemo(() => mentions ? {
+    ...mentions,
+    ...(mentions.kinds?.[ROW_MENTION] ? {} : { kinds: { ...mentions.kinds, [ROW_MENTION]: rowMentionKind } }),
+    render: (path: string) => mentions.render?.(path) ?? fileChip(path),
+    ...(mentions.renderSent ? { renderSent: (path: string) => mentions.renderSent?.(path) ?? fileChip(path) } : {}),
+  } : undefined, [mentions, fileChip]);
+  const artifactKinds = spec.fileKinds?.filter(kind => kind.label) as ArtifactsConfig['kinds'];
+  const chatProps = kitOpen || presented || shellMentions ? { ...spec.chatProps, ...(shellMentions ? { mentions: shellMentions } : {}), ...(kitOpen ? { onOpenFile: (path: string) => kitOpen(path) } : {}), ...(presented ? { artifacts: { open: presented.open, isOpen: presented.isOpen, ...(artifactKinds?.length ? { kinds: artifactKinds } : {}) } } : {}) } : spec.chatProps;
   const mic = useBarMic();
   const capturing = layer.voice.phase === 'starting' || layer.voice.phase === 'recording';
   const readOnly = oneRow ? spec.readOnly : undefined;
@@ -186,7 +198,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const replyAction = barred ? spec.replyAction : undefined;
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
-    <ReplyActionContext.Provider value={replyAction ? <Button type="button" variant="ghost" size="sm" data-testid="agent-reply-action" onClick={replyAction.onSelect}>{replyAction.label}</Button> : null}>
+    <ReplyActionContext.Provider value={replyAction ? <ReplyActionButton action={replyAction} testid="agent-reply-action" /> : null}>
     <PiChat {...withChatPlugins(chatProps ?? {})} {...barProps} {...(Object.keys(wordLabels).length > 0 ? { labels: { ...wordLabels, ...spec.chatProps?.labels } } : {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
       {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: oneRow ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: capturing && !oneRow ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
     </ReplyActionContext.Provider>
@@ -235,17 +247,10 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
     <HistoryButton />
     <LibraryButton open={library} text={text} testId="agent-layer-library" />
     {actions.length > 0 && <HeaderActions actions={actions} compact={compactSnap !== undefined} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
-    {layer.bar && (compactSnap === 'half' || compactSnap === 'full') && <HeaderHint label={compactSnap === 'full' ? text.collapse : text.expand}>
-      <Button variant="ghost" size="icon" data-testid={compactSnap === 'full' ? 'agent-layer-collapse' : 'agent-layer-expand'}
-        aria-label={compactSnap === 'full' ? text.collapse : text.expand} title={compactSnap === 'full' ? text.collapse : text.expand}
-        onClick={event => { event.currentTarget.focus({ preventScroll: true }); layer.setSnap(compactSnap === 'full' ? 'half' : 'full'); }}>
-        {compactSnap === 'full' ? <Minimize2Icon className="size-4" aria-hidden="true" /> : <Maximize2Icon className="size-4" aria-hidden="true" />}
-      </Button>
-    </HeaderHint>}
     {!layer.bar && compactSnap === 'half' && <HeaderHint label={text.expand}><Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {!layer.bar && compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {controls}
-    {!layer.bar && <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+    {(!layer.bar || compactSnap !== undefined) && <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
   </div>;
 }
 
