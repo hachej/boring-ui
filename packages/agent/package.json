@@ -57,6 +57,10 @@
       "types": "./dist/documents.d.ts",
       "import": "./dist/documents.js"
     },
+    "./caps/extraction": {
+      "types": "./dist/caps/extraction/index.d.ts",
+      "import": "./dist/caps/extraction/index.js"
+    },
     "./file-convert": {
       "types": "./dist/file-convert.d.ts",
       "import": "./dist/file-convert.js"
