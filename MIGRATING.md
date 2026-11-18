@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.5.6
+
 - **`app-shell` `mcp` prop and new block `mcp-setup`: every app's header says how to connect a person's own assistant to it over MCP (additive).** Give `AppShell` `mcp={{ address: location.origin + '/mcp', appName: 'Carnet', signIn: true }}` and the shell draws a plug icon button in the header, the same ghost icon button as the header's other icons, always at the top right just before the screen's actions (a panel toggle) and the agent's button, on desktop and phone; after a click or a tap it keeps no focus ring. Apps that portalled `McpSetup` into the header slot pass the prop instead. It opens a popover: the `address` exactly, with « Copier »; one button per assistant with one-sentence steps (`defaultMcpClients(appName, address, locale)`: Claude, ChatGPT, Claude Code with a copyable `claude mcp add --transport http` command, « Autre »; `clients` replaces them); the sign-in sentence (`signIn`, default on). The popover follows the shell's `locale`; `mcp.labels` and `mcp.clients` override. The MCP route and its sign-in stay the app's. Re-add `app-shell` to pick it up (it now depends on `mcp-setup`). An app without AppShell renders `<McpSetup address appName />` itself (`boring-ui-blocks add mcp-setup`; `_shared/icons` gains `PlugIcon`). Tests: `test/ui/mcp-setup.test.mjs`. Feature: `features/mcp-setup.md`.
 
 # Migrating to 0.5.5
