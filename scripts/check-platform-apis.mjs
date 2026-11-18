@@ -10,10 +10,11 @@ import { fileURLToPath } from 'node:url';
 import { gitIgnored, walkProject } from './project-files.mjs';
 import ts from 'typescript';
 
-// Browser-reachable source. Server-only files (packages/agent except its gateway provider, each example server.mjs, files/src/sqlite.ts, the remote handlers) are not listed.
+// Browser-reachable source. Server-only files (packages/agent except its gateway provider, each example server.mjs, files/src/sqlite.ts, the remote handlers,
+// the kit's sign-in for the app's Worker, ui/src/signin/) are not listed.
 export const BROWSER_GLOBS = [
   /^packages\/agent\/src\/gateway-provider\.ts$/,
-  /^packages\/ui\/src\/.+\.[jt]sx?$/,
+  /^packages\/ui\/src\/(?!signin\/).+\.[jt]sx?$/,
   /^packages\/feedback\/src\/(?:format|page|ui)\/.+\.[jt]sx?$/,
   /^packages\/files\/src\/(?!sqlite\.ts$|remote-handler\.ts$).+\.ts$/,
   /^packages\/execution\/src\/(?:remote-files|remote-shell)(?:-io|-protocol)?\.ts$/,
