@@ -34,7 +34,8 @@ import { usePane } from './agent-pane';
 export { AgentTrigger } from './agent-trigger';
 export { AgentComposerAnchor, AgentDockLayout, AgentLayer } from './agent-placements';
 export { isOverlayEvent, nextSnapOnClose } from './agent-compact';
-export type { AgentComposer, AgentLayerApi, AgentLayerState, AgentPreview, AgentSpec, AgentWords } from './layer-context';
+export type { AgentComposer, AgentLayerApi, AgentLayerState, AgentPreview, AgentSpec, AgentWords, PaneFrame } from './layer-context';
+export { usePaneFrame } from './layer-context';
 
 /** A screen's way to hand the layer an assistant it already owns (see `useAgentLoan`). */
 export interface AgentLoan {

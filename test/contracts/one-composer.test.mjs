@@ -672,6 +672,24 @@ test('1440: docking with a file open closes the preview, and the docked conversa
   assert.equal(await count('[data-testid=agent-layer] [data-testid=composer-input]'), 1, 'one field, in the column');
 });
 
+// A pane entry with `frame: false` draws its own header (an editor): the pane adds none, and its close and back still work (one header, not two).
+for (const width of [1280, 390]) test(`${width}: a frameless pane entry shows one header, back steps under it and close closes the pane`, { skip, timeout: 120000 }, async () => {
+  await open(width, 'demo=1&single=1');
+  await browser.evaluate(`window.__openFile('uploads/discrepancies-january.csv')`);
+  await browser.until('the file is open', `!!document.querySelector('[data-testid=agent-preview] [data-testid=agent-preview-title]')`);
+  await browser.evaluate(`window.__openBare()`);
+  await browser.until('the bare entry is on top', `!!document.querySelector('[data-pane-top] [data-testid=bare-editor]')`);
+  assert.equal(await count('[data-pane-top] [data-testid=bare-header]'), 1, 'the content draws one header');
+  assert.equal(await count('[data-pane-top] [data-testid=agent-preview-title]'), 0, 'the pane draws none above it');
+  assert.equal(await count('[data-pane-top] [data-testid=agent-preview-close]'), 0, 'no pane close under the content header');
+  await click('[data-testid=bare-back]');
+  await browser.until('back shows the file', `!!document.querySelector('[data-pane-top] [data-testid=agent-preview-title]') && !document.querySelector('[data-pane-top] [data-testid=bare-editor]')`);
+  await browser.evaluate(`window.__openBare()`);
+  await browser.until('bare again', `!!document.querySelector('[data-pane-top] [data-testid=bare-editor]')`);
+  await click('[data-testid=bare-close]');
+  await browser.until('the pane is closed', `!document.querySelector('[data-testid=agent-preview]')`);
+});
+
 // Julien: the composer in full screen looked different (square corners, square buttons): the portalled host lost the shell's scoped rules. The controller is one small notch.
 const composerLook = () => browser.evaluate(`(() => { const ig = document.querySelector('[data-testid=composer] [data-slot=input-group]'), bx = document.querySelector('[data-testid=agent-composer-box]'), g = bx && bx.getBoundingClientRect().height > 0 && bx.contains(ig) ? bx : ig, a = document.querySelector('[data-testid=composer-bar-attach]'), m = document.querySelector('[data-testid=agent-talk], [data-testid=composer-submit]');
   const r = e => parseFloat(getComputedStyle(e).borderTopLeftRadius); return { groupHeight: Math.round(g.getBoundingClientRect().height), groupRadius: r(g), attachRadius: r(a), attachCircle: r(a) >= a.getBoundingClientRect().height / 2 - 1, micCircle: r(m) >= m.getBoundingClientRect().height / 2 - 1, attachHeight: Math.round(a.getBoundingClientRect().height) }; })()`);

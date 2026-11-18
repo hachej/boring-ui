@@ -58,6 +58,21 @@ The app shell is a registry block (`app-shell`), installed with `boring-ui-block
 
 The message carries the token as text (`@id`). `createMentionResolver` (`@hachej/boring-agent/mentions`) expands workspace files only; the host resolves any other id itself, in an agent tool that looks it up or a Pi extension. Model the client side on `useSharedChat` ([registry/shared-chat/use-shared-chat.tsx](../../registry/shared-chat/use-shared-chat.tsx)), which does it for members.
 
+### Your own editor in the right pane
+
+`useAgentLayer().preview({ title, content })` draws `content` under the pane's header (title, back, close). A content that has its own header (an editable file in the pi-app `FileViewer`, with its mode toggle and save state) must not sit under a second one: pass `frame: false` and wire the pane's close and back into it with `usePaneFrame()` (feature `layer-pane-bare`).
+
+```tsx
+function Memoire({ path, provider }) {
+  const { close, back, backLabel } = usePaneFrame();
+  return <FileViewer path={path} locator={provider.locate(path)} onClose={close} onBack={back} backLabel={backLabel}
+    options={{ client: provider, identity: provider.identity, kinds: [markdownKind] }} />;
+}
+layer.preview({ title: 'Mémoire du dossier', frame: false, content: <Memoire path={path} provider={provider} /> });
+```
+
+`back` is undefined when there is nothing under the entry to go back to.
+
 ## Rules
 
 1. Install and update blocks with `boring-ui-blocks` only; configure through props and tokens.
