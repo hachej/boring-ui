@@ -97,6 +97,15 @@ function Page() {
         <Button variant="outline" data-testid="ds-notify-needs" onClick={() => { layer.close(); void controller.send('followUp', { text: 'approval', attachments: [], restore: { text: '', attachments: [] } }); }}>Needs you</Button>
         <Button variant="outline" data-testid="ds-notify-reply" onClick={() => { layer.close(); void controller.send('followUp', { text: 'answer', attachments: [], restore: { text: '', attachments: [] } }); }}>A reply arrives while folded</Button></Row>
     </Section>
+    <Section id="floating-composer" title="Floating composer">
+      <p className="m-0 text-muted-foreground">The one composer has three places. At the bottom of the page, floating over it (a wide screen: drag it by its six-dot grip, or focus the grip and use the arrow keys; near a corner it snaps there), or folded to a round icon that counts what is new and rings when the agent waits for a decision. The strip on the bar's border has Float, Dock to the bottom and Minimise; a tap on the icon puts the bar back where it was. A phone keeps the bar at the bottom and folds it to the icon above the tabs.</p>
+      <Row>
+        <Button variant="outline" data-testid="ds-float" disabled={layer.place === 'float' || !layer.expanded} onClick={() => layer.setPlace('float')}>Float the composer</Button>
+        <Button variant="outline" data-testid="ds-dock-bottom" disabled={layer.place === 'bottom'} onClick={() => layer.setPlace('bottom')}>Dock to the bottom</Button>
+        <Button variant="outline" data-testid="ds-minimise" disabled={layer.place === 'icon'} onClick={() => layer.setPlace('icon')}>Minimise to the icon</Button>
+        <Button variant="outline" data-testid="ds-icon-reply" onClick={() => { layer.setPlace('icon'); layer.close(); void controller.send('followUp', { text: 'answer', attachments: [], restore: { text: '', attachments: [] } }); }}>Minimise, then a reply arrives</Button>
+      </Row>
+    </Section>
     <Section id="navigation" title="Tabs, dialog, empty, loading">
       <Tabs defaultValue="a"><TabsList><TabsTrigger value="a">All</TabsTrigger><TabsTrigger value="b">Gaps</TabsTrigger></TabsList><TabsContent value="a">Everything</TabsContent><TabsContent value="b">Only gaps</TabsContent></Tabs>
       <Dialog><DialogTrigger render={<Button variant="outline" className="self-start">Open a dialog</Button>} /><DialogContent><DialogHeader><DialogTitle>A dialog</DialogTitle><DialogDescription>Kit defaults.</DialogDescription></DialogHeader></DialogContent></Dialog>
@@ -142,7 +151,7 @@ const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the 
 function App() {
   const [route, setRoute] = useState('design'), [theme, setTheme] = useState(initial), [notices, setNotices] = useState([]);
   notify = kind => { const id = `${kind}-${Date.now()}`; setNotices([{ ...NOTICES[kind], id, onDismiss: () => setNotices(list => list.filter(n => n.id !== id)) }]); };
-  return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" agent={agent} notices={notices}
+  return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" floatingComposer agent={agent} notices={notices}
     account={{ name: 'Visitor', menu: [], theme: { value: theme, onChange: value => { applyTheme(value); setTheme(value); } } }} />;
 }
 createRoot(document.getElementById('root')).render(<App />);

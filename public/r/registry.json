@@ -2468,6 +2468,15 @@
           ".app-shell [data-bar-tray=\"expanded\"]": {
             "--app-shell-bar-tray-size": "var(--app-shell-bar-tray-expanded)"
           },
+          ".app-shell [data-testid=\"composer-icon\"]": {
+            "border-radius": "var(--pm-radius-round)",
+            "width": "100%",
+            "height": "100%"
+          },
+          ".app-shell [data-testid=\"composer-icon\"] > svg": {
+            "width": "1.375rem",
+            "height": "1.375rem"
+          },
           ".app-shell [data-testid=\"agent-tray\"][data-overlay]": {
             "transform": "translateY(calc(var(--app-shell-bar-tray-expanded) - var(--app-shell-bar-tray-size)))"
           },
@@ -2736,6 +2745,21 @@
           "path": "registry/app-shell/shell-notice.tsx",
           "type": "registry:component",
           "target": "components/app-shell/shell-notice.tsx"
+        },
+        {
+          "path": "registry/app-shell/composer-grip.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/composer-grip.tsx"
+        },
+        {
+          "path": "registry/app-shell/float-composer.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/float-composer.tsx"
+        },
+        {
+          "path": "registry/app-shell/floating-composer.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/floating-composer.tsx"
         },
         {
           "path": "registry/app-shell/list-detail.tsx",
