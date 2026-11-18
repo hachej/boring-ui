@@ -1,6 +1,7 @@
 # Unreleased
 
 - **`sidebar-list`: a list of records for the app shell's left pane (new block; additive).** `npx boring-ui-blocks add sidebar-list` gives `SidebarList` with `label`, `action?`, `items` (`id`, `label`, `avatar?` letters or icon, `count?`, `active?`, `onSelect`, `children?` sub-rows) and `expanded?`, built from the kit's sidebar primitives so it folds to avatars on the icon rail. Render it from `NavItem.sidebar`; replaces hand-built client lists. Needs the shadcn `sidebar` and `avatar` components.
+- **`app-shell`: a right-pane entry can draw its own header (`useAgentLayer().preview({ title, content, frame: false })`, `usePaneFrame()`; additive).** Without `frame: false` nothing changes. With it the pane adds no header and the content draws one (for example a pi-app `FileViewer` on an editable file, with its mode toggle and save state), taking the pane's close and back from `usePaneFrame()` (`{ close, back, backLabel }`) as `onClose`, `onBack` and `backLabel`. Update the `app-shell` block to get it.
 
 # Migrating to 0.5.4
 
