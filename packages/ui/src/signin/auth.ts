@@ -117,11 +117,13 @@ export function makeAuth(options: SignInOptions) {
     // Better Auth's own limiter, kept in the app's database so every isolate counts the same; sign-ups also per hour.
     rateLimit: { enabled: true, storage: 'database', customRules: { '/sign-up/email': { window: 3600, max: options.signUpsPerHour ?? 20 } } },
     databaseHooks: { user: { create: {
-      // By invitation only: an invited address, the holder of the first-owner link, or a Studio owner back from Studio.
-      before: async (user: { email: string }, context?: { params?: Record<string, string> } | null) => {
-        const email = normalEmail(user.email);
+      // By invitation only: an invited address, the holder of the first-owner link, or a Studio owner back from Studio. Through Google, the
+      // invited address counts only when Google says it is verified: an unverified one could be anyone's.
+      before: async (user: { email: string; emailVerified?: boolean }, context?: { params?: Record<string, string> } | null) => {
+        const email = normalEmail(user.email), provider = context?.params?.['id'] ?? context?.params?.['providerId'];
+        if (provider === 'google' && user.emailVerified !== true) throw new APIError('FORBIDDEN', { code: 'NOT_INVITED', message: say('NOT_INVITED', 'en') ?? 'NOT_INVITED' });
         if (email === pending.firstOwner || await invitationOf(email)) return;
-        const viaStudio = (context?.params?.['id'] ?? context?.params?.['providerId']) === STUDIO;        if (viaStudio && pending.studioOwners.has(email)) return;
+        if (provider === STUDIO && pending.studioOwners.has(email)) return;
         throw new APIError('FORBIDDEN', { code: 'NOT_INVITED', message: say('NOT_INVITED', 'en') ?? 'NOT_INVITED' });
       },
       after: async (user: { email: string }) => {
