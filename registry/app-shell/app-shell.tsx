@@ -32,6 +32,7 @@ import type { AppShellNotice } from './shell-notice';
 import { updateNotice } from './update-notice';
 import type { AppShellUpdate } from './update-notice';
 import { ScreenHeaderSlotContext } from '../utils/screen-header-slot';
+import type { McpSetupProps } from '../mcp-setup/mcp-setup';
 import type { AppShellLocale, AppShellText } from './text';
 
 export interface AppShellProps {
@@ -66,6 +67,11 @@ export interface AppShellProps {
   readonly account?: AccountSpec;
   /** The language of the shell's own words and the layer's (« Se déconnecter », « Plus », « Ouvrir l’assistant »…). When set it wins over the agent's `chatProps.locale` and the panel's; without it `chatProps.locale`, then the panel's, then English. */
   readonly locale?: AppShellLocale;
+  /**
+   * The app's MCP door (`{ address: location.origin + '/mcp', appName, signIn }`): a plug icon button in the header, at the far right just
+   * before the agent's button, on every screen and width, that opens how to connect a person's own assistant (`mcp-setup`). Words follow `locale`.
+   */
+  readonly mcp?: McpSetupProps;
   /** The app's router owns the URL; the shell only reports the choice. */
   readonly route: { readonly id: string; readonly onChange: (id: string) => void };
   /**
@@ -138,7 +144,7 @@ function Screens({ items, activeId, scrolls, slot, centred, bar }: { readonly it
   </div>;
 }
 
-function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title, nav, agent, panel, account, route, text, update, notices }: { readonly update: AppShellUpdate | undefined; readonly notices: readonly AppShellNotice[]; readonly single: boolean; readonly bar: boolean; readonly resizable: AppShellProps['resizable']; readonly appId: string | undefined; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
+function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title, nav, agent, panel, account, route, text, update, notices, mcp }: { readonly mcp: McpSetupProps | undefined; readonly update: AppShellUpdate | undefined; readonly notices: readonly AppShellNotice[]; readonly single: boolean; readonly bar: boolean; readonly resizable: AppShellProps['resizable']; readonly appId: string | undefined; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
   const improve = panel && panel.menu !== false ? panel.label ?? text.improve : undefined;
   const Layout = panel?.Layout ?? NoPanelLayout;
   const compact = useIsCompact();
@@ -169,7 +175,7 @@ function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title,
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-card">
       <Layout screen={active.label} navigation={compact && !sheet && !single ? <TabBar items={nav} activeId={active.id} onChange={choose} text={text} /> : undefined}>
         <ShellContext name={active.label} />
-        <ScreenHeader fallbackTitle={single ? title : active.label} compact={compact} leadingAvatar={single} trigger={!(single && bar)} avatar={avatar} menu={sheet} screenSidebar={compact && !sheet && active.sidebar ? <ScreenSidebarSheet key={active.id} item={active} text={text} /> : undefined} text={text} slotRef={setSlot} />
+        <ScreenHeader fallbackTitle={single ? title : active.label} compact={compact} leadingAvatar={single} trigger={!(single && bar)} avatar={avatar} menu={sheet} screenSidebar={compact && !sheet && active.sidebar ? <ScreenSidebarSheet key={active.id} item={active} text={text} /> : undefined} text={text} slotRef={setSlot} mcp={mcp} />
         <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} centred={single} bar={bar} />
         <NoticeHost notices={own ? [...notices, own] : notices} text={text} compact={compact} />
       </Layout>
@@ -185,11 +191,13 @@ const NONE: readonly AppShellNotice[] = [];
 export function AppShell(props: AppShellProps) {
   const { layout, rail = 'icon', compactNav = 'tabs', agent, panel, title, nav, account, route } = props;
   if (layout === 'chat' && agent) throw new Error('AppShell layout "chat" takes no `agent`: the page is the chat (use `panel` for the product manager)');
-  const text = { ...appShellText(props.locale ?? agent?.chatProps?.locale ?? (panel?.locale as AppShellLocale | undefined)), ...agent?.words };
+  const locale = props.locale ?? agent?.chatProps?.locale ?? (panel?.locale as AppShellLocale | undefined);
+  const text = { ...appShellText(locale), ...agent?.words };
+  const mcp = props.mcp && { ...props.mcp, locale: props.mcp.locale ?? (locale === 'fr' ? 'fr' : 'en') };
   useOverlayBlur(props.overlayBlur ?? false);
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;
   return <AgentLayerProvider agent={agent} composer={props.composer} floating={props.floatingComposer === true} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title} modeIdentity={{ app: props.appId || title, person: account?.email, screen: layout === 'screen' }}>
-    <HeaderProvider><Shell single={props.sidebar === false} bar={props.composer === 'bar'} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} update={props.update} notices={props.notices ?? NONE} /></HeaderProvider>
+    <HeaderProvider><Shell single={props.sidebar === false} bar={props.composer === 'bar'} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} update={props.update} notices={props.notices ?? NONE} mcp={mcp} /></HeaderProvider>
   </AgentLayerProvider>;
 }

@@ -12,6 +12,8 @@ import { ScreenActiveContext } from './agent-context';
 import { HeaderActions } from './header-actions';
 import type { ScreenHeaderAction } from './header-actions';
 import { AgentTrigger } from './agent-layer';
+import { McpSetup } from '../mcp-setup/mcp-setup';
+import type { McpSetupProps } from '../mcp-setup/mcp-setup';
 import type { AppShellText } from './text';
 
 interface Icon { className?: string }
@@ -101,7 +103,7 @@ function mergedSpec(entries: readonly Entry[]): ScreenHeaderSpec {
  * The header of the screen on show: the avatar button (compact) or « ← », then the title and subtitle,
  * then the slot of the screen's own controls (`slotRef`), up to two actions, « … » and the agent trigger. `avatar` is the compact account button. `menu` (compact only) makes the leading button open the sidebar sheet and leaves the account to the sidebar's footer. The sidebar toggle of a wide screen lives in the sidebar's own header (`AppSidebar`), not here: on a phone the sheet does not exist while closed, so its opener stays in this header.
  */
-export function ScreenHeader({ fallbackTitle, compact, leadingAvatar = false, trigger = true, avatar, text, slotRef, menu, screenSidebar }: { readonly leadingAvatar?: boolean; readonly trigger?: boolean; readonly menu?: boolean; readonly screenSidebar?: ReactNode; readonly fallbackTitle: string; readonly compact: boolean; readonly avatar: ReactNode; readonly text: AppShellText; readonly slotRef?: (element: HTMLElement | null) => void }) {
+export function ScreenHeader({ fallbackTitle, compact, leadingAvatar = false, trigger = true, avatar, text, slotRef, menu, screenSidebar, mcp }: { readonly mcp?: McpSetupProps | undefined; readonly leadingAvatar?: boolean; readonly trigger?: boolean; readonly menu?: boolean; readonly screenSidebar?: ReactNode; readonly fallbackTitle: string; readonly compact: boolean; readonly avatar: ReactNode; readonly text: AppShellText; readonly slotRef?: (element: HTMLElement | null) => void }) {
   const top = useTopHeader();
   const spec = top?.spec;
   const actions = spec?.actions ?? [];
@@ -121,6 +123,8 @@ export function ScreenHeader({ fallbackTitle, compact, leadingAvatar = false, tr
     </div>
     {/* An embedded page's own controls (`ScreenHeaderSlotContext`, for example AgentWorkspace layout="embedded"), so it needs no second row. */}
     <div ref={slotRef} data-testid="header-slot" className="flex shrink-0 items-center gap-1 empty:hidden" />
+    {/* The MCP door: after the screen's own controls, just before its actions (a panel toggle) and the agent's button. */}
+    {mcp && <McpSetup {...mcp} />}
     <HeaderActions actions={actions} compact={compact} text={text} prefix="header" run={run} />
     {lead && back && !menu && avatar}
     {trigger && <AgentTrigger />}

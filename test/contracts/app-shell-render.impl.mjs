@@ -205,6 +205,27 @@ test('hover rail on a phone keeps the same tab bar and no sidebar', async t => {
   await ui.unmount();
 });
 
+test('mcp: the header carries the plug as a ghost icon button after the screen\'s controls and before the agent\'s button, in the shell\'s words; without mcp, none', async t => {
+  const plug = async (props, width) => {
+    const { container, unmount } = await render(t, props, width);
+    const header = container.querySelector('[data-testid=screen-header]');
+    const button = header?.querySelector('[data-testid=mcp-setup-trigger]');
+    const order = [...(header?.querySelectorAll('[data-testid=mcp-setup-trigger], [data-testid=agent-trigger]') ?? [])].map(node => node.getAttribute('data-testid'));
+    const agentButton = header?.querySelector('[data-testid=agent-trigger]');
+    // The same Button as the agent's (ghost, icon), so the same size, look and spacing; the agent's adds only touch-none for hold to talk.
+    const same = agentButton ? button?.className === agentButton.className.split(' ').filter(c => c !== 'touch-none').join(' ') : undefined;
+    const found = button && { label: button.getAttribute('aria-label'), size: button.getAttribute('data-size'), same, order: order.join(' ') };
+    await unmount();
+    return found;
+  };
+  const mcp = { address: 'https://carnet-fictif.invalid/mcp', appName: 'Carnet' };
+  for (const width of [{ width: 390 }, { width: 1280 }]) {
+    assert.deepEqual(await plug({ mcp, agent: agentWith(undefined), locale: 'fr' }, width), { label: 'Connecter un assistant', size: 'icon', same: true, order: 'mcp-setup-trigger agent-trigger' }, `at ${width.width}`);
+    assert.equal((await plug({ mcp }, width))?.label, 'Connect an assistant', `no locale: English at ${width.width}`);
+    assert.equal(await plug({ locale: 'fr' }, width), null, `no mcp, no plug at ${width.width}`);
+  }
+});
+
 test('the layer\'s own words follow the shell locale, which wins over the agent\'s own locale; the agent\'s applies when the shell sets none', async t => {
   const trigger = async (agentChatProps, locale) => {
     const { container, unmount } = await render(t, { agent: agentWith(agentChatProps), locale });

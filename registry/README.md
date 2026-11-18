@@ -132,6 +132,7 @@ Item and file types follow the shadcn schema: the multi-file chat items are `reg
 | `app-shell` | `... add <registry>/app-shell.json` (also installs `pi-chat` and `feedback`; uses the app's `sidebar`, `avatar`, `drawer` and `dropdown-menu`) | one agent above any app: a bottom drawer with peek, half and full on a phone, a right panel on a wide screen (see [below](#agent-layer-app-shell)) |
 | `windows` | `... add <registry>/windows.json` (the app's Base UI controls only) | independent floating utilities and a keyboard launcher (see [below](#floating-windows-windows)) |
 | `agent-target` | `... add <registry>/agent-target.json` (also installs `app-shell`; requires the coordinated kit patch, not the older published 0.4.3) | point and dictate on explicitly marked app JSON without opening chat (see [below](#point-and-dictate-on-app-data-agent-target)) |
+| `mcp-setup` | `... add <registry>/mcp-setup.json` (the app's `button` and `popover`) | the app has an MCP route. With `app-shell` (which installs it) give `AppShell mcp={{ address: origin + "/mcp", appName: "Carnet" }}`; without AppShell, `<McpSetup address={origin + "/mcp"} appName="Carnet" />`. The plug at the top right of the header opens how to connect Claude, ChatGPT, Claude Code or another assistant (address, copy, steps; `clients`, `signIn`, `locale`, `labels`) |
 | `spaces` | `... add <registry>/spaces.json` | an app with shared spaces: `useSpaces`, `SpaceSwitcher` and `MembersSheet` over the host's Spaces service, through a `transport` you give |
 
 ### From one item to small items (D-257)

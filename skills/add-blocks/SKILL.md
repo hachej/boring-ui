@@ -40,6 +40,7 @@ Pick by placement ([full table](../../registry/README.md#blocks-what-to-install)
 | User feedback (point, dictate, send) | `feedback`, `feedback-preview` |
 | A "choose a file" Button, or a dashed drop strip, with type and size refusals | `file-pick` |
 | Model and key picker | `provider-setup` |
+| The header icon on how to connect a person's assistant (Claude, ChatGPT) to the app over MCP | `AppShell mcp={{ address, appName }}` (`app-shell` brings `mcp-setup`); without AppShell, `mcp-setup` |
 | Floating utility windows | `windows` |
 
 ## Install

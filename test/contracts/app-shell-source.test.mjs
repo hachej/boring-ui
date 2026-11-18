@@ -67,6 +67,8 @@ test('the item imports only React, its declared packages and the app setup shadc
       if (imported.startsWith('./')) { assert.ok(files.some(file => file.replace(/\.tsx?$/, '') === imported.slice(2)), `${name} imports missing ${imported}`); continue; }
       if (imported === '../_shared/icons' || imported === '../_shared/controller-strip') { assert.ok(item.registryDependencies.includes('@boring-ui/_shared')); continue; }
       if (/^\.\.\/(?:pi-chat(?:-[a-z]+)?|feedback|utils|dock)\//.test(imported)) continue;
+      // The header's MCP door (`mcp` prop) is the mcp-setup item's.
+      if (imported === '../mcp-setup/mcp-setup') { assert.ok(item.registryDependencies.includes('@boring-ui/mcp-setup'), `${name} imports ${imported} without depending on @boring-ui/mcp-setup`); continue; }
       // composer="bar" (D-2198) reads the run through the agent bar's adapter and draws its question card.
       // The right pane draws files with the kit's viewers (viewer-frame, viewer-pdf, viewer-code) and routes the chat's artifacts (pi-artifacts).
       const viewer = /^\.\.\/(viewer-frame|viewer-pdf|viewer-code|pi-artifacts)\//.exec(imported);
@@ -236,7 +238,7 @@ test('AppShellProps has the shell props, optional rail, locale and URL opt-out, 
   const program = ts.createProgram([`${root}${folder}/app-shell.tsx`], { allowImportingTsExtensions: true, jsx: ts.JsxEmit.ReactJSX, noEmit: true, skipLibCheck: true });
   const file = program.getSourceFile(`${root}${folder}/app-shell.tsx`);
   const props = file.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'AppShellProps');
-  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'appId', 'compactNav', 'composer', 'floatingComposer', 'layout', 'locale', 'nav', 'notices', 'overlayBlur', 'panel', 'rail', 'resizable', 'route', 'sidebar', 'title', 'update']);
+  assert.deepEqual(props.members.map(member => member.name.text).sort(), ['account', 'agent', 'agentLink', 'appId', 'compactNav', 'composer', 'floatingComposer', 'layout', 'locale', 'mcp', 'nav', 'notices', 'overlayBlur', 'panel', 'rail', 'resizable', 'route', 'sidebar', 'title', 'update']);
   const sidebar = props.members.find(member => member.name.text === 'sidebar');
   assert.ok(sidebar.questionToken, 'sidebar is optional (D-2198: only `false`, a single-screen app)');
   assert.equal(sidebar.type.getText(file), 'false');
