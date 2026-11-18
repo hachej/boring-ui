@@ -436,7 +436,7 @@ export function Composer(props: ComposerProps) {
     {fileEl}
     {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} {...(props.barActions === 'attach' || props.slashList ? { bare: true } : {})} />}
     {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} header={typeof mentions.pickerHeader === 'function' ? mentions.pickerHeader(trigger!.query) : mentions.pickerHeader} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
-    {pill && !props.recording && chipList && <div className="flex flex-wrap gap-2 empty:hidden">{chipList}</div>}
+    {pill && !props.recording && chipList && <div className="flex flex-wrap gap-2 px-2 empty:hidden">{chipList}</div>}
     {slots ? pill ? <InputGroup className="h-auto">
       <InputGroupAddon>{startAndPlus}</InputGroupAddon>
       <div data-slot="composer-recording" data-testid="composer-recording" className="flex min-w-0 flex-1 items-center gap-2 self-stretch">{props.recordingStatus}

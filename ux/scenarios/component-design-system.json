@@ -11,6 +11,7 @@
   { "label": "Error", "steps": [{ "do": "type", "target": "composer-input", "text": "error" }, { "do": "tap", "target": "composer-submit", "until": "visible:agent-card-failed|text:conversation-content~Provider unavailable", "timeout": 14000 }] },
   { "label": "Files: chips and open", "steps": [{ "do": "type", "target": "composer-input", "text": "files" }, { "do": "tap", "target": "composer-submit", "until": "text:conversation-content~Opened on the right", "timeout": 14000 }] },
   { "label": "Table: reference a row", "flow": "F01" },
+  { "label": "Cite a card to the agent", "flow": "F04" },
   { "label": "Approval card", "steps": [{ "do": "type", "target": "composer-input", "text": "approval" }, { "do": "tap", "target": "composer-submit", "until": "visible:agent-card", "timeout": 14000 }, { "do": "tap", "target": "agent-bar-conversation", "until": "visible:approval-card", "timeout": 8000 }] },
   { "label": "Reply card with an action", "steps": [{ "do": "type", "target": "composer-input", "text": "answer" }, { "do": "tap", "target": "composer-submit", "until": "visible:agent-card-action", "timeout": 14000 }] },
   { "label": "Typing", "steps": [{ "do": "type", "target": "composer-input", "text": "typing" }, { "do": "tap", "target": "composer-submit", "until": "text:conversation-content~That took a moment", "timeout": 14000 }] },
@@ -35,7 +36,10 @@
  "notes": "A reference page, not a flow: it has no gestures. Its fixture is held to the design check like every showcase fixture.",
  "states": [
   { "id": "01", "name": "rest", "steps": [] },
-  { "id": "02", "name": "dark", "query": "dark=1", "steps": [] }
+  { "id": "02", "name": "dark", "query": "dark=1", "steps": [] },
+  { "id": "03", "name": "cite-one-chip", "steps": [{ "do": "tap", "target": "[data-testid=ds-cite-1] [data-testid=cite-reference]", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===1", "timeout": 3000 }] },
+  { "id": "04", "name": "cite-two-chips-dark", "query": "dark=1", "steps": [{ "do": "tap", "target": "[data-testid=ds-cite-1] [data-testid=cite-reference]", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===1", "timeout": 3000 }, { "do": "tap", "target": "[data-testid=ds-cite-2] [data-testid=cite-reference]", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===2", "timeout": 3000 }] },
+  { "id": "05", "name": "cite-french", "query": "lang=fr", "steps": [{ "do": "tap", "target": "[data-testid=ds-cite-1] [data-testid=cite-reference]", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===1", "timeout": 3000 }, { "do": "tap", "target": "[data-testid=ds-cite-2] [data-testid=cite-reference]", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===2", "timeout": 3000 }] }
  ],
  "flows": [
   { "id": "F01", "name": "Reference a table row in the assistant", "steps": [
@@ -46,6 +50,10 @@
   { "id": "F02", "name": "Fire a notification from the page", "steps": [
     { "do": "tap", "target": "ds-notify-warning", "say": "Tap “Warning” in the Notifications section", "until": "visible:notice", "expect": "One notice appears above the assistant bar, with its action." } ] },
   { "id": "F03", "name": "A reply arrives while the conversation is folded", "steps": [
-    { "do": "tap", "target": "ds-notify-reply", "say": "Tap “A reply arrives while folded”", "until": "visible:agent-card", "timeout": 14000, "expect": "The folded card shows the reply and the notch counts it." } ] }
+    { "do": "tap", "target": "ds-notify-reply", "say": "Tap “A reply arrives while folded”", "until": "visible:agent-card", "timeout": 14000, "expect": "The folded card shows the reply and the notch counts it." } ] },
+  { "id": "F04", "name": "Cite a card to the assistant", "steps": [
+    { "do": "tap", "target": "[data-testid=ds-cite-1] [data-testid=cite-reference]", "say": "Tap the button on card 1", "expect": "One chip appears in the composer: the card's title and its number", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===1", "timeout": 3000 },
+    { "do": "tap", "target": "[data-testid=ds-cite-2] [data-testid=cite-reference]", "say": "Tap the button on card 2", "expect": "A second chip joins the first", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===2", "timeout": 3000 },
+    { "do": "tap", "target": "[data-testid=ds-cite-1] [data-testid=cite-reference]", "say": "Tap card 1 again", "expect": "Nothing is added: still two chips", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===2", "timeout": 3000 } ] }
  ]
 }

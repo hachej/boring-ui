@@ -78,6 +78,8 @@ export interface AppShellText {
   /** A table row's action (tooltip and name), its state once the row is in the field, and the multi-row bar (`{n}` is the count). */
   readonly referenceInAgent: string;
   readonly referencedInAgent: string;
+  /** The word before a cited reference's title in the chip's name and the sent message (`Reference: Sort the list`). */
+  readonly citation: string;
   readonly referenceRows: string;
   /** The field's status after rows were referenced (`{n}` is the count). */
   readonly rowsReferenced: string;
@@ -139,6 +141,7 @@ const en: AppShellText = {
   fileUnavailable: 'This file cannot be opened.',
   referenceInAgent: 'Reference in agent',
   referencedInAgent: 'Referenced',
+  citation: 'Reference',
   referenceRows: 'Reference {n} rows in agent',
   rowsReferenced: '{n} referenced',
   selectRow: 'Select row',
@@ -197,6 +200,7 @@ const fr: AppShellText = {
   fileUnavailable: 'Ce fichier ne peut pas être ouvert.',
   referenceInAgent: 'Citer dans l’assistant',
   referencedInAgent: 'Cité',
+  citation: 'Référence',
   referenceRows: 'Citer {n} lignes dans l’assistant',
   rowsReferenced: '{n} cité(s)',
   selectRow: 'Sélectionner la ligne',

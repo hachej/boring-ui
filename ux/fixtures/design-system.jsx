@@ -8,6 +8,7 @@ import { useAgentLayer } from '../../registry/app-shell/agent-layer.tsx';
 import { DEMO_KINDS, demoTree } from '../../test/fixtures/themes/one-composer-demo.jsx';
 import { DEMO_FILES, demoFiles } from '../../test/fixtures/themes/one-composer-files.js';
 import { csvRows } from '../../registry/viewer-code/csv-table.tsx';
+import { CiteButton } from '../../registry/app-shell/cite-reference.tsx';
 import { columnNames, rowMentionPath, rowReferenceLabel } from '../../registry/viewer-code/row-reference.tsx';
 import { createDemoController } from './demo-controller.mjs';
 import { installFakeMic } from './fake-mic.mjs';
@@ -44,6 +45,7 @@ applyTheme(initial);
 const COLOURS = [['background', 'bg-background'], ['foreground', 'bg-foreground'], ['card', 'bg-card'], ['muted', 'bg-muted'], ['muted-foreground', 'bg-muted-foreground'], ['primary', 'bg-primary'], ['primary-foreground', 'bg-primary-foreground'], ['secondary', 'bg-secondary'], ['accent', 'bg-accent'], ['border', 'bg-border'], ['input', 'bg-input'], ['ring', 'bg-ring'], ['destructive', 'bg-destructive'], ['success', 'bg-success'], ['warning', 'bg-warning'], ['info', 'bg-info']];
 const SCALE = ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl', 'text-2xl'];
 const Section = ({ id, title, children }) => <section data-testid={`ds-${id}`} className="flex flex-col gap-3"><h2 className="m-0 text-lg font-semibold">{title}</h2>{children}</section>;
+const lang = new URLSearchParams(location.search).get('lang') === 'fr' ? 'fr' : 'en';
 const Row = ({ children }) => <div className="flex flex-wrap items-center gap-2">{children}</div>;
 
 // The « Agent cards » section: the kit's AgentCard for three agents in their colours (Reader, Mailer, Ledger) and a task card, folded by default;
@@ -56,6 +58,7 @@ function AgentCards() {
   </div>;
 }
 
+const CARDS = [{ id: 1, title: 'Sort the list by date', subtitle: '#1' }, { id: 2, title: 'Fix the export of open-gaps.csv', subtitle: '#2' }];
 function Page() {
   const layer = useAgentLayer();
   return <div className="mx-auto flex max-w-3xl flex-col gap-8 text-sm">
@@ -80,6 +83,10 @@ function Page() {
       <Card><CardHeader><CardTitle>A card</CardTitle><CardDescription>Flat, one border.</CardDescription></CardHeader><CardContent>Content</CardContent></Card>
     </Section>
     <Section id="files" title="File tree: every viewer"><div className="rounded-lg border"><FileTreeView controller={demoTree()} variant="plain" locale="en" upload={false} history={false} refresh={false} onOpen={path => layer.pane.push({ file: path })} /></div><p data-testid="ds-files-note" className="m-0 text-sm text-muted-foreground">Boards and canvases (tldraw) are not in this public demo: tldraw needs a licence key for production use (docs/architecture/CANVAS.md). They are checked by their own journeys (npm run board:journey).</p></Section>
+    <Section id="cite" title="Cite to the agent">
+      <p className="m-0 text-muted-foreground">An app cites one of its own things to the agent: the button puts one chip in the assistant's field (a second citation adds a second chip, the same one again changes nothing). The words come from the kit's labels: English by default, French with <code>locale="fr"</code>.</p>
+      <ItemGroup className="gap-1">{CARDS.map(card => <Item key={card.id} variant="outline" size="sm" data-testid={`ds-cite-${card.id}`}><ItemContent><ItemTitle>{card.title}</ItemTitle><ItemDescription>{card.subtitle}</ItemDescription></ItemContent><CiteButton reference={{ kind: 'card', ...card }} /></Item>)}</ItemGroup>
+    </Section>
     <Section id="agent-cards" title="Agent cards">
       <p className="m-0 text-muted-foreground">One unit of agent work as a folding card, three agents in their colours and a task card. Folded, a card is a header and what the agent does; a decision it waits for shows right on it. The strip on its lower border opens the chat, as on the assistant bar.</p>
       <AgentCards />
@@ -131,11 +138,11 @@ const nav = [
   { id: 'design', label: 'Design system', icon: FileTextIcon, render: () => <ScreenBody><Page /></ScreenBody> },
   { id: 'empty', label: 'Empty app view', icon: FolderIcon, render: () => <ScreenBody><Placeholder /></ScreenBody> },
 ];
-const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the change', icon: <Undo2Icon />, onSelect() { window.__undone = (window.__undone ?? 0) + 1; } }, voice: { transcribe: async () => 'Dictated text (fictional)' }, files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: 'en', actions, attachments, mentions, slash, labels: { placeholder: 'Ask, or type /' } } };
+const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the change', icon: <Undo2Icon />, onSelect() { window.__undone = (window.__undone ?? 0) + 1; } }, voice: { transcribe: async () => 'Dictated text (fictional)' }, files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: lang, actions, attachments, mentions, slash, labels: { placeholder: 'Ask, or type /' } } };
 function App() {
   const [route, setRoute] = useState('design'), [theme, setTheme] = useState(initial), [notices, setNotices] = useState([]);
   notify = kind => { const id = `${kind}-${Date.now()}`; setNotices([{ ...NOTICES[kind], id, onDismiss: () => setNotices(list => list.filter(n => n.id !== id)) }]); };
-  return <AppShell layout="screen" locale="en" title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" agent={agent} notices={notices}
+  return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" agent={agent} notices={notices}
     account={{ name: 'Visitor', menu: [], theme: { value: theme, onChange: value => { applyTheme(value); setTheme(value); } } }} />;
 }
 createRoot(document.getElementById('root')).render(<App />);
