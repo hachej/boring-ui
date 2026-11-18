@@ -9,8 +9,8 @@
     "zod@^4.6.5"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.9/r/viewer-frame.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.9/r/_shared.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.10/r/viewer-frame.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.10/r/_shared.json"
   ],
   "files": [
     {

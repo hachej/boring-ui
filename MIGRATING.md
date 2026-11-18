@@ -1,6 +1,10 @@
 # Unreleased
 
+# Migrating to 0.5.10
+
 - **`pi-chat` composer: the field you type in follows the app's body size, not the assistant's reading size (visible change; no API change).** The composer's textarea and placeholder (the bottom bar, the panel and the ambient chat share one composer) read at `--text-md` when the app's theme defines it, else `--text-body` (13 px by default), instead of `--text-chat` (15 px). On a narrow screen (under 768 px) or a coarse pointer they stay at least 1rem so iOS Safari does not zoom on focus. The message text keeps `--text-chat`. Re-copy `pi-chat` (`npx boring-ui-blocks update`) and update `@hachej/boring-ui-kit`; an app that wants a different size sets `--text-md` in its theme.
+
+- **Migration notes are now one fragment file per PR (tooling only; no API change).** A PR adds `migrating/<name>.md` instead of a bullet under `# Unreleased` in MIGRATING.md, and `npm run release:version` gathers the fragments into the release section and deletes them. Bullets already under `# Unreleased` are still accepted and promoted. Tests: `test/scaffold/npm-release.test.mjs`.
 
 # Migrating to 0.5.9
 
