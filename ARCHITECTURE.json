@@ -72,7 +72,10 @@
     "@alchemy.run/cloudflare": "2.0.0-beta.87",
     "@alchemy.run/better-auth": "2.0.0-beta.87",
     "better-auth": "1.7.7",
-    "@effect/platform-node": "4.1.4"
+    "@effect/platform-node": "4.1.4",
+    "@better-auth/core": "1.7.7",
+    "@better-auth/oauth-provider": "1.7.7",
+    "jose": "6.2.12"
   },
   "packages": {
     "files": {
@@ -283,13 +286,22 @@
         "node:url",
         "node:crypto",
         "node:os",
-        "node:zlib"
+        "node:zlib",
+        "better-auth",
+        "better-auth/*",
+        "@better-auth/core",
+        "@better-auth/core/context",
+        "@better-auth/oauth-provider",
+        "jose"
       ],
       "typeOnlyExternal": [
         "@earendil-works/pi-durable",
         "@earendil-works/pi-ai",
         "@earendil-works/chord",
         "@earendil-works/chord/json"
+      ],
+      "onlyIn": [
+        { "names": ["better-auth*", "@better-auth/*", "jose"], "prefixes": ["src/signin/"] }
       ],
       "pathRules": [
         {

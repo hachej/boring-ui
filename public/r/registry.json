@@ -3514,6 +3514,55 @@
       ]
     },
     {
+      "name": "sign-in",
+      "type": "registry:block",
+      "title": "Sign-in",
+      "description": "The pages of an app's sign-in on @hachej/boring-ui-kit/signin: SignInPage (e-mail and password, Google when set, account creation by invitation or by the one-use first-owner link, resuming an assistant's authorization), ConsentPage (the « Allow » of an assistant's sign-in to /mcp), PeopleList (the owner's invitation list), useSignedIn and studioNavItem (the « Studio » entry for an app's owners). English and French, labels overridable.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.7/r/_shared.json"
+      ],
+      "files": [
+        {
+          "path": "registry/sign-in/sign-in-labels.ts",
+          "type": "registry:lib",
+          "target": "components/sign-in/sign-in-labels.ts"
+        },
+        {
+          "path": "registry/sign-in/sign-in-client.ts",
+          "type": "registry:lib",
+          "target": "components/sign-in/sign-in-client.ts"
+        },
+        {
+          "path": "registry/sign-in/use-signed-in.ts",
+          "type": "registry:hook",
+          "target": "components/sign-in/use-signed-in.ts"
+        },
+        {
+          "path": "registry/sign-in/sign-in.tsx",
+          "type": "registry:component",
+          "target": "components/sign-in/sign-in.tsx"
+        },
+        {
+          "path": "registry/sign-in/consent.tsx",
+          "type": "registry:component",
+          "target": "components/sign-in/consent.tsx"
+        },
+        {
+          "path": "registry/sign-in/people.tsx",
+          "type": "registry:component",
+          "target": "components/sign-in/people.tsx"
+        },
+        {
+          "path": "registry/sign-in/studio-entry.tsx",
+          "type": "registry:component",
+          "target": "components/sign-in/studio-entry.tsx"
+        }
+      ]
+    },
+    {
       "name": "task-list-viewer",
       "type": "registry:component",
       "title": "Consumer task-list viewer",
