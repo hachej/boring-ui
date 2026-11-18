@@ -2727,6 +2727,11 @@
           "target": "components/app-shell/update-notice.tsx"
         },
         {
+          "path": "registry/app-shell/cite-reference.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/cite-reference.tsx"
+        },
+        {
           "path": "registry/app-shell/shell-notice.tsx",
           "type": "registry:component",
           "target": "components/app-shell/shell-notice.tsx"
