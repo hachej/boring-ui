@@ -19,7 +19,9 @@
   { "label": "Notification: success", "group": "Notifications", "steps": [{ "do": "fixture", "name": "notify", "arg": "success", "until": "visible:notice" }] },
   { "label": "Notification: warning", "group": "Notifications", "steps": [{ "do": "fixture", "name": "notify", "arg": "warning", "until": "visible:notice" }] },
   { "label": "Notification: error", "group": "Notifications", "steps": [{ "do": "fixture", "name": "notify", "arg": "error", "until": "visible:notice" }] },
-  { "label": "Notification: needs you", "group": "Notifications", "steps": [{ "do": "type", "target": "composer-input", "text": "approval" }, { "do": "tap", "target": "composer-submit", "until": "visible:agent-card", "timeout": 14000 }] }],
+  { "label": "Notification: needs you", "group": "Notifications", "steps": [{ "do": "type", "target": "composer-input", "text": "approval" }, { "do": "tap", "target": "composer-submit", "until": "visible:agent-card", "timeout": 14000 }] },
+  { "label": "Floating composer: fold it to the icon", "group": "Floating composer", "flow": "F06" },
+  { "label": "Floating composer: float it (wide screen)", "group": "Floating composer", "flow": "F05" }],
  "purpose": "Every default kit part and token in one page, with no app styling, as the app view of the default AppShell layout, full screen. Built from kit parts and theme tokens only.",
  "fixture": {
   "entry": "ux/fixtures/design-system.jsx",
@@ -39,7 +41,10 @@
   { "id": "02", "name": "dark", "query": "dark=1", "steps": [] },
   { "id": "03", "name": "cite-one-chip", "steps": [{ "do": "tap", "target": "[data-testid=ds-cite-1] [data-testid=cite-reference]", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===1", "timeout": 3000 }] },
   { "id": "04", "name": "cite-two-chips-dark", "query": "dark=1", "steps": [{ "do": "tap", "target": "[data-testid=ds-cite-1] [data-testid=cite-reference]", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===1", "timeout": 3000 }, { "do": "tap", "target": "[data-testid=ds-cite-2] [data-testid=cite-reference]", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===2", "timeout": 3000 }] },
-  { "id": "05", "name": "cite-french", "query": "lang=fr", "steps": [{ "do": "tap", "target": "[data-testid=ds-cite-1] [data-testid=cite-reference]", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===1", "timeout": 3000 }, { "do": "tap", "target": "[data-testid=ds-cite-2] [data-testid=cite-reference]", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===2", "timeout": 3000 }] }
+  { "id": "05", "name": "cite-french", "query": "lang=fr", "steps": [{ "do": "tap", "target": "[data-testid=ds-cite-1] [data-testid=cite-reference]", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===1", "timeout": 3000 }, { "do": "tap", "target": "[data-testid=ds-cite-2] [data-testid=cite-reference]", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===2", "timeout": 3000 }] },
+  { "id": "06", "name": "composer-floating", "only": "1280", "steps": [{ "do": "tap", "target": "ds-float", "until": "visible:composer-floating", "timeout": 3000 }] },
+  { "id": "07", "name": "composer-icon", "steps": [{ "do": "tap", "target": "ds-icon-reply", "until": "visible:composer-icon", "timeout": 3000 }, { "do": "wait", "ms": 1500 }] },
+  { "id": "08", "name": "composer-icon-dark", "query": "dark=1", "steps": [{ "do": "tap", "target": "ds-minimise", "until": "visible:composer-icon", "timeout": 3000 }] }
  ],
  "flows": [
   { "id": "F01", "name": "Reference a table row in the assistant", "steps": [
@@ -54,6 +59,13 @@
   { "id": "F04", "name": "Cite a card to the assistant", "steps": [
     { "do": "tap", "target": "[data-testid=ds-cite-1] [data-testid=cite-reference]", "say": "Tap the button on card 1", "expect": "One chip appears in the composer: the card's title and its number", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===1", "timeout": 3000 },
     { "do": "tap", "target": "[data-testid=ds-cite-2] [data-testid=cite-reference]", "say": "Tap the button on card 2", "expect": "A second chip joins the first", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===2", "timeout": 3000 },
-    { "do": "tap", "target": "[data-testid=ds-cite-1] [data-testid=cite-reference]", "say": "Tap card 1 again", "expect": "Nothing is added: still two chips", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===2", "timeout": 3000 } ] }
+    { "do": "tap", "target": "[data-testid=ds-cite-1] [data-testid=cite-reference]", "say": "Tap card 1 again", "expect": "Nothing is added: still two chips", "until": "eval:document.querySelectorAll('[data-testid=mention-chip]').length===2", "timeout": 3000 } ] },
+  { "id": "F05", "name": "Float the composer over the page", "only": "1280", "steps": [
+   { "do": "tap", "target": "ds-float", "say": "Tap “Float the composer” in the Floating composer section", "until": "visible:composer-floating", "timeout": 3000, "expect": "The same bar detaches over the page; the page stays usable under it and a six-dot grip shows on its left." },
+   { "do": "tap", "target": "ds-dock-bottom", "say": "Tap “Dock to the bottom”", "until": "gone:composer-floating", "timeout": 3000, "expect": "The bar is back at the foot of the page." }] },
+  { "id": "F06", "name": "Fold the composer to its icon and bring it back", "steps": [
+   { "do": "tap", "target": "ds-icon-reply", "say": "Tap “Minimise, then a reply arrives”", "until": "visible:composer-icon", "timeout": 3000, "expect": "The bar folds to a round icon." },
+   { "do": "wait", "ms": 3500 },
+   { "do": "tap", "target": "composer-icon", "say": "Tap the icon", "until": "gone:composer-icon", "timeout": 3000, "expect": "The bar comes back where it was." }] }
  ]
 }

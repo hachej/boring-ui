@@ -49,6 +49,11 @@ export interface AppShellText {
   /** The one composer's microphone: held past 300 ms, release sends; a tap listens until ■. */
   readonly releaseToSend: string;
   readonly undock: string;
+  /** The floating composer (`floatingComposer`): move the bar to the bottom of the screen, fold it to an icon, bring it back from the icon, and the grip that moves it. */
+  readonly dock: string;
+  readonly minimise: string;
+  readonly restore: string;
+  readonly dragHandle: string;
   /** The folded card: the dot of an unread reply, the run's words, the form's « 1 sur 2 ». */
   readonly unread: string;
   readonly working: string;
@@ -123,6 +128,10 @@ const en: AppShellText = {
   dictate: 'Dictate',
   releaseToSend: 'Release to send',
   undock: 'Move to the bottom',
+  dock: 'Dock to the bottom',
+  minimise: 'Minimise',
+  restore: 'Open the assistant',
+  dragHandle: 'Move the assistant',
   unread: 'New reply',
   working: 'Working',
   done: 'Done',
@@ -182,6 +191,10 @@ const fr: AppShellText = {
   dictate: 'Dicter',
   releaseToSend: 'Relâche pour envoyer',
   undock: 'Détacher en bas',
+  dock: 'Ancrer en bas',
+  minimise: 'Réduire',
+  restore: 'Ouvrir l’assistant',
+  dragHandle: 'Déplacer l’assistant',
   unread: 'Nouvelle réponse',
   working: 'En cours',
   done: 'Terminé',

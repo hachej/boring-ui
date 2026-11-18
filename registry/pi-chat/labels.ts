@@ -283,6 +283,8 @@ export const defaultChatLabels = {
   toolFailedSummary: 'This did not work out.' as string | ((tool: string) => string),
   toolUnfinished: 'No result',
   arguments: 'Arguments',
+  /** The folded disclosure of an approval card that has a summary: the tool name and the raw arguments. A customised `arguments` label still wins. */
+  details: 'Details',
   result: 'Result',
   error: 'Error',
   openImageResult: 'Open image result',

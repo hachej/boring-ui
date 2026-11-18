@@ -225,6 +225,8 @@ export const frenchChatLabels: ChatLabels = {
   toolFailedSummary: 'Cela n’a pas abouti.',
   toolUnfinished: 'Sans résultat',
   arguments: 'Arguments',
+  /** The folded disclosure of an approval card that has a summary: the tool name and the raw arguments. A customised `arguments` label still wins. */
+  details: 'Détails',
   result: 'Résultat',
   error: 'Erreur',
   openImageResult: 'Ouvrir l’image du résultat',

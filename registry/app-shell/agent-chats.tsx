@@ -143,6 +143,10 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const readStop = () => spec.controller.getSnapshot().stop;
   const stop = useSyncExternalStore(spec.controller.subscribe, readStop, readStop);
   const { markRead } = barChat;
+  // The icon the composer folds into shows what the conversation holds: what is unread, and a decision that waits.
+  const { setSignals } = layer;
+  const unreadLabel = barChat.historyBadge?.label, unreadCount = barChat.historyBadge?.count, needsYou = Boolean(barChat.question || barChat.approval);
+  useEffect(() => { if (barred) setSignals({ unread: unreadLabel === undefined ? undefined : { label: unreadLabel, count: unreadCount }, needsYou }); }, [barred, setSignals, unreadLabel, unreadCount, needsYou]);
   const unfolded = barred && !layer.folded;
   useEffect(() => { if (unfolded) markRead(); }, [unfolded, markRead]);
   // Docked, the bar's field goes with the thread: nothing stays at the bottom.

@@ -208,6 +208,17 @@ test('gated tool calls become approval cards that show the real arguments and th
   assert.match(pending, /<details[^>]*data-testid="approval-details"[^>]*>/, 'raw arguments are collapsible under the summary');
   assert.doesNotMatch(pending, /<details[^>]*\bopen\b/, 'collapsed by default');
   assert.match(pending, /Fictional note/, 'and still there');
+  // With a summary the tool name is developer detail: it sits inside the folded Details, never next to the summary.
+  const detailsStart = pending.indexOf('<details');
+  assert.ok(detailsStart > 0 && pending.indexOf('<code') > detailsStart, 'the tool name is only inside the folded details');
+  assert.doesNotMatch(pending.slice(0, detailsStart).replace(/data-tool="[^"]*"/, ''), /api_request|approval-tool/, 'no tool name before the details are opened');
+  assert.match(pending, /<summary[^>]*>Details<\/summary>/);
+  assert.match(pending, /data-testid="approval-tool"/, 'and the tool line is in the details');
+  const cardOf = props => renderToStaticMarkup(createElement(ApprovalCard, { call: pendingParts[0].call, answer: async () => ({ kind: 'answered' }), ...props }));
+  const noSummary = cardOf({});
+  assert.doesNotMatch(noSummary, /<details/, 'without a summary nothing is folded');
+  assert.match(noSummary, /data-testid="approval-tool"[^>]*>[^<]*<code[^>]*>api_request/, 'the raw call is visible as before');
+  assert.match(noSummary, /data-testid="approval-args"/);
   // Once settled, the result's details carry the summary and the decision requireApproval recorded.
   const done = (value, isError, decision) => derive({ entries: entries([user('add a note')], [assistant([call('1', 'api_request', args)])], [{ ...result('1', 'api_request', value, isError), details: { [summaryKey]: { summary: text, ...(decision ? { decision } : {}) } } }]), docs: {} }, options('expert')).rows[1].parts;
   const markupOf = parts => renderToStaticMarkup(createElement(ApprovalCard, { call: parts[0].call, result: parts[0].result, summary: parts[0].summary, decision: parts[0].decision, answer: async () => ({ kind: 'answered' }) }));
