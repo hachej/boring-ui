@@ -87,7 +87,9 @@ a completed latest main-push run of the exact SHA decides. Until it completes, t
 latest pull-request run of the merged head qualifies only when Git proves it tested
 the same files: the release commit is a two-parent merge whose main parent is an
 ancestor of the head (the head was up to date, so its test merge equalled the head)
-and whose tree equals the head's tree. Otherwise admission waits up to 20 minutes
+and whose tree equals the head's tree. A green `merge_group` run of the exact SHA
+(branch `gh-readonly-queue/main/...`; the merge queue fast-forwards main to the commit it
+tested) qualifies the same way. Otherwise admission waits up to 20 minutes
 for main's run. The qualifying run must succeed, with every named job in
 [`scripts/release-admission.mjs`](../../scripts/release-admission.mjs) to be completed
 and successful in the matching suite. This includes all consumer/browser shards,
