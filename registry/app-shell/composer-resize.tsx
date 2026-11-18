@@ -104,6 +104,10 @@ export function ResizeHandle() {
     aria-valuenow={range.now} aria-valuemin={range.min} aria-valuemax={range.max}
     onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerCancel} onLostPointerCapture={onPointerCancel} onKeyDown={onKeyDown} onDoubleClick={() => commit(undefined)}
     style={{ top: `calc(0px - var(${SIZE_VAR}))` }}
-    className={cn('pointer-events-auto absolute inset-x-0 z-20 h-1.5 -translate-y-1/2 cursor-ns-resize touch-none select-none outline-ring transition-colors duration-(--duration-fast) hover:bg-ring/30 focus-visible:bg-ring/30 focus-visible:outline-2 motion-reduce:transition-none',
-      'pointer-coarse:h-11 pointer-coarse:-translate-y-[calc(100%-0.25rem)]')} />;
+    className={cn('group/resize pointer-events-auto absolute inset-x-0 z-20 h-1.5 -translate-y-1/2 cursor-ns-resize touch-none select-none outline-none',
+      'pointer-coarse:h-11 pointer-coarse:-translate-y-[calc(100%-0.25rem)]')}>
+    {/* On hover and keyboard focus the border thickens to a 2 px line with a short grip bar; the strip sits over the middle, so the grip is drawn a quarter in. */}
+    <span aria-hidden="true" className="pointer-events-none absolute inset-x-4 top-1/2 h-0.5 -translate-y-1/2 bg-ring opacity-0 transition-opacity duration-(--duration-fast) group-[:hover]/resize:opacity-100 group-[:focus-visible]/resize:opacity-100 group-[:active]/resize:opacity-100 motion-reduce:transition-none pointer-coarse:top-[calc(100%-0.125rem)]" />
+    <span aria-hidden="true" className="pointer-events-none absolute top-1/2 left-1/4 h-1.5 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ring opacity-0 transition-opacity duration-(--duration-fast) group-[:hover]/resize:opacity-100 group-[:focus-visible]/resize:opacity-100 group-[:active]/resize:opacity-100 motion-reduce:transition-none pointer-coarse:top-[calc(100%-0.125rem)]" />
+  </div>;
 }

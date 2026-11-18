@@ -377,11 +377,11 @@ export function OneBox({ children, floating = false }: { readonly children: Reac
       {floating && <Grip rail />}
       <div className={cn('flex min-w-0 flex-col rounded-(--radius-3xl)', !overlay && 'overflow-hidden')}>{children}</div>
       {overlay && <>
-        <ResizeHandle />
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-1/2 z-20 overflow-hidden" style={{ top: 'calc(0px - var(--app-shell-bar-tray-expanded))' }}>
           <div className="absolute inset-x-0 top-0 -bottom-(--radius-3xl) rounded-(--radius-3xl) ring-1 ring-inset ring-border group-has-focus-visible/one-box:ring-2 group-has-focus-visible/one-box:ring-ring transition-transform duration-(--duration-fast) ease-(--ease-standard) motion-reduce:transition-none" style={{ transform: 'translateY(calc(var(--app-shell-bar-tray-expanded) - var(--app-shell-bar-tray-size)))' }} />
         </div>
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 rounded-(--radius-3xl) ring-1 ring-inset ring-border group-has-focus-visible/one-box:ring-2 group-has-focus-visible/one-box:ring-ring" style={{ clipPath: 'inset(50% 0 0)' }} />
+        <ResizeHandle />
       </>}
     </div>;
   if (floating) return box;

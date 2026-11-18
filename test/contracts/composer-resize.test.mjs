@@ -273,6 +273,28 @@ test('1440: a smaller window brings a tall window back inside the viewport; the 
   assert.equal(await stored(HEIGHT_KEY), String(after));
 });
 
+for (const floating of [false, true]) {
+  test(`1440: the handle shows a 2 px line and a grip bar on hover and on keyboard focus (${floating ? 'floating' : 'tray'})`, { skip, timeout: 120000 }, async () => {
+    await openTray(1440, { floating });
+    const marks = () => browser.evaluate(`[...document.querySelector(${js(HANDLE)}).children].map(e => Number(getComputedStyle(e).opacity))`);
+    assert.deepEqual(await marks(), [0, 0], 'nothing drawn at rest');
+    const r = await rect(HANDLE);
+    await mouse('mouseMoved', r.x + r.w * 0.2, r.y + r.h / 2);
+    await wait(300);
+    assert.deepEqual(await marks(), [1, 1], 'hover: the line and the grip');
+    await shots2(`${floating ? 'floating' : '1440'}-4-hover`);
+    await mouse('mouseMoved', 5, 5);
+    await wait(300);
+    assert.deepEqual(await marks(), [0, 0]);
+    await browser.evaluate(`document.querySelector(${js(HANDLE)}).focus()`);
+    await key('ArrowUp');
+    await mouse('mouseMoved', 5, 5);
+    await wait(300);
+    assert.deepEqual(await marks(), [1, 1], 'keyboard focus: the line and the grip');
+    await shots2(`${floating ? 'floating' : '1440'}-5-focus`);
+  });
+}
+
 test('390: a phone has no resize handle; the grabber keeps driving the sheet', { skip, timeout: 120000 }, async () => {
   await open(390);
   await click('[data-testid=agent-bar-conversation]');
