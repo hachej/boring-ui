@@ -151,6 +151,22 @@ export const SHADCN = 'shadcn@4.23.0';
 /** sha256 of every generated shadcn file under the app's `ui` alias, written by `add`, `update` and `manifest`, verified by `check`. */
 export const MANIFEST = 'SHADCN-GENERATED.json';
 export const itemBase = version => `https://cdn.jsdelivr.net/npm/${KIT}@${version}/r`;
+/** The shadcn namespace of the kit's items: components.json `"registries": { "@boring": "<itemBase>/{name}.json" }`, so `npx shadcn add @boring/<item>` works. */
+export const NAMESPACE = '@boring';
+
+/**
+ * Keeps the `@boring` namespace in components.json on `version`: rewrites only the version inside that one URL, so the file's other bytes stay
+ * as they are. Returns true when it changed the file. An app without the namespace, or with its own registry URL, is left alone.
+ */
+export function syncNamespace(app, version) {
+  const file = join(app, 'components.json');
+  const text = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  const url = readJson(file)?.registries?.[NAMESPACE];
+  const pinned = typeof url === 'string' ? /^https:\/\/cdn\.jsdelivr\.net\/npm\/@hachej\/boring-ui-kit@([^/]+)\/r\/\{name\}\.json$/.exec(url) : null;
+  if (!pinned || pinned[1] === version) return false;
+  writeFileSync(file, text.replace(JSON.stringify(url), JSON.stringify(`${itemBase(version)}/{name}.json`)));
+  return true;
+}
 
 const posix = path => path.split(sep).join('/');
 // sha256 of a file's text with line endings normalised (a checkout may convert them).
@@ -1012,7 +1028,11 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
     const items = blocks.map(block => `${base}/${block.name}.json`);
     if (flags.dryRun) { log(`npx -y ${SHADCN} add ${items.join(' ')} --overwrite --yes`); return 0; }
     const { status } = shadcnAdd(app, items, log, true);
-    if (status === 0) { log(`${flags.manifest ?? MANIFEST}: ${writeManifest(app, flags.manifest)} file(s)`); refreshCss(app, flags.css, log); }
+    if (status === 0) {
+      log(`${flags.manifest ?? MANIFEST}: ${writeManifest(app, flags.manifest)} file(s)`); refreshCss(app, flags.css, log);
+      // The `@boring` namespace follows the version the blocks now come from (a custom --registry leaves it alone).
+      if (!flags.registry && syncNamespace(app, flags.version ?? installed)) log(`components.json: ${NAMESPACE} now on ${KIT}@${flags.version ?? installed}`);
+    }
     return status;
   } catch (cause) {
     if (flags?.json) log(JSON.stringify({ ok: false, error: cause.message }, null, 2));
