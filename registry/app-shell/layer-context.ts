@@ -83,8 +83,19 @@ export const composerLabels = (locale: AppShellLocale | undefined, agent: AgentS
 export type AgentLayerState = 'closed' | 'peek' | 'half' | 'full' | 'open';
 export type Which = 'agent' | 'improve';
 export type Snap = 'closed' | 'peek' | 'half' | 'full';
+/** Where the one composer sits (`floatingComposer`): at the bottom of the page, floating over it (wide screens), or folded to a round icon. */
+export type ComposerPlace = 'bottom' | 'float' | 'icon';
+export type FloatCorner = 'tl' | 'tr' | 'bl' | 'br';
+/** The floating bar's place: a corner (it stays there when the window resizes) or free, in px from the window's top left. */
+export type FloatPos = { readonly corner: FloatCorner } | { readonly left: number; readonly top: number };
+/** What the icon shows of the conversation: what is unread, and whether a decision waits for the person. */
+export interface ComposerSignals { readonly unread: { readonly label: string; readonly count?: number | undefined } | undefined; readonly needsYou: boolean }
 export interface AgentLayerApi {
   readonly agent: NativeChatController | undefined;
+  /** `floatingComposer`: where the one composer sits now. A phone never floats: `float` reads as `bottom` there. Always `bottom` without the prop. */
+  readonly place: ComposerPlace;
+  /** Moves the composer: to the bottom, floating (wide screens) or folded to its icon (the grown conversation is remembered and comes back with the icon's tap). No-op without `floatingComposer`. */
+  readonly setPlace: (place: ComposerPlace) => void;
   readonly state: AgentLayerState;
   readonly showing: Which | null;
   /** Opens the assistant or the PM. Below `TOGETHER_FROM` (and on a phone) it closes the other; from it, the PM opens beside the assistant.
@@ -181,6 +192,18 @@ export const TOGETHER_QUERY = `(width >= ${TOGETHER_FROM}px)`;
 export const PM_COLUMN = 416;
 export const MIN_MAIN = 360;
 export interface Internal extends Omit<AgentLayerApi, 'agent'> {
+  /** `floatingComposer`: the composer may float and fold (the shell's `floatingComposer` prop, or the standalone entry). */
+  readonly floatable: boolean;
+  /** False for the standalone entry: no dock column beside the page, so no action docks the conversation to a side. */
+  readonly docks: boolean;
+  readonly floatPos: FloatPos;
+  readonly setFloatPos: (pos: FloatPos) => void;
+  /** Folded to the icon: the tap that brings the composer back where it was. */
+  readonly restore: () => void;
+  /** Set when a person moved the composer (Minimise, the icon's tap): the next place takes focus, as the control they pressed is gone. */
+  readonly placeFocus: { current: boolean };
+  readonly signals: ComposerSignals;
+  readonly setSignals: (signals: ComposerSignals) => void;
   /** The layer's own controls (Close, the trigger, Escape, a swipe): the one snap (the assistant, or the PM where they are one at a time). */
   readonly close: () => void;
   /** `AgentLayerApi.close`: what `showing` names. */

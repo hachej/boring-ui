@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, Loader2Icon, MicIcon, MaximizeIcon, PanelRightIcon, ShieldAlertIcon, SquareIcon, XIcon } from '../_shared/icons';
+import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, Loader2Icon, MicIcon, MaximizeIcon, MinusIcon, PanelBottomIcon, PanelRightIcon, PictureInPicture2Icon, ShieldAlertIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
@@ -22,6 +22,7 @@ import { ControllerStrip } from '../_shared/controller-strip';
 import { UnreadMark } from '../_shared/controller-strip';
 import type { ControllerAction, Unread } from '../_shared/controller-strip';
 import { composerLabels, shellWords, useInternal } from './layer-context';
+import { Grip } from './composer-grip';
 import { FileChip, isCitedFile, ReplyActionButton } from './file-chip';
 
 /** Tap to start; while active, this same control is the composer's replacement recording row. In the bar it stands in Send's place, named « Dicter ». */
@@ -147,14 +148,23 @@ function useControllerActions(): readonly ControllerAction[] {
   }
   if (layer.trayOpen && layer.size === 'full') return [{ id: 'chevron', testId: 'agent-full-back', label: text.exitFullScreen, icon: down, expanded: true, primary: true, onSelect: layer.leaveFull }];
   if (layer.dockOpen) return [];
+  // `floatingComposer`: the bar floats or sits at the bottom, and can fold to its icon. Floating, the strip is Expand (or Collapse), Dock to the bottom and Minimise.
+  const minimise: ControllerAction = { id: 'minimise', testId: 'composer-minimise', label: text.minimise, icon: <MinusIcon aria-hidden="true" />, onSelect: () => layer.setPlace('icon') };
+  const floats = layer.floatable && !layer.anchored;
+  if (layer.place === 'float') return [
+    layer.trayOpen ? { id: 'chevron', testId: 'agent-tray-reduce', label: text.collapse, icon: down, expanded: true, primary: true, onSelect: () => { layer.close(); focusField(); } }
+      : { id: 'chevron', testId: 'agent-bar-conversation', label: text.conversation, icon: up, expanded: false, primary: true, onSelect: () => layer.open('agent') },
+    { id: 'dock', testId: 'composer-dock-bottom', label: text.dock, icon: <PanelBottomIcon aria-hidden="true" />, onSelect: () => layer.setPlace('bottom') },
+    minimise];
+  const places: readonly ControllerAction[] = floats ? [{ id: 'float', testId: 'composer-float', label: text.float, icon: <PictureInPicture2Icon aria-hidden="true" />, onSelect: () => layer.setPlace('float') }, minimise] : [];
   if (layer.trayOpen) return [
     { id: 'chevron', testId: 'agent-tray-reduce', label: text.collapse, icon: down, expanded: true, primary: true, onSelect: () => { layer.close(); focusField(); } },
     ...(layer.size === 'open' ? [more(() => layer.setSize('grown'))] : []),
-    { id: 'split', testId: 'agent-tray-dock', label: layer.side === 'left' ? text.dockLeft : text.dockRight, icon: <PanelRightIcon aria-hidden="true" />, onSelect: layer.moveToDock },
-    full,
+    ...(layer.docks ? [{ id: 'split', testId: 'agent-tray-dock', label: layer.side === 'left' ? text.dockLeft : text.dockRight, icon: <PanelRightIcon aria-hidden="true" />, onSelect: layer.moveToDock }] : []),
+    full, ...places,
   ];
   return [{ id: 'chevron', testId: 'agent-bar-conversation', label: text.conversation, icon: up, expanded: false, primary: true, onSelect: () => layer.open('agent') },
-    { ...full, onSelect: () => layer.enterFull('folded') }];
+    { ...full, onSelect: () => layer.enterFull('folded') }, ...places];
 }
 
 /**
@@ -168,15 +178,20 @@ export function ConversationChevron({ unread }: { readonly unread: Unread | unde
   const actions = useControllerActions();
   const [box, setBox] = useState<HTMLElement | null>(null);
   const [handle, setHandle] = useState<HTMLElement | null>(null);
+  const [popup, setPopup] = useState<HTMLElement | null>(null);
   const overlay = layer.trayOpen && !layer.anchored;
   const first = actions[0];
+  const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   if (!first) return null;
   // A phone has no strip: the size is the sheet's grabber (tap for the next snap, drag for any). This control is the grabber's keyboard and screen reader twin: invisible and out of the pointer's way until focused.
   // The unread mark sits beside the grabber's pill: portalled into the drawer's swipe handle, which is that pill.
   if (!layer.expanded) return <>
-    <button ref={node => setHandle(node?.closest('[data-slot=drawer-popup]')?.querySelector<HTMLElement>('[data-slot=drawer-swipe-handle]') ?? null)} type="button" data-testid={first.testId} data-action="chevron" aria-label={first.label} aria-expanded={first.expanded} onClick={first.onSelect}
+    <button ref={node => { const sheet = node?.closest<HTMLElement>('[data-slot=drawer-popup]') ?? null; setPopup(sheet); setHandle(sheet?.querySelector<HTMLElement>('[data-slot=drawer-swipe-handle]') ?? null); }} type="button" data-testid={first.testId} data-action="chevron" aria-label={first.label} aria-expanded={first.expanded} onClick={first.onSelect}
       className="pointer-events-none absolute top-0 left-1/2 z-30 size-11 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 outline-ring focus-visible:opacity-100 focus-visible:outline-2" />
     {handle && unread && createPortal(<UnreadMark unread={unread} dot="top-1/2 left-1/2 ml-8 -translate-y-1/2" pill="top-1/2 left-1/2 ml-9 -translate-y-1/2" />, handle)}
+    {/* The phone's Minimise: at the right end of the grabber's row, in the sheet (not in the grabber, which the drawer takes for its swipe); the grabber's tap logic skips it (`data-no-grabber`). */}
+    {popup && layer.floatable && createPortal(<button type="button" data-testid="composer-minimise" data-action="minimise" data-no-grabber="" aria-label={text.minimise} title={text.minimise} onClick={() => layer.setPlace('icon')}
+      className="absolute top-0 right-2 z-30 flex size-11 -translate-y-2 items-center justify-center rounded-full text-muted-foreground outline-ring focus-visible:outline-2 [&_svg]:size-5"><MinusIcon aria-hidden="true" /></button>, popup)}
   </>;
   const strip = <ControllerStrip actions={actions} unread={unread} style={box && overlay ? { top: 'calc(0px - var(--app-shell-bar-tray-size))' } : undefined} />;
   return <>
@@ -351,12 +366,12 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
 export const NEEDS_YOU = 'has-[[data-needs-you]]:ring-1 has-[[data-needs-you]]:ring-warning has-[[data-needs-you]]:outline-3 has-[[data-needs-you]]:outline-warning/25';
 
 /** `composer: 'bar'`: the thread (Ouvert), the folded card and the field in one frame at the field's width, never the page's (AC-16). The inner input group's own frame is cleared by the block's CSS (`.app-shell [data-one-composer]`). */
-export function OneBox({ children }: { readonly children: ReactNode }) {
+export function OneBox({ children, floating = false }: { readonly children: ReactNode; readonly floating?: boolean }) {
   // Docked (AC-17) the field and the thread are in the right column: the box stays mounted, empty and out of sight, so nothing stays at the bottom.
   const { dockOpen, anchored, folded, trayOpen } = useInternal();
   const overlay = trayOpen && !anchored;
-  return <div className={cn('shrink-0 bg-card px-6 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]', dockOpen && 'hidden')}>
-    <div data-one-composer="" data-folded={folded || undefined} data-testid="agent-composer-box" style={anchored ? undefined : { marginInlineStart: 'clamp(0px, calc((100cqw - var(--app-shell-composer-max)) / 2 - var(--spacing) * 6), max(0px, calc(100% - var(--container-xs, 20rem))))', marginInlineEnd: 0, width: 'auto' }} className={cn('group/one-box mx-auto flex w-full max-w-[720px] min-w-0 flex-col rounded-(--radius-3xl) bg-card text-card-foreground', !anchored && 'relative', 'overflow-visible', !overlay && 'ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring', NEEDS_YOU)}>
+  const box = <div data-one-composer="" data-folded={folded || undefined} data-testid="agent-composer-box" style={anchored ? undefined : floating ? { width: 'auto' } : { marginInlineStart: 'clamp(0px, calc((100cqw - var(--app-shell-composer-max)) / 2 - var(--spacing) * 6), max(0px, calc(100% - var(--container-xs, 20rem))))', marginInlineEnd: 0, width: 'auto' }} className={cn('group/one-box mx-auto flex w-full max-w-[720px] min-w-0 flex-col rounded-(--radius-3xl) bg-card text-card-foreground', !anchored && 'relative', 'overflow-visible', floating && 'pl-7 shadow-pm-popover pointer-coarse:pl-11', !overlay && 'ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring', NEEDS_YOU)}>
+      {floating && <Grip rail />}
       <div className={cn('flex min-w-0 flex-col rounded-(--radius-3xl)', !overlay && 'overflow-hidden')}>{children}</div>
       {overlay && <>
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-1/2 z-20 overflow-hidden" style={{ top: 'calc(0px - var(--app-shell-bar-tray-expanded))' }}>
@@ -364,6 +379,7 @@ export function OneBox({ children }: { readonly children: ReactNode }) {
         </div>
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 rounded-(--radius-3xl) ring-1 ring-inset ring-border group-has-focus-visible/one-box:ring-2 group-has-focus-visible/one-box:ring-ring" style={{ clipPath: 'inset(50% 0 0)' }} />
       </>}
-    </div>
-  </div>;
+    </div>;
+  if (floating) return box;
+  return <div className={cn('shrink-0 bg-card px-6 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]', dockOpen && 'hidden')}>{box}</div>;
 }

@@ -22,6 +22,8 @@ import { OneBox, VoiceProblem } from './agent-bar-parts';
 import { ChatSlot, Header, HeaderHint, HistoryButton, LibraryButton, useTitle } from './agent-chats';
 import { CompactSheet } from './agent-compact';
 import { PaneDock, PaneStack } from './agent-pane';
+import { ComposerFab, FloatFrame } from './float-composer';
+import { Grip } from './composer-grip';
 
 /** The panel inside the dock: the same element docked or floating, so a placement change keeps focus and the chats where they are. */
 function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSide }) {
@@ -114,22 +116,48 @@ function AgentDock({ side }: { readonly side: DockSide }) {
 }
 /** `composer: 'content'`: the page content, then the field's slot at the bottom; a file dropped anywhere on the column goes to that field. */
 export function ContentColumn({ children }: { readonly children: ReactNode }) {
-  const { setComposerSlot, setDropZone, trayOpen, size, anchored, setCardSlot, bar: barMode, contentComposer, folded } = useInternal();
+  const { setComposerSlot, setDropZone, trayOpen, size, anchored, bar: barMode, contentComposer } = useInternal();
   // The box only on a wide screen: on a phone the field lives in the drawer.
   const bar = barMode && contentComposer;
   const grown = size !== 'open';
   // The page keeps one wrapper whether the tray is open or not, so opening it never remounts the screen; Agrandir only hides it.
   return <div ref={setDropZone} data-testid="agent-content" data-bar-tray={bar && trayOpen && !anchored ? (grown ? 'expanded' : 'open') : undefined} className={cn('relative flex min-h-0 min-w-0 flex-1 flex-col', bar && '@container')}>
     <div data-testid="agent-page" className={cn('flex min-h-0 min-w-0 flex-1 flex-col', trayOpen && grown && !anchored && !bar && 'hidden')}>{children}</div>
-    {bar ? <OneBox>
-      {trayOpen && !anchored && <ContentTray />}
-      <div ref={setCardSlot} data-testid="agent-card-slot" className={cn('shrink-0 empty:hidden', !anchored && 'relative z-10 bg-card')} />
-      <div ref={setComposerSlot} data-testid="agent-content-composer" className={cn('shrink-0', !anchored && 'relative z-10 rounded-b-(--radius-3xl) bg-card', folded && FOLDED_FIELD)} />
-    </OneBox> : <>
+    {bar ? <BarBox /> : <>
       {trayOpen && !anchored && <ContentTray />}
       <div ref={setComposerSlot} data-testid="agent-content-composer" className="shrink-0" />
     </>}
   </div>;
+}
+
+/**
+ * The one composer's box where its place puts it (`floatingComposer`): at the bottom in the column's flow, floating over the page in its own frame, or folded to the icon (the box stays
+ * mounted and hidden, so the field, its draft and the folded card keep their place and the unread count goes on). `standalone`: no column to sit in, so the bottom is the window's.
+ */
+export function BarBox({ standalone = false }: { readonly standalone?: boolean }) {
+  const { setComposerSlot, setCardSlot, trayOpen, anchored, folded, place, placeFocus: focusRef, composerSlot } = useInternal();
+  const slots = <>
+    {trayOpen && !anchored && <ContentTray />}
+    <div ref={setCardSlot} data-testid="agent-card-slot" className={cn('shrink-0 empty:hidden', !anchored && 'relative z-10 bg-card')} />
+    <div ref={setComposerSlot} data-testid="agent-content-composer" className={cn('shrink-0', !anchored && 'relative z-10 rounded-b-(--radius-3xl) bg-card', folded && FOLDED_FIELD)} />
+  </>;
+  // Moved by a person (Minimise, the icon's tap, Dock to the bottom): the field takes focus once it is drawn in its new place.
+  useEffect(() => {
+    if (place === 'icon' || !focusRef.current || !composerSlot) return;
+    // The field is drawn into its new slot a frame or two after the slot exists (the slot itself may be replaced meanwhile: the flag stays up until the field has focus).
+    let frames = 0, frame = 0;
+    const land = () => {
+      const field = composerSlot.querySelector<HTMLElement>('[data-testid=composer-input]');
+      if (field) { focusRef.current = false; field.focus({ preventScroll: true }); }
+      else if (++frames < 12) frame = requestAnimationFrame(land);
+      else focusRef.current = false;
+    };
+    frame = requestAnimationFrame(land);
+    return () => cancelAnimationFrame(frame);
+  }, [place, focusRef, composerSlot]);
+  if (place === 'float') return <FloatFrame><OneBox floating>{slots}</OneBox></FloatFrame>;
+  if (place === 'icon') return <><div hidden><OneBox>{slots}</OneBox></div><ComposerFab /></>;
+  return standalone ? <div className="@container fixed inset-x-0 bottom-0 z-(--app-shell-z-layer)"><OneBox>{slots}</OneBox></div> : <OneBox>{slots}</OneBox>;
 }
 
 /**
@@ -200,6 +228,7 @@ function ContentTray() {
     {boxed ? null : <Separator className="absolute inset-x-0 top-0" />}
     <div data-testid="agent-tray-body" className={cn('mx-auto flex min-h-0 w-full max-w-[720px] flex-col', overlay ? 'relative h-(--app-shell-bar-tray-expanded) shrink-0' : 'flex-1')}>
       <div data-testid="agent-tray-header" className="flex h-13 shrink-0 items-center gap-1.5">
+        {layer.place === 'float' && <Grip />}
         <h2 data-testid="agent-tray-title" className="m-0 min-w-0 flex-1 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
         <HistoryButton />
         {layer.bar && <LibraryButton open={layer.openLibrary} text={text} testId="agent-layer-library" />}
@@ -331,7 +360,8 @@ export function AgentLayer(): ReactElement | null {
   // aside; on a wide screen at the top, the dock beside the app. The note bubble is here only while pointing (else inside the layer).
   return <>
     {layer.expanded && layer.trayOpen && layer.size === 'full' && <FullScreen />}
-    {!layer.expanded && <CompactSheet pointing={session !== undefined} />}
+    {!layer.expanded && layer.place !== 'icon' && <CompactSheet pointing={session !== undefined} />}
+    {!layer.expanded && layer.place === 'icon' && <ComposerFab />}
     {layer.bar && !layer.expanded && layer.stack.length > 0 && <PaneStack placement="screen" assistant={title} />}
     {commenting && <CommentBanner session={commenting} bottomOffset={`${layer.tabbar}px`} className="z-[60]" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
     {session && <NoteBubble session={session} {...(transcribe ? { transcribe } : {})} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
