@@ -2,8 +2,11 @@ name: Specification and boundary evidence
 on:
   workflow_call:
   pull_request:
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
+# merge_group: the merge queue runs the same required checks on its gh-readonly-queue ref (run id group, never cancelled).
 # A new push to a pull request cancels its superseded run; main pushes and release calls keep their own run id and never cancel.
 # The literal prefix keeps the release's called workflows in distinct groups.
 concurrency:
