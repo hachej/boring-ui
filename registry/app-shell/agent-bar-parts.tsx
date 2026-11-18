@@ -23,6 +23,7 @@ import { UnreadMark } from '../_shared/controller-strip';
 import type { ControllerAction, Unread } from '../_shared/controller-strip';
 import { composerLabels, shellWords, useInternal } from './layer-context';
 import { Grip } from './composer-grip';
+import { ResizeHandle } from './composer-resize';
 import { FileChip, isCitedFile, ReplyActionButton } from './file-chip';
 
 /** Tap to start; while active, this same control is the composer's replacement recording row. In the bar it stands in Send's place, named « Dicter ». */
@@ -368,12 +369,15 @@ export const NEEDS_YOU = 'has-[[data-needs-you]]:ring-1 has-[[data-needs-you]]:r
 /** `composer: 'bar'`: the thread (Ouvert), the folded card and the field in one frame at the field's width, never the page's (AC-16). The inner input group's own frame is cleared by the block's CSS (`.app-shell [data-one-composer]`). */
 export function OneBox({ children, floating = false }: { readonly children: ReactNode; readonly floating?: boolean }) {
   // Docked (AC-17) the field and the thread are in the right column: the box stays mounted, empty and out of sight, so nothing stays at the bottom.
-  const { dockOpen, anchored, folded, trayOpen } = useInternal();
+  const { dockOpen, anchored, folded, trayOpen, trayHeight, size } = useInternal();
   const overlay = trayOpen && !anchored;
-  const box = <div data-one-composer="" data-folded={folded || undefined} data-testid="agent-composer-box" style={anchored ? undefined : floating ? { width: 'auto' } : { marginInlineStart: 'clamp(0px, calc((100cqw - var(--app-shell-composer-max)) / 2 - var(--spacing) * 6), max(0px, calc(100% - var(--container-xs, 20rem))))', marginInlineEnd: 0, width: 'auto' }} className={cn('group/one-box mx-auto flex w-full max-w-[720px] min-w-0 flex-col rounded-(--radius-3xl) bg-card text-card-foreground', !anchored && 'relative', 'overflow-visible', floating && 'pl-7 pointer-coarse:pl-11', floating && !overlay && 'shadow-pm-popover', !overlay && 'ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring', NEEDS_YOU)}>
+  // A height the person dragged the window to replaces both tray levels' variables, here for the box in the page; the floating frame sets its own.
+  const own = overlay && !floating && size === 'open' && trayHeight !== undefined ? { '--app-shell-bar-tray-size': `${trayHeight}px`, '--app-shell-bar-tray-expanded': `${trayHeight}px` } : undefined;
+  const box = <div data-one-composer="" data-folded={folded || undefined} data-testid="agent-composer-box" style={anchored ? undefined : floating ? { width: 'auto' } : { ...own, marginInlineStart: 'clamp(0px, calc((100cqw - var(--app-shell-composer-max)) / 2 - var(--spacing) * 6), max(0px, calc(100% - var(--container-xs, 20rem))))', marginInlineEnd: 0, width: 'auto' }} className={cn('group/one-box mx-auto flex w-full max-w-[720px] min-w-0 flex-col rounded-(--radius-3xl) bg-card text-card-foreground', !anchored && 'relative', 'overflow-visible', floating && 'pl-7 pointer-coarse:pl-11', floating && !overlay && 'shadow-pm-popover', !overlay && 'ring-1 ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring', NEEDS_YOU)}>
       {floating && <Grip rail />}
       <div className={cn('flex min-w-0 flex-col rounded-(--radius-3xl)', !overlay && 'overflow-hidden')}>{children}</div>
       {overlay && <>
+        <ResizeHandle />
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-1/2 z-20 overflow-hidden" style={{ top: 'calc(0px - var(--app-shell-bar-tray-expanded))' }}>
           <div className="absolute inset-x-0 top-0 -bottom-(--radius-3xl) rounded-(--radius-3xl) ring-1 ring-inset ring-border group-has-focus-visible/one-box:ring-2 group-has-focus-visible/one-box:ring-ring transition-transform duration-(--duration-fast) ease-(--ease-standard) motion-reduce:transition-none" style={{ transform: 'translateY(calc(var(--app-shell-bar-tray-expanded) - var(--app-shell-bar-tray-size)))' }} />
         </div>

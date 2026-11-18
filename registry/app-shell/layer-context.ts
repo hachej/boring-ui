@@ -198,6 +198,9 @@ export interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly docks: boolean;
   readonly floatPos: FloatPos;
   readonly setFloatPos: (pos: FloatPos) => void;
+  /** The open window's height in px when the person dragged it (`undefined`: the default); stored per app and person. It applies at the tray level; Full and Dock drop it. */
+  readonly trayHeight: number | undefined;
+  readonly setTrayHeight: (height: number | undefined) => void;
   /** Folded to the icon: the tap that brings the composer back where it was. */
   readonly restore: () => void;
   /** Set when a person moved the composer (Minimise, the icon's tap): the next place takes focus, as the control they pressed is gone. */

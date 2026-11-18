@@ -2752,6 +2752,11 @@
           "target": "components/app-shell/composer-grip.tsx"
         },
         {
+          "path": "registry/app-shell/composer-resize.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/composer-resize.tsx"
+        },
+        {
           "path": "registry/app-shell/float-composer.tsx",
           "type": "registry:component",
           "target": "components/app-shell/float-composer.tsx"

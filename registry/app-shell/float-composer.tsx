@@ -84,7 +84,8 @@ export function FloatFrame({ children }: { readonly children: ReactNode }) {
     },
   }), [drag, commit, setFloatPos]);
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  const style = { ...placement(pos, trayOpen), ...(trayOpen ? { '--app-shell-bar-tray-size': 'min(26rem, 55dvh)', '--app-shell-bar-tray-expanded': 'min(26rem, 55dvh)' } : {}) } as CSSProperties;
+  const tall = layer.size === 'open' && layer.trayHeight !== undefined ? `${layer.trayHeight}px` : 'min(26rem, 55dvh)';
+  const style = { ...placement(pos, trayOpen), ...(trayOpen ? { '--app-shell-bar-tray-size': tall, '--app-shell-bar-tray-expanded': tall } : {}) } as CSSProperties;
   return <GripContext.Provider value={handlers}>
     <div ref={box} data-testid="composer-floating" data-corner={'corner' in pos ? pos.corner : undefined} role="group" aria-label={text.assistant} style={style}
       className="fixed z-(--app-shell-z-layer) w-[min(22rem,calc(100vw-2rem))]">{children}</div>
