@@ -3,7 +3,8 @@
 // The agent layer's shared state and words: the public types, the internal context every part reads (`useInternal`), the shell's constants.
 import { createContext, useContext } from 'react';
 import type { ComponentType, ReactNode } from 'react';
-import type { PresentedArtifact } from '../pi-artifacts/artifact';
+import type { ArtifactDescriptor, PresentedArtifact } from '../pi-artifacts/artifact';
+import type { ArtifactFailed, ArtifactShown } from '@hachej/boring-ui-kit/chat-react';
 import type { FeedbackSession } from '@hachej/boring-feedback/ui';
 import type { NativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatVoiceHandle as Voice } from '@hachej/boring-ui-kit/chat-react/voice';
@@ -30,6 +31,13 @@ export interface AgentSpec {
   readonly feedback?: FeedbackSession;
   /** Host actions in the layer's title row (before the dock controls, or the snap and close controls when compact), as the screen header's. Two shown, the rest in « … ». Not at peek. */
   readonly headerActions?: readonly ScreenHeaderAction[];
+  /** Host-owned controls in the layer's title row, before the actions (for example an icon-anchored popover). Not at peek. */
+  readonly headerTools?: ReactNode;
+  /**
+   * `composer: 'bar'`: the host's viewer for an artifact card the person opens (or the agent presents), drawn in the right pane (beside the floating window, full screen on a phone) instead of the kit's file viewer.
+   * Build it from the viewer registry (`ViewerFrame`, ...): it draws its own bar and calls `api.close`. Tasks never come here: they go to `chatProps.artifacts.open`, the host's.
+   */
+  readonly artifactPanel?: ((artifact: ArtifactDescriptor, api: AgentArtifactPanelApi) => ReactNode) | undefined;
   /**
    * `composer="bar"` (D-2198): the app's library, the same shape as the workspace bar's `library`: the app renders its file navigator (for example
    * the kit's `FileTreeView`) and calls `onPicked` once a file is chosen. « Bibliothèque » in the assistant's header and in a preview's header opens it
@@ -61,6 +69,26 @@ export interface AgentSpec {
   /** `composer: 'bar'` (kit 0.4.85): the app's words on the working card, per phase. `tool` is the tool that runs (absent while the agent thinks), `text` the default words.
    * Return the words, or nothing to keep the default. */
   readonly workingWords?: ((phase: { readonly tool?: string; readonly stage?: string; readonly text: string }) => string | undefined) | undefined;
+}
+
+/** What an `artifactPanel` gets: the panel's own controls and the versions of the artifact it shows (the same members as `AmbientArtifactPanelApi`). */
+export interface AgentArtifactPanelApi {
+  readonly fullscreen: boolean;
+  /** Absent on a phone, where the panel is already a full-screen sheet. */
+  readonly onFullscreenChange: ((next: boolean) => void) | undefined;
+  readonly close: () => unknown;
+  readonly sheet: boolean;
+  readonly floatChat: (() => void) | undefined;
+  /** Every known version of the open artifact in this conversation, newest first. */
+  readonly versions: readonly ArtifactDescriptor[];
+  /** True while the panel follows the newest version; false when one older version is pinned. */
+  readonly follow: boolean;
+  /** `'latest'` follows the newest version; a descriptor from `versions` pins that one. */
+  readonly select: (version: ArtifactDescriptor | 'latest') => void;
+  /** Forward the viewer's actual loaded revision mount/unmount report. Opening or rendering the panel is not evidence. */
+  readonly onShown: (shown: ArtifactShown) => void;
+  /** Forward a viewer load/render failure; the waiting present is refused. */
+  readonly onFailed: (failed: ArtifactFailed) => void;
 }
 
 /** The chat's own words an app may override through `agent.words`, next to the shell's (`AppShellText`): all of them are what the one composer shows. */
@@ -145,6 +173,7 @@ export interface AgentPane {
 export type PaneEntry = { readonly id: number; readonly title: string; readonly opener: HTMLElement | null } & (
   | { readonly kind: 'view'; readonly content: ReactNode; readonly bare?: boolean }
   | { readonly kind: 'library'; readonly content: ReactNode }
+  | { readonly kind: 'artifact'; readonly descriptor: ArtifactDescriptor; readonly follow: boolean }
   | { readonly kind: 'file'; readonly path: string; readonly files: readonly string[]; readonly revision?: string | undefined });
 
 /** What `useAgentLayer().preview` shows: the app's own view of the file, under its title. */
@@ -167,6 +196,8 @@ export interface PaneFrame {
   readonly backLabel: string | undefined;
 }
 export const PaneFrameContext = createContext<PaneFrame | null>(null);
+/** The standalone composer's pane window can take the whole screen: an `artifactPanel`'s full screen control reads and sets it. Absent: the pane has no full screen of its own. */
+export const PaneFullscreenContext = createContext<{ readonly fullscreen: boolean; readonly set: (next: boolean) => void } | null>(null);
 /** Inside `preview({ frame: false, content })`: the pane's close and back for the content's own header; a no-op frame elsewhere. */
 export function usePaneFrame(): PaneFrame {
   return useContext(PaneFrameContext) ?? { close: () => {}, back: undefined, backLabel: undefined };
@@ -299,7 +330,11 @@ export interface Internal extends Omit<AgentLayerApi, 'agent'> {
 export interface PanePresent {
   readonly open: (artifact: PresentedArtifact) => void;
   readonly isOpen: (artifact: PresentedArtifact) => boolean;
-  readonly shown: (shown: { readonly path: string; readonly revision: string; readonly hidden?: true }) => void;
+  readonly shown: (shown: ArtifactShown) => void;
+  /** `artifactPanel` only: a viewer load failure, the versions of the artifact on show and how to switch between them. */
+  readonly failed: (failed: ArtifactFailed) => void;
+  readonly select: (version: ArtifactDescriptor | 'latest') => void;
+  readonly versions: readonly ArtifactDescriptor[];
 }
 
 /** One state for "how big is the conversation": the wide tray's three sizes, and on a phone the drawer's half (`open`) and full (`full`). */

@@ -5,7 +5,7 @@
 // and the agent's `present`. Data first: a stack of typed entries (`PaneEntry`), the top one last. The top one shows; the ones under it stay mounted,
 // hidden, so back returns to them as they were (scroll, selection). Wide: the `preview` Dock on the right, or over the docked conversation in its
 // column (« ← Assistant »). Phone: full screen, and the system Back steps back too. Every entry is drawn in the kit's `ViewerFrame`.
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Suspense, lazy, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { ArrowLeftIcon, LibraryIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
@@ -22,10 +22,10 @@ import type { RowReferenceTarget } from '../viewer-code/row-reference';
 import { StepButtons, stepIndex, stepOffset } from '../pi-chat/image-viewer';
 import { useBackLayer } from '../utils/back';
 import { cn } from '../utils/utils';
-import type { PresentedArtifact } from '../pi-artifacts/artifact';
+import type { ArtifactDescriptor, PresentedArtifact } from '../pi-artifacts/artifact';
 import type { AppShellLocale, AppShellText } from './text';
 import { shellWords, useInternal } from './layer-context';
-import { PaneFrameContext } from './layer-context';
+import { PaneFrameContext, PaneFullscreenContext } from './layer-context';
 import type { AgentPane, AgentSpec, FileKind, PaneEntry, PaneFrame, PaneItem, PanePresent } from './layer-context';
 
 const MAX_DEPTH = 12;
@@ -100,7 +100,7 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
     const current = latest.current;
     const top = current.at(-1);
     // The same thing again replaces the top (an app updating its view, the agent presenting the file on show), so back never shows it twice.
-    const same = top && top.kind === entry.kind && (entry.kind === 'file' ? top.kind === 'file' && top.path === entry.path : top.title === entry.title);
+    const same = top && top.kind === entry.kind && (entry.kind === 'file' ? top.kind === 'file' && top.path === entry.path : entry.kind === 'artifact' ? top.kind === 'artifact' && top.descriptor.target.resource.path === entry.descriptor.target.resource.path : top.title === entry.title);
     const next = { ...entry, id: same ? top.id : ++ids.current, opener: same ? top.opener : opener() } as PaneEntry;
     // Focus follows a person's open of something new; an update of what is on top, or the agent's auto-open, leaves it where it is.
     commit([...(same ? current.slice(0, -1) : current), next].slice(-MAX_DEPTH), same || !focus ? null : { to: 'top' });
@@ -165,26 +165,38 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
   const openFile = files && bar ? showFile : undefined;
 
   // The agent's `present`, and a card the person clicks: the file goes on top; the viewer's mount acknowledges it.
-  const controller = bar && files ? agent?.controller : undefined;
+  const artifactPanel = agent?.artifactPanel;
+  const hostArtifacts = agent?.chatProps?.artifacts;
+  // The pane draws artifacts when it can (a file reader, the host's panel); a host that routes artifacts itself (`chatProps.artifacts`) still gets the present acknowledgements from here.
+  const inPane = Boolean(files || artifactPanel);
+  const hostOnly = Boolean(hostArtifacts) && !inPane;
+  const controller = bar && (inPane || hostArtifacts) ? agent?.controller : undefined;
   const conversations = agent?.chatProps?.conversations;
   const top = stack.at(-1);
-  const onTop = useCallback((path: string) => { const shown = latest.current.at(-1); return shown?.kind === 'file' && shown.path === path; }, []);
-  const presentFile = useCallback((artifact: PresentedArtifact, focus = true) => {
+  const onTop = useCallback((path: string) => { const shown = latest.current.at(-1); return (shown?.kind === 'file' && shown.path === path) || (shown?.kind === 'artifact' && shown.descriptor.target.resource.path === path); }, []);
+  // `artifactPanel`: the host's viewer draws the artifact (with its versions), the kit's file viewer is for files.
+  const active = top?.kind === 'artifact' ? { descriptor: top.descriptor, follow: top.follow } : null;
+  const presentFile = useCallback((artifact: PresentedArtifact, focus = true, follow = true) => {
     if (artifact.type === 'task') return false;
     const path = artifact.target.resource.path;
-    pushEntry({ kind: 'file', title: artifact.title || nameOf(path), path, files: [path], revision: artifact.revision }, focus);
+    if (artifactPanel) pushEntry({ kind: 'artifact', title: artifact.title || nameOf(path), descriptor: artifact, follow }, focus);
+    else pushEntry({ kind: 'file', title: artifact.title || nameOf(path), path, files: [path], revision: artifact.revision }, focus);
     return true;
-  }, [pushEntry]);
-  const follow = useArtifactFollow({ controller, conversationId: controller ? String(conversations?.activeId ?? controller.getSnapshot().conversationId) : undefined, active: null,
-    onOpen: selection => { presentFile(selection.descriptor, !selection.follow); }, autoOpen: true, narrow: () => compact, showing: onTop,
+  }, [pushEntry, artifactPanel]);
+  const follow = useArtifactFollow({ controller, conversationId: controller ? String(conversations?.activeId ?? controller.getSnapshot().conversationId) : undefined, active,
+    onOpen: selection => { if (inPane) presentFile(selection.descriptor, !selection.follow, selection.follow); }, autoOpen: inPane, narrow: () => compact, showing: hostOnly ? () => true : onTop,
+    ...(hostOnly ? { showingTask: () => true } : {}),
     openPresent: path => files ? pushEntry({ kind: 'file', title: nameOf(path), path, files: [path] }) > 0 : false,
     answer: agent?.chatProps?.actions?.answer as Parameters<typeof useArtifactFollow>[0]['answer'] });
-  const { onShown } = follow;
+  const { onShown, onFailed, open: followOpen, select, known } = follow;
   const presented = useMemo<PanePresent | undefined>(() => controller ? {
-    open: artifact => { presentFile(artifact); },
+    open: artifact => { if (artifactPanel && artifact.type !== 'task') followOpen(artifact); else presentFile(artifact); },
     isOpen: artifact => artifact.type !== 'task' && onTop(artifact.target.resource.path),
     shown: onShown,
-  } : undefined, [controller, presentFile, onTop, onShown]);
+    failed: onFailed,
+    select,
+    versions: known.filter((version): version is ArtifactDescriptor => version.type !== 'task'),
+  } : undefined, [controller, artifactPanel, presentFile, followOpen, onTop, onShown, onFailed, select, known]);
 
   // Focus: an entry's heading when it opens; back to the control that opened what closed (else the heading under it, or the field).
   useEffect(() => {
@@ -351,14 +363,29 @@ function EntryView({ entry, below, top, placement, assistant }: { readonly entry
       {placement === 'screen' && entry.files.length > 1 && <div className="flex shrink-0 justify-center px-2 py-1">{steps}</div>}
     </>;
   }
+  if (entry.kind === 'artifact' && layer.agent?.artifactPanel && layer.presented) {
+    return <ArtifactEntry entry={entry} panel={layer.agent.artifactPanel} presented={layer.presented} id={id} placement={placement} close={layer.pane.close} />;
+  }
   if (entry.kind === 'view' && entry.bare) {
     // The content draws its own header (`preview({ frame: false })`): the pane gives it its close and back, and a heading-less region name.
     const frame: PaneFrame = { close: layer.pane.close, back: backTitle ? layer.pane.back : undefined, backLabel: backTitle ? `${text.backTo} ${backTitle}` : undefined };
     return <PaneFrameContext.Provider value={frame}><div data-testid={`${id}-content`} data-bare="" className="flex min-h-0 flex-1 flex-col overflow-hidden text-sm [:where(&_*)]:border-border">{entry.content}</div></PaneFrameContext.Provider>;
   }
   return <ViewerFrame title={entry.title} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} {...(library ? { actions: library } : {})} onClose={layer.pane.close}>
-    {entry.kind === 'file' ? null : <div data-testid={entry.kind === 'library' ? `${id}-library-list` : `${id}-content`} className="flex min-h-0 flex-1 flex-col overflow-auto text-sm [:where(&_*)]:border-border">{entry.content}</div>}
+    {entry.kind === 'file' || entry.kind === 'artifact' ? null : <div data-testid={entry.kind === 'library' ? `${id}-library-list` : `${id}-content`} className="flex min-h-0 flex-1 flex-col overflow-auto text-sm [:where(&_*)]:border-border">{entry.content}</div>}
   </ViewerFrame>;
+}
+
+/** An artifact the host's `artifactPanel` draws: its own bar (close, full screen, versions), given the pane's controls and the versions of what is on show. */
+function ArtifactEntry({ entry, panel, presented, id, placement, close }: { readonly entry: Extract<PaneEntry, { kind: 'artifact' }>; readonly panel: NonNullable<AgentSpec['artifactPanel']>; readonly presented: PanePresent;
+  readonly id: string; readonly placement: 'column' | 'stacked' | 'screen'; readonly close: () => void }) {
+  const wide = useContext(PaneFullscreenContext);
+  const sheet = placement === 'screen';
+  const shown = entry.follow ? presented.versions[0] ?? entry.descriptor : entry.descriptor;
+  return <div data-testid={`${id}-content`} data-bare="" className="flex min-h-0 flex-1 flex-col overflow-hidden text-sm [:where(&_*)]:border-border">
+    {panel(shown, { fullscreen: wide?.fullscreen ?? false, onFullscreenChange: sheet || !wide ? undefined : wide.set, close, sheet, floatChat: undefined,
+      versions: presented.versions, follow: entry.follow, select: presented.select, onShown: presented.shown, onFailed: presented.failed })}
+  </div>;
 }
 
 /** A touch swipe across the pane steps to the previous or next file (a pinch or a zoomed image keeps its own gestures). */
