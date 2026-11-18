@@ -39,10 +39,12 @@ export async function releaseAdmission({ commit, sha, repository, token, tested 
     }
     throw new Error('GitHub check evidence exceeds pagination limit');
   };
-  const latest = async (workflow, head, event) => (await list(`actions/workflows/${workflow}/runs?head_sha=${head}`, 'workflow_runs'))
+  const latestOf = (runs, head, event) => runs
     .filter(value => value.head_sha === head && value.event === event && value.repository?.full_name === repository
-      && (event === 'push' ? value.head_branch === 'main' : value.head_repository?.full_name === repository))
+      && (event === 'push' ? value.head_branch === 'main' : event === 'merge_group' ? value.head_branch?.startsWith('gh-readonly-queue/main/') : value.head_repository?.full_name === repository))
     .sort((a, b) => b.id - a.id)[0];
+  const runsOf = (workflow, head) => list(`actions/workflows/${workflow}/runs?head_sha=${head}`, 'workflow_runs');
+  const latest = async (workflow, head, event) => latestOf(await runsOf(workflow, head), head, event);
   // Every named check of this run is the latest, green, and belongs to its GitHub Actions suite on that head.
   const failing = async (run, head, names) => {
     if (!run || run.status !== 'completed' || run.conclusion !== 'success') return 'run is not green';
@@ -59,11 +61,13 @@ export async function releaseAdmission({ commit, sha, repository, token, tested 
   try {
     const deadline = now() + waitTimeoutMs, sources = new Set();
     for (const [workflow, names] of Object.entries(REQUIRED_CHECKS)) {
-      // Main's own completed run decides. Until it completes, the merged PR's green run of the same files suffices;
+      // Main's own completed run decides. Until it completes, the merge queue's green run of this exact SHA, or the merged PR's green run of the same files, suffices;
       // otherwise wait for main rather than repeating its run.
       let problem;
       for (;;) {
-        const main = await latest(workflow, commit, 'push');
+        const runs = await runsOf(workflow, commit), main = latestOf(runs, commit, 'push');
+        // The merge queue fast-forwards main to the commit it tested, so a green queue run of this exact SHA tested these files.
+        if (main?.status !== 'completed' && !(await failing(latestOf(runs, commit, 'merge_group'), commit, names))) { problem = null; sources.add('merge queue'); break; }
         if (main?.status === 'completed') { problem = await failing(main, commit, names); sources.add('main push'); break; }
         if (tested && !(await failing(await latest(workflow, tested, 'pull_request'), tested, names))) { problem = null; sources.add('merged pull request'); break; }
         if (now() >= deadline) { problem = 'latest exact-SHA main push run is not green'; break; }

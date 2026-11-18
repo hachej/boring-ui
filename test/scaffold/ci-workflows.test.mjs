@@ -281,3 +281,11 @@ test('a new pull request push cancels its superseded CI run; main pushes and rel
   // The release calls all three with one run id; a shared prefix would make them cancel or wait on each other.
   assert.equal(groups.size, 3);
 });
+
+test('every workflow that produces a required check also runs in the merge queue, with the same job names', () => {
+  for (const name of ['verify', 'secrets', 'studio-scripted']) {
+    const source = workflow(name);
+    assert.match(source, /^on:\n(?:.*\n)*?  merge_group:\n    types: \[checks_requested\]\n/m, `${name} runs on merge_group checks_requested`);
+    assert.ok(!/github\.head_ref|github\.base_ref/.test(source), `${name} reads no pull-request-only context`);
+  }
+});

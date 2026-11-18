@@ -169,3 +169,40 @@ test('only an up-to-date merge with an identical tree names its pull request hea
   assert.equal(testedPullRequestHead(root, head), null, 'a non-merge commit has no tested pull request head');
   assert.ok(stale);
 });
+
+// A merge queue run of the exact commit: the queue fast-forwards main to the commit it tested, so its run carries the commit's SHA.
+function queueEvidence(f, change) {
+  for (const workflow of Object.keys(REQUIRED_CHECKS)) {
+    const runs = f.pages.get(`actions/workflows/${workflow}/runs`).workflow_runs, run = runs[0];
+    runs.push({ ...run, id: run.id + 100, head_branch: 'gh-readonly-queue/main/pr-1-' + commit, event: 'merge_group' });
+    Object.assign(run, { status: 'in_progress', conclusion: null });
+  }
+  const run = f.pages.get('actions/workflows/verify.yml/runs').workflow_runs[1];
+  if (change === 'branch') run.head_branch = 'feature';
+  else if (change === 'sha') run.head_sha = 'b'.repeat(40);
+  else if (change === 'failure') run.conclusion = 'failure';
+  else if (change === 'suite') run.check_suite_id = 999;
+  else if (change === 'event') run.event = 'pull_request';
+}
+
+test('while main is still checking its commit, the green merge queue run of the same SHA admits it', async () => {
+  const f = fixture();
+  queueEvidence(f);
+  assert.deepEqual(await releaseAdmission(input, f), { reuse: true, reason: 'All named verification and browser checks passed on these exact files (merge queue)' });
+  assert.equal(f.now(), 0, 'no wait');
+});
+
+test('a merge queue run that is red, of another SHA or branch, or not of the suite never admits', async () => {
+  for (const change of ['failure', 'sha', 'branch', 'suite', 'event']) {
+    const f = fixture();
+    queueEvidence(f, change);
+    assert.equal((await releaseAdmission(input, f)).reuse, false, change);
+  }
+});
+
+test('a completed red main run outranks a green merge queue run', async () => {
+  const f = fixture();
+  queueEvidence(f);
+  Object.assign(f.pages.get('actions/workflows/verify.yml/runs').workflow_runs[0], { status: 'completed', conclusion: 'failure' });
+  assert.equal((await releaseAdmission(input, f)).reuse, false);
+});
