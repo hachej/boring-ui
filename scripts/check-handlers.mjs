@@ -27,8 +27,8 @@ export const REMOVED_FILE_APIS = /\b(?:openSqliteResources|SqliteResourceProvide
 
 const HISTORY_HEADING = '## Migrating from the removed resource store';
 
-// The Atlas shooter (D-1831) writes its own `index.json` catalogue beside the PNGs; that is not the removed artifact index.
-const ATLAS_INDEX_FILES = new Set(['MIGRATING.md', 'features/atlas.md', 'packages/ui/bin/boring-ui-blocks.mjs', 'test/atlas-shoot.test.mjs']);
+// The Atlas shooter (D-1831) writes its own `index.json` catalogue beside the PNGs, and the atlas-viewer block shows it; that is not the removed artifact index.
+const ATLAS_INDEX_FILES = new Set(['MIGRATING.md', 'features/atlas.md', 'packages/ui/bin/boring-ui-blocks.mjs', 'test/atlas-shoot.test.mjs', 'registry/atlas-viewer/atlas-viewer.tsx', 'public/r/atlas-viewer.json']);
 
 /** Every tracked file (or each of `files`) that names a removed file API, as `path:line: name`. */
 export function removedFileApis(root, files) {
