@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.5.9
+
 - **`app-shell`: the open composer can be resized by dragging its top edge (additive).** On a wide screen the open conversation (the tray above the bar, and the floating window) has a handle on its top border: drag it, or use the arrow keys (24 px, Shift 96, Home/End for the limits, Enter or a double-click to reset). The height is remembered per app and person (`boring-ui:sidebar-composer-height:<app>:<person>`); Full and Dock drop it; a phone is unchanged. New label `resizeHandle` (en, fr) in `AppShellText`; an app that passes a complete `words` object gets the English default. Re-run `npx boring-ui-blocks add app-shell` to pick it up.
 
 - **`signin`: a Google account gets in only when Google says its address is verified (stricter; no API change).** Before, an invited address coming through « Continue with Google » was let in whatever Google said of it; now `email_verified` must be true, or the sign-in is refused like an uninvited one (`NOT_INVITED`). Apps without a Google client are unchanged. Tests: `test/packages/signin-google.test.mjs`. Feature: `features/signin.md` (`signin-google`).
