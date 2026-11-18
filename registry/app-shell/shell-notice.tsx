@@ -34,11 +34,14 @@ const MAX_QUEUED = 5;
 const SWIPE = 48;
 const droppable = (notice: AppShellNotice) => notice.kind === 'info' || notice.kind === 'success';
 const fades = (notice: AppShellNotice) => droppable(notice) && !notice.own;
+/** How long a notice stays before it fades: `fadeMs` (0 = stays) for every kind but a warning, else 8 s for info and success and no fade for the others. Undefined: it stays. */
+const fadeAfter = (notice: AppShellNotice, fadeMs: number | undefined): number | undefined =>
+  notice.own ? undefined : fadeMs === undefined ? fades(notice) ? FADE_MS : undefined : notice.kind === 'warning' || fadeMs <= 0 ? undefined : fadeMs;
 
 /** At most `MAX_QUEUED`: past that the oldest (last) info or success notices go, one at a time; a warning or an error is never dropped. */
-export function capNotices(list: readonly AppShellNotice[]): readonly AppShellNotice[] {
+export function capNotices(list: readonly AppShellNotice[], max = MAX_QUEUED): readonly AppShellNotice[] {
   const kept = [...list];
-  for (let at = kept.findLastIndex(droppable); kept.length > MAX_QUEUED && at >= 0; at = kept.findLastIndex(droppable)) kept.splice(at, 1);
+  for (let at = kept.findLastIndex(droppable); kept.length > max && at >= 0; at = kept.findLastIndex(droppable)) kept.splice(at, 1);
   return kept;
 }
 
@@ -50,26 +53,27 @@ const TONES = {
 } as const;
 
 /** Notices as the shell shows them: the host's, then the update's. `notices` is newest first. Renders at most one. */
-export function NoticeHost({ notices, text, compact }: { readonly notices: readonly AppShellNotice[]; readonly text: AppShellText; readonly compact: boolean }): ReactNode {
+export function NoticeHost({ notices, text, compact, fadeMs, max }: { readonly notices: readonly AppShellNotice[]; readonly text: AppShellText; readonly compact: boolean; readonly fadeMs?: number | undefined; readonly max?: number | undefined }): ReactNode {
   // Read here, not in the shell: only a shell with notices follows the layer's snaps (a shell that reads the layer re-renders its screens with it).
   const layer = useInternal();
   const [gone, setGone] = useState<readonly string[]>([]);
   const [held, setHeld] = useState(false);
   const [press, setPress] = useState<{ readonly x: number; readonly y: number } | undefined>();
-  const queue = capNotices(notices).filter(notice => !gone.includes(notice.id));
+  const queue = capNotices(notices, max).filter(notice => !gone.includes(notice.id));
   const shown = queue[0];
   // A dismiss ends with the notice leaving the list: the same id may come back and show again. Reset while rendering, not in an effect.
   if (gone.some(id => !notices.some(notice => notice.id === id))) setGone(gone.filter(id => notices.some(notice => notice.id === id)));
   const dismiss = () => { if (!shown) return; setGone(ids => [...ids, shown.id]); setHeld(false); shown.onDismiss?.(); };
-  const fading = shown !== undefined && fades(shown);
+  const fadeIn = shown === undefined ? undefined : fadeAfter(shown, fadeMs);
+  const fading = fadeIn !== undefined;
   const latest = useRef(shown);
   useEffect(() => { latest.current = shown; });
   const shownId = shown?.id;
   useEffect(() => {
     if (shownId === undefined || !fading || held) return;
-    const timer = setTimeout(() => { setGone(ids => [...ids, shownId]); latest.current?.onDismiss?.(); }, FADE_MS);
+    const timer = setTimeout(() => { setGone(ids => [...ids, shownId]); latest.current?.onDismiss?.(); }, fadeIn);
     return () => clearTimeout(timer);
-  }, [shownId, fading, held]);
+  }, [shownId, fading, fadeIn, held]);
   if (!shown) return null;
   const { icon: Icon, box, mark } = TONES[shown.kind];
   const ids = shown.own?.ids ?? { root: 'notice', text: 'notice-text', action: 'notice-action', dismiss: 'notice-dismiss' };

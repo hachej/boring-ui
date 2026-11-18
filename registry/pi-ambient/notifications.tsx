@@ -67,6 +67,8 @@ export const defaultNotificationLabels = {
   dismissShort: 'Dismiss',
   /** The action on a notice (the one composer shows the toasts as its notices): opens that conversation. */
   openShort: 'Open',
+  /** The action of the notice that offers system notifications (`systemNotifications`): asks the browser's permission when the person presses it. */
+  enableShort: 'Turn on',
 };
 export type NotificationLabels = typeof defaultNotificationLabels;
 
@@ -82,6 +84,7 @@ export const frenchNotificationLabels: NotificationLabels = {
   dismissNotification: title => `Fermer : ${title}`,
   dismissShort: 'Fermer',
   openShort: 'Ouvrir',
+  enableShort: 'Activer',
 };
 
 /** The status icon of a notification, also used by the ambient header. */

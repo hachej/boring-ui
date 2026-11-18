@@ -3,7 +3,7 @@
 // `AmbientChat` over the one composer. The floating bar is the shell's composer (`FloatingComposer` of `app-shell`): the same bar, strip, conversation window, icon, grip and remembered place.
 // This file keeps the old public props. A prop the one composer takes is delegated to it; a prop it does not take yet (`ambientGap`) keeps the whole bar on the old window (`ambient-window.tsx`)
 // so no existing app changes. Background-conversation toasts become the composer's notices; `createNotificationStore` and `watchConversation` keep feeding them.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { createNotificationStore, useRunNotifications } from '@hachej/boring-ui-kit/chat-react';
 import { FloatingComposer } from '../app-shell/floating-composer';
@@ -15,6 +15,8 @@ import type { PiChatProps } from '../pi-chat/pi-chat';
 import { useNotifications, noticeTextOf } from './notifications';
 import type { AgentNotification, NotificationStore } from './notifications';
 import { AmbientWindow, AMBIENT_TEXT } from './ambient-window';
+import { notifyPermission, notifyWhenHidden, requestNotifyPermission } from './browser-notify';
+import type { NotifyPermission } from './browser-notify';
 import type { AmbientChatProps, AmbientIcons, AmbientLabels, AmbientState } from './ambient-window';
 
 export { usePhone, defaultAmbientLabels, defaultAmbientIcons } from './ambient-window';
@@ -24,14 +26,12 @@ export type { AgentNotification, AgentNotificationsProps, NewNotification, Notif
 
 /**
  * The props the one composer does not take yet: each keeps the bar on the old window. `undefined` means the composer takes every prop the app gave, so the bar is the one composer.
- * Listed in `features/ambient.md`: the in-window artifact panel and host artifact cards, embedding in a host page, the bar's own actions, thumbs and "open in full chat" on replies,
- * the dock button, the composer's layout and renderer, the toast timing, `className` (hosts position the old bar with it) and the system-notification bell.
+ * Listed in `features/ambient.md`: the in-window artifact panel and host artifact cards, embedding in a host page, the bar's own actions, thumbs and "open in full chat" on replies and the dock button.
  */
 export function ambientGap(props: AmbientChatProps): string | undefined {
-  const keys = ['embedded', 'artifactPanel', 'artifacts', 'headerTools', 'renderComposer', 'composerLayout', 'onDock', 'onOpenFull', 'onFeedback', 'autoDismissMs', 'maxToasts', 'className'] as const;
+  const keys = ['embedded', 'artifactPanel', 'artifacts', 'headerTools', 'onDock', 'onOpenFull', 'onFeedback'] as const;
   const key = keys.find(name => props[name] !== undefined && props[name] !== false);
   if (key) return key;
-  if (props.systemNotifications) return 'systemNotifications';
   if (props.headerActions?.length) return 'headerActions';
   return undefined;
 }
@@ -54,6 +54,9 @@ function StateBridge({ state, initial, onChange, layerRef }: BridgeProps) {
   useLayoutEffect(() => { layerRef.current = layer; });
   const level = levelOf(layer);
   const reported = useRef(level);
+  const hostState = useRef(state);
+  useLayoutEffect(() => { hostState.current = state; });
+  const resnap = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const target = useRef<AmbientState | undefined>(undefined);
   const settle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const move = useCallback((to: AmbientState) => {
@@ -72,12 +75,21 @@ function StateBridge({ state, initial, onChange, layerRef }: BridgeProps) {
   useEffect(() => { if (wanted !== undefined && (first.current || state !== undefined)) move(wanted); first.current = false; }, [wanted, state, move]);
   useEffect(() => {
     if (target.current !== undefined) { if (level === target.current) { target.current = undefined; clearTimeout(settle.current); } reported.current = level; return; }
-    if (reported.current !== level) { reported.current = level; onChange(level); }
-  }, [level, onChange]);
-  useEffect(() => () => clearTimeout(settle.current), []);
+    if (reported.current !== level) {
+      reported.current = level; onChange(level);
+      // A controlled `state` is the host's truth: when the host does not take the person's change (no `onStateChange`, or it keeps its own value), the bar goes back to what the host holds.
+      clearTimeout(resnap.current);
+      if (hostState.current !== undefined) resnap.current = setTimeout(() => { const want = hostState.current, now = layerRef.current; if (want !== undefined && now && levelOf(now) !== want) move(want); }, RESNAP_MS);
+    }
+  }, [level, onChange, layerRef, move]);
+  useEffect(() => () => { clearTimeout(settle.current); clearTimeout(resnap.current); }, []);
   return null;
 }
 
+/** How long a host gets to take the person's change of a controlled `state` before the bar goes back to the host's value. */
+const RESNAP_MS = 150;
+/** Where the old floating bar kept its dragged position when the app gave no `storageKey`. */
+const LEGACY_POSITION_KEY = 'boring.ambient.position';
 const TONE = { done: 'success', input: 'warning', error: 'error' } as const;
 
 /** The toasts of a store as the composer's notices, newest first. */
@@ -87,13 +99,40 @@ function noticesOf(items: readonly AgentNotification[], labels: AmbientLabels, o
     action: { label: labels.openShort, onSelect: () => { open(item); store.dismiss(item.id); } }, onDismiss: () => store.dismiss(item.id) }));
 }
 
+/** Inside the layer: a system notification for each new toast while the page is hidden (`systemNotifications`); its click brings the conversation. Draws nothing. */
+function SystemNotifier({ items, labels, activate }: { readonly items: readonly AgentNotification[]; readonly labels: AmbientLabels; readonly activate: (layer: Omit<AgentLayerApi, 'agent'>, item: AgentNotification) => void }) {
+  const layer = useAgentLayer();
+  const seen = useRef(new Set<string>());
+  const word = { done: labels.finished, input: labels.needsInput, error: labels.failedRun } as const;
+  useEffect(() => {
+    for (const item of items) {
+      const key = `${item.id}:${item.createdAt}`;
+      if (seen.current.has(key)) continue;
+      seen.current.add(key);
+      notifyWhenHidden(item.title, item.summary ?? word[item.kind], item.id, () => { globalThis.focus?.(); activate(layer, item); });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `word` is rebuilt every render from `labels`; the toast's own text is read once, when it first shows
+  }, [items, layer, activate]);
+  return null;
+}
+
+/** The notice that offers system notifications while the browser has not been asked: its button is the person's own action, the only moment the permission is requested. */
+function useEnableNotice(on: boolean, labels: AmbientLabels): readonly AppShellNotice[] {
+  const [permission, setPermission] = useState<NotifyPermission>('unsupported');
+  const [declined, setDeclined] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the browser's permission exists only after mount
+  useEffect(() => { if (on) setPermission(notifyPermission()); }, [on]);
+  return useMemo(() => on && permission === 'default' && !declined ? [{ id: 'ambient-enable-notifications', kind: 'info', text: labels.enableNotifications,
+    action: { label: labels.enableShort, onSelect: () => { void requestNotifyPermission().then(setPermission); } }, onDismiss: () => setDeclined(true) }] : [], [on, permission, declined, labels]);
+}
+
 const CHAT_WORDS = ['placeholder', 'placeholderWorking', 'messageInput', 'send', 'sendHint', 'stop', 'queue', 'add', 'attachFiles', 'takePhoto', 'commands', 'retry', 'voiceStop', 'voiceCancel', 'emptyDescription'] as const;
 
 function AmbientOnComposer(props: AmbientChatProps) {
   const { controller, labels: givenLabels, icons: givenIcons, variant = 'contrast', state, defaultState, onStateChange, storageKey, notifications, conversations, avatar, tools, belowComposer,
     // Props the composer has no use for (`ambientGap` keeps the ones that matter on the old window): the old window's own position, size and placement.
-    embedded: _embedded, headerActions: _headerActions, headerTools: _headerTools, storage: _storage, systemNotifications: _system, autoDismissMs: _dismiss, maxToasts: _max, composerLayout: _layout, renderComposer: _render,
-    artifacts: _artifacts, artifactPanel: _panel, artifactTarget: _target, onDock: _dock, onOpenFull: _full, onFeedback: _feedback, className: _class, ...rest } = props;
+    embedded: _embedded, headerActions: _headerActions, headerTools: _headerTools, storage = 'session', systemNotifications = false, autoDismissMs, maxToasts, composerLayout, renderComposer, className,
+    artifacts: _artifacts, artifactPanel: _panel, artifactTarget: _target, onDock: _dock, onOpenFull: _full, onFeedback: _feedback, ...rest } = props;
   const { labels, icons } = useMergedText<AmbientLabels, AmbientIcons>(givenLabels, givenIcons, AMBIENT_TEXT);
   const internal = useMemo(() => createNotificationStore(), []);
   const store = notifications || internal;
@@ -107,11 +146,13 @@ function AmbientOnComposer(props: AmbientChatProps) {
     suppress: () => levelRef.current === 'expanded' && globalThis.document?.visibilityState !== 'hidden' });
   const items = useNotifications(store);
   // Built inside the composer's layer (a function of it), where Open can bring the bar or the icon back to the conversation.
-  const notices = useCallback((layer: Omit<AgentLayerApi, 'agent'>) => noticesOf(items, labels, item => {
+  const activate = useCallback((layer: Omit<AgentLayerApi, 'agent'>, item: AgentNotification) => {
     if (item.conversationId !== undefined && item.conversationId !== conversationId) conversations?.onSelect(item.conversationId);
     if (layer.place === 'icon') layer.setPlace('float');
     layer.open('agent');
-  }, store), [items, labels, conversationId, conversations, store]);
+  }, [conversationId, conversations]);
+  const enable = useEnableNotice(systemNotifications && notifications !== false, labels);
+  const notices = useCallback((layer: Omit<AgentLayerApi, 'agent'>) => [...noticesOf(items, labels, item => activate(layer, item), store), ...enable], [items, labels, activate, store, enable]);
   const change = useCallback((next: AmbientState) => {
     levelRef.current = next;
     if (next === 'expanded') store.dismissConversation(conversationId);
@@ -123,10 +164,11 @@ function AmbientOnComposer(props: AmbientChatProps) {
     return picked;
   }, [labels]);
   const agent: AgentSpec = ({ controller, label: labels.title, words,
-    chatProps: { ...rest, labels, icons, ...(avatar !== undefined ? { avatar } : {}), ...(tools !== undefined ? { tools } : {}), ...(belowComposer !== undefined ? { belowComposer } : {}), ...(conversations ? { conversations } : {}) } as Omit<PiChatProps, 'controller'> });
+    chatProps: { ...rest, labels, icons, ...(renderComposer !== undefined ? { renderComposer } : {}), ...(composerLayout !== undefined ? { composerLayout } : {}), ...(avatar !== undefined ? { avatar } : {}), ...(tools !== undefined ? { tools } : {}), ...(belowComposer !== undefined ? { belowComposer } : {}), ...(conversations ? { conversations } : {}) } as Omit<PiChatProps, 'controller'> });
   const starts = (state ?? defaultState) === 'minimized' ? 'icon' : 'float';
-  const bridge: ReactNode = <StateBridge state={state} initial={defaultState} onChange={change} layerRef={layerRef} />;
-  const composer = <FloatingComposer agent={agent} appId={storageKey ?? 'ambient'} start={starts} {...(notifications === false ? {} : { notices })}>{bridge}</FloatingComposer>;
+  const bridge: ReactNode = <><StateBridge state={state} initial={defaultState} onChange={change} layerRef={layerRef} />{systemNotifications && notifications !== false && <SystemNotifier items={items} labels={labels} activate={activate} />}</>;
+  const composer = <FloatingComposer agent={agent} appId={storageKey ?? 'ambient'} start={starts} storage={storage} legacyPositionKey={storageKey ?? LEGACY_POSITION_KEY} legacyPositionStorage={storage}
+    {...(className !== undefined ? { className } : {})} {...(autoDismissMs !== undefined ? { autoDismissMs } : {})} {...(maxToasts !== undefined ? { maxToasts } : {})} {...(notifications === false ? {} : { notices })}>{bridge}</FloatingComposer>;
   return <div data-boring="ambient-chat" data-variant={variant} className={variant === 'contrast' ? 'dark scheme-dark contents' : 'contents'}>{composer}</div>;
 }
 

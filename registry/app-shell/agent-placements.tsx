@@ -22,7 +22,7 @@ import { OneBox, VoiceProblem } from './agent-bar-parts';
 import { ChatSlot, Header, HeaderHint, HistoryButton, LibraryButton, useTitle } from './agent-chats';
 import { CompactSheet } from './agent-compact';
 import { PaneDock, PaneStack } from './agent-pane';
-import { ComposerFab, FloatFrame, NoticeSlot } from './float-composer';
+import { ComposerClassContext, ComposerFab, FloatFrame, NoticeSlot } from './float-composer';
 import { Grip } from './composer-grip';
 
 /** The panel inside the dock: the same element docked or floating, so a placement change keeps focus and the chats where they are. */
@@ -135,6 +135,7 @@ export function ContentColumn({ children }: { readonly children: ReactNode }) {
  * mounted and hidden, so the field, its draft and the folded card keep their place and the unread count goes on). `standalone`: no column to sit in, so the bottom is the window's.
  */
 export function BarBox({ standalone = false }: { readonly standalone?: boolean }) {
+  const hostClass = useContext(ComposerClassContext);
   const { setComposerSlot, setCardSlot, trayOpen, anchored, folded, place, placeFocus: focusRef, composerSlot } = useInternal();
   const slots = <>
     {trayOpen && !anchored && <ContentTray />}
@@ -157,7 +158,7 @@ export function BarBox({ standalone = false }: { readonly standalone?: boolean }
   }, [place, focusRef, composerSlot]);
   if (place === 'float') return <FloatFrame><OneBox floating>{slots}</OneBox></FloatFrame>;
   if (place === 'icon') return <><div hidden><OneBox>{slots}</OneBox></div><ComposerFab /></>;
-  return standalone ? <div className="@container fixed inset-x-0 bottom-0 z-(--app-shell-z-layer)"><NoticeSlot /><OneBox>{slots}</OneBox></div> : <OneBox>{slots}</OneBox>;
+  return standalone ? <div className={cn('@container fixed inset-x-0 bottom-0 z-(--app-shell-z-layer)', hostClass)}><NoticeSlot /><OneBox>{slots}</OneBox></div> : <OneBox>{slots}</OneBox>;
 }
 
 /**
