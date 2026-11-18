@@ -5,8 +5,8 @@
   "description": "The kit's own compact spinner primitive (shadcn/ui/spinner.tsx), installed in the app's ui alias at this kit release. Blocks keep borrowing the app's own primitives; install this one to use the kit's.",
   "dependencies": [],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.3/r/_shared.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.3/r/utils.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.4/r/_shared.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.4/r/utils.json"
   ],
   "files": [
     {
