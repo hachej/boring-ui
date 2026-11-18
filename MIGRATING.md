@@ -1,6 +1,7 @@
 # Unreleased
 
 - **New block `atlas-viewer`: show an Atlas shoot (additive).** `npx boring-ui-blocks add atlas-viewer` gives `AtlasViewer` with `index` (the `index.json` of `boring-ui-blocks atlas … --out`) and `shotUrl(file)`; it never fetches. States grouped by flow with the arrows' `after` labels, a phone/desktop and light/dark switch, « changed »/« new » badges from `--since`, a click opens a shot large. English by default, `locale="fr"`, `labels` override. Needs the shadcn `badge`, `button`, `dialog`, `separator` and `toggle-group` components; `_shared/icons` gains `ArrowRightIcon`, `MonitorIcon`, `SmartphoneIcon` and `SunIcon`. Tests: `test/ui/atlas-viewer.test.mjs`. Feature: `features/atlas.md`.
+- **`pi-chat-approval`: an approval with a summary shows only the badge, the summary and Approve/Deny; the tool name and the raw arguments move together into the folded « Détails » / « Details ».** Without a summary the card is unchanged. New label `details` (`labels.ts`, `labels-fr.ts`); an app that customised `labels.arguments` keeps that word for the disclosure. Re-add `pi-chat-approval` and `pi-chat` (labels) to pick it up. Feature: `features/chat.md` (`chat-approval-summary`).
 
 # Migrating to 0.5.6
 

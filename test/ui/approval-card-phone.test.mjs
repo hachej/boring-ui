@@ -55,7 +55,7 @@ test('approval and question cards stack text over a full-width 44px decision row
     const dd = card.querySelector('dd');
     assert.equal(has(dd, 'font-mono') && has(dd, 'whitespace-pre-wrap'), true, 'the command is a wrapping mono block');
     assert.equal(has(card.querySelector('dl'), '@max-md:grid-cols-1'), true, 'name over value in a narrow card, so the command has the full width');
-    if (summary) { const details = card.querySelector('[data-testid=approval-details]'); assert.equal(details?.tagName, 'DETAILS', 'Arguments stays a plain disclosure'); assert.equal(details.querySelector('summary')?.textContent, 'Arguments'); }
+    if (summary) { const details = card.querySelector('[data-testid=approval-details]'); assert.equal(details?.tagName, 'DETAILS', 'Details stays a plain disclosure'); assert.equal(details.querySelector('summary')?.textContent, 'Details'); }
   }
 
   await draw(createElement(QuestionCard, { call: call('ask_user', { question: 'Which fictional archive should be cleaned first?', questions: [{ question: 'Which archive?', options: ['archive-2019', 'archive-2020'] }] }), answer, questionId: 'q2' }));
