@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.5.9
+
 - **`signin`: a Google account gets in only when Google says its address is verified (stricter; no API change).** Before, an invited address coming through « Continue with Google » was let in whatever Google said of it; now `email_verified` must be true, or the sign-in is refused like an uninvited one (`NOT_INVITED`). Apps without a Google client are unchanged. Tests: `test/packages/signin-google.test.mjs`. Feature: `features/signin.md` (`signin-google`).
 
 # Migrating to 0.5.8
