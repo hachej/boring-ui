@@ -3857,6 +3857,26 @@
       ]
     },
     {
+      "name": "atlas-viewer",
+      "type": "registry:component",
+      "title": "Atlas viewer",
+      "description": "The Atlas viewer: an app's catalogue of screens and states as `boring-ui-blocks atlas … --out` shot them, from the shoot's index. The states grouped by flow, each arrow labelled with the state's `after`; a phone (390) or desktop (1280) and light or dark switch; the « changed » and « new » badges of `--since`; a click opens one shot large in a dialog. Props in (the index and where the shots are), no fetch; English by default, French by setting, labels overridable. Needs the shadcn `badge`, `button`, `dialog`, `separator` and `toggle-group` components.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/utils",
+        "@boring-ui/_shared"
+      ],
+      "files": [
+        {
+          "path": "registry/atlas-viewer/atlas-viewer.tsx",
+          "type": "registry:component",
+          "target": "components/atlas-viewer/atlas-viewer.tsx"
+        }
+      ]
+    },
+    {
       "name": "inline-question",
       "type": "registry:component",
       "title": "Inline question",
