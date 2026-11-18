@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`pi-chat` composer: the field you type in follows the app's body size, not the assistant's reading size (visible change; no API change).** The composer's textarea and placeholder (the bottom bar, the panel and the ambient chat share one composer) read at `--text-md` when the app's theme defines it, else `--text-body` (13 px by default), instead of `--text-chat` (15 px). On a narrow screen (under 768 px) or a coarse pointer they stay at least 1rem so iOS Safari does not zoom on focus. The message text keeps `--text-chat`. Re-copy `pi-chat` (`npx boring-ui-blocks update`) and update `@hachej/boring-ui-kit`; an app that wants a different size sets `--text-md` in its theme.
+
 # Migrating to 0.5.9
 
 - **`app-shell`: the open composer can be resized by dragging its top edge (additive).** On a wide screen the open conversation (the tray above the bar, and the floating window) has a handle on its top border: drag it, or use the arrow keys (24 px, Shift 96, Home/End for the limits, Enter or a double-click to reset). The height is remembered per app and person (`boring-ui:sidebar-composer-height:<app>:<person>`); Full and Dock drop it; a phone is unchanged. New label `resizeHandle` (en, fr) in `AppShellText`; an app that passes a complete `words` object gets the English default. Re-run `npx boring-ui-blocks add app-shell` to pick it up.
