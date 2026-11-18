@@ -138,8 +138,10 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const registerDock = useCallback((api: DockApi | null) => { dockApi.current = api; }, []);
   // The tray's Dock: this thread goes to the docked side pane whatever placement was persisted (a floated dock stays floated only for the dock's own controls).
   const moveToDock = useCallback(() => { restoreFocus.current = true; dockApi.current?.dock(); setMode('dock'); }, [setMode]);
-  const contentColumn = (composer === 'content' || composer === 'bar') && agent !== undefined;
-  const contentComposer = contentColumn && expanded;
+  // The column is there from the first frame, assistant or not: wrapping the page only once the agent arrives remounted the whole screen
+  // (Chase, 17 November: every screen loaded twice when its chat connected). Its composer still waits for the agent.
+  const contentColumn = composer === 'content' || composer === 'bar';
+  const contentComposer = contentColumn && agent !== undefined && expanded;
   const bar = composer === 'bar' && agent !== undefined;
   const [columnCard, setCardSlot] = useState<HTMLElement | null>(null);
   const [phoneCard, setPhoneCard] = useState<HTMLElement | null>(null);
@@ -198,18 +200,20 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     if (!specs.current.together) setPmOpen(false);
     setShown('agent');
   }, []);
-  const open = useCallback((which?: Which, at: 'peek' | 'half' | 'full' = 'half') => {
+  // `dock`: the conversation in the right column (wide screens), as the tray's Dock button does; a phone opens it at half.
+  const open = useCallback((which?: Which, at: 'peek' | 'half' | 'full' | 'dock' = 'half') => {
     const { agent: a, improve: i, together: both } = specs.current;
     const target = which ?? (a ? 'agent' : 'improve');
     if (target === 'agent' ? !a : !i) return;
     closeShellLayer();
-    if (target === 'agent') { toAgent(); setSnapState(at); return; }
+    if (target === 'agent') { toAgent(); setSnapState(at === 'dock' ? 'half' : at); if (at === 'dock' && !compact) moveToDock(); return; }
+    if (at === 'dock') at = 'half';
     // Wide enough for both: the PM opens beside the assistant and leaves it as it is.
     if (both) { setPmOpen(true); return; }
     setPmOpen(false);
     setShown('improve');
     setSnapState(at === 'peek' ? 'half' : at);
-  }, [toAgent]);
+  }, [toAgent, moveToDock, compact]);
   const lend = useCallback((spec: AgentSpec | undefined, at?: 'peek' | 'half' | 'full') => {
     if (specs.current.agent && specs.current.agent !== lentRef.current) return;
     lentRef.current = spec;

@@ -106,7 +106,7 @@ export function AgentCard({ controller, agent, title, status, activity, meta, le
             <div className="flex flex-wrap gap-2">{bar.question.choices.map(choice => <Button key={choice} type="button" variant="outline" onClick={() => bar.question?.onAnswer({ text: choice, source: 'choice' })}>{choice}</Button>)}</div>
           </div>}
         </div>}
-        {level === 0 && composer && !docked && <><Separator className="mt-1" /><div data-testid="agent-card-composer" style={{ height: heights?.composer ?? '10.5rem' }} className="min-h-0">{chat({ header: false, chatProps: { ...chatProps, hideLine: () => true, emptyState: <span /> } })}</div></>}
+        {level === 0 && composer && !docked && <><Separator className="mt-1" /><div data-testid="agent-card-composer" style={{ height: heights?.composer ?? '10.5rem' }} className="min-h-0 [&_[data-testid=conversation-content]]:invisible">{chat({ header: false, chatProps: { ...chatProps, hideLine: () => true, emptyState: <span /> } })}</div></>}
         {level === 1 && !docked && <><Separator className="mt-1" /><div style={{ height: heights?.tray ?? '16rem' }} className="min-h-0">{chat({ header: false })}</div></>}
       </>}
     <ControllerStrip edge="bottom" actions={actions} unread={bar.historyBadge} />
