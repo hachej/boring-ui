@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-ui-kit",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "license": "MIT",
   "private": false,
   "type": "module",
@@ -71,6 +71,10 @@
     "./chat-text": {
       "types": "./dist/chat-text.d.ts",
       "import": "./dist/chat-text.js"
+    },
+    "./signin": {
+      "types": "./dist/signin/index.d.ts",
+      "import": "./dist/signin/index.js"
     },
     "./voice-capture": {
       "types": "./dist/voice-capture.d.ts",
@@ -162,7 +166,7 @@
     }
   },
   "peerDependencies": {
-    "@hachej/boring-files": "^0.5.7",
+    "@hachej/boring-files": "^0.5.8",
     "@earendil-works/pi-durable": "~1.5.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -189,9 +193,25 @@
     "zod": "^4.6.5",
     "@tldraw/tlschema": "^5.6.0",
     "lucide-react": "^1.51.0",
-    "@base-ui/react": "1.9.0"
+    "@base-ui/react": "1.9.0",
+    "better-auth": "^1.7.7",
+    "@better-auth/core": "^1.7.7",
+    "@better-auth/oauth-provider": "^1.7.7",
+    "jose": "^6.2.3"
   },
   "peerDependenciesMeta": {
+    "@better-auth/core": {
+      "optional": true
+    },
+    "better-auth": {
+      "optional": true
+    },
+    "@better-auth/oauth-provider": {
+      "optional": true
+    },
+    "jose": {
+      "optional": true
+    },
     "@hachej/boring-files": {
       "optional": true
     },

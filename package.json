@@ -1,6 +1,6 @@
 {
   "name": "boring-ui",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -205,7 +205,10 @@
     "@alchemy.run/cloudflare": "2.0.0-beta.87",
     "@alchemy.run/better-auth": "2.0.0-beta.87",
     "better-auth": "1.7.7",
-    "@effect/platform-node": "4.1.4"
+    "@effect/platform-node": "4.1.4",
+    "@better-auth/core": "1.7.7",
+    "@better-auth/oauth-provider": "1.7.7",
+    "jose": "6.2.12"
   },
   "overrides": {
     "@earendil-works/pi-durable": "1.5.2",
