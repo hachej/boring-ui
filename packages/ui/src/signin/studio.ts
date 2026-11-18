@@ -27,7 +27,7 @@ export interface StudioClientOptions {
   readonly ownersTtlMs?: number | undefined;
 }
 
-export interface Owner { readonly sub: string; readonly email: string; readonly name: string }
+export interface Owner { readonly sub: string }
 
 /** The redirect address of an app's Studio round trip. */
 export const studioCallback = (appOrigin: string) => `${new URL(appOrigin).origin}/api/auth/callback/${STUDIO}`;

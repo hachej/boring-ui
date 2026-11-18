@@ -87,14 +87,14 @@ export function signIn(options: SignInOptions) {
     return new Response(null, { status: 405 });
   };
 
-  /** Studio: its owners, by Studio id, in a 5-minute token signed with its own keys, for the apps it links. */
+  /** Studio: its owners, by Studio id only (the route is public, so no address or name), in a 5-minute token signed with its own keys. */
   const owners = async (): Promise<Response> => {
     await ready();
     const store = await db();
     const rows = await store.findMany<{ email: string }>({ model: 'invitation', where: [{ field: 'role', value: 'owner' }] });
     const users = (await Promise.all(rows.map((r) => store.findOne<User>({ model: 'user', where: [{ field: 'email', value: r.email }] })))).filter((u): u is User => !!u);
     const { token } = await api['signJWT']!({ body: {
-      payload: { owners: users.map((u) => ({ sub: u.id, email: u.email, name: u.name })) },
+      payload: { owners: users.map((u) => ({ sub: u.id })) },
       overrideOptions: { jwt: { issuer: `${origin}/api/auth`, audience: OWNERS_AUDIENCE, expirationTime: '5m' } },
     } }) as { token: string };
     return Response.json({ token }, { headers: { 'cache-control': 'no-store' } });
