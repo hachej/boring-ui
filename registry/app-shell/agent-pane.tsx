@@ -25,7 +25,8 @@ import { cn } from '../utils/utils';
 import type { PresentedArtifact } from '../pi-artifacts/artifact';
 import type { AppShellLocale, AppShellText } from './text';
 import { shellWords, useInternal } from './layer-context';
-import type { AgentPane, AgentSpec, FileKind, PaneEntry, PaneItem, PanePresent } from './layer-context';
+import { PaneFrameContext } from './layer-context';
+import type { AgentPane, AgentSpec, FileKind, PaneEntry, PaneFrame, PaneItem, PanePresent } from './layer-context';
 
 const MAX_DEPTH = 12;
 const noSubscription = () => () => {};
@@ -108,7 +109,7 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
   }, [commit, compact, uncover]);
   const pushNow = useCallback((item: PaneItem): boolean => {
     if (!agent || !bar) return false;
-    if ('content' in item) return pushEntry({ kind: 'view', title: item.title, content: item.content }) > 0;
+    if ('content' in item) return pushEntry({ kind: 'view', title: item.title, content: item.content, ...(item.frame === false ? { bare: true } : {}) }) > 0;
     if (!files) return false;
     const set = item.files?.includes(item.file) ? item.files : [item.file];
     return pushEntry({ kind: 'file', title: item.title ?? nameOf(item.file), path: item.file, files: set }) > 0;
@@ -349,6 +350,11 @@ function EntryView({ entry, below, top, placement, assistant }: { readonly entry
       <div className="flex min-h-0 flex-1 flex-col"><FileEntry entry={entry} read={layer.agent.files.read} onShown={layer.presented?.shown} fileKinds={layer.agent.fileKinds} rows={rows} frame={{ id, headerStart, controls: placement === 'screen' ? undefined : steps, onClose: layer.pane.close, text }} /></div>
       {placement === 'screen' && entry.files.length > 1 && <div className="flex shrink-0 justify-center px-2 py-1">{steps}</div>}
     </>;
+  }
+  if (entry.kind === 'view' && entry.bare) {
+    // The content draws its own header (`preview({ frame: false })`): the pane gives it its close and back, and a heading-less region name.
+    const frame: PaneFrame = { close: layer.pane.close, back: backTitle ? layer.pane.back : undefined, backLabel: backTitle ? `${text.backTo} ${backTitle}` : undefined };
+    return <PaneFrameContext.Provider value={frame}><div data-testid={`${id}-content`} data-bare="" className="flex min-h-0 flex-1 flex-col overflow-hidden text-sm [:where(&_*)]:border-border">{entry.content}</div></PaneFrameContext.Provider>;
   }
   return <ViewerFrame title={entry.title} testId={id} titleTestId={`${id}-title`} headerStart={headerStart} {...(library ? { actions: library } : {})} onClose={layer.pane.close}>
     {entry.kind === 'file' ? null : <div data-testid={entry.kind === 'library' ? `${id}-library-list` : `${id}-content`} className="flex min-h-0 flex-1 flex-col overflow-auto text-sm [:where(&_*)]:border-border">{entry.content}</div>}
