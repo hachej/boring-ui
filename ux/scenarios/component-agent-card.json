@@ -2,15 +2,15 @@
  "target": "component:agent-card",
  "title": "Agent cards",
  "summary": "One unit of agent work (a run, a task, a job) as a card that keeps working while folded: a status chip, one line of activity, a decision on the card, and the composer's levels on a strip.",
- "purpose": "AgentCard and AgentChat over a scripted agent: one card per state (queued, running, needs you, done, failed) with three agents in three colours, plus a task card (the same card with a meta). Folded, a card shows the agent's colour dot, a title, a status chip and one line; a decision the agent waits for shows on the folded card. The strip on its lower border goes folded, a small tray (the conversation and its field), the whole chat, or docks it into a side column.",
+ "purpose": "AgentCard and AgentChat over a scripted agent: one card per state (queued, running, needs you, done, failed) with three agents in three colours, plus a task card (the same card with a meta). Folded, a card shows the agent's colour dot, a title, a status chip and one line; a decision the agent waits for shows on the folded card. The strip on its lower border is one ladder, a step at a time: chat bubble, composer, a small tray (the conversation and its field), the whole chat; Dock at every step.",
  "try": [
   {
-   "label": "Expand a finished run",
+   "label": "Open the chat of a finished run",
    "steps": [
     {
      "do": "tap",
-     "target": "[data-task=done] [data-testid=agent-card-expand]",
-     "until": "visible:[data-task=done] [data-testid=agent-chat]"
+     "target": "[data-task=done] [data-testid=agent-card-chat]",
+     "until": "visible:[data-task=done] [data-testid=agent-card-composer]"
     }
    ]
   },
@@ -103,21 +103,28 @@
  "flows": [
   {
    "id": "F1",
-   "name": "Levels by the strip, back with Esc",
+   "name": "The ladder by the strip, one step at a time",
    "steps": [
     {
      "do": "tap",
      "target": "[data-task=done] [data-testid=agent-card-chat]",
      "say": "Tap the chat bubble",
      "until": "visible:[data-task=done] [data-testid=agent-card-composer] & gone:[data-task=done] [data-testid=agent-chat-header]",
-     "expect": "Only the composer opens on the folded card."
+     "expect": "Only the composer opens on the folded card; the strip is Collapse, Expand, Dock."
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-collapse]",
+     "say": "Collapse",
+     "until": "gone:[data-task=done] [data-testid=agent-card-composer] & visible:[data-task=done] [data-testid=agent-card-chat]",
+     "expect": "One step back to the chat bubble."
     },
     {
      "do": "tap",
      "target": "[data-task=done] [data-testid=agent-card-chat]",
-     "say": "Tap it again",
-     "until": "gone:[data-task=done] [data-testid=agent-card-composer]",
-     "expect": "The composer hides."
+     "say": "Open the chat again",
+     "until": "visible:[data-task=done] [data-testid=agent-card-composer]",
+     "expect": "The composer is back."
     },
     {
      "do": "press",
@@ -127,16 +134,54 @@
     },
     {
      "do": "focus",
-     "target": "[data-task=done] [data-testid=agent-card-chat]",
-     "say": "Focus the chat bubble (it reveals the chevron and Dock)",
+     "target": "[data-task=done] [data-testid=agent-card-collapse]",
+     "say": "Focus the chevron (it reveals the controller)",
      "only": "1440"
     },
     {
      "do": "tap",
      "target": "[data-task=done] [data-testid=agent-card-expand]",
-     "say": "Expand the finished run",
-     "until": "visible:[data-task=done] [data-testid=agent-chat] & gone:[data-task=done] [data-testid=agent-chat-header]",
+     "say": "Expand",
+     "until": "visible:[data-task=done] [data-testid=agent-card-expand-more] & visible:[data-task=done] [data-testid=agent-chat] & gone:[data-task=done] [data-testid=agent-chat-header]",
      "expect": "The small tray opens: the conversation and its field."
+    },
+    {
+     "do": "press",
+     "key": "Shift",
+     "say": "Press a key (focus then shows as a keyboard focus)",
+     "only": "1440"
+    },
+    {
+     "do": "focus",
+     "target": "[data-task=done] [data-testid=agent-card-collapse]",
+     "say": "Focus the chevron (it reveals the controller)",
+     "only": "1440"
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-collapse]",
+     "say": "Collapse from the tray",
+     "until": "visible:[data-task=done] [data-testid=agent-card-composer] & visible:[data-task=done] [data-testid=agent-card-expand]",
+     "expect": "Back to the composer, one step."
+    },
+    {
+     "do": "press",
+     "key": "Shift",
+     "say": "Press a key (focus then shows as a keyboard focus)",
+     "only": "1440"
+    },
+    {
+     "do": "focus",
+     "target": "[data-task=done] [data-testid=agent-card-collapse]",
+     "say": "Focus the chevron (it reveals the controller)",
+     "only": "1440"
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-expand]",
+     "say": "Expand",
+     "until": "visible:[data-task=done] [data-testid=agent-card-expand-more]",
+     "expect": "The tray again."
     },
     {
      "do": "press",
@@ -160,17 +205,9 @@
     {
      "do": "tap",
      "target": "[data-task=done] [data-testid=agent-card-collapse]",
-     "say": "Collapse",
-     "until": "gone:[data-task=done] [data-testid=agent-chat] & focus:agent-card-header",
-     "focus": "agent-card-header",
-     "expect": "The card folds and focus returns to its header."
-    },
-    {
-     "do": "tap",
-     "target": "[data-task=done] [data-testid=agent-card-header]",
-     "say": "Tap the header",
-     "until": "visible:[data-task=done] [data-testid=agent-chat]",
-     "expect": "A tap on the header expands it."
+     "say": "Collapse from the full chat",
+     "until": "gone:[data-task=done] [data-testid=agent-chat-header] & visible:[data-task=done] [data-testid=agent-chat] & visible:[data-task=done] [data-testid=agent-card-expand-more]",
+     "expect": "One step back to the tray, not to the folded card."
     },
     {
      "do": "press",
@@ -178,6 +215,13 @@
      "say": "Press Esc",
      "until": "gone:[data-task=done] [data-testid=agent-chat] & focus:agent-card-header",
      "expect": "Esc folds the card; focus is on its header."
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=done] [data-testid=agent-card-header]",
+     "say": "Tap the header",
+     "until": "visible:[data-task=done] [data-testid=agent-chat]",
+     "expect": "A tap on the header expands it."
     }
    ]
   },
@@ -229,7 +273,7 @@
     {
      "do": "focus",
      "target": "[data-task=done] [data-testid=agent-card-chat]",
-     "say": "Focus the chat bubble (it reveals the controller)",
+     "say": "Focus the chat bubble (it reveals Dock)",
      "only": "1440"
     },
     {
