@@ -92,6 +92,10 @@ test('the agent card: levels, background work, a decision on the folded card, do
     await page.locator(task('done', 'agent-chat-header')).waitFor();
     assert.equal(await page.locator(`${task('done', 'agent-chat')} [data-testid=artifact-card]`).count(), 1, label('the file the agent presented is the chat\'s own card'));
     assert.deepEqual(await strip(), ['agent-card-collapse', 'agent-card-dock'], label('level 2: Collapse and Dock'));
+    assert.equal(await page.locator(`${task('done', 'agent-card')} [data-testid=composer-controller]`).count(), 1, label('level 2: one strip on the card, not one per layer'));
+    await page.locator(task('done', 'agent-card-collapse')).scrollIntoViewIfNeeded();
+    const box = await page.locator(task('done', 'agent-card-collapse')).boundingBox();
+    assert.ok(box.y >= 0 && box.y + box.height <= viewport.height && box.x >= 0 && box.x + box.width <= viewport.width, label('level 2: the strip is fully inside the screen'));
     assert.match(await arrow('agent-card-collapse'), /91\.31/, label('level 2: Collapse points up'));
     await page.locator(task('done', 'agent-card-collapse')).click();
     await page.locator(task('done', 'agent-chat')).waitFor();
