@@ -1,6 +1,6 @@
 'use client';
 
-// The open conversation's top edge as a handle (`shell-composer-resize`): drag it to make the window taller or shorter, or use the keys. It is a horizontal separator on the border line the
+// The open conversation's top edge as a handle (`shell-composer-resize`): drag it to make the window taller or shorter, or use the keys. It is a horizontal separator on the edge the
 // controller strip sits on (the strip stays on top and keeps its buttons). While dragging the height goes straight into the two CSS variables the tray and its frame already read, so
 // nothing re-renders per move; the release commits it to the layer, which remembers it per app and person. Host concern: Pi has no layout.
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
@@ -108,6 +108,6 @@ export function ResizeHandle() {
       'pointer-coarse:h-11 pointer-coarse:-translate-y-[calc(100%-0.25rem)]')}>
     {/* On hover and keyboard focus the border thickens to a 2 px line with a short grip bar; the strip sits over the middle, so the grip is drawn a quarter in. */}
     <span aria-hidden="true" className="pointer-events-none absolute inset-x-4 top-1/2 h-0.5 -translate-y-1/2 bg-ring opacity-0 transition-opacity duration-(--duration-fast) group-[:hover]/resize:opacity-100 group-[:focus-visible]/resize:opacity-100 group-[:active]/resize:opacity-100 motion-reduce:transition-none pointer-coarse:top-[calc(100%-0.125rem)]" />
-    <span aria-hidden="true" className="pointer-events-none absolute top-1/2 left-1/4 h-1.5 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ring opacity-0 transition-opacity duration-(--duration-fast) group-[:hover]/resize:opacity-100 group-[:focus-visible]/resize:opacity-100 group-[:active]/resize:opacity-100 motion-reduce:transition-none pointer-coarse:top-[calc(100%-0.125rem)]" />
+    <span aria-hidden="true" className="pointer-events-none absolute top-1/2 left-1/4 h-1.5 w-10 -translate-x-1/2 -translate-y-1/2 rounded-(--radius-3xl) bg-ring opacity-0 transition-opacity duration-(--duration-fast) group-[:hover]/resize:opacity-100 group-[:focus-visible]/resize:opacity-100 group-[:active]/resize:opacity-100 motion-reduce:transition-none pointer-coarse:top-[calc(100%-0.125rem)]" />
   </div>;
 }
