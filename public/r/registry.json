@@ -3815,6 +3815,22 @@
       ]
     },
     {
+      "name": "sidebar-list",
+      "type": "registry:component",
+      "title": "Sidebar list",
+      "description": "A titled list of records for the app shell's left pane (NavItem.sidebar): each row an avatar (initial letter) or icon, a label and a count, the open row unfolding its sub-items, a small action beside the title. Built only from the kit's sidebar primitives, so it folds to avatars on the icon rail and keeps the kit's row height and touch floor.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "files": [
+        {
+          "path": "registry/sidebar-list/sidebar-list.tsx",
+          "type": "registry:component",
+          "target": "components/sidebar-list/sidebar-list.tsx"
+        }
+      ]
+    },
+    {
       "name": "inline-question",
       "type": "registry:component",
       "title": "Inline question",

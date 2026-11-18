@@ -1,5 +1,7 @@
 # Unreleased
 
+- **`sidebar-list`: a list of records for the app shell's left pane (new block; additive).** `npx boring-ui-blocks add sidebar-list` gives `SidebarList` with `label`, `action?`, `items` (`id`, `label`, `avatar?` letters or icon, `count?`, `active?`, `onSelect`, `children?` sub-rows) and `expanded?`, built from the kit's sidebar primitives so it folds to avatars on the icon rail. Render it from `NavItem.sidebar`; replaces hand-built client lists. Needs the shadcn `sidebar` and `avatar` components.
+
 # Migrating to 0.5.4
 
 - **`agent-card`: the strip is one ladder, one step at a time (behaviour change; same props).** Folded with no chat open the strip is Open the chat (the bubble) and Dock, no chevron; with the composer showing it is Collapse (up, back to the bubble), Expand (down) and Dock; in the tray it is Collapse (up, back to the composer, no longer to the folded card), Expand more (double chevron down) and Dock; in the whole chat it is Collapse (up, back to the tray, no longer to the folded card) and Dock; docked it is Undock. Dock shows at every step; a task card uses the same ladder. The default `labels.chat` is now "Open the chat" (was "Message the agent"). A host that clicked `agent-card-expand` on a folded card opens the composer first (`agent-card-chat`), then Expand. `agent-card-collapse` is now also the composer's Collapse. Update with `boring-ui-blocks update`; `agent-card` changes. See `features/agent-card.md`.
