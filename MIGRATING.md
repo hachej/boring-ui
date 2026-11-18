@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.5.5
+
 - **`app-shell`: cite one of the app's things to the agent as a chip (new; additive).** `<CiteButton reference={{ kind: 'card', id: 1, title: 'Sort the list by date', subtitle: '#1' }} />` (or `useAgentLayer().talkAbout(citeToken(reference), { add: true })`) adds one chip to the agent's field: icon, title, number or subtitle, remove. A second citation adds a second chip, the same one again changes nothing, typed text stays. The agent receives a structured `@"cite:{kind,id,title,subtitle}"` mention, read back with `citedReferences(text)`; no prose is added. The shell registers the `cite` mention kind itself when the chat has `mentions` (an app's own `mentions.kinds.cite` wins). Words come from the kit's labels (`referenceInAgent`, `referencedInAgent` and the new `citation`): English by default, `locale="fr"` for French. An app that filled the field with its own sentence (« À propos de la carte… ») can drop it for this. Re-add `app-shell` to pick it up (new file `cite-reference.tsx`).
 - **`sidebar-list`: a list of records for the app shell's left pane (new block; additive).** `npx boring-ui-blocks add sidebar-list` gives `SidebarList` with `label`, `action?`, `items` (`id`, `label`, `avatar?` letters or icon, `count?`, `active?`, `onSelect`, `children?` sub-rows) and `expanded?`, built from the kit's sidebar primitives so it folds to avatars on the icon rail. Render it from `NavItem.sidebar`; replaces hand-built client lists. Needs the shadcn `sidebar` and `avatar` components.
 
