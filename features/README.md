@@ -30,6 +30,7 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Drawing viewer | Excalidraw and draw.io files drawn by their own renderers, read-only | [drawing-viewer.md](drawing-viewer.md) |
 | Viewer utilities | shared phone breakpoint, media/keyboard viewport and local layout persistence | [viewer-utilities.md](viewer-utilities.md) |
 | Pattern blocks | KPI stat, list row, empty state, page header, data table | [patterns.md](patterns.md) |
+| MCP setup | the header icon and popover on how to connect a person's assistant to the app | [mcp-setup.md](mcp-setup.md) |
 | Space overview blocks | SpaceCard and WiringChips | [space-overview.md](space-overview.md) |
 | Agent bar | AgentBar (field, mic, tap to listen, hold to talk, quoted chip) and AgentStatus | [agent-bar.md](agent-bar.md) |
 | Agent card | `AgentCard` (one unit of agent work as a folding card with the composer's levels, dock, a decision on the folded card) and `AgentChat` (the default chat that fits any place) | [agent-card.md](agent-card.md) |

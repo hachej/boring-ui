@@ -96,6 +96,7 @@ export {
   PictureInPictureIcon as PictureInPicture2Icon,
   PushPinIcon as PinIcon,
   PlayIcon,
+  PlugsConnectedIcon as PlugIcon,
   PlusIcon,
   PresentationIcon,
   ArrowUUpRightIcon as Redo2Icon,

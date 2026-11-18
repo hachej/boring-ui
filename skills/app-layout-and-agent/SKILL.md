@@ -22,6 +22,7 @@ The app shell is a registry block (`app-shell`), installed with `boring-ui-block
 - One header per screen: call `useScreenHeader({ title, subtitle?, back?, actions?, leading?, dense? })` inside the screen ([header.tsx](../../registry/app-shell/header.tsx)).
 - `ListDetail { list, detail, onBack, collapsible?, collapsed?, railWidth?, title? }` ([list-detail.tsx](../../registry/app-shell/list-detail.tsx)): both panes wide; one at a time on a phone, the detail pushed as one history entry. Keep selection in the URL so a deep link opens the detail.
 - `account={{ name, email?, menu, signOut?, theme? }}` ([account.tsx](../../registry/app-shell/account.tsx)); `theme: { value, onChange }` adds the dark-mode switch. `locale` (`fr` | `en`) sets the shell's own words.
+- `mcp={{ address: location.origin + "/mcp", appName, signIn? }}`: every app with an MCP route gives it; the header then shows the plug that explains how to connect Claude or ChatGPT ([mcp-setup](../../registry/mcp-setup/mcp-setup.tsx)). Do not portal your own MCP button into the header.
 - A screen that polls or subscribes runs only while it is on show: `useScreenActive()` (true on the screen on show, and outside a shell; [agent-context.ts](../../registry/app-shell/agent-context.ts)). Never read `location.hash` for it: the first screen is on show when the address has no hash.
 - Tell the agent what is on show with `useAgentContext({ name, params })` ([agent-context.ts](../../registry/app-shell/agent-context.ts)); it travels with each message as `context`.
 
