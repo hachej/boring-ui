@@ -30,7 +30,8 @@ test('kit items declare no shadcn palette token, no :root block and no prefers-c
 });
 
 test('the ambient contrast variant is the host\'s own dark theme: its root carries .dark', () => {
-  for (const file of ['ambient.tsx', 'notifications.tsx']) {
+  assert.match(readFileSync(new URL('registry/pi-ambient/ambient.tsx', root), 'utf8'), /variant === 'contrast' \? 'dark scheme-dark contents'/, 'the wrapper root carries .dark for contrast');
+  for (const file of ['ambient-window.tsx', 'notifications.tsx']) {
     const source = readFileSync(new URL(`registry/pi-ambient/${file}`, root), 'utf8');
     assert.match(source, /variant === 'contrast' && 'dark scheme-dark'/, file);
     assert.doesNotMatch(source, /oklch\(|#[0-9a-f]{3,8}\b/i, `${file} hard-codes no colour`);
