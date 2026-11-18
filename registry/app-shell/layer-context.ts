@@ -132,7 +132,7 @@ export interface AgentPane {
 
 /** One entry of the pane's stack: what it shows, its title (the back control of the entry above says it) and the control that opened it (focus returns there). */
 export type PaneEntry = { readonly id: number; readonly title: string; readonly opener: HTMLElement | null } & (
-  | { readonly kind: 'view'; readonly content: ReactNode }
+  | { readonly kind: 'view'; readonly content: ReactNode; readonly bare?: boolean }
   | { readonly kind: 'library'; readonly content: ReactNode }
   | { readonly kind: 'file'; readonly path: string; readonly files: readonly string[]; readonly revision?: string | undefined });
 
@@ -140,6 +140,25 @@ export type PaneEntry = { readonly id: number; readonly title: string; readonly 
 export interface AgentPreview {
   readonly title: string;
   readonly content: ReactNode;
+  /**
+   * `false`: the pane draws no header of its own and `content` draws the one (a pi-app `FileViewer`, an editor with its own mode toggle and save state). The pane's
+   * close and back reach it through `usePaneFrame()`: `<FileViewer onClose={close} onBack={back} backLabel={backLabel} … />`. Default: the pane's frame.
+   */
+  readonly frame?: false | undefined;
+}
+
+/** What a frameless pane entry (`frame: false`) wires into its own header: the pane's Fermer, and « ← <what is under> » when there is something to go back to. */
+export interface PaneFrame {
+  readonly close: () => void;
+  /** Undefined when the entry is alone in a pane over no conversation (nothing to go back to). */
+  readonly back: (() => void) | undefined;
+  /** « Retour à <title> » (the back control's name). */
+  readonly backLabel: string | undefined;
+}
+export const PaneFrameContext = createContext<PaneFrame | null>(null);
+/** Inside `preview({ frame: false, content })`: the pane's close and back for the content's own header; a no-op frame elsewhere. */
+export function usePaneFrame(): PaneFrame {
+  return useContext(PaneFrameContext) ?? { close: () => {}, back: undefined, backLabel: undefined };
 }
 // The three fixed snap points: a peek (the file chip, one composer row and a line of the last reply, `PEEK_REM` above the tab bar), 55% and the full height.
 export const PEEK_REM = 8;

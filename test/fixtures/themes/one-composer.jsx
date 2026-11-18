@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AppShell } from '../../../registry/app-shell/app-shell.tsx';
+import { usePaneFrame } from '../../../registry/app-shell/layer-context.ts';
 import { useAgentLayer } from '../../../registry/app-shell/agent-layer.tsx';
 import { SlashPicker } from '../../../registry/pi-chat-slash/slash-menu.tsx';
 import { createScriptedAgent } from '../../../ux/fixtures/scripted-agent.mjs';
@@ -98,6 +99,9 @@ const actions = {
 };
 window.__library = 0;
 const onOpenFile = path => DEMO ? window.__layer.preview(fileView(path)) : window.__layer.preview({ title: path.split('/').at(-1), content: (DEMO || params.get('page') === 'real') ? <div data-testid="fixture-preview" className="flex flex-col gap-3 p-4 text-sm"><p className="font-medium">{path.split('/').at(-1)}</p><Table head={['Date', 'Libellé', 'Écart']} rows={[['09/01', 'Carte Garage du Port', '12,00 €'], ['15/01', 'Carte Restaurant Le Cèdre', '−12,00 €']]} /><p className="text-muted-foreground">Deux écarts à justifier avant la clôture.</p></div> : <div data-testid="fixture-preview" className="p-4 text-sm">{T('Aperçu fictif de', 'Fictional preview of')} {path}{T(' : deux écarts de 12,00 €.', ': two discrepancies of $12.00.')}</div> });
+// A pane entry that draws its own header (`preview({ frame: false })`), the way an editor does: the pane gives it close and back through `usePaneFrame`.
+const BareEditor = () => { const { close, back, backLabel } = usePaneFrame(); return <div data-testid="bare-editor" className="flex min-h-0 flex-1 flex-col"><header data-testid="bare-header" className="flex items-center gap-2 border-b p-2">{back && <Button variant="ghost" size="sm" data-testid="bare-back" aria-label={backLabel} onClick={back}>←</Button>}<b>NOTES.md</b><Button variant="ghost" size="sm" data-testid="bare-close" aria-label="Fermer" onClick={close}>×</Button></header></div>; };
+window.__openBare = () => window.__layer.preview({ title: 'Notes', frame: false, content: <BareEditor /> });
 window.__openFile = KIT ? path => window.__layer.pane.push({ file: path }) : onOpenFile;
 window.__presented = [];
 const Icon = ({ className }) => <svg className={className} width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="currentColor" /></svg>;

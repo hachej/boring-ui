@@ -85,7 +85,8 @@ export function McpSetup({ address, appName, clients, signIn = true, locale = 'f
     <PopoverTrigger render={<Button variant="ghost" size="icon" aria-label={labels.trigger} title={labels.trigger} data-testid="mcp-setup-trigger" />}>
       {icon ?? <PlugIcon data-icon="inline-start" aria-hidden="true" />}
     </PopoverTrigger>
-    <PopoverContent align="end" aria-label={labels.title(appName)} data-testid="mcp-setup" className="w-[min(26rem,calc(100vw-2rem))] max-h-[min(36rem,80dvh)] gap-4 overflow-y-auto">
+    {/* Focus goes back to the icon only after a keyboard close: after a click or a tap the icon stays a plain ghost button, without a focus ring. */}
+    <PopoverContent align="end" finalFocus={type => type === 'keyboard'} aria-label={labels.title(appName)} data-testid="mcp-setup" className="w-[min(26rem,calc(100vw-2rem))] max-h-[min(36rem,80dvh)] gap-4 overflow-y-auto">
       <div className="flex flex-col gap-1">
         <p className="m-0 font-semibold">{labels.title(appName)}</p>
         <p className="m-0 text-muted-foreground">{labels.intro(appName)}</p>

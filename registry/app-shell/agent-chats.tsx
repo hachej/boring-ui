@@ -24,6 +24,7 @@ import { sentFeedbackContent } from '../feedback/sent-content';
 import { usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
 import { ROW_MENTION, rowMentionKind } from '../viewer-code/row-reference';
+import { CITE_MENTION, citeMentionKind } from './cite-reference';
 import { useAgentBarChat } from '../agent-bar/use-agent-bar-chat';
 import type { ArtifactsConfig } from '../pi-artifacts/artifact';
 import { basename, FileChip, isCitedFile, ReplyActionButton } from './file-chip';
@@ -155,15 +156,16 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   // An app with `@` mentions also takes the table row reference (`row`): the pane's row action puts a `row` mention in the field, and it shows as a chip.
   const mentions = role === 'agent' ? spec.chatProps?.mentions : undefined;
   const openLabel = chatTextFor(locale).labels.openFile;
+  const citeWord = words.citation;
   // A cited file in a reply is a chip that opens the way the card's chip does (`openFile`); a file the workspace does not have stays text.
   const fileChip = useCallback((path: string, text?: string) => !openFile || !isCitedFile(path) ? undefined
     : <FileChip path={path} files={spec.files} kinds={spec.fileKinds} onOpen={target => openFile(target)} label={openLabel(basename(path))} inline testid="message-mention" {...(text ? { text } : {})} />, [openFile, spec.files, spec.fileKinds, openLabel]);
   const shellMentions = useMemo(() => mentions ? {
     ...mentions,
-    ...(mentions.kinds?.[ROW_MENTION] ? {} : { kinds: { ...mentions.kinds, [ROW_MENTION]: rowMentionKind } }),
+    kinds: { ...(mentions.kinds?.[ROW_MENTION] ? {} : { [ROW_MENTION]: rowMentionKind }), ...(mentions.kinds?.[CITE_MENTION] ? {} : { [CITE_MENTION]: citeMentionKind(citeWord) }), ...mentions.kinds },
     render: (path: string) => mentions.render?.(path) ?? fileChip(path),
     ...(mentions.renderSent ? { renderSent: (path: string) => mentions.renderSent?.(path) ?? fileChip(path) } : {}),
-  } : undefined, [mentions, fileChip]);
+  } : undefined, [mentions, fileChip, citeWord]);
   const artifactKinds = spec.fileKinds?.filter(kind => kind.label) as ArtifactsConfig['kinds'];
   const chatProps = kitOpen || presented || shellMentions ? { ...spec.chatProps, ...(shellMentions ? { mentions: shellMentions } : {}), ...(kitOpen ? { onOpenFile: (path: string) => kitOpen(path) } : {}), ...(presented ? { artifacts: { open: presented.open, isOpen: presented.isOpen, ...(artifactKinds?.length ? { kinds: artifactKinds } : {}) } } : {}) } : spec.chatProps;
   const mic = useBarMic();
