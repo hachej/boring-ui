@@ -17,6 +17,8 @@ const entry = `
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement as h } from 'react';
 import { kpiChange, KpiStat, KpiRow } from '${join(root, 'registry/kpi-stat/kpi-stat.tsx')}';
+import { SidebarList } from '${join(root, 'registry/sidebar-list/sidebar-list.tsx')}';
+import { SidebarProvider } from '${join(root, 'examples/app-shell/components/ui/sidebar.tsx')}';
 import { ListRow } from '${join(root, 'registry/list-row/list-row.tsx')}';
 import { EmptyState } from '${join(root, 'registry/empty-state/blank-state.tsx')}';
 import { PageHeader } from '${join(root, 'registry/page-header/page-header.tsx')}';
@@ -28,6 +30,13 @@ export const html = {
   row: () => renderToStaticMarkup(h(KpiRow, null, h(KpiStat, { label: 'A', value: '1' }))),
   listSelect: () => renderToStaticMarkup(h(ListRow, { title: 'Invoice 12', subtitle: 'Paid', trailing: '€40', onSelect: () => {} })),
   listStatic: () => renderToStaticMarkup(h(ListRow, { title: 'Invoice 12' })),
+  sidebarList: (expanded) => renderToStaticMarkup(h(SidebarProvider, null, h(SidebarList, {
+    label: 'Clients', action: { label: 'New client', icon: () => h('i'), onSelect: () => {} }, expanded,
+    items: [
+      { id: 'a', label: 'Acme', count: 3, active: true, onSelect: () => {}, children: [{ id: 'm', label: 'Moves', active: true, onSelect: () => {} }, { id: 'd', label: 'Requests', onSelect: () => {} }] },
+      { id: 'b', label: 'Berg', count: 0, onSelect: () => {}, children: [{ id: 'x', label: 'Banks', onSelect: () => {} }] },
+    ],
+  }))),
   empty: () => renderToStaticMarkup(h(EmptyState, { title: 'Nothing yet', hint: 'Add one to start', action: h('button', null, 'Add') })),
   header: () => renderToStaticMarkup(h(PageHeader, { title: 'Billing', badge: 'Beta', assistant: { opensIn: 'sheet', onOpen: () => {} } })),
   headerPanel: () => renderToStaticMarkup(h(PageHeader, { title: 'Billing', assistant: { opensIn: 'panel', onOpen: () => {} } })),
@@ -123,4 +132,18 @@ test('DataTable hides priority-3 cells on narrow widths and stacks below the con
   assert.doesNotMatch(markup, /overflow-x-auto/);
   assert.match(markup, /<dt[^>]*>Note<\/dt>/);
   assert.match(markup, /<caption[^>]*>Name, Amount<\/caption>/);
+});
+
+test('SidebarList: avatar initial, count, the active row unfolds, one open row at a time', () => {
+  const markup = html.sidebarList();
+  assert.match(markup, /data-slot="avatar-fallback"[^>]*>A</, 'the initial of the label');
+  assert.match(markup, /data-sidebar="menu-badge"[^>]*>3</, 'the count');
+  assert.doesNotMatch(markup, /menu-badge[^>]*>0</, 'no pill for 0');
+  assert.match(markup, /Moves/);
+  assert.doesNotMatch(markup, /Banks/, 'the inactive row stays folded');
+  assert.match(markup, /aria-label="New client"/);
+  assert.match(markup, /title="Acme"/, 'a long label keeps its full text');
+  const other = html.sidebarList('b');
+  assert.match(other, /Banks/);
+  assert.doesNotMatch(other, /Moves/, 'expanded overrides the active row');
 });

@@ -6,6 +6,7 @@ Small presentational blocks for app screens, installed one by one with `boring-u
 
 - `pattern-kpi-stat` a labelled figure with an optional up/down change against a previous reading (`kpiChange` returns `null` for no base, equal or 0% rounding), and `KpiRow` to lay several side by side. `registry/kpi-stat/kpi-stat.tsx`.
 - `pattern-list-row` one row with title, subtitle, leading and trailing slots; a button only when `onSelect` is given. `registry/list-row/list-row.tsx`.
+- `pattern-sidebar-list` a titled list of records for the app shell's left pane: `SidebarList` takes `label`, `action?` (`{label, icon, onSelect}`), `items` (`{id, label, avatar?: string | icon, count?, active?, onSelect, children?: {id, label, icon?, active?, onSelect}[]}`), `expanded?` (the item id whose children show; default the active item) and `empty?`. Only the kit's sidebar primitives, so on the icon rail it shows the avatars alone. In an AppShell: `{ id: 'clients', ..., sidebar: () => <SidebarList label="Clients" items={...} /> }` (`NavItem.sidebar`). `registry/sidebar-list/sidebar-list.tsx`.
 - `pattern-empty-state` a title, hint, icon and one action for a screen with nothing in it yet. `registry/empty-state/blank-state.tsx`.
 - `pattern-page-header` the screen title with badge, actions and an assistant slot. `registry/page-header/page-header.tsx`.
 - `pattern-data-table` a fixed-layout table that never scrolls sideways: cells truncate, and below 520px of container width each row stacks as a title plus label/value pairs by column priority. `registry/data-table/data-table.tsx`.
@@ -20,7 +21,7 @@ Small presentational blocks for app screens, installed one by one with `boring-u
 
 ## How to get to it (user POV)
 
-- Add a block to an app with `npx boring-ui-blocks add kpi-stat` (or `list-row`, `empty-state`, `page-header`, `data-table`) and render it on a screen.
+- Add a block to an app with `npx boring-ui-blocks add kpi-stat` (or `list-row`, `sidebar-list`, `empty-state`, `page-header`, `data-table`) and render it on a screen.
 - Wrap a control in `<FieldLabel><Field orientation="horizontal">…</Field></FieldLabel>` (see `test/fixtures/labelled-rows.tsx`) at 390px and tap beside its text.
 - Put `<FieldLabel variant="flat">` rows in a `FieldGroup className="gap-0"` inside a card at 390px: no borders, a hairline between rows.
 - Narrow the data table's container below 520px and see rows stack.
@@ -29,7 +30,7 @@ Small presentational blocks for app screens, installed one by one with `boring-u
 
 Preconditions: Chromium; fictional data only.
 
-- **Render.** `pattern-kpi-stat`, `pattern-list-row`, `pattern-empty-state`, `pattern-page-header`, `pattern-data-table`, `pattern-shared-icons`: run `node test/ui/pattern-blocks.test.mjs`, which bundles the blocks as an app does and renders each.
+- **Render.** `pattern-kpi-stat`, `pattern-list-row`, `pattern-sidebar-list`, `pattern-empty-state`, `pattern-page-header`, `pattern-data-table`, `pattern-shared-icons`: run `node test/ui/pattern-blocks.test.mjs`, which bundles the blocks as an app does and renders each.
 - **Labelled row.** `pattern-labelled-row`: `CHROMIUM=... node --test test/ui/labelled-row.test.mjs` builds the fixture with the real primitives and Tailwind preflight, opens it at 390 with touch in Chromium, measures every row (44px, 8px gap), clicks text, empty space and control once each and counts changes, checks disabled rows and the Tab ring.
 - **File pick.** `pattern-file-pick`: `node --test test/ui/file-pick.test.mjs` renders the real FilePick and drives a pick, the same file twice, type, size and count refusals, a drop, drag-over on and off, disabled and busy, the accessible name and the picker opening. For the look, `test/fixtures/file-pick.tsx` is the page (buttons, drop strip idle, over, with an app-worded refusal, busy) to open at 390 and 1280, light and dark.
 - **Short date.** `pattern-short-date`: `node --test test/ui/space-blocks.test.mjs` renders a `SpaceCard` and a `StatusNarrative` with the same Date (and a past-year Date) and compares the `<time>` text, then an invalid Date.

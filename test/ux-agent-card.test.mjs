@@ -45,38 +45,78 @@ test('the agent card: levels, background work, a decision on the folded card, do
     assert.equal(await page.locator(task('needs', 'approval-card')).count(), 1, label('the approval is on the folded card'));
     assert.equal(await page.locator(task('needs', 'agent-chat')).count(), 0, label('the card did not open by itself'));
 
-    // Levels through the strip, and the keyboard.
-    const expand = page.locator(task('done', 'agent-card-expand'));
-    // The strip is on the card's lower border and the card grows downwards: expand points down, collapse up (Phosphor's caret paths: the tip at 164.69 is down, 91.31 up).
+    // The ladder through the strip, one step at a time. The strip is on the card's lower border and the card grows downwards: expand points down, collapse up (Phosphor's caret paths: the tip at 164.69 is down, 91.31 up).
     const arrow = testid => page.locator(task('done', testid)).evaluate(node => node.querySelector('svg').innerHTML);
-    assert.match(await arrow('agent-card-expand'), /164\.69/, label('folded: the chevron points down'));
-    // The chat bubble opens the composer alone on the folded card (no tray, no chat); a second tap hides it.
+    const strip = () => page.locator(`${task('done', 'agent-card')} [data-action]`).evaluateAll(nodes => nodes.map(node => node.getAttribute('data-testid')));
+    const level = () => page.locator(task('done', 'agent-card')).getAttribute('data-level');
+    const reveal = async testid => { if (name === '1440') { await page.keyboard.press('Shift'); await page.locator(task('done', testid)).focus(); } };
+    // Level 0, chat not open: [Open the chat, Dock]; no chevron yet.
+    assert.deepEqual(await strip(), ['agent-card-chat', 'agent-card-dock'], label('folded: Open the chat and Dock'));
+    assert.equal(await page.locator(task('done', 'agent-card-composer')).count(), 0, label('folded: no composer yet'));
     await page.locator(task('done', 'agent-card-chat')).click();
     await page.locator(task('done', 'agent-card-composer')).waitFor();
     assert.equal(await page.locator(task('done', 'agent-chat-header')).count(), 0, label('only the composer opened'));
-    assert.equal(await page.locator(task('done', 'agent-card')).getAttribute('data-level'), '0');
-    await page.locator(task('done', 'agent-card-chat')).click();
+    assert.equal(await level(), '0');
+    // Level 0, composer showing: [Collapse up, Expand down, Dock]; Collapse is one step back to the chat bubble.
+    assert.deepEqual(await strip(), ['agent-card-collapse', 'agent-card-expand', 'agent-card-dock'], label('composer showing: Collapse, Expand, Dock'));
+    assert.match(await arrow('agent-card-collapse'), /91\.31/, label('composer showing: Collapse points up'));
+    assert.match(await arrow('agent-card-expand'), /164\.69/, label('composer showing: Expand points down'));
+    await page.locator(task('done', 'agent-card-collapse')).click();
     await page.locator(task('done', 'agent-card-composer')).waitFor({ state: 'detached' });
-    if (name === '1440') { await page.keyboard.press('Shift'); await page.locator(task('done', 'agent-card-chat')).focus(); }
-    await expand.click();
+    assert.deepEqual(await strip(), ['agent-card-chat', 'agent-card-dock'], label('Collapse returns to the chat bubble in one step'));
+    await page.locator(task('done', 'agent-card-chat')).click();
+    await page.locator(task('done', 'agent-card-composer')).waitFor();
+    await reveal('agent-card-collapse');
+    // Level 1, the tray: [Collapse up, Expand more double down, Dock].
+    await page.locator(task('done', 'agent-card-expand')).click();
     await page.locator(task('done', 'agent-chat')).waitFor();
+    assert.deepEqual(await strip(), ['agent-card-collapse', 'agent-card-expand-more', 'agent-card-dock'], label('level 1: Collapse, Expand more, Dock'));
     const collapseArrow = await arrow('agent-card-collapse');
     assert.match(collapseArrow, /91\.31/, label('level 1: the chevron points up'));
-    if (name === '1440') { await page.keyboard.press('Shift'); await page.locator(task('done', 'agent-card-collapse')).focus(); }
     assert.notEqual(await arrow('agent-card-expand-more'), collapseArrow, label('level 1: Expand more is the double chevron'));
+    assert.match(await arrow('agent-card-expand-more'), /204\.69/, label('level 1: Expand more is the double chevron pointing down'));
     assert.equal(await page.locator(task('done', 'agent-chat-header')).count(), 0, label('level 1 is the tray, without the chat header'));
-    assert.equal(await page.locator(task('done', 'agent-card')).getAttribute('data-level'), '1');
-    if (name === '1440') { await page.keyboard.press('Shift'); await page.locator(task('done', 'agent-card-collapse')).focus(); }
+    assert.equal(await level(), '1');
+    // Collapse from the tray goes back to level 0 with the composer showing.
+    await reveal('agent-card-collapse');
+    await page.locator(task('done', 'agent-card-collapse')).click();
+    await page.locator(task('done', 'agent-card-composer')).waitFor();
+    assert.equal(await level(), '0', label('Collapse from the tray: level 0'));
+    assert.equal(await page.locator(`${task('done', 'agent-card')} :not([data-testid=agent-card-composer] *)[data-testid=agent-chat]`).count(), 0, label('Collapse from the tray: the tray is gone, only the composer stays'));
+    // Level 2, the full chat: [Collapse up, Dock]; Collapse goes back to the tray, not to the folded card.
+    await reveal('agent-card-collapse');
+    await page.locator(task('done', 'agent-card-expand')).click();
+    await page.locator(task('done', 'agent-chat')).waitFor();
+    await reveal('agent-card-collapse');
     await page.locator(task('done', 'agent-card-expand-more')).click();
     await page.locator(task('done', 'agent-chat-header')).waitFor();
     assert.equal(await page.locator(`${task('done', 'agent-chat')} [data-testid=artifact-card]`).count(), 1, label('the file the agent presented is the chat\'s own card'));
+    assert.deepEqual(await strip(), ['agent-card-collapse', 'agent-card-dock'], label('level 2: Collapse and Dock'));
+    assert.equal(await page.locator(`${task('done', 'agent-card')} [data-testid=composer-controller]`).count(), 1, label('level 2: one strip on the card, not one per layer'));
+    await page.locator(task('done', 'agent-card-collapse')).scrollIntoViewIfNeeded();
+    const box = await page.locator(task('done', 'agent-card-collapse')).boundingBox();
+    assert.ok(box.y >= 0 && box.y + box.height <= viewport.height && box.x >= 0 && box.x + box.width <= viewport.width, label('level 2: the strip is fully inside the screen'));
+    assert.match(await arrow('agent-card-collapse'), /91\.31/, label('level 2: Collapse points up'));
+    await page.locator(task('done', 'agent-card-collapse')).click();
+    await page.locator(task('done', 'agent-chat')).waitFor();
+    await page.locator(task('done', 'agent-chat-header')).waitFor({ state: 'detached' });
+    assert.equal(await level(), '1', label('Collapse from the full chat: the tray'));
+    // Esc folds the card and focus is on its header; a tap on the header expands to the tray.
     await page.locator(task('done', 'composer-input')).press('Escape');
     await page.locator(task('done', 'agent-chat')).waitFor({ state: 'detached' });
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('data-testid')), 'agent-card-header', label('Esc folds the card and focus is on its header'));
     await page.locator(task('done', 'agent-card-header')).click();
     await page.locator(task('done', 'agent-chat')).waitFor();
     await page.locator(task('done', 'agent-card-collapse')).click();
-    await page.locator(task('done', 'agent-chat')).waitFor({ state: 'detached' });
+    await page.locator(task('done', 'agent-card-composer')).waitFor();
+    await page.locator(task('done', 'agent-card-collapse')).click();
+    await page.locator(task('done', 'agent-card-composer')).waitFor({ state: 'detached' });
+
+    // A task card is the same card: the same ladder.
+    const taskStrip = async () => (await page.locator(`${task('task', 'agent-card')} [data-action]`).evaluateAll(nodes => nodes.map(node => node.getAttribute('data-action'))));
+    assert.deepEqual(await taskStrip(), ['chat', 'dock'], label('a task card starts at the same step'));
+    await page.locator(task('task', 'agent-card-chat')).click();
+    assert.deepEqual(await taskStrip(), ['chevron', 'expand', 'dock'], label('a task card: composer showing'));
 
     // The decision on the folded card works there: the agent carries on and the chip follows.
     await page.locator(task('needs', 'approval-approve')).click();
@@ -85,10 +125,11 @@ test('the agent card: levels, background work, a decision on the folded card, do
     assert.equal(await page.locator(task('needs', 'approval-card')).count(), 0, label('the decision left the card'));
 
     // Dock and undock: the chat goes to the column, the card stays in the list, marked docked.
-    if (name === '1440') { await page.keyboard.press('Shift'); await page.locator(task('done', 'agent-card-chat')).focus(); }
+    await reveal('agent-card-chat');
     await page.locator(task('done', 'agent-card-dock')).click();
     await page.locator('[data-testid=dock] [data-testid=agent-chat-header]').waitFor();
-    assert.equal(await page.locator(task('done', 'agent-card')).getAttribute('data-level'), 'docked');
+    assert.deepEqual(await strip(), ['agent-card-undock'], label('docked: only Undock'));
+    assert.equal(await level(), 'docked');
     await page.locator(task('done', 'agent-card-undock')).click();
     await page.locator('[data-testid=dock] [data-testid=agent-chat]').waitFor({ state: 'detached' });
 
