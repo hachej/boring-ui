@@ -15,6 +15,7 @@ The `markdown-editor` and `html-viewer` items copy thin React wrappers and scope
 | `pi-app` | copied source in `components/pi-app/` | the agent page; viewers over one resource client (`useRemoteChat` lives in `pi-chat` and is re-exported) |
 | `documents` | copied source in `components/documents/` | none: the Library, a file and its revisions over one `revisionProvider`; `DocumentSheet` for one document over the app |
 | `provider-setup` | copied source in `components/provider-setup/` | none: props and callbacks only |
+| `sign-in` | copied source in `components/sign-in/` | the app's sign-in routes, served by `@hachej/boring-ui-kit/signin` in its Worker |
 | `theme` | the shadcn tokens (light, dark) and their `@theme inline` bindings, merged into the host's CSS | none |
 | `utils`, `button` | `cn`/`copyText`/`useDraggable` and the host-action adapters in `components/button/actions.tsx`; controls come from the app's shadcn components (its `ui` alias) | none |
 | `ui`, `ui-<name>` | the kit's own shadcn primitives (`shadcn/ui/`), each in the app's `ui` alias; see [the kit's primitives](#the-kits-own-primitives-ui) | none |
@@ -582,6 +583,10 @@ Pass `actions.answer` to `PiChat`. A call to a tool wrapped with `requireApprova
 ## `provider-setup`
 
 `ProviderSetup` is a Tailwind popover for model access. It never fetches: the host passes `providers` (`{ id, name, models, auth: ('api_key' | 'oauth')[], configured, needsGateway?, loginLabel? }`, whichever providers the host registered), the current `value` (`{ provider, modelId, gateway? }`) and callbacks. `onSave({ provider, modelId, gateway, apiKey? })` may reject with an Error to show its message; `onLogin(providerId)` starts a device-code sign-in whose progress the host passes back as `loginState` (`idle | starting | pending { userCode, verificationUri } | done | failed { message }`). The API key field is masked and shows "saved" when `configured`; a provider with `needsGateway` shows a note and the optional gateway field. Put it in the `controls` slot of `PiChat`; `trigger`, `side`, `align`, `showGateway` and `defaultOpen` adjust it. `@hachej/boring-browser/models` produces the provider list (`catalog()`), and its `createModelAccessHandler` serves the item's routes from a worker (`GET`/`PUT <prefix>`, `POST <prefix>/login`) for one conversation, whose native model is the value. `needsGateway` and the gateway field are for hosts that route some providers through their own proxy; the handler leaves that to the host.
+
+## `sign-in`
+
+The pages of an app's sign-in; the Worker part is `signIn(options)` from `@hachej/boring-ui-kit/signin` (install `better-auth`, `@better-auth/core`, `@better-auth/oauth-provider` and `jose` in the app), whose `handle(request)` answers `/api/auth/*`, `/api/signin/*` and the OAuth discovery routes. `SignInPage({ onSignedIn, locale, labels })` at `/sign-in`: e-mail and password, Google when the app has its client, account creation by invitation or by the one-use first-owner link (`/sign-in?first-owner=<token>`), and, during an assistant's authorization, it resumes that authorization. `ConsentPage({ appName })` at `/consent`: the « Allow » of an assistant's sign-in to `/mcp`. `PeopleList({ canInviteOwners })`: the owner's invitation list. `useSignedIn(locale)` gives `{ me, refresh }` (`me` is `undefined` while asking, `null` when nobody). `studioNavItem(me)` is the « Studio » entry for AppShell's `nav`, present only for an owner of an app linked to Studio. Words in English and French (`signInLabels`), each overridable. What the routes do is in [features/signin.md](../features/signin.md).
 
 ## Changes
 
