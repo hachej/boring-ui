@@ -111,7 +111,8 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
         const prose = mobile ? Math.max(m.token.px, 16) : m.token.px;
         if (!mobile) near(m.token.px, 15, `${label}: the token's default`);
         assert.deepEqual(m.small, [], `${label}: nothing in pi-chat computes under 13px except sr-only text`);
-        near(m.composer?.size ?? null, prose, `${label}: composer input`);
+        // The field the person types in reads at the app's body size (--text-body, 13px by default) on a wide screen, and at 16px on touch so iOS does not zoom.
+        near(m.composer?.size ?? null, mobile ? 16 : 13, `${label}: composer input`);
         if (state === 'empty') near(m.empty?.size ?? null, prose, `${label}: empty state line`);
         if (state === 'reply' || state === 'thought' || state === 'streaming') {
           near(m.userProse?.size ?? null, prose, `${label}: the person's message`);
