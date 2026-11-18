@@ -24,14 +24,16 @@ checks the retained artifact contains none of them. No published package depends
 ## Prepare the release PR
 
 1. Each PR changing a published package or shipped registry recipe adds its own
-   bullet under `# Unreleased` in [MIGRATING.md](../../MIGRATING.md), including
+   fragment file `migrating/<pr-or-slug>-<name>.md` ([README](../../migrating/README.md);
+   a bullet under `# Unreleased` in [MIGRATING.md](../../MIGRATING.md) is still accepted), including
    compatibility and any consumer action. The Specification checks job enforces
    this against the PR's merge base. Private-only and tooling-only PRs need no
    consumer note. A version-only release PR may promote the accumulated notes;
    runtime or other manifest changes still require a new Unreleased line.
 2. Use a clean checkout with Node.js 22.19.0 or later and run `npm ci`.
-3. Run `npm run release:version -- <version>`. It refuses an empty Unreleased
-   section, promotes those notes to `# Migrating to <version>` and leaves a fresh
+3. Run `npm run release:version -- <version>`. It gathers the `migrating/`
+   fragments (filename order) after any bullets already under `# Unreleased`,
+   deletes them, refuses an empty Unreleased section, promotes those notes to `# Migrating to <version>` and leaves a fresh
    empty `# Unreleased` for subsequent PRs. Review the notes and version/pin diff.
 4. Run `npm run release:preflight`: static checks, build/typecheck, real tarball
    audits and `npm publish --dry-run --ignore-scripts` of those archives. Temporary
