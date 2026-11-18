@@ -35,7 +35,7 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Agent bar | AgentBar (field, mic, tap to listen, hold to talk, quoted chip) and AgentStatus | [agent-bar.md](agent-bar.md) |
 | Agent card | `AgentCard` (one unit of agent work as a folding card with the composer's levels, dock, a decision on the folded card) and `AgentChat` (the default chat that fits any place) | [agent-card.md](agent-card.md) |
 | Conversation log | ConversationLog, the sheet of the bar's history arrow (entries, labels, focus) | [conversation-log.md](conversation-log.md) |
-| Atlas | the screens-and-states manifest, its schema and `atlas --check` | [atlas.md](atlas.md) |
+| Atlas | the screens-and-states manifest, its schema, `atlas --check`, the shoot and the `atlas-viewer` block | [atlas.md](atlas.md) |
 | One model call | `complete`, `structured` and the `llm_structured` tool as a plain import | [cap-llm.md](cap-llm.md) |
 | Transcription | `transcribe`, the `transcribeHandler` route, the kit's `transcribeClient` and the `transcribe` tool, as a plain import | [cap-transcription.md](cap-transcription.md) |
 | Extraction | a PDF or a photo as text and checked fields, the `documents` OCR callback and the `extract_fields` tool, as a plain import | [cap-extraction.md](cap-extraction.md) |

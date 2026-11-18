@@ -247,7 +247,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
     for (const file of item.files) {
       const source = readFileSync(join(root, file.path), 'utf8');
       const imports = [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map(match => match[1]);
-      assert.ok(imports.length > 0 || file.path === 'registry/spaces/spaces-labels.ts');
+      assert.ok(imports.length > 0 || ['registry/spaces/spaces-labels.ts', 'registry/sign-in/sign-in-labels.ts'].includes(file.path));
       for (const imported of imports) {
         const hostUi = /^@\/components\/ui\/([\w-]+)$/.exec(imported);
         if (hostUi) { assert.ok(SHADCN_BUILTINS.includes(hostUi[1]), `${file.path} imports ${imported}, which is not in the app setup`); continue; }
@@ -257,7 +257,7 @@ test('registry dependency pins and scoped styles preserve the declared source di
           assert.ok(dependency && item.registryDependencies?.includes('@boring-ui/' + dependency.name) && dependency.files.some(entry => entry.path.replace(/\.tsx?$/, '') === `registry/${dependency.name}/${sibling[2]}`), `${file.path} imports unshipped or undeclared ${imported}`);
           continue;
         }
-        if (item.name === 'board-viewer' || item.name === 'mockup-viewer' || item.name === 'looks-viewer' || item.name === 'highlights' || item.name === 'markdown-editor' || item.name === 'spaces' || ['_shared', 'kpi-stat', 'list-row', 'sidebar-list', 'empty-state', 'page-header', 'data-table', 'inline-question', 'file-pick', 'mcp-setup', 'status-narrative', 'space-card', 'wiring-chips', 'agent-bar', 'agent-chat', 'agent-card'].includes(item.name)) {
+        if (item.name === 'board-viewer' || item.name === 'mockup-viewer' || item.name === 'looks-viewer' || item.name === 'highlights' || item.name === 'markdown-editor' || item.name === 'spaces' || ['_shared', 'kpi-stat', 'list-row', 'sidebar-list', 'atlas-viewer', 'empty-state', 'page-header', 'data-table', 'inline-question', 'file-pick', 'mcp-setup', 'sign-in', 'status-narrative', 'space-card', 'wiring-chips', 'agent-bar', 'agent-chat', 'agent-card'].includes(item.name)) {
           if (imported.startsWith('./')) assert.ok(item.files.some(entry => entry.path.replace(/\.tsx?$/, '').endsWith('/' + imported.slice(2))), `${file.path} imports unshipped ${imported}`);
           else {
             const pkg = imported.startsWith('@') ? imported.split('/').slice(0, 2).join('/') : imported.split('/')[0];

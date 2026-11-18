@@ -1,7 +1,9 @@
 // The page's side of `@hachej/boring-ui-kit/signin`: plain fetches to the app's own sign-in routes, the person's language sent along so
 // refusals come back in it. No state here; the pages and `useSignedIn` hold it.
 
-export type Lang = 'fr' | 'en';
+import { signInLabels, type Lang } from './sign-in-labels';
+
+export type { Lang };
 export interface Person { readonly id: string; readonly email: string; readonly name: string; readonly role: 'owner' | 'member' }
 export interface Me { readonly person: Person; readonly studio?: string }
 export interface Options { readonly google: boolean; readonly studio: boolean; readonly app: string }
@@ -13,7 +15,7 @@ async function call(lang: Lang, path: string, init: RequestInit & { readonly ext
   const headers: Record<string, string> = { 'x-boring-lang': lang, ...(init.body ? { 'content-type': 'application/json' } : {}), ...init.extra };
   const r = await fetch(path, { ...init, credentials: 'same-origin', headers });
   const data = await r.json().catch(() => ({})) as Reply;
-  if (!r.ok) throw new Error(data.message ?? String(r.status));
+  if (!r.ok) throw new Error(data.message ?? signInLabels[lang].failed);
   return data;
 }
 

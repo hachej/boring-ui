@@ -1,3 +1,6 @@
+/** The kit's two languages. */
+export type Lang = 'fr' | 'en';
+
 /** The words of the sign-in pages, in the kit's two languages; an app overrides any of them through `labels`. */
 export interface SignInLabels {
   readonly signInTitle: string;
@@ -37,7 +40,7 @@ export interface SignInLabels {
   readonly signOut: string;
 }
 
-export const signInLabels: Record<'fr' | 'en', SignInLabels> = {
+export const signInLabels: Record<Lang, SignInLabels> = {
   en: {
     signInTitle: 'Sign in', signUpTitle: 'Create your account',
     signInLead: app => `Sign in to ${app}.`, signUpLead: app => `${app} is by invitation: use the address you were invited with.`,
