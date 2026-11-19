@@ -29,7 +29,7 @@ export function browser(route) {
     for (const c of r.headers.getSetCookie()) { const [pair] = c.split(';'); const i = pair.indexOf('='); const v = pair.slice(i + 1); if (v) jar.set(pair.slice(0, i), v); else jar.delete(pair.slice(0, i)); }
     return r;
   };
-  return { go, json: async (input, init) => { const r = await go(input, init); return { status: r.status, body: await r.json().catch(() => ({})), r }; } };
+  return { go, anonymous: () => browser(route), json: async (input, init) => { const r = await go(input, init); return { status: r.status, body: await r.json().catch(() => ({})), r }; } };
 }
 
 export const signUp = (b, origin, email, extra = {}) => b.json(`${origin}/api/auth/sign-up/email`, { method: 'POST', body: { email, password, name: email.split('@')[0] }, headers: extra });
@@ -65,10 +65,10 @@ export async function authorize(b, server, { clientId, redirectUri, scope, resou
   return { code: at.searchParams.get('code'), verifier };
 }
 
-/** An assistant's own sign-in to the app's /mcp, as the person in browser `b`: registers a loopback client, authorizes with PKCE, answers the access token. */
+/** An assistant's own sign-in to the app's /mcp, as the person in browser `b`: registers a loopback client (as an assistant does, signed in to nothing), authorizes with PKCE, answers the access token. */
 export async function assistantToken(b, server) {
   const redirectUri = 'http://localhost:4545/callback', scope = 'openid profile email offline_access', resource = `${server}/mcp`;
-  const reg = await b.json(`${server}/api/auth/oauth2/register`, { method: 'POST', body: { redirect_uris: [redirectUri], client_name: 'Claude Code' } });
+  const reg = await b.anonymous().json(`${server}/api/auth/oauth2/register`, { method: 'POST', body: { redirect_uris: [redirectUri], client_name: 'Claude Code' } });
   assert.equal(reg.status, 201, JSON.stringify(reg.body));
   const { code, verifier } = await authorize(b, server, { clientId: reg.body.client_id, redirectUri, scope, resource });
   assert.ok(code, 'the person allowed the assistant');
