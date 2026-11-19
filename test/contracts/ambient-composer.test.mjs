@@ -146,12 +146,6 @@ test('1440: a background conversation\'s toast is the composer\'s notice, Open b
   assert.equal(await browser.evaluate(`document.querySelector(${js(NOTICE)}).dataset.noticeKind`), 'warning');
 });
 
-test('1440: a prop the composer does not take (className) keeps the old window, unchanged', { skip, timeout: 180000 }, async () => {
-  await open(1440, 'gap=1');
-  assert.equal(await count(LEGACY), 1, 'the old window');
-  assert.equal(await count(FRAME), 0, 'not the composer');
-});
-
 test('390: on a phone the bar is at the bottom with its grabber, a notice stands above it inside the screen, Minimise folds it to the icon', { skip, timeout: 180000 }, async () => {
   await open(390);
   assert.equal(await count(LEGACY), 0);

@@ -117,7 +117,7 @@ export type FloatCorner = 'tl' | 'tr' | 'bl' | 'br';
 /** The floating bar's place: a corner (it stays there when the window resizes) or free, in px from the window's top left. */
 export type FloatPos = { readonly corner: FloatCorner } | { readonly left: number; readonly top: number };
 /** What the icon shows of the conversation: what is unread, and whether a decision waits for the person. */
-export interface ComposerSignals { readonly unread: { readonly label: string; readonly count?: number | undefined } | undefined; readonly needsYou: boolean }
+export interface ComposerSignals { readonly unread: { readonly label: string; readonly count?: number | undefined } | undefined; readonly needsYou: boolean; /** A run is under way: the folded icon pulses a ring round itself. */ readonly working?: boolean }
 export interface AgentLayerApi {
   readonly agent: NativeChatController | undefined;
   /** `floatingComposer`: where the one composer sits now. A phone never floats: `float` reads as `bottom` there. Always `bottom` without the prop. */

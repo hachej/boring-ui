@@ -20,6 +20,9 @@ import type { FloatCorner, FloatPos } from './layer-context';
 const MARGIN = 16;
 /** A drop this close (px, on both axes) to a corner's place snaps to that corner. */
 const SNAP = 120;
+/** The bar's width at rest (22 rem, less the margins on a narrow window) and its height, for placing a remembered position of the old bar. */
+const BAR_WIDTH = 352;
+const BAR_HEIGHT = 56;
 const STEP = 16;
 const BIG_STEP = 64;
 const ARROWS: Readonly<Record<string, readonly [number, number]>> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
@@ -29,13 +32,26 @@ export const cornerOf = (pos: FloatPos, width = 0, height = 0): FloatCorner => '
   : `${pos.top + height / 2 < window.innerHeight / 2 ? 't' : 'b'}${pos.left + width / 2 < window.innerWidth / 2 ? 'l' : 'r'}`;
 
 /** The corner a dropped rect is close enough to, if any. */
-function snapCorner(rect: { readonly left: number; readonly top: number; readonly width: number; readonly height: number }): FloatCorner | undefined {
+export function snapCorner(rect: { readonly left: number; readonly top: number; readonly width: number; readonly height: number }): FloatCorner | undefined {
   for (const corner of ['tl', 'tr', 'bl', 'br'] as const) {
     const left = corner.endsWith('l') ? MARGIN : window.innerWidth - rect.width - MARGIN;
     const top = corner.startsWith('t') ? MARGIN : window.innerHeight - rect.height - MARGIN;
     if (Math.abs(rect.left - left) <= SNAP && Math.abs(rect.top - top) <= SNAP) return corner;
   }
   return undefined;
+}
+
+/**
+ * The place the old floating bar (`AmbientChat`) remembered, `{ right, bottom }` in px from the window's bottom right, as this bar's place: a corner when it is near one (the old default is), else free.
+ * Anything else (nothing saved, a malformed value) is no place.
+ */
+export function legacyFloatPos(value: unknown): FloatPos | undefined {
+  const { right, bottom } = (value ?? {}) as { right?: unknown; bottom?: unknown };
+  if (typeof right !== 'number' || typeof bottom !== 'number' || !Number.isFinite(right) || !Number.isFinite(bottom) || typeof window === 'undefined') return undefined;
+  const width = Math.min(BAR_WIDTH, window.innerWidth - 2 * MARGIN);
+  const at = { left: Math.max(0, Math.round(window.innerWidth - width - right)), top: Math.max(0, Math.round(window.innerHeight - BAR_HEIGHT - bottom)), width, height: BAR_HEIGHT };
+  const corner = snapCorner(at);
+  return corner ? { corner } : { left: at.left, top: at.top };
 }
 
 /** The CSS of a place. A top-anchored bar with the window open keeps room above it for the window. */
@@ -52,6 +68,9 @@ function placement(pos: FloatPos, trayOpen: boolean): CSSProperties {
  */
 export const NoticeSlotContext = createContext<ReactNode>(null);
 
+/** The host's `className` for the composer's own box (`FloatingComposer className`): the floating frame, the folded icon and the standalone bottom bar carry it, so a host can move or size the bar. */
+export const ComposerClassContext = createContext<string | undefined>(undefined);
+
 /** Where the notices sit around a box: above it, or below it for a bar in a top corner (above would leave the window). */
 export function NoticeSlot({ below = false, className }: { readonly below?: boolean; readonly className?: string }) {
   const notices = useContext(NoticeSlotContext);
@@ -62,6 +81,7 @@ export function NoticeSlot({ below = false, className }: { readonly below?: bool
 /** The bar detached from the page: `children` is the one composer's box. */
 export function FloatFrame({ children }: { readonly children: ReactNode }) {
   const layer = useInternal();
+  const className = useContext(ComposerClassContext);
   const { floatPos, setFloatPos, trayOpen } = layer;
   const box = useRef<HTMLDivElement>(null);
   // The place while the grip is held, and after a clamp; committed (and remembered) when the grip is released.
@@ -101,13 +121,14 @@ export function FloatFrame({ children }: { readonly children: ReactNode }) {
   const style = { ...placement(pos, trayOpen), ...(trayOpen ? { '--app-shell-bar-tray-size': tall, '--app-shell-bar-tray-expanded': tall } : {}) } as CSSProperties;
   return <GripContext.Provider value={handlers}>
     <div ref={box} data-testid="composer-floating" data-corner={'corner' in pos ? pos.corner : undefined} role="group" aria-label={text.assistant} style={style}
-      className="fixed z-(--app-shell-z-layer) w-[min(22rem,calc(100vw-2rem))]">{children}<NoticeSlot below={cornerOf(pos, 0, 0).startsWith('t')} /></div>
+      className={cn('fixed z-(--app-shell-z-layer) w-[min(22rem,calc(100vw-2rem))]', className)}>{children}<NoticeSlot below={cornerOf(pos, 0, 0).startsWith('t')} /></div>
   </GripContext.Provider>;
 }
 
 /** The round button the composer folds into. A tap restores the bar where it was (floating, or the window if it was open). */
 export function ComposerFab() {
   const layer = useInternal();
+  const className = useContext(ComposerClassContext);
   const { signals, floatPos, expanded, tabbar, restore, placeFocus: focusRef } = layer;
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const button = useRef<HTMLButtonElement>(null);
@@ -119,11 +140,14 @@ export function ComposerFab() {
     ? { ...(corner.endsWith('l') ? { left: MARGIN } : { right: MARGIN }), ...(corner.startsWith('t') ? { top: MARGIN } : { bottom: `max(${MARGIN}px, env(safe-area-inset-bottom))` }) }
     : { right: MARGIN, bottom: `calc(${tabbar}px + max(${MARGIN}px, env(safe-area-inset-bottom)))` };
   const label = signals.unread ? `${text.restore} (${signals.unread.label}${signals.unread.count && signals.unread.count > 1 ? `, ${signals.unread.count}` : ''})` : text.restore;
-  return <span style={style} className={cn('fixed z-(--app-shell-z-layer) size-13 rounded-pm-round shadow-pm-popover', signals.needsYou && 'ring-2 ring-warning outline-3 outline-warning/25')}>
-    <Button ref={button} type="button" size="icon" data-testid="composer-icon" data-needs-you={signals.needsYou || undefined} aria-label={label} title={text.restore} onClick={restore}>
+  // The agent at work: a thin ring pulses round the icon (still when the person prefers less motion). A decision that waits shows its own ring, which wins.
+  const working = signals.working === true && !signals.needsYou;
+  return <span style={style} className={cn('fixed z-(--app-shell-z-layer) size-13 rounded-pm-round shadow-pm-popover', signals.needsYou && 'ring-2 ring-warning outline-3 outline-warning/25', className)}>
+    <Button ref={button} type="button" size="icon" data-testid="composer-icon" data-needs-you={signals.needsYou || undefined} data-working={working || undefined} aria-busy={working || undefined} aria-label={label} title={text.restore} onClick={restore}>
       <Icon aria-hidden="true" />
       {signals.unread && <UnreadMark unread={signals.unread} dot="top-0 right-0" pill="-top-1 -right-2" />}
     </Button>
+      {working && <span data-testid="composer-icon-working" aria-hidden="true" className="pointer-events-none absolute -inset-0.5 rounded-pm-round ring-2 ring-primary animate-pulse motion-reduce:animate-none" />}
     <NoticeSlot below={corner.startsWith('t')} className={cn('w-[min(22rem,calc(100vw-2rem))]', corner.endsWith('l') ? 'left-0 right-auto' : 'right-0 left-auto')} />
   </span>;
 }

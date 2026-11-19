@@ -149,7 +149,10 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   // The icon the composer folds into shows what the conversation holds: what is unread, and a decision that waits.
   const { setSignals } = layer;
   const unreadLabel = barChat.historyBadge?.label, unreadCount = barChat.historyBadge?.count, needsYou = Boolean(barChat.question || barChat.approval);
-  useEffect(() => { if (barred || exploring) setSignals({ unread: unreadLabel === undefined ? undefined : { label: unreadLabel, count: unreadCount }, needsYou }); }, [barred, exploring, setSignals, unreadLabel, unreadCount, needsYou]);
+  const readRun = () => Boolean(spec.controller.getSnapshot().view?.docs['pi.live']?.['run']);
+  const running = useSyncExternalStore(spec.controller.subscribe, readRun, readRun);
+  const working = (running && stop !== 'confirmed') || barChat.status?.state === 'working';
+  useEffect(() => { if (barred || exploring) setSignals({ unread: unreadLabel === undefined ? undefined : { label: unreadLabel, count: unreadCount }, needsYou, working }); }, [barred, exploring, setSignals, unreadLabel, unreadCount, needsYou, working]);
   const unfolded = (barred && !layer.folded) || (exploring && layer.showing === 'agent');
   useEffect(() => { if (unfolded) markRead(); }, [unfolded, markRead]);
   // Docked, the bar's field goes with the thread: nothing stays at the bottom.
@@ -193,7 +196,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
         ? <InputGroup className="h-auto"><p data-testid="agent-read-only" className="m-0 flex min-h-[var(--control-h,2.75rem)] w-full min-w-0 items-center px-2 text-sm wrap-anywhere text-muted-foreground">{readOnly}</p></InputGroup>
         : spec.chatProps?.renderComposer ? spec.chatProps.renderComposer(composer) : <PinnedBarComposer {...composer} />}</>;
     },
-    composerLayout: 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerEditLast: true, composerStart: capturing ? <BarMicCancel mic={mic} /> : <ConversationChevron unread={barChat.historyBadge} />,
+    composerLayout: spec.chatProps?.composerLayout ?? 'pill' as const, composerBarActions: 'attach' as const, composerFileChips: true, composerEditLast: true, composerStart: capturing ? <BarMicCancel mic={mic} /> : <ConversationChevron unread={barChat.historyBadge} />,
     // While the agent's question waits, the field says so; a typed message answers it (PiChat's own rule).
     labels: {
       // « / » is only mentioned when the app has slash actions, and only in the two languages the kit has words for; any other app or locale keeps the chat's own default.

@@ -1,0 +1,13 @@
+{
+ "fallback": "Plain fallback.",
+ "turns": [
+  { "match": "^final$", "steps": [{ "think": true, "ms": 300 }, { "text": "Final answer in one sentence." }] },
+  { "match": "^tool only$", "steps": [{ "think": true, "ms": 300 }, { "tool": "read", "path": "samples/entries.records.json", "ms": 300, "result": "2 rows" }] },
+  { "match": "^tool error$", "steps": [{ "think": true, "ms": 300 }, { "tool": "read", "path": "samples/missing-file.csv", "error": "File not found (fictional)", "ms": 300 }] },
+  { "match": "^file$", "steps": [{ "think": true, "ms": 300 }, { "present": "samples/booking.diagram.json", "ms": 300 }] },
+  { "match": "^file text$", "steps": [{ "think": true, "ms": 300 }, { "present": "samples/booking.diagram.json", "ms": 300 }, { "text": "Done: @samples/booking.diagram.json" }] },
+  { "match": "^fail$", "steps": [{ "think": true, "ms": 300 }, { "fail": "Provider unavailable (fictional)" }] },
+  { "match": "^approval$", "steps": [{ "approve": { "tool": "delete_file", "arguments": { "path": "samples/old-draft.md" }, "summary": "Delete the old draft?" }, "then": [{ "text": "Decision received." }] }] },
+  { "match": "^question$", "steps": [{ "ask": { "question": "One detail", "questions": [{ "question": "Which size?", "options": ["Small", "Large"] }] }, "then": [{ "text": "Noted." }] }] }
+ ]
+}
