@@ -112,6 +112,34 @@ test('a failing step exits 1 and names the state, the step number and the step t
   assert.equal(shotsOf(idx, 'apropos.page').length, 4, 'the other states are still shot');
 });
 
+test('a flow checked in prod: --only keeps one flow, --quick shoots desktop light, --steps keeps each step, a failed check keeps its screen', { skip, timeout: 240000 }, async () => {
+  const dir = join(work, 'flow');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'atlas.json'), JSON.stringify({ states: [
+    { id: 'connexion.merci', page: '/connexion', title: 'Merci', flow: 'connexion', given: { fixture: 'ledger.synthetic.csv',
+      steps: ['fill Courriel jeanne@example.test', 'click Envoyer', 'expect 5s Merci', 'absent Erreur'] } },
+    { id: 'connexion.stale', page: '/connexion', title: 'Merci gone', flow: 'connexion', after: 'Envoyer', given: { fixture: 'ledger.synthetic.csv',
+      steps: ['fill Courriel jeanne@example.test', 'click Envoyer', 'absent 2s Merci'] } },
+    { id: 'apropos.page', page: '/apropos', title: 'À propos', given: { fixture: 'ledger.synthetic.csv' } },
+  ] }));
+  const out = join(work, 'out-flow');
+  const { status, stdout, stderr } = await shoot(dir, out, '--only', 'connexion', '--quick', '--steps');
+  assert.equal(status, 1, 'the stale check fails the run');
+  assert.match(stdout, /✔ state connexion\.merci/);
+  assert.match(stderr, /✖ state connexion\.stale step 3 "absent 2s Merci": the text "Merci" is still on the page after 2 s/);
+  const idx = index(out);
+  assert.deepEqual(idx.states.map(s => s.id), ['connexion.merci', 'connexion.stale'], '--only keeps the flow, not the other screens');
+  const merci = idx.states[0], stale = idx.states[1];
+  assert.deepEqual(merci.shots.map(s => `${s.viewport} ${s.mode}`), ['1280 light'], '--quick is desktop light only');
+  assert.deepEqual(merci.steps.map(s => s.n), [1, 2, 3, 4], '--steps keeps the page after each step');
+  for (const s of merci.steps) assert.ok(existsSync(join(out, s.file)), s.file);
+  assert.equal(stale.failure.at, 'step 3 "absent 2s Merci"');
+  assert.ok(existsSync(join(out, stale.failure.file)), 'the screen at the failure is kept');
+  const none = await shoot(dir, join(work, 'out-none'), '--only', 'nothing');
+  assert.equal(none.status, 2);
+  assert.match(none.stderr, /--only nothing names no flow and no state/);
+});
+
 test('--since marks only the changed state changed, the others same, and a new state new', { skip, timeout: 240000 }, async () => {
   const { out } = await firstRun();
   writeFileSync(join(app(), 'pages/ecritures.html'), `${readFileSync(join(app(), 'pages/ecritures.html'), 'utf8')}<div style="height:200px;background:#c00"></div>\n`);

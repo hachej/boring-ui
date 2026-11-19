@@ -103,6 +103,19 @@ test('parseStep follows the Factory examples grammar', () => {
   assert.deepEqual(parseStep('upload « a.synthetic.csv »'), { verb: 'upload', args: ['a.synthetic.csv'] });
 });
 
+test('text checks: wait and expect (it appears), absent (it is not on the page), each with an optional time up to 10 minutes', () => {
+  assert.deepEqual(parseStep('expect « 3 pièces jointes »'), { verb: 'expect', args: ['3 pièces jointes'] });
+  assert.deepEqual(parseStep('absent D-'), { verb: 'absent', args: ['D-'] });
+  assert.deepEqual(parseStep('wait 90s « Terminé »'), { verb: 'wait', args: ['Terminé', 90000] });
+  assert.deepEqual(parseStep('expect 2m Envoyé'), { verb: 'expect', args: ['Envoyé', 120000] });
+  assert.deepEqual(parseStep('absent 5s « Envoi en cours »'), { verb: 'absent', args: ['Envoi en cours', 5000] });
+  assert.deepEqual(parseStep('wait 90 secondes'), { verb: 'wait', args: ['90 secondes'] }, 'a number that is not a time is text');
+  assert.match(parseStep('wait 11m Terminé').error, /between 1s and 10m/);
+  assert.match(parseStep('expect 0s x').error, /between 1s and 10m/);
+  const findings = checkAtlas({ states: [{ id: 'a', page: '/', title: 'A', given: { fixture: 'x.synthetic.csv', steps: ['expect Bonjour', 'absent 3s Erreur', 'wait 30m Fin'] } }] });
+  assert.deepEqual(findings.map(f => f.path), ['states[0].given.steps[2]']);
+});
+
 test('parseStep reads bare, double-quoted and guillemet arguments', () => {
   assert.deepEqual(parseStep('open Écritures'), { verb: 'open', args: ['Écritures'] });
   assert.deepEqual(parseStep('click Se connecter'), { verb: 'click', args: ['Se connecter'] });
