@@ -1,7 +1,7 @@
 import { BACKGROUND_CONTEXT, withAbortSignal, type Context } from '@earendil-works/chord/context';
 import type { FileChange, FileSystem, FileWatcher } from '@earendil-works/pi-durable/env';
 import type { CommittedChange, PublicationLookupResult, PublicationReceipt, PublicationResult, ReadResult, ResourceAccess, ResourceCapabilities, ResourceExpectation, ResourceLocator, ResourceProvider, ResourceRead, ResourceRef, ResourceChange, PublicationRequest, ResourceRenameRequest, ResourceRenamer, ResourceDeleter } from './contracts.js';
-import { createWorkspaceCatalog } from './workspace-catalog.js';
+import { MAX_LINK_DEPTH, createWorkspaceCatalog, linkTarget } from './workspace-catalog.js';
 import type { WorkspaceCatalogOptions } from './workspace-catalog.js';
 import type { ChangeFeedRequest, WorkspaceCatalog, WorkspaceChangeEvent } from './revision-contracts.js';
 export type { ChangeFeedRequest, WorkspaceChangeEvent } from './revision-contracts.js';
@@ -113,6 +113,13 @@ export interface WorkspaceProviderOptions {
    * unless opened otherwise). Over other file systems it applies to publications only, with no default.
    */
   readonly maxFileBytes?: number;
+  /**
+   * Follow symbolic links when the workspace is listed, searched and polled (default false: a link is not listed). A link is followed
+   * only while its real target stays inside the workspace root; a link that escapes, dangles or loops back into a directory being
+   * walked is ignored, and the depth is capped. Files under a link are reported under the link's path. Reads already resolve links
+   * that stay inside the root; a link itself is never written through, whatever this option says.
+   */
+  readonly followLinks?: boolean;
 }
 
 const ASIDE_FOLDER_MAX_AGE_MS = 60 * 60 * 1000;
@@ -550,14 +557,28 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
   async function everyFile(signal?: AbortSignal): Promise<string[] | undefined> {
     const found: string[] = [];
     let scanned = 0;
+    const base = options.followLinks ? await realRoot() : undefined;
+    const chain: string[] = base === undefined ? [] : [base];
     const walk = async (directory: string): Promise<boolean> => {
       const listing = await fs.listDir(directory ? absolute(directory) : root, fsContext(signal));
       if (!listing.ok) return true;
       for (const entry of listing.value) {
         if (++scanned > 100_000) return false;
         const path = directory ? `${directory}/${entry.name}` : entry.name;
-        if (entry.kind === 'directory') { if (entry.name !== '.git' && entry.name !== 'node_modules' && !await walk(path)) return false; }
-        else if (entry.kind === 'file' && !isTemporary(path)) found.push(path);
+        let kind = entry.kind, real: string | undefined;
+        if (kind === 'symlink' && base !== undefined) {
+          const target = await linkTarget(fs, absolute(path), base, fsContext(signal));
+          if (!target) continue;
+          ({ kind, real } = target);
+        }
+        if (kind === 'directory') {
+          if (entry.name === '.git' || entry.name === 'node_modules') continue;
+          if (real !== undefined && (chain.includes(real) || chain.length > MAX_LINK_DEPTH)) continue;
+          if (real !== undefined) chain.push(real);
+          const complete = await walk(path);
+          if (real !== undefined) chain.pop();
+          if (!complete) return false;
+        } else if (kind === 'file' && !isTemporary(path)) found.push(path);
       }
       return true;
     };
@@ -721,7 +742,7 @@ export function createWorkspaceProvider(options: WorkspaceProviderOptions): Work
 
   return {
     providerId, read, queue, keep, identity: Object.freeze(key),
-    catalog: createWorkspaceCatalog({ fs, ...(options.catalog ? { config: options.catalog } : {}), saves: path => journal.saves(historyScope, path) }),
+    catalog: createWorkspaceCatalog({ fs, followLinks: options.followLinks === true, ...(options.catalog ? { config: options.catalog } : {}), saves: path => journal.saves(historyScope, path) }),
     publication: { publish }, reconciliation: { lookup }, renaming: { rename }, deletion: { delete: remove }, poll, record, changes, changeHead: () => head, changeIncarnation: incarnationOfFeed,
     lifetime: lifetime.signal,
     close: () => {

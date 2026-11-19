@@ -138,6 +138,8 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const barChat = useAgentBarChat(spec.controller, { actions: spec.chatProps?.actions, toolLabels: chatTextFor(locale).labels, plainTools: spec.chatProps?.toolDetails === 'none', workingWords: spec.workingWords,
     labels: { working: words.working, done: words.done, unread: words.unread, step: (index, count) => `${index} ${words.of} ${count}` } });
   const barred = role === 'agent' && layer.bar;
+  // `composer="explore"`: the closed toggle shows the same two signals as the icon: what is unread and a decision that waits.
+  const exploring = role === 'agent' && layer.explore;
   // The one composer's row (pill, chevron, attach, Dicter, edit last) wherever the field is: under the page, docked, or in the phone's drawer (AC-20).
   const oneRow = role === 'agent' && layer.bar;
   const readStop = () => spec.controller.getSnapshot().stop;
@@ -149,8 +151,8 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const readRun = () => Boolean(spec.controller.getSnapshot().view?.docs['pi.live']?.['run']);
   const running = useSyncExternalStore(spec.controller.subscribe, readRun, readRun);
   const working = (running && stop !== 'confirmed') || barChat.status?.state === 'working';
-  useEffect(() => { if (barred) setSignals({ unread: unreadLabel === undefined ? undefined : { label: unreadLabel, count: unreadCount }, needsYou, working }); }, [barred, setSignals, unreadLabel, unreadCount, needsYou, working]);
-  const unfolded = barred && !layer.folded;
+  useEffect(() => { if (barred || exploring) setSignals({ unread: unreadLabel === undefined ? undefined : { label: unreadLabel, count: unreadCount }, needsYou, working }); }, [barred, exploring, setSignals, unreadLabel, unreadCount, needsYou, working]);
+  const unfolded = (barred && !layer.folded) || (exploring && layer.showing === 'agent');
   useEffect(() => { if (unfolded) markRead(); }, [unfolded, markRead]);
   // Docked, the bar's field goes with the thread: nothing stays at the bottom.
   const hosted = role === 'agent' && layer.contentComposer && !(barred && layer.dockOpen);

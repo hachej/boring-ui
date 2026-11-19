@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppShell } from '../../registry/app-shell/app-shell.tsx';
 import { ScreenBody } from '../../registry/app-shell/screen-body.tsx';
@@ -13,6 +13,8 @@ import { columnNames, rowMentionPath, rowReferenceLabel } from '../../registry/v
 import { createDemoController } from './demo-controller.mjs';
 import { installFakeMic } from './fake-mic.mjs';
 import script from '../scenarios/scripts/design-system.json';
+import atlas from '../atlas/composer-atlas.json';
+import { runSteps } from '../atlas/steps.mjs';
 import { demoSlash } from './demo-slash.jsx';
 import { TASKS, Task } from './agent-card-demo.jsx';
 import { NoticeHost } from '../../registry/app-shell/shell-notice.tsx';
@@ -46,6 +48,8 @@ const COLOURS = [['background', 'bg-background'], ['foreground', 'bg-foreground'
 const SCALE = ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl', 'text-2xl'];
 const Section = ({ id, title, children }) => <section data-testid={`ds-${id}`} className="flex flex-col gap-3"><h2 className="m-0 text-lg font-semibold">{title}</h2>{children}</section>;
 const lang = new URLSearchParams(location.search).get('lang') === 'fr' ? 'fr' : 'en';
+// `?composer=explore`: the same page in the explore mode (closed, an Ask toggle at the bottom right, the panel on demand) instead of the bar.
+const explore = new URLSearchParams(location.search).get('composer') === 'explore';
 const Row = ({ children }) => <div className="flex flex-wrap items-center gap-2">{children}</div>;
 
 // The « Agent cards » section: the kit's AgentCard for three agents in their colours (Reader, Mailer, Ledger) and a task card, folded by default;
@@ -106,6 +110,14 @@ function Page() {
         <Button variant="outline" data-testid="ds-icon-reply" onClick={() => { layer.setPlace('icon'); layer.close(); void controller.send('followUp', { text: 'answer', attachments: [], restore: { text: '', attachments: [] } }); }}>Minimise, then a reply arrives</Button>
       </Row>
     </Section>
+    <Section id="explore-composer" title="Explore composer">
+      <p className="m-0 text-muted-foreground">For screens people read. With <code>composer="explore"</code> nothing sits at the bottom: the page keeps its whole width and a small Ask tab waits at the bottom right (Ctrl or Cmd + J also opens it). Open, the panel pushes the page from 1100 px, overlays it below that and is a bottom sheet on a phone; it shows what the person is looking at and sends it with the turn. A reply that arrives while it is closed puts a dot on the tab, a decision the agent waits for rings it. This page is in the bar mode: open it in explore mode to try.</p>
+      <Row>
+        <Button variant="outline" data-testid="ds-explore-open" render={<a href={`?composer=explore${lang === 'fr' ? '&lang=fr' : ''}`} />}>Open this page in explore mode</Button>
+        {explore && <Button variant="outline" data-testid="ds-explore-reply" onClick={() => { layer.close(); void controller.send('followUp', { text: 'answer', attachments: [], restore: { text: '', attachments: [] } }); }}>A reply arrives while closed</Button>}
+        {explore && <Button variant="outline" data-testid="ds-explore-needs" onClick={() => { layer.close(); void controller.send('followUp', { text: 'approval', attachments: [], restore: { text: '', attachments: [] } }); }}>Needs you while closed</Button>}
+      </Row>
+    </Section>
     <Section id="navigation" title="Tabs, dialog, empty, loading">
       <Tabs defaultValue="a"><TabsList><TabsTrigger value="a">All</TabsTrigger><TabsTrigger value="b">Gaps</TabsTrigger></TabsList><TabsContent value="a">Everything</TabsContent><TabsContent value="b">Only gaps</TabsContent></Tabs>
       <Dialog><DialogTrigger render={<Button variant="outline" className="self-start">Open a dialog</Button>} /><DialogContent><DialogHeader><DialogTitle>A dialog</DialogTitle><DialogDescription>Kit defaults.</DialogDescription></DialogHeader></DialogContent></Dialog>
@@ -148,10 +160,19 @@ const nav = [
   { id: 'empty', label: 'Empty app view', icon: FolderIcon, render: () => <ScreenBody><Placeholder /></ScreenBody> },
 ];
 const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the change', icon: <Undo2Icon />, onSelect() { window.__undone = (window.__undone ?? 0) + 1; } }, voice: { transcribe: async () => 'Dictated text (fictional)' }, files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: lang, actions, attachments, mentions, slash, labels: { placeholder: 'Ask, or type /' } } };
+// `?atlas=<state id>`: the page opens in that state of the Composer atlas (a thumbnail of the Atlas page): the state's own steps, run on the real controls.
+const atlasState = atlas.states.find(state => state.id === new URLSearchParams(location.search).get('atlas'));
 function App() {
   const [route, setRoute] = useState('design'), [theme, setTheme] = useState(initial), [notices, setNotices] = useState([]);
+  useEffect(() => {
+    if (!atlasState) return;
+    const hooks = { say: text => { void controller.send('followUp', { text, attachments: [], restore: { text: '', attachments: [] } }); }, notify: kind => notify(kind) };
+    // The shell takes its first interaction a moment after it mounts: the steps wait for it.
+    const timer = setTimeout(() => { void runSteps({ root: document, win: window, act: run => run(), hooks }, atlasState.reach).catch(error => console.error(String(error))); }, 800);
+    return () => clearTimeout(timer);
+  }, []);
   notify = kind => { const id = `${kind}-${Date.now()}`; setNotices([{ ...NOTICES[kind], id, onDismiss: () => setNotices(list => list.filter(n => n.id !== id)) }]); };
-  return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" floatingComposer agent={agent} notices={notices}
+  return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} {...(explore ? { composer: 'explore', context: { title: 'Design system', detail: 'The components of the kit, in both themes' } } : { composer: 'bar', floatingComposer: true })} agent={agent} notices={notices}
     account={{ name: 'Visitor', menu: [], theme: { value: theme, onChange: value => { applyTheme(value); setTheme(value); } } }} />;
 }
 createRoot(document.getElementById('root')).render(<App />);

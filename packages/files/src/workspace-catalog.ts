@@ -17,6 +17,20 @@ export interface WorkspaceCatalogOptions {
   readonly maxEntries?: number;
 }
 const inside = (root: string, path: string) => path === root || path.startsWith(root === '/' ? '/' : `${root}/`);
+/** How many followed links deep a walk goes: a bound beside the cycle check, so a pathological tree of links ends. */
+export const MAX_LINK_DEPTH = 32;
+/**
+ * What a symbolic link listed at `absolutePath` stands for when links are followed: its real path and the kind and size of its target,
+ * or undefined (the link is ignored, nothing recorded, nothing thrown) when it dangles, resolves outside `realRoot`, or is not a file or
+ * directory. A link never lets a walk leave the workspace root.
+ */
+export async function linkTarget(fs: FileSystem, absolutePath: string, realRoot: string, context: Context): Promise<{ readonly real: string; readonly kind: 'file' | 'directory'; readonly size: number } | undefined> {
+  const real = await fs.canonicalPath(absolutePath, context);
+  if (!real.ok || !inside(realRoot, real.value)) return undefined;
+  const info = await fs.fileInfo(real.value, context);
+  if (!info.ok || (info.value.kind !== 'file' && info.value.kind !== 'directory')) return undefined;
+  return { real: real.value, kind: info.value.kind, size: info.value.size };
+}
 /** Basename first: a name that starts with the query, then one that contains it, then a match in the directories only. */
 const rank = (path: string, query: string) => {
   const name = path.slice(path.lastIndexOf('/') + 1).toLowerCase();
@@ -30,8 +44,10 @@ export function createWorkspaceCatalog(options: {
   readonly fs: FileSystem;
   readonly config?: WorkspaceCatalogOptions;
   readonly saves: (path: string) => readonly SavedRevision[];
+  /** Follow symbolic links that stay inside the root (default: listings do not follow links). */
+  readonly followLinks?: boolean;
 }): WorkspaceCatalog {
-  const { fs } = options, config = options.config ?? {};
+  const { fs, followLinks } = options, config = options.config ?? {};
   const maximum = config.maxEntries ?? 100_000;
   if (!Number.isSafeInteger(maximum) || maximum < 1) throw new TypeError('Invalid catalog traversal bound');
   const root = fs.cwd.replace(/\/$/, '') || '/';
@@ -81,6 +97,9 @@ export function createWorkspaceCatalog(options: {
     if (!await contained(directory, access)) throw new RevisionError('denied', 'The directory is outside the workspace or unavailable');
     const entries: FileEntry[] = [];
     let scanned = 0;
+    const baseReal = followLinks ? await fs.canonicalPath(root, context(access)) : undefined;
+    // The real paths of the directories being walked, root first: a link back to one of them is a cycle and is not entered.
+    const chain: string[] = baseReal?.ok ? [baseReal.value] : [];
     async function walk(parent: string, rules: Rules): Promise<void> {
       check(access);
       const own = await rulesAt(parent ? `${parent}/.gitignore` : '.gitignore', parent, rules, access);
@@ -90,13 +109,25 @@ export function createWorkspaceCatalog(options: {
       for (const item of listing.value) {
         check(access);
         if (++scanned > maximum) throw new RevisionError('unavailable', 'The workspace exceeds the catalog traversal limit');
-        if (item.kind !== 'file' && item.kind !== 'directory') continue;
+        let kind = item.kind, size = item.size, real: string | undefined;
+        if (kind === 'symlink' && baseReal?.ok) {
+          const target = await linkTarget(fs, absolute(parent ? `${parent}/${item.name}` : item.name), baseReal.value, context(access));
+          check(access);
+          if (!target) continue;
+          ({ kind, size, real } = target);
+        }
+        if (kind !== 'file' && kind !== 'directory') continue;
         const path = catalogPath(parent ? `${parent}/${item.name}` : item.name);
-        const entry: FileEntry = { path, kind: item.kind, size: item.size };
+        const entry: FileEntry = { path, kind, size };
         if (!visible(entry, own)) continue;
         if (!await contained(path, access)) throw new RevisionError('denied', 'A listed entry resolves outside the workspace');
         entries.push(entry);
-        if (item.kind === 'directory' && (recursive || directory === path || directory.startsWith(`${path}/`))) await walk(path, own);
+        if (kind === 'directory' && (recursive || directory === path || directory.startsWith(`${path}/`))) {
+          if (real !== undefined && (chain.includes(real) || chain.length > MAX_LINK_DEPTH)) continue;
+          if (real !== undefined) chain.push(real);
+          await walk(path, own);
+          if (real !== undefined) chain.pop();
+        }
       }
     }
     // Walk from the root so parent ignore rules and directory exclusions also apply to a direct nested-directory request.

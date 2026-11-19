@@ -9,7 +9,7 @@ import type { PiChatProps } from '../../registry/pi-chat/pi-chat.tsx';
 import { withChatPlugins } from '../../registry/pi-chat-plugins/chat-plugins.ts';
 
 import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
-import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
+import { useRemoteChat } from '@hachej/boring-ui-kit/chat-react';
 
 // The example ships every composer feature item (Markdown, `/`, `@`, model pill, voice, camera).
 const PiChat = (props: PiChatProps) => <BarePiChat {...withChatPlugins(props)} />;

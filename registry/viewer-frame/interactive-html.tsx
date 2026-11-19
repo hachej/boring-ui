@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode, Ref } from 'react';
-import { declaredLibraries, offlineLibraryHead } from '@hachej/boring-ui-kit/offline-libs';
-import type { OfflineLibraryHead } from '@hachej/boring-ui-kit/offline-libs';
+import { declaredLibraries, offlineLibraryHead, withOfflineLibraries } from '@hachej/boring-ui-kit/offline-libs';
+import type { OfflineLibrary, OfflineLibraryHead } from '@hachej/boring-ui-kit/offline-libs';
 
 /**
  * Host opt-in for running an HTML document's own scripts. `scriptSources` are the HTTPS origins the page may load libraries, styles and fonts
@@ -11,7 +11,11 @@ import type { OfflineLibraryHead } from '@hachej/boring-ui-kit/offline-libs';
  * Pinning library versions is the page's responsibility. A page can instead declare a library the kit carries, `<!-- lib: d3 -->` (several
  * with commas): its source is injected inline before the page's scripts, loaded only for pages that declare one, with no network.
  */
-export interface InteractiveHtml { readonly scriptSources: readonly string[] }
+export interface InteractiveHtml {
+  readonly scriptSources: readonly string[];
+  /** More offline libraries a page may declare, beside the built-in ones: `{ chart: { version: '4.4.1', load: loadChartSource } }`. */
+  readonly libraries?: Readonly<Record<string, OfflineLibrary>>;
+}
 
 /** An origin only: `https://host` with an optional port, no path, no wildcard, nothing that could add a second CSP directive. */
 const ORIGIN = /^https:\/\/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{1,5})?$/i;
@@ -50,7 +54,8 @@ export function interactiveDocument(text: string, sources: readonly string[], li
  * storage or access to this page), and no top navigation, popups, forms, downloads or modals. `allow=""` withholds camera, microphone, location
  * and the other powerful features. Changing `reload` loads the page again from the start.
  */
-export function InteractiveFrame({ text, sources, reload = 0, title = 'HTML page (running)', testId = 'viewer', children, frameRef, onLoad }: {
+export function InteractiveFrame({ text, sources, reload = 0, title = 'HTML page (running)', testId = 'viewer', children, frameRef, onLoad, libraries }: {
+  readonly libraries?: InteractiveHtml['libraries'];
   readonly text: string;
   readonly sources: readonly string[];
   readonly reload?: number;
@@ -62,13 +67,14 @@ export function InteractiveFrame({ text, sources, reload = 0, title = 'HTML page
   readonly onLoad?: (() => void) | undefined;
 }) {
   const names = useMemo(() => declaredLibraries(text), [text]);
+  const available = useMemo(() => withOfflineLibraries(libraries), [libraries]);
   const [loaded, setLoaded] = useState<{ readonly text: string } & OfflineLibraryHead>();
   useEffect(() => {
     if (!names.length) return;
     let current = true;
-    void offlineLibraryHead(names).then(result => { if (current) setLoaded({ text, ...result }); });
+    void offlineLibraryHead(names, available).then(result => { if (current) setLoaded({ text, ...result }); });
     return () => { current = false; };
-  }, [names, text]);
+  }, [names, text, available]);
   const ready = names.length === 0 ? { head: '', problems: [] } : loaded?.text === text ? loaded : undefined;
   return <div className="boring-html-run flex min-h-0 flex-1 flex-col" data-testid={`${testId}-run`}>
     {ready?.problems.map(problem => <p key={problem} role="alert" className="m-0 px-3 py-2 text-sm text-destructive" data-testid={`${testId}-run-library-error`}>{problem}</p>)}

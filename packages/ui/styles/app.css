@@ -220,8 +220,21 @@
 .pi-chat :is([class*="text-xs"], [class*="text-sm"], [class*="text-[11px]"], [class*="text-[0.6875rem]"]):not(input, textarea, select) {
   font-size: var(--chat-meta);
 }
-.pi-chat.pi-chat.pi-chat :is([data-slot="bubble-content"], [data-slot="empty-description"], [data-slot="empty-title"], [data-slot="composer-placeholder"], [data-testid="composer-input"], [data-testid="question-text"], [data-testid="question-input"], [data-slot="table-cell"], [data-slot="table-head"], header h2, header h2 [data-slot="button"], header input, [data-testid="approval-card"] [data-slot="item-title"], [data-testid="approval-card"] [data-slot="item-description"], [data-testid="question-card"] [data-slot="item-title"], [data-testid="question-card"] [data-slot="item-description"]) {
+.pi-chat.pi-chat.pi-chat :is([data-slot="bubble-content"], [data-slot="empty-description"], [data-slot="empty-title"], [data-testid="question-text"], [data-testid="question-input"], [data-slot="table-cell"], [data-slot="table-head"], header h2, header h2 [data-slot="button"], header input, [data-testid="approval-card"] [data-slot="item-title"], [data-testid="approval-card"] [data-slot="item-description"], [data-testid="question-card"] [data-slot="item-title"], [data-testid="question-card"] [data-slot="item-description"]) {
   font-size: var(--chat-text);
+  line-height: var(--chat-leading);
+}
+/* The composer's field (bar, panel and ambient: one Composer) is where the person types, so it reads at the app's body size, not the assistant's
+   reading size: --text-md when the app's theme has one, else --text-body. On a narrow screen or a coarse pointer it is at least 1rem, below which
+   iOS Safari zooms the page on focus. */
+.pi-chat {
+  --composer-text: var(--text-md, var(--text-body, 0.8125rem));
+}
+@media (width < 768px), (pointer: coarse) {
+  .pi-chat { --composer-text: max(var(--text-md, var(--text-body, 0.8125rem)), 1rem); }
+}
+.pi-chat.pi-chat.pi-chat :is([data-slot="composer-placeholder"], [data-testid="composer-input"]) {
+  font-size: var(--composer-text);
   line-height: var(--chat-leading);
 }
 .pi-chat.pi-chat.pi-chat :is(pre, code) {

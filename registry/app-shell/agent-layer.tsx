@@ -31,13 +31,13 @@ import { AgentContextProvider } from './agent-context';
 import type { ShellPanel } from './shell-panel';
 import { barReserve } from './bar-reserve';
 import { LayerContext, PEEK_BAR_REM, PEEK_REM, SIDE_KEY, TOGETHER_QUERY, Z, useInternal } from './layer-context';
-import type { AgentComposer, AgentLayerApi, AgentLayerState, AgentMode, AgentPreview, AgentSpec, ComposerPlace, ComposerSignals, ConversationSize, DockSide, FloatCorner, FloatPos, Internal, Snap, Which } from './layer-context';
+import type { AgentComposer, AgentLayerApi, AgentLayerState, AgentMode, AgentPreview, AgentSpec, ComposerPlace, ComposerSignals, ConversationSize, DockSide, ExploreContext, FloatCorner, FloatPos, Internal, Snap, Which } from './layer-context';
 import { Chats } from './agent-chats';
 import { usePane } from './agent-pane';
 export { AgentTrigger } from './agent-trigger';
 export { AgentComposerAnchor, AgentDockLayout, AgentLayer } from './agent-placements';
 export { isOverlayEvent, nextSnapOnClose } from './agent-compact';
-export type { AgentComposer, AgentLayerApi, AgentLayerState, AgentPreview, AgentSpec, AgentWords, ComposerPlace, PaneFrame } from './layer-context';
+export type { AgentComposer, AgentLayerApi, AgentLayerState, AgentPreview, AgentSpec, AgentWords, ComposerPlace, ExploreContext, PaneFrame } from './layer-context';
 export { usePaneFrame } from './layer-context';
 
 /** A screen's way to hand the layer an assistant it already owns (see `useAgentLoan`). */
@@ -111,7 +111,7 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>, peekRem: numbe
   return { peekPoint: `${px}px`, tabbar };
 }
 /** Places the layer in the app. `agent` is the one assistant; `panel` sits beside the app (the product manager). Either may be absent. */
-export function AgentLayerProvider({ storage: persist = 'local', legacyPosition, agent: own, panel: improve, locale, agentLink, appName, composer = 'dock', modeIdentity, floating = false, docks = true, startIn = 'bottom', children }: { readonly storage?: Persistence | undefined; readonly legacyPosition?: { readonly key: string; readonly storage: Persistence } | undefined; readonly floating?: boolean | undefined; readonly docks?: boolean | undefined; readonly startIn?: 'float' | 'icon' | 'bottom' | undefined; readonly modeIdentity?: { readonly app?: string | undefined; readonly person?: string | undefined; readonly screen?: boolean | undefined } | undefined; readonly composer?: AgentComposer | undefined; readonly agent?: AgentSpec | undefined; readonly panel?: ShellPanel | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly appName?: string | undefined; readonly children: ReactNode }): ReactElement {
+export function AgentLayerProvider({ storage: persist = 'local', legacyPosition, agent: own, panel: improve, locale, agentLink, appName, composer = 'dock', context, modeIdentity, floating = false, docks = true, startIn = 'bottom', children }: { readonly context?: ExploreContext | undefined; readonly storage?: Persistence | undefined; readonly legacyPosition?: { readonly key: string; readonly storage: Persistence } | undefined; readonly floating?: boolean | undefined; readonly docks?: boolean | undefined; readonly startIn?: 'float' | 'icon' | 'bottom' | undefined; readonly modeIdentity?: { readonly app?: string | undefined; readonly person?: string | undefined; readonly screen?: boolean | undefined } | undefined; readonly composer?: AgentComposer | undefined; readonly agent?: AgentSpec | undefined; readonly panel?: ShellPanel | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly appName?: string | undefined; readonly children: ReactNode }): ReactElement {
   const compact = usePhone();
   const expanded = !compact;
   const together = useMedia(TOGETHER_QUERY) && expanded;
@@ -157,6 +157,20 @@ export function AgentLayerProvider({ storage: persist = 'local', legacyPosition,
     } catch { /* a convenience */ }
   }, [posKey, persist, legacyKey, legacyStorage, floatable]);
   const setFloatPos = useCallback((next: FloatPos) => { setFloatPosState(next); writePersistedJson(posKey, next, persist); }, [posKey, persist]);
+  // The height the person dragged the open window to (px), remembered per app and person; unset means the default. It applies to the tray level only, and Full or Dock drop it.
+  const heightKey = sidebarKey('composer-height', modeIdentity?.app, modeIdentity?.person);
+  const [trayHeight, setTrayHeightState] = useState<number | undefined>(undefined);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- same: the remembered height is read once the store exists
+  useLayoutEffect(() => { try { const saved = Number(readPersisted(heightKey, persist)); setTrayHeightState(Number.isFinite(saved) && saved > 0 ? saved : undefined); } catch { /* a convenience */ } }, [heightKey, persist]);
+  const setTrayHeight = useCallback((next: number | undefined) => { setTrayHeightState(next); try { if (next === undefined) writePersisted(heightKey, null, persist); else writePersisted(heightKey, String(Math.round(next)), persist); } catch { /* a convenience */ } }, [heightKey, persist]);
+  // `composer="explore"`: the panel's width (px) the person dragged it to, remembered per app and person; unset means the default.
+  const exploreKey = sidebarKey('explore-width', modeIdentity?.app, modeIdentity?.person);
+  const [exploreWidth, setExploreWidthState] = useState<number | undefined>(undefined);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- same: the remembered width is read once the store exists
+  useLayoutEffect(() => { try { const saved = Number(readPersisted(exploreKey, persist)); setExploreWidthState(Number.isFinite(saved) && saved > 0 ? saved : undefined); } catch { /* a convenience */ } }, [exploreKey, persist]);
+  const setExploreWidth = useCallback((next: number | undefined) => { setExploreWidthState(next); try { if (next === undefined) writePersisted(exploreKey, null, persist); else writePersisted(exploreKey, String(Math.round(next)), persist); } catch { /* a convenience */ } }, [exploreKey, persist]);
+  const explore = composer === 'explore';
+  const lookingAt = explore ? context : undefined;
   const place: ComposerPlace = !floatable || agent === undefined ? 'bottom' : placeState.startsWith('icon') ? 'icon' : placeState === 'float' && expanded && anchor === null ? 'float' : 'bottom';
   // `bar` on a phone (AC-20): the one composer is never closed away; at rest it is the peek, the field right above the tabs. Close and Échap come back here.
   const snap: Snap = composer === 'bar' && compact && place !== 'icon' && agent !== undefined && shown === 'agent' && snapState === 'closed' ? 'peek' : snapState;
@@ -180,7 +194,7 @@ export function AgentLayerProvider({ storage: persist = 'local', legacyPosition,
   const dockApi = useRef<DockApi | null>(null);
   const registerDock = useCallback((api: DockApi | null) => { dockApi.current = api; }, []);
   // The tray's Dock: this thread goes to the docked side pane whatever placement was persisted (a floated dock stays floated only for the dock's own controls).
-  const moveToDock = useCallback(() => { if (!docks) return; restoreFocus.current = true; dockApi.current?.dock(); setMode('dock'); }, [setMode, docks]);
+  const moveToDock = useCallback(() => { if (!docks) return; setTrayHeight(undefined); restoreFocus.current = true; dockApi.current?.dock(); setMode('dock'); }, [setMode, docks, setTrayHeight]);
   // The column is there from the first frame, assistant or not: wrapping the page only once the agent arrives remounted the whole screen
   // (Chase, 17 November: every screen loaded twice when its chat connected). Its composer still waits for the agent.
   const contentColumn = composer === 'content' || composer === 'bar';
@@ -309,7 +323,7 @@ export function AgentLayerProvider({ storage: persist = 'local', legacyPosition,
   // and uploads) while the layer is closed, on a phone and on a wide screen. Nothing is mounted before the layer is first opened.
   const opened = useRef(false);
   // eslint-disable-next-line react-hooks/refs -- a monotonic "ever opened" latch for this render: no re-render, no setState during render
-  if (snap !== 'closed' || contentComposer) opened.current = true;
+  if (snap !== 'closed' || contentComposer || (explore && agent !== undefined)) opened.current = true;
 
   // Consume the launch URL before an open layer pushes its Back entry. Keep the parsed request through StrictMode's effect replay.
   const launch = useRef<ReturnType<typeof parseAgentLink> | undefined>(undefined);
@@ -450,7 +464,7 @@ export function AgentLayerProvider({ storage: persist = 'local', legacyPosition,
   useEffect(() => { if (!trayOpen && wideSize !== 'open') setWideSize('open'); }, [trayOpen, wideSize]);
   // The phone's drawer is this same state: its full snap is `full`, its half is `open`.
   const size: ConversationSize = compact ? (snap === 'full' ? 'full' : 'open') : wideSize;
-  const setSize = useCallback((next: ConversationSize) => { if (!specs.current.expanded) setSnap(next === 'full' ? 'full' : 'half'); else setWideSize(next); }, [setSnap]);
+  const setSize = useCallback((next: ConversationSize) => { if (!specs.current.expanded) setSnap(next === 'full' ? 'full' : 'half'); else setWideSize(next); if (next === 'full') setTrayHeight(undefined); }, [setSnap, setTrayHeight]);
   // Full screen remembers where it came from, so back returns there: the folded bar, the docked column, or (otherwise) the grown tray.
   const fullFrom = useRef<'folded' | 'dock' | undefined>(undefined);
   useEffect(() => { if (size !== 'full') fullFrom.current = undefined; }, [size]);
@@ -469,9 +483,9 @@ export function AgentLayerProvider({ storage: persist = 'local', legacyPosition,
   }, [close, dockHere, setSize]);
   const value = useMemo<Internal>(() => ({
     state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, status, fieldStatus, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, anchored: anchor !== null, setAnchor, setDropZone, onSent, mode, setMode, moveToDock: dockHere, registerDock, size, setSize, enterFull, leaveFull, setFullField, trayOpen, dockOpen,
-    place, setPlace, restore, placeFocus, floatable, docks, floatPos, setFloatPos, signals, setSignals,
-    bar, folded, cardSlot, setCardSlot, setPhoneCard, cardPx, setCardPx, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, holdSend,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, status, fieldStatus, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, dockHere, registerDock, size, setSize, enterFull, leaveFull, setFullField, trayOpen, dockOpen, place, setPlace, restore, floatable, docks, floatPos, setFloatPos, signals, bar, folded, cardSlot, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, cardPx]);
+    place, setPlace, restore, placeFocus, floatable, docks, floatPos, setFloatPos, trayHeight, setTrayHeight, signals, setSignals,
+    bar, explore, lookingAt, exploreWidth, setExploreWidth, folded, cardSlot, setCardSlot, setPhoneCard, cardPx, setCardPx, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, holdSend,
+  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, status, fieldStatus, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, dockHere, registerDock, size, setSize, enterFull, leaveFull, setFullField, trayOpen, dockOpen, place, setPlace, restore, floatable, docks, floatPos, setFloatPos, trayHeight, setTrayHeight, signals, bar, explore, lookingAt, exploreWidth, setExploreWidth, folded, cardSlot, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, cardPx]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   // `--agent-bar-reserve`: what the bar takes from the bottom of a screen (the phone's peek and its card; see `barReserve`). The shell pads the bottom of each screen with it (a sticky bar inside a screen already sticks above that padding); a host element placed against the screen's box uses it as `bottom`.

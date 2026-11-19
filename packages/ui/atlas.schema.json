@@ -41,9 +41,9 @@
           "pattern": "^[^/\\\\\\s]+\\.synthetic\\.[^/\\\\\\s]+$"
         },
         "steps": {
-          "description": "In order: open <screen>, upload [<fixture>] (default given.fixture), click <label>, fill <label> <value>, wait <text> (atlas only). Quote a multi-word label or value \"like this\" or with guillemets.",
+          "description": "In order: open <screen>, upload [<fixture>] (default given.fixture), click <label>, fill <label> <value>, and the atlas-only text checks wait <text> or expect <text> (it appears) and absent <text> (it is not on the page), each optionally led by a time up to 10 minutes (wait 90s \"Terminé\"; 10 s otherwise). Quote a multi-word label or value \"like this\" or with guillemets.",
           "type": "array",
-          "items": { "type": "string", "pattern": "^\\s*(?:(?:open|click|fill|wait)\\s+\\S|upload(?:\\s+\\S+)?\\s*$)" }
+          "items": { "type": "string", "pattern": "^\\s*(?:(?:open|click|fill|wait|expect|absent)\\s+\\S|upload(?:\\s+\\S+)?\\s*$)" }
         }
       }
     }

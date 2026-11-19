@@ -9,7 +9,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const source = process.env.STAGED_SOURCE_ROOT ?? root;
 const out = `${root}.cache/pi-chat-staged-test`;
 mkdirSync(out, { recursive: true });
-await build({ stdin: { contents: `export { PiChat } from '${source}registry/pi-chat/pi-chat'; export { readChatPlacement } from '${source}registry/pi-chat/use-remote-chat'; export { AmbientChat } from '${source}registry/pi-ambient/ambient';`, resolveDir: root, loader: 'tsx' }, outfile: `${out}/chat.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
+await build({ stdin: { contents: `export { PiChat } from '${source}registry/pi-chat/pi-chat'; export { readChatPlacement } from '@hachej/boring-ui-kit/chat-react'; export { AmbientChat } from '${source}registry/pi-ambient/ambient';`, resolveDir: root, loader: 'tsx' }, outfile: `${out}/chat.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
 const { PiChat, AmbientChat, readChatPlacement } = await import(pathToFileURL(`${out}/chat.mjs`).href);
 const assistant = (text, durationMs = 10, extra = {}) => ({ role: 'assistant', content: text === null ? [] : [{ type: 'text', text }], api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: 1, durationMs, ...extra });
 const entry = (id, message) => ({ id, kind: 'message', byTaskId: id, model: [message] });
