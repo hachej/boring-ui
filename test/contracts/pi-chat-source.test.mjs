@@ -476,7 +476,7 @@ test('earlier records use normal message components and footer without reviving 
 
 
 test('the expanded ambient window shows the host reply footer under a settled reply', async () => {
-  const { AmbientChat } = await load('ambient', 'ambient.tsx', 'pi-ambient');
+  const { AmbientWindow: AmbientChat } = await load('ambient', 'ambient-window.tsx', 'pi-ambient');
   const view = { entries: entries([user('go')], [assistant([{ type: 'text', text: 'all done' }], { model: 'amb', timestamp: 9, durationMs: 77 })]), docs: {} };
   const snapshot = { identity: {}, conversationId: 'c1', connection: { kind: 'connected' }, view, draft: { text: '', attachments: [], version: 0 }, outbox: [], history: { kind: 'disabled' },
     send: { kind: 'idle' }, stop: 'idle', disposed: false };

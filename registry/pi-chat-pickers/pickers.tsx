@@ -35,7 +35,6 @@ export function ModelEffortPicker({ model, effort, currentModel, currentEffort, 
   };
   const modelLabel = model ? models.find(choice => choice.value === modelValue)?.label || currentModel?.modelId || labels.model : undefined;
   const effortLabel = effort ? currentEffort ? name(currentEffort) : labels.effortDefault : undefined;
-  const summary = [modelLabel, effortLabel].filter(Boolean).join(' · ');
   const description = labels.modelSummary(modelLabel, effortLabel);
   const section = (title: string, items: readonly Choice[], value: string, pick: (value: string) => void) => items.length > 0 && <DropdownMenuGroup>
     <DropdownMenuLabel>{title}</DropdownMenuLabel>
@@ -47,10 +46,10 @@ export function ModelEffortPicker({ model, effort, currentModel, currentEffort, 
     </DropdownMenuRadioGroup>
   </DropdownMenuGroup>;
   return <DropdownMenu open={open} onOpenChange={setOpen}>
-    <div className="min-w-0 max-w-[65%] shrink @max-[480px]/composer:max-w-20">
+    <div className="min-w-0 max-w-[65%] shrink @max-[480px]/composer:max-w-28">
       <DropdownMenuTrigger render={<Button variant="ghost" />} data-testid="composer-model" data-value={modelValue} data-effort={currentEffort ?? ''} disabled={disabled} aria-label={description} title={description} className="min-w-0 max-w-full">
         {busy && <Loader2Icon data-icon="inline-start" className="animate-spin motion-reduce:animate-none" aria-hidden="true" />}
-        <span data-testid="composer-model-label" className="min-w-0 truncate">{summary}</span>
+        <span data-testid="composer-model-label" className="min-w-0 truncate">{modelLabel}{modelLabel && effortLabel ? <span className="@max-[480px]/composer:hidden"> · {effortLabel}</span> : effortLabel}</span>
         <ChevronDownIcon data-icon="inline-end" aria-hidden="true" />
       </DropdownMenuTrigger>
     </div>

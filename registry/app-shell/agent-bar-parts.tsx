@@ -353,7 +353,7 @@ export function FoldedCard({ bar, onOpenFile }: { readonly bar: AgentBarChat; re
       </div>}
       {kind === 'reply' && reply && <>
         {/* A tap on the reply opens the conversation, as the chevron does (the chevron stays the way for a keyboard). */}
-        <FoldedReply text={reply.text} onOpen={() => layer.open('agent')} />
+        {reply.text && <FoldedReply text={reply.text} onOpen={() => layer.open('agent')} />}
         {(reply.files.length > 0 || action) && <div role="list" data-testid="agent-card-files" className="flex flex-wrap items-center gap-1.5">
           {reply.files.map(path => isCitedFile(path) && <span role="listitem" key={path}><FileChip path={path} files={layer.agent?.files} kinds={layer.agent?.fileKinds} testid="agent-card-file" onOpen={onOpenFile ? target => onOpenFile(target, reply.files) : undefined} /></span>)}
           {action && <span role="listitem"><ReplyActionButton action={action} testid="agent-card-action" className="pointer-coarse:min-h-11" /></span>}

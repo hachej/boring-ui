@@ -9,4 +9,4 @@ npm run ambient            # the console with the bar over it
 npm run ambient:journey    # real-browser journey, screenshots under .cache/evidence/ambient/
 ```
 
-`?view=full` renders a `PiChat` with the same composer configuration; `?artifacts=host` hands artifacts to the host viewer instead of the window.
+`?composer=1` gives `AmbientChat` only the props the one composer takes (no artifact panel, thumbs, open-full, bell or toast timing), so it renders `FloatingComposer`; without it the old window stays. `?view=full` renders a `PiChat` with the same composer configuration; `?artifacts=host` hands artifacts to the host viewer instead of the window.
