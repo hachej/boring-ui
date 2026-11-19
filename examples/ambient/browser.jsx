@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MicIcon } from 'lucide-react';
 import { AmbientChat, createNotificationStore, watchConversation } from '../../registry/pi-ambient/ambient.tsx';
+import { AmbientWindow } from '../../registry/pi-ambient/ambient-window.tsx';
 import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
 import { useRemoteChat } from '@hachej/boring-ui-kit/chat-react';
@@ -157,7 +158,7 @@ function App() {
     conversations: { items: (items ?? []).map(item => ({ id: item.id, title: item.title ?? undefined, updatedAt: item.updatedAt ?? undefined })), activeId: conversationId, onSelect: select, onNew: () => { void newConversation(); } },
     ...composerConfig,
     tools: <HostTools />,
-    // `?composer=1`: only the props the one composer takes, so `AmbientChat` is the floating composer. Without it the artifact panel, thumbs, open-full and the bell keep the old window.
+    // `?composer=1`: `AmbientChat`, the floating composer, with only the props the demo's own composer journey drives. Without it the demo is the old window (`AmbientWindow`) with the artifact panel, thumbs, open-full and the bell: its journey drives that window's controls.
     ...(params.get('composer') === '1' ? {} : {
       artifactPanel: renderPanel, artifactTarget: params.get('artifacts') === 'host' ? 'host' : 'window',
       artifacts: { open: artifact => setNote(`Opening ${artifact.title} in the host viewer…`) },
@@ -169,7 +170,7 @@ function App() {
     slash={props.slash} mentions={props.mentions} attachments={props.attachments} model={props.model} effort={props.effort} /></div> : null;
   return <>
     <Console onTask={() => { void startTask(); }} taskNote={taskNote} note={note} />
-    {props && <AmbientChat key="ambient" {...props} />}
+    {props && (params.get('composer') === '1' ? <AmbientChat key="ambient" {...props} /> : <AmbientWindow key="ambient" {...props} />)}
   </>;
 }
 
