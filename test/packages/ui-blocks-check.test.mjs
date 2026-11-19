@@ -219,6 +219,37 @@ test('add runs the pinned shadcn CLI then records the manifest, so check passes;
   assert.equal(manifest.bin['boring-ui-blocks'], './bin/boring-ui-blocks.mjs', 'shipped as the kit\'s bin');
 });
 
+test('an app in web/ of a repo that installs at its root: update finds the kit above, runs the CLI with the root package.json, cleans up', t => {
+  const app = fixture(t, 'web'), repo = dirname(app);
+  // The repo installs at its root: the kit is there, the app folder has no package.json; the root has an .npmrc the CLI must honour.
+  cpSync(join(app, 'node_modules'), join(repo, 'node_modules'), { recursive: true });
+  rmSync(join(app, 'node_modules'), { recursive: true, force: true });
+  unlinkSync(join(app, 'package.json'));
+  write(join(repo, 'package.json'), `${JSON.stringify({ name: 'fictional-repo', private: true, dependencies: { 'lucide-react': '1.8.0' } }, null, 2)}\n`);
+  write(join(repo, '.npmrc'), 'legacy-peer-deps=true\n');
+  write(join(app, 'components.json'), JSON.stringify({ style: 'base-nova', tailwind: { css: 'src/index.css' }, aliases: { components: '@/components', ui: '@/components/ui', utils: '@/lib/utils' } }));
+  const fake = join(repo, '.fake-bin'), seen = join(repo, '.seen');
+  // The stand-in CLI: records what its folder held, adds a dependency, installs into the folder and appends block CSS to the stylesheet.
+  write(join(fake, 'shadcn.mjs'), `import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(seen)}, JSON.stringify({ pkg: existsSync('package.json'), npmrc: existsSync('.npmrc') && readFileSync('.npmrc', 'utf8') }));
+const p = JSON.parse(readFileSync('package.json', 'utf8')); p.dependencies['new-dependency'] = '^2.0.0'; p.dependencies['lucide-react'] = '^1.8.0';
+writeFileSync('package.json', JSON.stringify(p)); writeFileSync('package-lock.json', '{}'); mkdirSync('node_modules/new-dependency', { recursive: true });
+appendFileSync('src/index.css', '\\n@layer utilities { .injected {} }\\n');
+`);
+  write(join(fake, 'npx'), `#!/bin/sh\n${JSON.stringify(process.execPath)} "${join(fake, 'shadcn.mjs')}"\n`);
+  write(join(fake, 'npm'), `#!/bin/sh\npwd > "${join(repo, '.npm-ran-in')}"\n`);
+  for (const bin of ['npx', 'npm']) chmodSync(join(fake, bin), 0o755);
+  const sheet = readFileSync(join(app, 'src/index.css'), 'utf8');
+  const updated = run(app, ['update', '--version', '9.9.9', '--css', 'src/blocks.css'], { PATH: `${fake}${delimiter}${process.env.PATH}` });
+  assert.equal(updated.status, 0, updated.stdout + updated.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(seen, 'utf8')), { pkg: true, npmrc: 'legacy-peer-deps=true\n' }, 'the CLI ran with the root package.json and .npmrc, so it asked nothing');
+  for (const name of ['package.json', '.npmrc', 'package-lock.json', 'node_modules']) assert.equal(existsSync(join(app, name)), false, `no ${name} left in web/`);
+  assert.deepEqual(JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8')).dependencies, { 'lucide-react': '1.8.0', 'new-dependency': '^2.0.0' }, 'the new dependency reaches the root, the pin stays');
+  assert.equal(readFileSync(join(repo, '.npm-ran-in'), 'utf8').trim(), repo, 'installed at the root');
+  assert.equal(readFileSync(join(app, 'src/index.css'), 'utf8'), sheet, 'the stylesheet keeps what the app wrote; the blocks CSS is in src/blocks.css');
+  assert.ok(existsSync(join(app, 'src/blocks.css')));
+});
+
 test('update keeps the app\'s exact dependency pins when the CLI\'s package manager rewrites them to ranges', t => {
   const app = fixture(t);
   const pins = { 'lucide-react': '1.8.0', 'class-variance-authority': '0.7.1' };
