@@ -22,6 +22,7 @@ export { langOf, say, type Lang } from './words.js';
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const loopback = (u: string) => { try { const x = new URL(u); return x.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(x.hostname); } catch { return false; } };
 const issuerOf = (token: string) => { try { return decodeJwt(token).iss; } catch { return undefined; } };
+const opt = <T>(user: T | null) => (user ? { user } : {});
 const sha256 = async (text: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, '0')).join('');
 
 export function signIn(options: SignInOptions) {
@@ -51,15 +52,38 @@ export function signIn(options: SignInOptions) {
     return claims?.sub ? withRole(await (await db()).findOne<User>({ model: 'user', where: [{ field: 'id', value: claims.sub }] })) : undefined;
   };
 
-  /** The app's person a verified Studio pass names: the user holding the `studio` account of its `sub`, else the user of its e-mail when they
-   *  hold no `studio` account under another `sub`. Looks only: no user and no invitation is ever made here. */
-  const studioPassPerson = async ({ sub, email }: PassClaims): Promise<Person | undefined> => {
+  /** Who a pass names: the user holding the `studio` account of its `sub`, else the user of its e-mail when they hold no `studio` account under
+   *  another `sub`. `held` is whether the `sub` or the e-mail is taken at all, by anyone. */
+  const passUser = async (sub: string, email: string): Promise<{ user?: User; held: boolean }> => {
     const store = await db();
-    const studioAccountOf = (userId: string) => store.findOne<{ userId: string }>({ model: 'account', where: [{ field: 'userId', value: userId }, { field: 'providerId', value: STUDIO }] });
+    const byId = (id: string) => store.findOne<User>({ model: 'user', where: [{ field: 'id', value: id }] });
     const account = await store.findOne<{ userId: string }>({ model: 'account', where: [{ field: 'providerId', value: STUDIO }, { field: 'accountId', value: sub }] });
-    if (account) return withRole(await store.findOne<User>({ model: 'user', where: [{ field: 'id', value: account.userId }] }));
-    const user = await store.findOne<User>({ model: 'user', where: [{ field: 'email', value: normalEmail(email) }] });
-    return user && !await studioAccountOf(user.id) ? withRole(user) : undefined;
+    if (account) return { held: true, ...opt(await byId(account.userId)) };
+    const user = await store.findOne<User>({ model: 'user', where: [{ field: 'email', value: email }] });
+    if (!user) return { held: false };
+    const other = await store.findOne({ model: 'account', where: [{ field: 'userId', value: user.id }, { field: 'providerId', value: STUDIO }] });
+    return { held: true, ...(other ? {} : { user }) };
+  };
+
+  /** The creator's record (`studio.owner`): a user and its `studio` account, as the round trip leaves them; no invitation. Undone if the account fails. */
+  const createCreator = async (sub: string, email: string, name: string): Promise<void> => {
+    const store = await db(), now = new Date();
+    const user = await store.create<User>({ model: 'user', data: { email, name, emailVerified: false, createdAt: now, updatedAt: now } });
+    await store.create({ model: 'account', data: { accountId: sub, providerId: STUDIO, userId: user.id, createdAt: now, updatedAt: now } })
+      .catch(async (e: unknown) => { await store.delete({ model: 'user', where: [{ field: 'id', value: user.id }] }); throw e; });
+  };
+
+  /** The app's person a verified Studio pass names (`passUser`). Nobody is made here, with one exception: the creator, the pass whose `sub` is
+   *  `studio.owner` and whom Studio's signed list names, whose first pass makes their record when neither the `sub` nor the e-mail is held. */
+  const studioPassPerson = async ({ sub, email, name }: PassClaims): Promise<Person | undefined> => {
+    const mail = normalEmail(email);
+    let found = await passUser(sub, mail);
+    if (!found.held && options.studio?.owner && options.studio.owner === sub && (await a.link!.ownerSubs()).has(sub)) {
+      // A concurrent first pass or the unique e-mail may refuse the create: look once more, whoever made the record.
+      await createCreator(sub, mail, name || mail.split('@')[0]!).catch(() => undefined);
+      found = await passUser(sub, mail);
+    }
+    return withRole(found.user);
   };
 
   /** The person an MCP bearer token stands for, or nobody: a token this app issued for `<origin>/mcp`, or, in an app linked to Studio, Studio's

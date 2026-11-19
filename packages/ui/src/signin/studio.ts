@@ -26,13 +26,15 @@ export interface StudioClientOptions {
   readonly clientId: string;
   /** How this Worker reaches Studio: a service binding's fetch, or the global fetch (needs `global_fetch_strictly_public` on workers.dev). */
   readonly fetch?: typeof fetch;
+  /** The creator's Studio id (`sub`): the first valid pass of this person, whom Studio's signed owner list names, makes their user and `studio` account in the app (no invitation), so they reach `/mcp` with no prior sign-in. Never matched by e-mail; unset or empty, no record is ever made by a pass. */
+  readonly owner?: string | undefined;
   /** How long the app keeps Studio's owner list and keys before asking again: 3 minutes by default. */
   readonly ownersTtlMs?: number | undefined;
 }
 
 export interface Owner { readonly sub: string }
-/** Who Studio's pass vouches for: its user id and e-mail, nothing else (the role is the app's own). */
-export interface PassClaims { readonly sub: string; readonly email: string }
+/** Who Studio's pass vouches for: its user id, e-mail and name, nothing else (the role is the app's own). */
+export interface PassClaims { readonly sub: string; readonly email: string; readonly name?: string | undefined }
 
 /** The redirect address of an app's Studio round trip. */
 export const studioCallback = (appOrigin: string) => `${new URL(appOrigin).origin}/api/auth/callback/${STUDIO}`;
@@ -74,7 +76,7 @@ export function studioLink(studio: StudioClientOptions) {
       const { payload } = await jwtVerify(token, await passKeySet(kid), { issuer: studio.origin, audience: studio.app, algorithms: ['EdDSA'], requiredClaims: ['exp', 'iat', 'sub', 'email'] });
       const { sub, email, aud, exp, iat } = payload;
       if (aud !== studio.app || typeof sub !== 'string' || !sub || typeof email !== 'string' || !email || exp! - iat! > PASS_SECONDS) return undefined;
-      return { sub, email };
+      return { sub, email, name: typeof payload['name'] === 'string' ? payload['name'].trim() : undefined };
     } catch { return undefined; }
   };
   /** The Studio ids of Studio's owners now; empty when Studio cannot be reached or its token does not check (no owner, never a guess). */
