@@ -170,8 +170,10 @@ const readItems = root => readdirSync(join(root, 'r')).filter(name => name.endsW
 
 /** The installed kit (its package.json version) and its registry items that copy files (`theme` has none). */
 export function installedKit(app) {
-  const root = join(app, 'node_modules', KIT);
-  if (!existsSync(join(root, 'package.json'))) throw new Error(`${KIT} is not installed in ${app}: the kit version is read from node_modules/${KIT}/package.json`);
+  // The nearest install at or above the app: an app in web/ of a repo installs its packages at the repo root.
+  let root = join(app, 'node_modules', KIT);
+  for (let dir = resolve(app); !existsSync(join(root, 'package.json')) && dirname(dir) !== dir; dir = dirname(dir)) root = join(dirname(dir), 'node_modules', KIT);
+  if (!existsSync(join(root, 'package.json'))) throw new Error(`${KIT} is not installed in ${app} or above it: the kit version is read from node_modules/${KIT}/package.json`);
   const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   if (!version || !existsSync(join(root, 'r'))) throw new Error(`${KIT}@${version ?? '?'} ships no registry items (node_modules/${KIT}/r)`);
   return { version, items: readItems(root).filter(item => item.files?.length) };
@@ -388,17 +390,58 @@ function snapshotFiles(app) {
  * `overwrite` false a file that existed with other content is put back afterwards and returned in `skipped`; identical files are never touched.
  * `created` is the generated ui files the run newly wrote.
  */
-function shadcnAdd(app, args, log, overwrite) {
+function shadcnAdd(app, args, log, overwrite, css) {
   const argv = ['-y', SHADCN, 'add', ...args.filter(arg => !['--yes', '-y', '--overwrite'].includes(arg)), '--overwrite', '--yes'];
   log(`npx ${argv.join(' ')}`);
-  const before = specifiers(app), existing = snapshotFiles(app);
-  const result = spawnSync('npx', argv, { cwd: app, stdio: ['ignore', 'inherit', 'inherit'], shell: process.platform === 'win32' });
-  restoreSpecifiers(before, app, log);
+  const staged = stagePackage(app, log);
+  const owner = staged?.owner ?? app;
+  const before = specifiers(owner), existing = snapshotFiles(app);
+  // With --css, the blocks' CSS lives in that generated file: the stylesheet components.json names keeps what the app wrote in it.
+  const sheet = css && readJson(join(app, 'components.json'))?.tailwind?.css, sheetPath = sheet && join(app, sheet);
+  const sheetBytes = sheetPath && existsSync(sheetPath) ? readFileSync(sheetPath) : undefined;
+  let result;
+  try { result = spawnSync('npx', argv, { cwd: app, stdio: ['ignore', 'inherit', 'inherit'], shell: process.platform === 'win32' }); }
+  finally { if (staged) unstagePackage(staged, log); }
+  if (sheetBytes && !readFileSync(sheetPath).equals(sheetBytes)) { writeFileSync(sheetPath, sheetBytes); log(`${posix(sheet)}: kept as it was (the blocks' CSS is in ${posix(css)})`); }
+  restoreSpecifiers(before, owner, log);
   const skipped = overwrite ? [] : [...existing].filter(([path, bytes]) => existsSync(path) && !readFileSync(path).equals(bytes));
   for (const [path, bytes] of skipped) writeFileSync(path, bytes);
   const { ui } = appPaths(app);
   const created = files(ui).filter(path => /\.(?:[jt]sx?|css)$/.test(path) && !existing.has(path));
   return { status: result.status ?? 1, skipped: skipped.map(([path]) => path), created };
+}
+
+/**
+ * An app whose components.json is in a folder without package.json (web/ of a repo that installs at its root): the shadcn CLI there takes
+ * the folder for a new project and asks which component library to start one with. For the run, the folder gets a copy of the nearest
+ * package.json above it (and its .npmrc); afterwards the dependencies the CLI added go into that package.json, installed there, and the
+ * copies and whatever the CLI installed in the folder are removed. Returns undefined when the app has its own package.json.
+ */
+function stagePackage(app, log) {
+  if (existsSync(join(app, 'package.json'))) return undefined;
+  let owner = dirname(resolve(app));
+  while (!existsSync(join(owner, 'package.json'))) { if (dirname(owner) === owner) return undefined; owner = dirname(owner); }
+  const made = ['package.json', '.npmrc', 'package-lock.json', 'node_modules'].filter(name => !existsSync(join(app, name)));
+  writeFileSync(join(app, 'package.json'), readFileSync(join(owner, 'package.json')));
+  if (made.includes('.npmrc') && existsSync(join(owner, '.npmrc'))) writeFileSync(join(app, '.npmrc'), readFileSync(join(owner, '.npmrc')));
+  log(`${posix(relative(owner, app)) || '.'} has no package.json: the run uses a copy of ${posix(join(relative(app, owner), 'package.json'))}`);
+  return { app, owner, made, deps: readJson(join(owner, 'package.json')) };
+}
+
+function unstagePackage({ app, owner, made, deps }, log) {
+  const copy = readJson(join(app, 'package.json')) ?? {};
+  const added = [];
+  const target = readJson(join(owner, 'package.json')) ?? deps;
+  for (const field of DEPENDENCY_FIELDS) for (const [name, range] of Object.entries(copy[field] ?? {})) {
+    if (DEPENDENCY_FIELDS.some(f => target[f]?.[name] !== undefined)) continue;
+    (target[field] ??= {})[name] = range; added.push(`${name}@${range}`);
+  }
+  for (const name of made) rmSync(join(app, name), { recursive: true, force: true });
+  if (!added.length) return;
+  const text = readFileSync(join(owner, 'package.json'), 'utf8');
+  writeFileSync(join(owner, 'package.json'), `${JSON.stringify(target, null, /^\{\n([ \t]+)"/.exec(text)?.[1] ?? 2)}${text.endsWith('\n') ? '\n' : ''}`);
+  log(`added to ${posix(join(relative(app, owner), 'package.json'))}: ${added.join(', ')}; installing there`);
+  spawnSync('npm', ['install', '--no-audit', '--no-fund'], { cwd: owner, stdio: ['ignore', 'inherit', 'inherit'], shell: process.platform === 'win32' });
 }
 
 /**
@@ -1050,7 +1093,7 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
     if (command === 'add') {
       appPaths(app);
       if (!flags.pass.length) throw new Error('add needs shadcn add arguments');
-      const { status, skipped, created } = shadcnAdd(app, flags.pass, log, flags.overwrite);
+      const { status, skipped, created } = shadcnAdd(app, flags.pass, log, flags.overwrite, flags.css);
       if (skipped.length) {
         // The files the run created are the app's new generated files: record them, so `check` does not call them unknown. The kept ones stay unrecorded.
         if (created.length) recordFiles(app, created, flags.manifest ?? MANIFEST);
@@ -1065,7 +1108,7 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
     const base = (flags.registry ?? itemBase(flags.version ?? installed)).replace(/\/$/, '');
     const items = blocks.map(block => `${base}/${block.name}.json`);
     if (flags.dryRun) { log(`npx -y ${SHADCN} add ${items.join(' ')} --overwrite --yes`); return 0; }
-    const { status } = shadcnAdd(app, items, log, true);
+    const { status } = shadcnAdd(app, items, log, true, flags.css);
     if (status === 0) { log(`${flags.manifest ?? MANIFEST}: ${writeManifest(app, flags.manifest)} file(s)`); refreshCss(app, flags.css, log); }
     return status;
   } catch (cause) {
