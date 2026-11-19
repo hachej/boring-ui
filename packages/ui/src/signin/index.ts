@@ -4,6 +4,7 @@
 //   /api/auth/*                        Better Auth (sign-up, sign-in, sign-out, OAuth provider), refusals in the person's language
 //   /.well-known/oauth-*               discovery for assistants (RFC 9728, RFC 8414, OpenID)
 //   /api/signin/options, /me           what the sign-in page offers; who is signed in, with the « Studio » entry for an app's owners
+//   /api/signin/first-owner            GET with the link's token (x-boring-first-owner): { valid }, false for a used or an unknown link
 //   /api/signin/people                 the invitation list, owners only
 //   /api/signin/studio                 an app linked to Studio: the round trip that proves an owner
 //   /api/signin/owners                 Studio: its signed owner list
@@ -114,10 +115,19 @@ export function signIn(options: SignInOptions) {
     return new Response(null, { status: 302, headers: out });
   };
 
+  /** Whether a first-owner token is good now: it is the link's (`firstOwnerHash`) and no owner exists yet. Reads only; it never uses the link up. */
+  const linkOpen = async (token: string | null): Promise<boolean> =>
+    !!token && !!options.firstOwnerHash && await sha256(token) === options.firstOwnerHash.toLowerCase() && !await a.hasOwner();
+
+  /** The sign-in page's check of `/sign-in?first-owner=<token>`: `{ valid }`, one answer for a used link and an unknown one, any number of times. */
+  const firstOwnerCheck = async (request: Request): Promise<Response> => {
+    await ready();
+    return Response.json({ valid: await linkOpen(request.headers.get('x-boring-first-owner')) }, { headers: { 'cache-control': 'no-store' } });
+  };
+
   /** The first-owner link's token on a sign-up: while no owner exists, its holder may sign up and becomes the owner. */
   const firstOwner = async (request: Request): Promise<void> => {
-    const token = request.headers.get('x-boring-first-owner');
-    if (!token || !options.firstOwnerHash || await sha256(token) !== options.firstOwnerHash.toLowerCase() || await a.hasOwner()) return;
+    if (!await linkOpen(request.headers.get('x-boring-first-owner'))) return;
     const body = await request.clone().json().catch(() => ({})) as { email?: unknown };
     if (typeof body.email === 'string') a.pending.firstOwner = normalEmail(body.email);
   };
@@ -132,6 +142,7 @@ export function signIn(options: SignInOptions) {
       const me = await personOf(request);
       return me ? Response.json({ person: me, ...(a.link && me.role === 'owner' ? { studio: a.link.entry } : {}) }) : refuse('SIGN_IN_FIRST', 401, lang);
     }
+    if (path === '/api/signin/first-owner') return request.method === 'GET' ? firstOwnerCheck(request) : new Response(null, { status: 405 });
     if (path === '/api/signin/people') return people(request, url);
     if (path === '/api/signin/owners' && options.provider) return owners();
     if (path === '/api/signin/links' && options.provider && request.method === 'POST') return links(request);

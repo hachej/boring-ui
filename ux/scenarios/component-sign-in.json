@@ -1,0 +1,85 @@
+{
+ "target": "component:sign-in",
+ "title": "Sign-in page",
+ "summary": "The sign-in page of an app: e-mail and password, Google, account creation by invitation, the one-use first-owner link.",
+ "purpose": "The registry block's SignInPage alone over a fake Worker, in Coach Max's theme (lime primary on paper, light and dark), in French and English. A person opens it for the first time, switches between sign-in and account creation, signs in with a wrong password and then the right one; opened from the first-owner link it waits for the Worker, then shows the owner's sign-up for a good link and a refusal above the ordinary form for a used or unknown one.",
+ "fixture": {
+  "entry": "ux/fixtures/component-sign-in.jsx",
+  "query": "",
+  "ready": "[data-testid=sign-in-submit], [data-testid=sign-in-first-owner-wait]",
+  "install": "npx shadcn@4.23.0 add sign-in",
+  "usage": "<SignInPage locale=\"fr\" onSignedIn={() => location.assign('/')} />"
+ },
+ "viewports": [
+  { "name": "390", "width": 390, "height": 844, "touch": true },
+  { "name": "1440", "width": 1440, "height": 900 }
+ ],
+ "watch": [["submit", "[data-testid=sign-in-submit]"], ["switch", "[data-testid=sign-in-switch]"]],
+ "thresholds": { "cls": 0.08, "settledMs": 1200, "touchTarget": 44, "offscreen": 0, "truncated": 0 },
+ "notes": "On a phone every full-width button of the block (the main one, « Continuer avec Google ») is at least 48 px high, where the rest of the kit keeps 44. The two switch links are drawn in the text colour, underlined, with at least 4.5:1 on the page in both themes (the theme's primary is a light lime). A wrong password is read under the form and the main button keeps its place and size while « Un instant… » shows. Opened from the first-owner link the page shows a neutral wait until the Worker answers (it answers 2 s late on purpose in the `late-` flows) and never shows « Vous installez » or the owner's sign-up before a good answer: the fixture checks that after every change of the page, not only at frames.",
+ "states": [
+  { "id": "01", "name": "first-visit", "steps": [] },
+  { "id": "02", "name": "dark", "query": "dark=1", "steps": [] },
+  { "id": "03", "name": "english", "query": "lang=en", "steps": [] },
+  { "id": "04", "name": "account", "steps": [{ "do": "tap", "target": "sign-in-switch", "until": "visible:#sign-in-name" }] },
+  { "id": "05", "name": "link-refused", "query": "first-owner=used", "steps": [{ "do": "wait", "ms": 200, "until": "visible:sign-in-link-refused" }] },
+  { "id": "06", "name": "link-waiting", "query": "first-owner=late-used", "steps": [{ "do": "wait", "ms": 300, "until": "visible:sign-in-first-owner-wait" }] },
+  { "id": "07", "name": "owner", "query": "first-owner=valid", "steps": [{ "do": "wait", "ms": 200, "until": "visible:#sign-in-name" }] }
+ ],
+ "flows": [
+  { "id": "F01", "name": "First visit, switch, wrong password, sign in", "steps": [
+   { "do": "wait", "ms": 100, "say": "Open the sign-in page", "expect": "The page asks for e-mail and password, with « Se connecter » and Google, each button at least 48 px high on a phone.", "until": { "390": "visible:sign-in-submit & text:main h1~Connexion & height:sign-in-submit>=48 & height:sign-in-google>=48", "default": "visible:sign-in-submit & text:main h1~Connexion" } },
+   { "do": "tap", "target": "sign-in-switch", "say": "Tap « Invité ? Créez votre compte »", "reflow": true, "expect": "The account form opens with a name field and the link now says « Déjà un compte ? Connectez-vous ».", "until": "visible:#sign-in-name & text:main h1~Créer votre compte & text:sign-in-switch~Déjà un compte" },
+   { "do": "tap", "target": "sign-in-switch", "say": "Tap « Déjà un compte ? Connectez-vous »", "reflow": true, "expect": "Back on the sign-in form, as it was.", "until": "gone:#sign-in-name & text:main h1~Connexion & text:sign-in-switch~Invité" },
+   { "do": "type", "target": "#sign-in-email", "text": "julie@example.test", "say": "Type the e-mail address", "until": "value:#sign-in-email~julie@example.test" },
+   { "do": "type", "target": "#sign-in-password", "text": "wrong-password", "say": "Type a wrong password", "until": "value:#sign-in-password~wrong-password" },
+   { "do": "fixture", "name": "mark", "arg": "sign-in-submit", "say": "Note where « Se connecter » is" },
+   { "do": "tap", "target": "sign-in-submit", "say": "Tap « Se connecter »", "expect": "The button says « Un instant… » and stays where it was, at least 48 px high.", "until": { "390": "text:sign-in-submit~Un instant & height:sign-in-submit>=48 & eval:window.__ux.moved('sign-in-submit') === 0", "default": "text:sign-in-submit~Un instant & eval:window.__ux.moved('sign-in-submit') === 0" } },
+   { "do": "wait", "ms": 300, "say": "Read the answer", "timeout": 3000, "expect": "« E-mail ou mot de passe incorrect. » shows under the form and « Se connecter » has not moved.", "until": { "390": "text:sign-in-error~E-mail ou mot de passe incorrect. & text:sign-in-submit~Se connecter & height:sign-in-submit>=48 & eval:window.__ux.moved('sign-in-submit') === 0", "default": "text:sign-in-error~E-mail ou mot de passe incorrect. & text:sign-in-submit~Se connecter & eval:window.__ux.moved('sign-in-submit') === 0" } },
+   { "do": "focus", "target": "#sign-in-password", "say": "Go back to the password", "until": "focus:#sign-in-password" },
+   { "do": "press", "key": "Control+A", "say": "Select it" },
+   { "do": "type", "text": "harbor-garage-1", "say": "Type the right password", "until": "value:#sign-in-password~harbor-garage-1" },
+   { "do": "tap", "target": "sign-in-submit", "say": "Tap « Se connecter »", "timeout": 3000, "expect": "The person is signed in and the page is gone.", "until": "visible:signed-in & gone:sign-in-submit" }
+  ] },
+  { "id": "F02", "name": "Buttons are 48 px (French)", "only": "390", "steps": [
+   { "do": "wait", "ms": 100, "say": "Read the sign-in buttons", "expect": "« Se connecter » and « Continuer avec Google » are at least 48 px high.", "until": "text:sign-in-submit~Se connecter & text:sign-in-google~Continuer avec Google & height:sign-in-submit>=48 & height:sign-in-google>=48" },
+   { "do": "tap", "target": "sign-in-switch", "say": "Tap « Invité ? Créez votre compte »", "reflow": true, "until": "visible:#sign-in-name" },
+   { "do": "wait", "ms": 100, "say": "Read the account buttons", "expect": "« Créer mon compte » and « Continuer avec Google » are at least 48 px high.", "until": "text:sign-in-submit~Créer mon compte & text:sign-in-google~Continuer avec Google & height:sign-in-submit>=48 & height:sign-in-google>=48" }
+  ] },
+  { "id": "F03", "name": "Buttons are 48 px (English)", "only": "390", "query": "lang=en", "steps": [
+   { "do": "wait", "ms": 100, "say": "Read the sign-in buttons", "expect": "« Sign in » and « Continue with Google » are at least 48 px high.", "until": "text:sign-in-submit~Sign in & text:sign-in-google~Continue with Google & height:sign-in-submit>=48 & height:sign-in-google>=48" },
+   { "do": "tap", "target": "sign-in-switch", "say": "Tap « Invited? Create your account »", "reflow": true, "until": "visible:#sign-in-name & text:sign-in-switch~Already have an account?" },
+   { "do": "wait", "ms": 100, "say": "Read the account buttons", "expect": "« Create my account » and « Continue with Google » are at least 48 px high.", "until": "text:sign-in-submit~Create my account & text:sign-in-google~Continue with Google & height:sign-in-submit>=48 & height:sign-in-google>=48" }
+  ] },
+  { "id": "F04", "name": "Switch links, light theme", "steps": [
+   { "do": "wait", "ms": 100, "say": "Read « Invité ? Créez votre compte »", "expect": "The link is in the text colour, underlined, readable on the paper.", "until": "eval:getComputedStyle(document.body).backgroundColor === 'rgb(246, 246, 243)' & text:sign-in-switch~Invité ? Créez votre compte & contrast:sign-in-switch>=4.5 & eval:getComputedStyle(document.querySelector('[data-testid=sign-in-switch]')).textDecorationLine === 'underline' & eval:getComputedStyle(document.querySelector('[data-testid=sign-in-switch]')).color === getComputedStyle(document.querySelector('main h1')).color" },
+   { "do": "tap", "target": "sign-in-switch", "say": "Tap it", "reflow": true, "until": "visible:#sign-in-name" },
+   { "do": "wait", "ms": 100, "say": "Read « Déjà un compte ? Connectez-vous »", "expect": "The other link is drawn the same way.", "until": "text:sign-in-switch~Déjà un compte ? Connectez-vous & contrast:sign-in-switch>=4.5 & eval:getComputedStyle(document.querySelector('[data-testid=sign-in-switch]')).textDecorationLine === 'underline' & eval:getComputedStyle(document.querySelector('[data-testid=sign-in-switch]')).color === getComputedStyle(document.querySelector('main h1')).color" }
+  ] },
+  { "id": "F05", "name": "Switch links, dark theme", "query": "dark=1", "steps": [
+   { "do": "wait", "ms": 100, "say": "Read « Invité ? Créez votre compte »", "expect": "The link is in the text colour, underlined, readable on the dark page.", "until": "eval:getComputedStyle(document.body).backgroundColor === 'rgb(18, 18, 20)' & text:sign-in-switch~Invité ? Créez votre compte & contrast:sign-in-switch>=4.5 & eval:getComputedStyle(document.querySelector('[data-testid=sign-in-switch]')).textDecorationLine === 'underline' & eval:getComputedStyle(document.querySelector('[data-testid=sign-in-switch]')).color === getComputedStyle(document.querySelector('main h1')).color" },
+   { "do": "tap", "target": "sign-in-switch", "say": "Tap it", "reflow": true, "until": "visible:#sign-in-name" },
+   { "do": "wait", "ms": 100, "say": "Read « Déjà un compte ? Connectez-vous »", "expect": "The other link is drawn the same way.", "until": "text:sign-in-switch~Déjà un compte ? Connectez-vous & contrast:sign-in-switch>=4.5 & eval:getComputedStyle(document.querySelector('[data-testid=sign-in-switch]')).textDecorationLine === 'underline' & eval:getComputedStyle(document.querySelector('[data-testid=sign-in-switch]')).color === getComputedStyle(document.querySelector('main h1')).color" }
+  ] },
+  { "id": "F06", "name": "First-owner link already used", "query": "first-owner=used", "steps": [
+   { "do": "wait", "ms": 200, "say": "Open the link", "expect": "« Ce lien a déjà servi ou n’est plus valable. » shows above the ordinary « Connexion » form, with « Invité ? Créez votre compte »; no « Vous installez ».", "until": "text:sign-in-link-refused~Ce lien a déjà servi ou n’est plus valable. & text:main h1~Connexion & text:sign-in-switch~Invité ? Créez votre compte & gone:#sign-in-name & eval:!document.getElementById('root').textContent.includes('Vous installez') & eval:document.querySelector('[data-testid=sign-in-link-refused]').getBoundingClientRect().bottom <= document.querySelector('main h1').getBoundingClientRect().top & eval:window.__ux.leaks() === 0" }
+  ] },
+  { "id": "F07", "name": "First-owner link unknown", "query": "first-owner=unknown", "steps": [
+   { "do": "wait", "ms": 200, "say": "Open the link", "expect": "The same refusal as a used link, above the ordinary form.", "until": "text:sign-in-link-refused~Ce lien a déjà servi ou n’est plus valable. & text:main h1~Connexion & text:sign-in-switch~Invité ? Créez votre compte & gone:#sign-in-name & eval:!document.getElementById('root').textContent.includes('Vous installez') & eval:document.querySelector('[data-testid=sign-in-link-refused]').getBoundingClientRect().bottom <= document.querySelector('main h1').getBoundingClientRect().top & eval:window.__ux.leaks() === 0" }
+  ] },
+  { "id": "F08", "name": "First-owner link already used (English)", "query": "lang=en&first-owner=used", "steps": [
+   { "do": "wait", "ms": 200, "say": "Open the link", "expect": "« This link has already been used or is no longer valid. » shows above the ordinary « Sign in » form, with « Invited? Create your account ».", "until": "text:sign-in-link-refused~This link has already been used or is no longer valid. & text:main h1~Sign in & text:sign-in-switch~Invited? Create your account & gone:#sign-in-name & eval:!document.getElementById('root').textContent.includes('You are setting up') & eval:window.__ux.leaks() === 0" }
+  ] },
+  { "id": "F09", "name": "Used link, the Worker answers 2 s late", "query": "first-owner=late-used", "steps": [
+   { "do": "wait", "ms": 600, "say": "Wait for the Worker", "motion": true, "expect": "A neutral wait shows: no form, no « Vous installez », no refusal yet.", "until": "visible:sign-in-first-owner-wait & gone:sign-in-submit & gone:sign-in-switch & gone:sign-in-link-refused & gone:#sign-in-name & eval:window.__ux.answered() === false & eval:window.__ux.leaks() === 0" },
+   { "do": "wait", "ms": 100, "say": "The Worker answers", "motion": true, "timeout": 4500, "expect": "The refusal shows above the ordinary form; the owner's sign-up never showed.", "until": "text:sign-in-link-refused~Ce lien a déjà servi ou n’est plus valable. & text:main h1~Connexion & visible:sign-in-switch & gone:#sign-in-name & eval:window.__ux.waited() & eval:window.__ux.leaks() === 0" }
+  ] },
+  { "id": "F10", "name": "Good link, the Worker answers 2 s late", "query": "first-owner=late-valid", "steps": [
+   { "do": "wait", "ms": 600, "say": "Wait for the Worker", "motion": true, "expect": "A neutral wait shows: no form, no « Vous installez » yet.", "until": "visible:sign-in-first-owner-wait & gone:sign-in-submit & gone:sign-in-switch & gone:sign-in-link-refused & gone:#sign-in-name & eval:window.__ux.answered() === false & eval:window.__ux.leaks() === 0" },
+   { "do": "wait", "ms": 100, "say": "The Worker answers", "motion": true, "timeout": 4500, "expect": "« Vous installez … » and the owner's sign-up show, with no switch link and no refusal.", "until": "visible:#sign-in-name & text:main > div~Vous installez Harbor Garage & gone:sign-in-switch & gone:sign-in-link-refused & gone:sign-in-google & eval:window.__ux.waited() & eval:window.__ux.leaks() === 0" }
+  ] },
+  { "id": "F11", "name": "Good link", "query": "first-owner=valid", "steps": [
+   { "do": "wait", "ms": 200, "say": "Open the link", "expect": "« Vous installez Harbor Garage (fictional) : le compte que vous créez maintenant en est le propriétaire. » and the owner's sign-up.", "until": "visible:#sign-in-name & text:main > div~Vous installez Harbor Garage (fictional) : le compte que vous créez maintenant en est le propriétaire. & text:sign-in-submit~Créer mon compte & gone:sign-in-switch & gone:sign-in-link-refused & eval:window.__ux.leaks() === 0" }
+  ] }
+ ]
+}

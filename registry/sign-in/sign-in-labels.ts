@@ -8,6 +8,7 @@ export interface SignInLabels {
   readonly signInLead: (app: string) => string;
   readonly signUpLead: (app: string) => string;
   readonly firstOwnerLead: (app: string) => string;
+  readonly linkRefused: string;
   readonly name: string;
   readonly email: string;
   readonly password: string;
@@ -45,6 +46,7 @@ export const signInLabels: Record<Lang, SignInLabels> = {
     signInTitle: 'Sign in', signUpTitle: 'Create your account',
     signInLead: app => `Sign in to ${app}.`, signUpLead: app => `${app} is by invitation: use the address you were invited with.`,
     firstOwnerLead: app => `You are setting up ${app}: the account you create now is its owner.`,
+    linkRefused: 'This link has already been used or is no longer valid.',
     name: 'Name', email: 'E-mail', password: 'Password', signIn: 'Sign in', signUp: 'Create my account', working: 'One moment…',
     toSignUp: 'Invited? Create your account', toSignIn: 'Already have an account? Sign in', google: 'Continue with Google', or: 'or',
     failed: 'That did not work. Try again.', studioRefused: 'Studio could not confirm you own this app.',
@@ -58,6 +60,7 @@ export const signInLabels: Record<Lang, SignInLabels> = {
     signInTitle: 'Connexion', signUpTitle: 'Créer votre compte',
     signInLead: app => `Connectez-vous à ${app}.`, signUpLead: app => `${app} est sur invitation : utilisez l’adresse avec laquelle vous avez été invité.`,
     firstOwnerLead: app => `Vous installez ${app} : le compte que vous créez maintenant en est le propriétaire.`,
+    linkRefused: 'Ce lien a déjà servi ou n’est plus valable.',
     name: 'Nom', email: 'E-mail', password: 'Mot de passe', signIn: 'Se connecter', signUp: 'Créer mon compte', working: 'Un instant…',
     toSignUp: 'Invité ? Créez votre compte', toSignIn: 'Déjà un compte ? Connectez-vous', google: 'Continuer avec Google', or: 'ou',
     failed: 'Ça n’a pas marché. Réessayez.', studioRefused: 'Studio n’a pas pu confirmer que vous êtes propriétaire de cette app.',

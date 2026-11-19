@@ -1,0 +1,50 @@
+{
+ "target": "component:people",
+ "title": "People list",
+ "summary": "The owner's invitation list: an e-mail field, a role picker, « Inviter », and one row per person with « Retirer ».",
+ "purpose": "The registry block's PeopleList mounted the way an app mounts it: in the kit's Sheet (bottom sheet on a phone, right sheet on a computer), no class on its wrapper but padding, with the role picker shown, over a fake Worker. At 390 px a 40-character address is cut with an ellipsis inside its row and never pushes « Retirer » or « Inviter » out of the screen; nobody invited and a refusal (« Seuls les propriétaires de l’app peuvent faire cela. ») read well too.",
+ "fixture": {
+  "entry": "ux/fixtures/component-people.jsx",
+  "query": "",
+  "ready": "[data-testid=people-invite]",
+  "install": "npx shadcn@4.23.0 add sign-in sheet",
+  "usage": "<Sheet open><SheetContent side=\"bottom\"><div className=\"p-4 pt-6\"><PeopleList locale=\"fr\" canInviteOwners /></div></SheetContent></Sheet>"
+ },
+ "viewports": [
+  { "name": "390", "width": 390, "height": 844, "touch": true },
+  { "name": "1440", "width": 1440, "height": 900 }
+ ],
+ "watch": [["invite", "[data-testid=people-invite]"], ["sheet", "[data-slot=sheet-content]"]],
+ "thresholds": { "cls": 0.08, "settledMs": 1200, "touchTarget": 44, "offscreen": 0 },
+ "notes": "« Inviter » is a kit button outside the sign-in block's own 48 px floor: it keeps the kit's 44 px on a phone. The e-mail field, the role picker, « Inviter » and every row's « Retirer » stay inside the screen, and neither the page nor the sheet scrolls sideways, with a 40-character address in the list. The address is the one that gives way (an ellipsis, its full text in the row's title).",
+ "states": [
+  { "id": "01", "name": "list", "steps": [] },
+  { "id": "02", "name": "dark", "query": "dark=1", "steps": [] },
+  { "id": "03", "name": "empty", "query": "people=empty", "steps": [] },
+  { "id": "04", "name": "refused", "query": "people=error", "steps": [
+   { "do": "type", "target": "people-email", "text": "noe@example.test" },
+   { "do": "tap", "target": "people-invite", "until": "visible:people-error" }] }
+ ],
+ "flows": [
+  { "id": "F01", "name": "Open the list with a long address", "steps": [
+   { "do": "wait", "ms": 100, "say": "Open the people list", "expect": "The e-mail field, the role picker and « Inviter » are on screen, and each of the three rows shows « Retirer » in view; the long address is cut with an ellipsis.", "until": { "390": "count:people-row>=3 & inside:people-email & inside:people-role & inside:people-invite & inside:people-remove & height:people-invite>=44 & height:people-remove>=44 & fit:[data-slot=sheet-content] & fit:[data-slot=sheet-content] ul & eval:[...document.querySelectorAll('[data-testid=people-row] span')].some(s => s.textContent.startsWith('beatrice.delacroix-harborfr@') && s.scrollWidth > s.clientWidth)", "default": "count:people-row>=3 & inside:people-email & inside:people-role & inside:people-invite & inside:people-remove & fit:[data-slot=sheet-content]" } }
+  ] },
+  { "id": "F02", "name": "Invite someone", "steps": [
+   { "do": "type", "target": "people-email", "text": "marta@example.test", "say": "Type an address", "until": "value:people-email~marta@example.test" },
+   { "do": "tap", "target": "people-invite", "say": "Tap « Inviter »", "expect": "The person joins the list and the field empties.", "until": "count:people-row>=4 & eval:document.querySelector('[data-testid=people-email]').value === '' & text:[data-testid=people-row]:last-child~marta" }
+  ] },
+  { "id": "F03", "name": "Remove someone", "steps": [
+   { "do": "tap", "target": "people-remove", "say": "Tap « Retirer » on the first row", "expect": "The first person leaves the list.", "until": "count:people-row>=2 & eval:document.querySelectorAll('[data-testid=people-row]').length === 2" }
+  ] },
+  { "id": "F04", "name": "Nobody invited", "query": "people=empty", "steps": [
+   { "do": "wait", "ms": 100, "say": "Open the empty list", "expect": "« Personne n’est encore invité. » shows and « Inviter » is in view.", "until": "text:people-empty~Personne n’est encore invité. & inside:people-invite & inside:people-email & fit:[data-slot=sheet-content]" }
+  ] },
+  { "id": "F05", "name": "Inviting is refused", "query": "people=error", "steps": [
+   { "do": "type", "target": "people-email", "text": "noe@example.test", "say": "Type an address", "until": "value:people-email~noe@example.test" },
+   { "do": "tap", "target": "people-invite", "say": "Tap « Inviter »", "expect": "« Seuls les propriétaires de l’app peuvent faire cela. » shows under the form; « Inviter » and every « Retirer » stay in view.", "until": { "390": "text:people-error~Seuls les propriétaires de l’app peuvent faire cela. & inside:people-invite & inside:people-remove & height:people-invite>=44 & fit:[data-slot=sheet-content]", "default": "text:people-error~Seuls les propriétaires de l’app peuvent faire cela. & inside:people-invite & inside:people-remove" } }
+  ] },
+  { "id": "F06", "name": "The list is refused", "query": "people=denied", "steps": [
+   { "do": "wait", "ms": 100, "say": "Open the list", "expect": "The same sentence shows under the form, then the empty list.", "until": "text:people-error~Seuls les propriétaires de l’app peuvent faire cela. & inside:people-invite & fit:[data-slot=sheet-content]" }
+  ] }
+ ]
+}

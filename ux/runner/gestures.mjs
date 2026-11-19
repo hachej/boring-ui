@@ -8,6 +8,7 @@
 //   back                           the browser's Back (a phone's back gesture)     reload               reload the page (what the page keeps across it)
 // A target is a test id (`composer-input`) or a CSS selector; where a gesture differs by viewport, give a map: { "390": "...", "1440": "..." }.
 // `until` is a list joined with " & ": visible:<t>  gone:<t>  focus:<t>  value:<t>~text  text:<t>~text  count:<t>>=N  eval:<js>; "a|b" inside visible/gone means either.
+// Reads of the page, each true for every visible match of <t>: height:<t>>=PX (box height)  contrast:<t>>=RATIO (text colour on its background)  inside:<t> (box within the viewport)  fit:<t> (no sideways scroll inside it).
 const css = t => /^[\w-]+$/.test(t) ? `[data-testid=${t}]` : t.replace(/^([\w-]+)(\[.*)$/, '[data-testid=$1]$2');
 export const pick = (value, viewport) => value && typeof value === 'object' && !Array.isArray(value) ? value[viewport] ?? value.default : value;
 export const FILES = { 'invoice-delmore-0112.pdf': 'application/pdf', 'statement-february.pdf': 'application/pdf', 'discrepancies-january.csv': 'text/csv' };
@@ -25,11 +26,29 @@ export function condition(text, viewport) {
       return `((e => ${read})(document.querySelector(${JSON.stringify(css(t))})) ?? '').includes(${JSON.stringify(needle)})`; }
     if (kind === 'count') { const [t, n] = rest.split('>='); return `document.querySelectorAll(${JSON.stringify(css(t))}).length >= ${Number(n)}`; }
     if (kind === 'eval') return `(${rest})`;
+    // Reads of the page's boxes and colours: every visible match must hold, and at least one must exist.
+    if (kind === 'height' || kind === 'contrast') { const [t, n] = rest.split('>='); return `((list, floor) => list.length > 0 && list.every(e => ${kind === 'height' ? 'e.getBoundingClientRect().height' : `(${CONTRAST})(e)`} >= floor))(${matches(css(t))}, ${Number(n)})`; }
+    if (kind === 'inside') return `((list) => list.length > 0 && list.every(e => { const b = e.getBoundingClientRect(); return b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight; }))(${matches(css(rest))})`;
+    if (kind === 'fit') return `((list) => list.length > 0 && list.every(e => e.scrollWidth <= e.clientWidth))(${matches(css(rest))})`;
     throw new Error(`unknown condition: ${part}`);
   });
   return parts.join(' && ');
 }
+const matches = selector => `[...document.querySelectorAll(${JSON.stringify(selector)})].filter(e => e.getClientRects().length > 0)`;
 const shown = selector => `[...document.querySelectorAll(${JSON.stringify(selector)})].some(e => e.getClientRects().length > 0)`;
+// WCAG contrast ratio of an element's text colour on what is behind it: the first opaque background up its ancestors, composited over white.
+// A 1 px canvas turns any CSS colour (rgb, oklch, color-mix) into sRGB bytes.
+const CONTRAST = `e => {
+  const paint = c => { const k = document.createElement('canvas').getContext('2d', { willReadFrequently: true }); k.clearRect(0, 0, 1, 1); k.fillStyle = c; k.fillRect(0, 0, 1, 1); const [r, g, b, a] = k.getImageData(0, 0, 1, 1).data; return [r, g, b, a / 255]; };
+  const over = (top, under) => top.slice(0, 3).map((v, i) => v * top[3] + under[i] * (1 - top[3]));
+  let back = [255, 255, 255];
+  const layers = []; for (let n = e; n; n = n.parentElement) { const c = paint(getComputedStyle(n).backgroundColor); if (c[3] > 0) layers.push(c); if (c[3] === 1) break; }
+  for (const layer of layers.reverse()) back = over(layer, back);
+  const text = over(paint(getComputedStyle(e).color), back);
+  const light = rgb => { const [r, g, b] = rgb.map(v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const [hi, lo] = [light(text), light(back)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}`;
 
 // Prepares one gesture (finds and measures its target) and returns the function that performs it, so the harness times the gesture itself,
 // not the waiting for the target to exist. `h` carries the page, the viewport and what the last gesture touched (for target-size metrics).

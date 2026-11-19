@@ -75,6 +75,36 @@ test('by invitation only, and the first owner proves the one-use link: a strange
   assert.equal((await me(ben, APP)).status, 401);
 });
 
+test('the sign-in page can ask whether the first-owner link is good: any number of times, one answer for a used and an unknown link, and the first sign-up is still the owner', async () => {
+  const w = world(); const first = link(); w.makeApp({ firstOwnerHash: first.hash });
+  const visitor = browser(w.route);
+  const check = (token) => visitor.json(`${APP}/api/signin/first-owner`, { headers: token === undefined ? {} : { 'x-boring-first-owner': token } });
+
+  for (let opened = 0; opened < 3; opened++) assert.deepEqual((await check(first.token)).body, { valid: true }, 'looking never uses the link up');
+  const unknown = await check('guessed');
+  assert.equal(unknown.status, 200);
+  assert.deepEqual(unknown.body, { valid: false });
+  assert.deepEqual((await check()).body, { valid: false }, 'no token is no link');
+  assert.equal((await visitor.json(`${APP}/api/signin/first-owner`, { method: 'POST' })).status, 405);
+
+  const ada = browser(w.route);
+  assert.equal((await signUp(ada, APP, 'ada@app.test', { 'x-boring-first-owner': first.token })).status, 200);
+  assert.equal((await me(ada, APP)).body.person.role, 'owner', 'the first sign-up with the link, after any number of looks, is the owner');
+
+  const used = await check(first.token);
+  assert.deepEqual([used.status, used.body], [unknown.status, unknown.body], 'a used link answers as an unknown one does');
+  for (const token of [first.token, 'guessed']) {
+    const eve = browser(w.route);
+    const refused = await signUp(eve, APP, 'eve@stranger.test', { 'x-boring-first-owner': token });
+    assert.equal(refused.status, 403);
+    assert.equal(refused.body.code, 'NOT_INVITED', 'a used or an unknown link is an uninvited sign-up');
+    assert.equal((await me(eve, APP)).status, 401);
+  }
+
+  const bare = world(); bare.makeApp({});
+  assert.deepEqual((await browser(bare.route).json(`${APP}/api/signin/first-owner`, { headers: { 'x-boring-first-owner': first.token } })).body, { valid: false }, 'an app with no link');
+});
+
 /** The authorization-code dance with PKCE, as an assistant does it, in a browser signed in to the server. */
 async function authorize(b, server, { clientId, redirectUri, scope, resource }) {
   const verifier = randomBytes(32).toString('base64url');
