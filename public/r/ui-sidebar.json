@@ -9,15 +9,15 @@
     "react@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.12/r/_shared.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.12/r/ui-button.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.12/r/ui-input.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.12/r/ui-separator.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.12/r/ui-sheet.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.12/r/ui-skeleton.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.12/r/ui-tooltip.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.12/r/ui-use-mobile.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.12/r/utils.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.13/r/_shared.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.13/r/ui-button.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.13/r/ui-input.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.13/r/ui-separator.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.13/r/ui-sheet.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.13/r/ui-skeleton.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.13/r/ui-tooltip.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.13/r/ui-use-mobile.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.13/r/utils.json"
   ],
   "files": [
     {

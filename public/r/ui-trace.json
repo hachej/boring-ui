@@ -7,9 +7,9 @@
     "react@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.12/r/_shared.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.12/r/ui-collapsible.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.12/r/utils.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.13/r/_shared.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.13/r/ui-collapsible.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.13/r/utils.json"
   ],
   "files": [
     {

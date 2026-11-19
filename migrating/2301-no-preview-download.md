@@ -1,1 +1,0 @@
-- **`LocalFileViewer`: a Download button when there is no preview (additive).** A file the viewer cannot show now offers « Download » in the pane (`<testId>-no-preview-download`), the same download as the « ⋯ » menu item. Nothing to change.
