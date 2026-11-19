@@ -20,8 +20,8 @@ async function harness(t, view = { conversation: { id: 1 }, entries: [], docs: {
   const out = new URL('../../.cache/ambient-position-test/', import.meta.url);
   mkdirSync(out, { recursive: true });
   const output = new URL('ambient.mjs', out);
-  await build({ entryPoints: [new URL('../../registry/pi-ambient/ambient.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
-  const { AmbientChat } = await import(output.href);
+  await build({ entryPoints: [new URL('../../registry/pi-ambient/ambient-window.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
+  const { AmbientWindow: AmbientChat } = await import(output.href);
   const { createNativeChatController } = await import('@hachej/boring-ui-kit/native-chat');
   const element = window.document.createElement('div');
   window.document.body.append(element);

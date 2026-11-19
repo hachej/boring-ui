@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import { Harness, MemoryStorage, createRegistry } from '@earendil-works/pi-durable';
 import { createModels } from '@earendil-works/pi-ai/models';
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
@@ -49,6 +50,44 @@ test('without redact no value is recorded; a redact that throws drops the values
   await run(createAuditExtension({ sink: record => { thrown.push(record); }, user: 'p', redact: () => { throw new Error('fictional'); } }));
   assert.equal(thrown[0].redactionFailed, true);
   assert.doesNotMatch(JSON.stringify(thrown), /fictional-secret/);
+});
+
+const hex = /^[0-9a-f]{64}$/;
+
+test('every record has durationMs >= 0 and a stable argumentsSha256 that differs for different arguments, with or without redact, even when redact throws', async () => {
+  const first = [], second = [], bare = [], thrown = [];
+  await run(createAuditExtension({ sink: record => { first.push(record); }, user: 'p', redact: value => value }));
+  await run(createAuditExtension({ sink: record => { second.push(record); }, user: 'p' }));
+  await run(createAuditExtension({ sink: record => { bare.push(record); }, user: 'p' }));
+  await run(createAuditExtension({ sink: record => { thrown.push(record); }, user: 'p', redact: () => { throw new Error('fictional'); } }));
+  for (const record of [...first, ...second, ...thrown]) { assert.match(record.argumentsSha256, hex); assert.ok(record.durationMs >= 0 && Number.isFinite(record.durationMs)); }
+  assert.equal(first[0].argumentsSha256, second[0].argumentsSha256, 'same arguments, same digest, with or without redact');
+  assert.equal(first[0].argumentsSha256, thrown[0].argumentsSha256, 'present when redact throws');
+  assert.notEqual(first[0].argumentsSha256, first[1].argumentsSha256);
+  assert.equal(thrown[0].redactionFailed, true);
+  assert.equal(first[0].argumentsSha256, createHash('sha256').update('{"secret":"fictional-secret"}').digest('hex'));
+  assert.doesNotMatch(JSON.stringify(bare), /fictional-secret/, 'without redact no raw value, only the digest');
+});
+
+test('resourceId comes from the resource option; a throwing or non-string resource drops it and never fails the tool or the record', async () => {
+  const named = [], thrown = [];
+  await run(createAuditExtension({ sink: record => { named.push(record); }, user: 'p', resource: call => call.name === 'save_meal' ? `meals/${call.arguments.secret.length}` : undefined }));
+  assert.equal(named[0].resourceId, 'meals/16');
+  assert.ok(!('resourceId' in named[1]));
+  const { conversation } = await run(createAuditExtension({ sink: record => { thrown.push(record); }, user: 'p', resource: () => { throw new Error('fictional'); } }));
+  assert.equal(thrown.length, 2);
+  assert.ok(!('resourceId' in thrown[0]));
+  const entries = (await conversation.entries({}, 50, undefined, context)).items;
+  assert.ok(entries.some(entry => entry.model?.some(message => message.role === 'toolResult' && message.toolName === 'save_meal' && !message.isError)));
+});
+
+test('reason carries the redacted error text only for a failed call and only with redact', async () => {
+  const kept = [], bare = [];
+  await run(createAuditExtension({ sink: record => { kept.push(record); }, user: 'p', redact: value => typeof value === 'string' ? value.toUpperCase() : value }));
+  assert.ok(!('reason' in kept[0]), 'a success has no reason');
+  assert.equal(kept[1].reason, 'NO');
+  await run(createAuditExtension({ sink: record => { bare.push(record); }, user: 'p' }));
+  assert.ok(!('reason' in bare[1]), 'without redact the error text stays out');
 });
 
 test('a failing sink never fails the tool', async t => {

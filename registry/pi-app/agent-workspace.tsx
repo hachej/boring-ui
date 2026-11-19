@@ -70,9 +70,8 @@ export type { WorkspaceBarPanel, WorkspaceBarProps } from './workspace-bar';
 export { ConversationList, ConversationHistory } from '../pi-chat/history';
 export { FileTree } from '../file-tree/file-tree';
 export type { SessionsView, WorkspaceAgent, WorkspaceAgents } from './sessions';
-export { useConversations } from '../pi-chat/use-conversations';
-export { useRemoteChat } from '../pi-chat/use-remote-chat';
-export type { RemoteChatState } from '../pi-chat/use-remote-chat';
+export { useConversations, useRemoteChat } from '@hachej/boring-ui-kit/chat-react';
+export type { RemoteChatState } from '@hachej/boring-ui-kit/chat-react';
 export { savedLabel, useSaved } from './use-saved';
 export { viewerKindOf as kindOf, mediaTypeOf } from '@hachej/boring-files/file-types';
 export { defaultAppIcons, defaultAppLabels } from './app-labels';
@@ -162,6 +161,13 @@ interface AgentWorkspaceBaseProps {
    * whole pane on a single-session page without `conversations`; files open in the right panel as usual.
    */
   readonly libraryPlacement?: 'panel' | 'side' | 'center' | 'pane' | undefined;
+  /**
+   * Called with the new value each time the Library's open state changes, wherever it shows (the artifact column or its phone drawer, the
+   * `side` column or its phone sheet, the `center` view, the `pane` tab with its pane shown, the embedded bar's Library panel): the Library
+   * button, a file chosen from it, the close buttons, the upload notice's "Open Library" or a prop change (for example `libraryPlacement`).
+   * Once per change, never on mount and never when nothing changed. Observing only: the Library has no controlled prop.
+   */
+  readonly onLibraryOpenChange?: ((open: boolean) => void) | undefined;
   /** The page's language: `en` (default) or `fr`, for the chat, the panes, the viewers and the Library. `labels` and `chat.labels` override any word. */
   readonly locale?: ChatLocale | undefined;
   /**
@@ -283,7 +289,7 @@ const defaultLocate = (path: string): ResourceLocator => ({ resource: { provider
  * its versions, the file viewer and the host's own views). Agent artifacts open the panel as they appear. Every prop is data or a callback:
  * the host owns the routes, authentication, the controller and what is open (when controlled).
  */
-export function AgentWorkspace({ layout = 'default', barPanels, barOptions, panelWidth, title, controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, viewers, interactive, share, opened: controlled,
+export function AgentWorkspace({ layout = 'default', barPanels, barOptions, panelWidth, title, controller, conversationId, chat = {}, labels, icons, panelActions, connecting, conversations, sessions, history: historyPlacement = 'column', resources, revisionProvider, libraryPlacement = 'panel', onLibraryOpenChange, locale, fileTree: treeOptions, uploads, agents, detect, artifactKinds, viewers, interactive, share, opened: controlled,
   defaultOpened = null, onOpenedChange, onUnsavedChange, panels, autoOpen = true, fileBack, floatingChat, chatTop, controls, storageKey = 'boring.agent-workspace', sheetBelow = PHONE_BELOW, drawerBelow = PHONE_BELOW, floatBelow, className }: AgentWorkspaceProps) {
   const [own, setOwn] = useState<OpenedView | null>(defaultOpened);
   const [panelLibrary, setPanelLibrary] = useState(false);
@@ -573,6 +579,17 @@ export function AgentWorkspace({ layout = 'default', barPanels, barOptions, pane
   const hasNavigation = !embedded && sessions !== false && Boolean(paneConversations || placed);
   const stepAside = Boolean(paneConversations) && hasNavigation && !narrow && panelOpen && !historyColumnFits(width, VIEWER_MIN);
   const docked = hasNavigation && width > 0 && !narrow && paneOpen && !stepAside;
+  // Whether the Library is showing, in whichever placement; the one source for `onLibraryOpenChange`. Embedded, the bar reports its own panel.
+  const libraryShown = !embedded && (libraryPlacement === 'panel' ? panelLibrary : librarySide ? sideOpen : libraryPlacement === 'center' ? libraryOpen
+    : libraryInPane && hasNavigation && paneView === 'library' && (narrow ? drawer : paneOpen && !stepAside));
+  const libraryReported = useRef(libraryShown);
+  const libraryChange = useRef(onLibraryOpenChange);
+  useEffect(() => { libraryChange.current = onLibraryOpenChange; });
+  useEffect(() => {
+    if (libraryReported.current === libraryShown) return;
+    libraryReported.current = libraryShown;
+    libraryChange.current?.(libraryShown);
+  }, [libraryShown]);
   const artifactSheetBelow = Math.max(CHAT_MIN + VIEWER_MIN, docked ? sheetBelow - SESSIONS_WIDTH : sheetBelow);
   const popoverHistory = historyPlacement === 'popover' || stepAside;
   const toggle = hasNavigation && !docked && !drawer && !stepAside && <SessionsToggle navigation={placed} open={narrow ? drawer : paneOpen} drawer={narrow} controls={narrow ? undefined : paneId}
@@ -604,7 +621,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, barOptions, pane
     // Embedded: the bar above replaces the chat's header (History, New and the host's controls are in it); conversations stay for Fork.
     ...(embedded ? { header: false, historyList: false, showHistory: false } : {}) });
   const bar = embedded && <WorkspaceBar title={title ?? conversationTitle ?? chatText.labels.title} {...(title && conversationTitle ? { subtitle: conversationTitle } : {})} conversations={conversations} narrow={narrow}
-    library={libraryController ? onPicked => libraryTree(path => { openFile(path); onPicked(); }, onPicked) : undefined} panels={barPanels} {...barOptions}
+    library={libraryController ? onPicked => libraryTree(path => { openFile(path); onPicked(); }, onPicked) : undefined} panels={barPanels} onLibraryOpenChange={onLibraryOpenChange} {...barOptions}
     controls={<><BlockActions actions={chat.headerActions} testId="chat-action" menuLabel={chatText.labels.moreActions} />{hostControls}</>} />;
   const docked_chat = <div data-testid="workspace-center" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     {attachmentFailure?.tree === fileTree && attachmentFailure?.reasons.map((reason, index) => <p key={index} role="alert" className="m-0 px-4 py-2 text-sm">{reason}</p>)}

@@ -7,8 +7,10 @@ import type { ReactNode } from 'react';
 /** A type alias, so the value is assignable to the transport's `Record<string, unknown>`. */
 export type AgentScreenContext = { readonly name: string; readonly params: Readonly<Record<string, unknown>> };
 
+/** `composer="explore"`: what the person is looking at, as the app wrote it. */
+export type AgentLooking = { readonly title: string; readonly detail?: string | undefined };
 interface Entry { value: AgentScreenContext }
-interface Store { readonly entries: Entry[] }
+interface Store { readonly entries: Entry[]; readonly looking: AgentLooking[] }
 
 const StoreContext = createContext<Store | null>(null);
 /**
@@ -23,7 +25,7 @@ let current: Store | null = null;
 
 /** Holds the screens' contexts. `AgentLayerProvider` mounts one. */
 export function AgentContextProvider({ children }: { readonly children: ReactNode }) {
-  const [store] = useState<Store>(() => ({ entries: [] }));
+  const [store] = useState<Store>(() => ({ entries: [], looking: [] }));
   useLayoutEffect(() => {
     const mine = store;
     current = mine;
@@ -50,8 +52,23 @@ export function useAgentContext(value: AgentScreenContext): void {
   useEffect(() => { entry.current.value = latest.current; }, [key]);
 }
 
+/** What the explore panel shows as « You are looking at », while the calling component is mounted: it joins the screen context as `params.lookingAt`, whichever screen registered last. */
+export function useLookingAt(value: AgentLooking | undefined): void {
+  const store = useContext(StoreContext);
+  const title = value?.title, detail = value?.detail;
+  useEffect(() => {
+    if (!store || title === undefined) return;
+    const mine: AgentLooking = detail === undefined ? { title } : { title, detail };
+    store.looking.push(mine);
+    return () => { const at = store.looking.indexOf(mine); if (at >= 0) store.looking.splice(at, 1); };
+  }, [store, title, detail]);
+}
+
 /** The latest screen context, or undefined when no screen registered one. Pass it as `requestContext`. */
 export function readAgentContext(): AgentScreenContext | undefined {
   const entries = current?.entries;
-  return entries?.length ? entries[entries.length - 1]!.value : undefined;
+  const screen = entries?.length ? entries[entries.length - 1]!.value : undefined;
+  const looking = current?.looking.at(-1);
+  if (!looking) return screen;
+  return { name: screen?.name ?? looking.title, params: { ...screen?.params, lookingAt: looking } };
 }

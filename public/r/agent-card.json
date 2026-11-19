@@ -8,12 +8,12 @@
     "react-dom@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.9/r/agent-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.9/r/agent-bar.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.9/r/pi-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.9/r/pi-chat-approval.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.9/r/_shared.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.9/r/utils.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.11/r/agent-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.11/r/agent-bar.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.11/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.11/r/pi-chat-approval.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.11/r/_shared.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.11/r/utils.json"
   ],
   "files": [
     {

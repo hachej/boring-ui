@@ -6,7 +6,7 @@ import { MicIcon } from 'lucide-react';
 import { AmbientChat, createNotificationStore, watchConversation } from '../../registry/pi-ambient/ambient.tsx';
 import { createNativeChatController } from '@hachej/boring-ui-kit/native-chat';
 import { createRemoteChat } from '@hachej/boring-ui-kit/remote-chat';
-import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
+import { useRemoteChat } from '@hachej/boring-ui-kit/chat-react';
 import { createArtifactPanel } from './artifact-panel.jsx';
 import { PiChat as BarePiChat } from '../../registry/pi-chat/pi-chat.tsx';
 import { withChatPlugins } from '../../registry/pi-chat-plugins/chat-plugins.ts';
@@ -153,14 +153,17 @@ function App() {
   };
   const props = chat.status === 'ready' ? {
     state: windowState, onStateChange: setWindowState, controller: chat.controller, actions: chat.actions, labels: { title: 'Console assistant' }, variant: params.get('variant') === 'surface' ? 'surface' : 'contrast',
-    notifications: store, systemNotifications: true, autoDismissMs: Number(params.get('dismiss') ?? 8000),
+    notifications: store, ...(params.get('composer') === '1' ? {} : { systemNotifications: true, autoDismissMs: Number(params.get('dismiss') ?? 8000) }),
     conversations: { items: (items ?? []).map(item => ({ id: item.id, title: item.title ?? undefined, updatedAt: item.updatedAt ?? undefined })), activeId: conversationId, onSelect: select, onNew: () => { void newConversation(); } },
     ...composerConfig,
-    artifactPanel: renderPanel, artifactTarget: params.get('artifacts') === 'host' ? 'host' : 'window',
-    artifacts: { open: artifact => setNote(`Opening ${artifact.title} in the host viewer…`) },
     tools: <HostTools />,
-    onOpenFull: id => setNote(`Opening conversation ${id} in the full workspace…`),
-    onFeedback: () => {},
+    // `?composer=1`: only the props the one composer takes, so `AmbientChat` is the floating composer. Without it the artifact panel, thumbs, open-full and the bell keep the old window.
+    ...(params.get('composer') === '1' ? {} : {
+      artifactPanel: renderPanel, artifactTarget: params.get('artifacts') === 'host' ? 'host' : 'window',
+      artifacts: { open: artifact => setNote(`Opening ${artifact.title} in the host viewer…`) },
+      onOpenFull: id => setNote(`Opening conversation ${id} in the full workspace…`),
+      onFeedback: () => {},
+    }),
   } : undefined;
   if (params.get('view') === 'full') return props ? <div style={{ height: '100dvh', background: 'var(--background)' }} className="pi-chat"><PiChat controller={props.controller} actions={props.actions} labels={{ title: 'Console assistant' }}
     slash={props.slash} mentions={props.mentions} attachments={props.attachments} model={props.model} effort={props.effort} /></div> : null;

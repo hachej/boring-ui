@@ -275,6 +275,13 @@ export interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly dockOpen: boolean;
   /** `composer: 'bar'`: the one composer (D-2198). */
   readonly bar: boolean;
+  /** `composer: 'explore'`: closed by default, an « Ask » toggle at the bottom right, the panel on demand. */
+  readonly explore: boolean;
+  /** `composer: 'explore'` with the app's `context`: shown in the panel and sent with the turn; undefined when the app gives none. */
+  readonly lookingAt: ExploreContext | undefined;
+  /** The panel's width in px when the person dragged it (`undefined`: the default); stored per app and person. */
+  readonly exploreWidth: number | undefined;
+  readonly setExploreWidth: (width: number | undefined) => void;
   /** `composer: 'bar'` on a wide screen with the conversation folded: the reply card sits on the field. */
   readonly folded: boolean;
   /** Where the folded card is drawn, right above the field (set by `ContentColumn` or `AgentComposerAnchor`). */
@@ -316,9 +323,13 @@ export type AgentMode = 'tray' | 'dock';
  * `bar` (D-2198), the one composer: the same field under the page, drawn as one row (the conversation's chevron, attach, the field and one
  * action button, Dicter, Envoyer or Arrêter; `/` opens the actions), the conversation's work or reply as a card on the field while it is folded,
  * and docked, the field goes with the thread to the right column (nothing stays at the bottom). `useAgentLayer().pane` fills that column.
+ * `explore`: the same panel, closed on every visit: no bar, a small « Ask » toggle at the bottom right (the unread dot and the needs-you ring as the icon has them);
+ * open, a right panel that pushes the page from 1100 px, overlays it below that and is a bottom sheet on a phone.
  * Below the wide breakpoint nothing changes: the peek drawer.
  */
-export type AgentComposer = 'dock' | 'content' | 'bar';
+export type AgentComposer = 'dock' | 'content' | 'bar' | 'explore';
+/** `composer="explore"`: what the person is looking at, shown at the top of the panel and sent to the agent with each turn. */
+export interface ExploreContext { readonly title: string; readonly detail?: string | undefined }
 /** The dock's remembered state lives under this prefix (DockLayout's storageKey): `<key>.agent.floating`, `.width`, and the side. */
 export const DOCK_KEY = 'boring.app-shell';
 export const SIDE_KEY = `${DOCK_KEY}.agent.side`;
