@@ -20,6 +20,20 @@ test('declaredLibraries reads one grammar: comma-separated names in `<!-- lib: .
   assert.deepEqual(declaredLibraries('<!-- lib: -->'), []);
 });
 
+test('withOfflineLibraries adds a host library, keeps d3, and refuses a bad name, version or built-in override', async () => {
+  const { withOfflineLibraries, offlineLibraryHead } = await import('@hachej/boring-ui-kit/offline-libs');
+  const all = withOfflineLibraries({ chart: { version: '4.4.1', load: async () => ({ default: 'window.chart = 1;' }) } });
+  assert.deepEqual(Object.keys(all).sort(), ['chart', 'd3']);
+  assert.match((await offlineLibraryHead(['chart'], all)).head, /window\.chart = 1;/);
+  const unlisted = await offlineLibraryHead(['other'], all);
+  assert.match(unlisted.problems[0], /Unknown library "other"/);
+  assert.match(unlisted.problems[0], /Available: d3, chart/);
+  const load = async () => ({ default: '' });
+  assert.throws(() => withOfflineLibraries({ Chart: { version: '1.0.0', load } }), /lowercase/);
+  assert.throws(() => withOfflineLibraries({ chart: { version: 'latest', load } }), /pinned/);
+  assert.throws(() => withOfflineLibraries({ d3: { version: '1.0.0', load } }), /built in/);
+});
+
 test('the base bundle does not carry a library: its source sits in a chunk only a dynamic import reaches', async () => {
   const result = await build({ entryPoints: [resolve(root, 'packages/ui/dist/offline-libs.js')], bundle: true, splitting: true, write: false, outdir: out,
     format: 'esm', platform: 'browser', metafile: true, logLevel: 'silent' });
