@@ -7,7 +7,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, PointerEvent } from 'react';
 import { UnreadMark } from '../_shared/controller-strip';
-import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useMedia } from '../utils/use-media';
 import { cn } from '../utils/utils';
@@ -59,11 +58,11 @@ export function ExploreToggle() {
   const unread = signals.unread;
   const label = unread ? `${text.ask} (${unread.label}${unread.count && unread.count > 1 ? `, ${unread.count}` : ''})` : text.ask;
   const style: CSSProperties = { right: 'env(safe-area-inset-right, 0px)', bottom: expanded ? 'max(1rem, env(safe-area-inset-bottom))' : `calc(${tabbar}px + max(1rem, env(safe-area-inset-bottom)))` };
-  return <span hidden={open} style={style} data-testid="explore-place" className={cn('fixed z-(--app-shell-z-layer) rounded-l-(--radius-3xl) shadow-pm-popover', signals.needsYou && 'ring-2 ring-warning outline-3 outline-warning/25')}>
-    {/* The clip gives the Button the tab's corners; the unread mark sits outside it, on the tab's top left corner. */}
-    <span className="block overflow-hidden rounded-l-(--radius-3xl)">
-      <Button type="button" data-testid="explore-toggle" data-needs-you={signals.needsYou || undefined} aria-label={label} aria-expanded={open} aria-keyshortcuts="Control+J Meta+J" title={`${text.ask} (Ctrl+J)`} onClick={() => layer.open('agent')}>{text.ask}</Button>
-    </span>
+  // The approved tab: slim (30 px by 76 px), flush with the right edge, with its inner corners curved, the label set vertically; the unread mark sits on its top corner.
+  return <span hidden={open} style={style} data-testid="explore-place" className={cn('fixed z-(--app-shell-z-layer) h-19 w-7.5 rounded-l-(--radius-lg) shadow-pm-popover', signals.needsYou && 'ring-2 ring-warning outline-3 outline-warning/25')}>
+    <button type="button" data-testid="explore-toggle" data-needs-you={signals.needsYou || undefined} aria-label={label} aria-expanded={open} aria-keyshortcuts="Control+J Meta+J" title={`${text.ask} (Ctrl+J)`} onClick={() => layer.open('agent')}
+      style={{ writingMode: 'vertical-rl' }}
+      className="relative flex size-full items-center justify-center rounded-l-(--radius-lg) bg-primary text-xs font-medium tracking-wider text-primary-foreground outline-ring select-none before:absolute before:-inset-2 before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2">{text.ask}</button>
     {unread && <UnreadMark unread={unread} dot="-top-1 -left-1" pill="-top-2 -left-3" className="ring-2 ring-background" />}
   </span>;
 }

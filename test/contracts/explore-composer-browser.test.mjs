@@ -86,7 +86,8 @@ test('1440: closed, the page keeps its whole width and the Ask toggle sits at th
   assert.equal(await count('[data-testid=agent-composer-box], [data-testid=composer-icon]'), 0, 'no bar, no icon');
   const toggle = await rect(TOGGLE);
   assert.ok(toggle && toggle.right >= 1439 && toggle.bottom <= 900 && toggle.bottom >= 800, `bottom right: ${JSON.stringify(toggle)}`);
-  assert.ok(toggle.h <= 48 && toggle.w <= 120, `a small tab: ${JSON.stringify(toggle)}`);
+  assert.ok(Math.abs(toggle.w - 30) <= 1 && Math.abs(toggle.h - 76) <= 1, `the mockup's slim vertical tab, 30 by 76: ${JSON.stringify(toggle)}`);
+  assert.equal(await browser.evaluate(`getComputedStyle(document.querySelector(${js(TOGGLE)})).writingMode`), 'vertical-rl', 'a vertical label');
   await shots2('1440-1-closed');
   await click(TOGGLE);
   await browser.until('open', `!!document.querySelector(${js(PANEL)})`);
@@ -142,7 +143,7 @@ test('390: closed there is no bar; the toggle sits above the tab bar at the bott
   const tabBar = await browser.evaluate(`document.querySelector('[aria-label=Navigation]')?.getBoundingClientRect().top ?? null`);
   assert.notEqual(tabBar, null, 'the tab bar is found');
   assert.ok(toggle.right >= 389 && toggle.bottom <= tabBar + 0.5, `bottom right, above the tabs: ${JSON.stringify({ toggle, tabBar })}`);
-  assert.ok(toggle.h >= 44, `a 44 px target on a phone: ${toggle.h}`);
+  assert.ok(Math.abs(toggle.w - 30) <= 1 && Math.abs(toggle.h - 76) <= 1, `the same 30 by 76 tab on a phone: ${JSON.stringify(toggle)}`);
   await shots2('390-1-closed');
   await click(TOGGLE);
   await browser.until('sheet', `!!document.querySelector('[data-testid=agent-layer]')`);
