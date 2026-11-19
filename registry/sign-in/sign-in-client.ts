@@ -21,6 +21,8 @@ async function call(lang: Lang, path: string, init: RequestInit & { readonly ext
 
 export const signInClient = (lang: Lang) => ({
   options: () => call(lang, '/api/signin/options') as Promise<unknown> as Promise<Options>,
+  /** Whether the one-use first-owner link is still good: the Worker answers `{ valid }`, the same for a used link and an unknown one. */
+  firstOwnerValid: (token: string) => call(lang, '/api/signin/first-owner', { extra: { 'x-boring-first-owner': token } }).then(r => r.valid === true),
   /** The signed-in person, or null. */
   me: () => call(lang, '/api/signin/me').then(r => r as unknown as Me, () => null),
   signIn: (email: string, password: string) => call(lang, '/api/auth/sign-in/email', { method: 'POST', body: JSON.stringify({ email, password }) }),
