@@ -1465,6 +1465,11 @@ the conversations, or the whole pane on a single-session page without
 `conversations` (a bot with one conversation). `agents={{ items, activeId, onSelect }}`
 adds an agent switcher at the top of the pane when there are two or more agents;
 the host scopes the conversations and controller to the chosen one.
+`onLibraryOpenChange={open => …}` (optional) reports each change of the Library's open state with the new value,
+in every placement (the column or its phone drawer, the side column or its sheet, the center view, the pane tab with
+the pane shown, the embedded bar's Library panel): the Library buttons, a file chosen from it, its close buttons or a
+prop change. Once per change, never on mount, never when the state is unchanged. It only observes: there is no
+controlled `libraryOpen` prop.
 `locale="fr"` (on `AgentWorkspace`, or `PiChat` alone) switches every word of the chat,
 the panes, the viewers and the Library to French; English stays the default. The French
 words are exported (`frenchChatLabels`, `frenchAppLabels`, `frenchFileTreeLabels`) and typed
