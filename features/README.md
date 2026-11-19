@@ -41,3 +41,4 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Extraction | a PDF or a photo as text and checked fields, the `documents` OCR callback and the `extract_fields` tool, as a plain import | [cap-extraction.md](cap-extraction.md) |
 | Sign-in | an app's sign-in by invitation, the first owner's one-use link, an assistant's OAuth sign-in to /mcp, Studio's owners in linked apps, and the pages | [signin.md](signin.md) |
 | A decision | `run`, `pickOne` and the `decide` tool over pi-ai's classify, as a plain import | [cap-decision.md](cap-decision.md) |
+| Web | `search` (Tavily), `fetch` (the kit's reader) and the `web_search` / `web_fetch` tools, as a plain import | [cap-web.md](cap-web.md) |
