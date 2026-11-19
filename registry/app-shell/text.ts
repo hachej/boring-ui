@@ -54,6 +54,12 @@ export interface AppShellText {
   readonly minimise: string;
   readonly restore: string;
   readonly dragHandle: string;
+  /** The open window's top edge, the separator that sets its height. */
+  readonly resizeHandle: string;
+  /** `composer: 'explore'`: the toggle's word, the context line's lead-in (« You are looking at ») and the panel's side edge, the separator that sets its width. */
+  readonly ask: string;
+  readonly lookingAt: string;
+  readonly resizeExplore: string;
   /** The folded card: the dot of an unread reply, the run's words, the form's « 1 sur 2 ». */
   readonly unread: string;
   readonly working: string;
@@ -139,6 +145,10 @@ const en: AppShellText = {
   minimise: 'Minimise',
   restore: 'Open the assistant',
   dragHandle: 'Move the assistant',
+  resizeHandle: 'Resize the conversation',
+  ask: 'Ask',
+  lookingAt: 'You are looking at',
+  resizeExplore: 'Resize the assistant panel',
   unread: 'New reply',
   working: 'Working',
   done: 'Done',
@@ -207,6 +217,10 @@ const fr: AppShellText = {
   minimise: 'Réduire',
   restore: 'Ouvrir l’assistant',
   dragHandle: 'Déplacer l’assistant',
+  resizeHandle: 'Redimensionner la conversation',
+  ask: 'Demander',
+  lookingAt: 'Vous regardez',
+  resizeExplore: 'Redimensionner le panneau de l’assistant',
   unread: 'Nouvelle réponse',
   working: 'En cours',
   done: 'Terminé',

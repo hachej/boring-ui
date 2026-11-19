@@ -106,6 +106,8 @@ for (const primitives of ['shadcn/ui', 'examples/app-shell/components/ui']) for 
       for (const [name, m] of [['normal', normal], ['compact', compact]]) for (const field of ['input', 'textarea', 'native', 'composerInput', 'question']) {
         const font = m[field]?.font, px = parseFloat(font);
         if (phone && !(px >= 16)) violations.push(`${width} ${name} ${field} font-size ${font} under 16px`);
+        // The composer's field follows the app's body size (md:text-xs, 13px) on a fine pointer at md+, and stays 16px on a coarse pointer.
+        if (field === 'composerInput') { if (mobile && !(px >= 16)) violations.push(`${width} ${name} ${field} font-size ${font} under 16px on a coarse pointer`); if (!mobile && font !== '13px') violations.push(`${width} ${name} ${field} font-size ${font}, expected 13px (md:text-xs)`); continue; }
         if (!phone && font !== '14px') violations.push(`${width} ${name} ${field} font-size ${font}, expected 14px (md:text-sm)`);
       }
       // A compact <html> (a whole page in compact): the media rule must lose to [data-density="compact"] wherever the rules land.

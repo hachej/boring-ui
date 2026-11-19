@@ -1,4 +1,4 @@
-// The composer draft kept per conversation (registry/pi-chat/use-chat-draft.ts) in happy-dom, over a fake native chat controller:
+// The composer draft kept per conversation (packages/ui/src/chat-react.ts) in happy-dom, over a fake native chat controller:
 // a draft survives a remount, two tabs sync through the storage event, storage that throws leaves the composer working, and a send clears it.
 // Fictional text only.
 import assert from 'node:assert/strict';
@@ -38,7 +38,7 @@ test('the composer draft is kept per conversation: restored after a remount, syn
   const { createElement, act } = await import('react'); const { createRoot } = await import('react-dom/client');
   const out = new URL('../../.cache/pi-chat-draft-test/', import.meta.url); mkdirSync(out, { recursive: true });
   const output = new URL('use-chat-draft.mjs', out);
-  await build({ entryPoints: [new URL('../../registry/pi-chat/use-chat-draft.ts', import.meta.url).pathname], outfile: output.pathname, bundle: true,
+  await build({ entryPoints: [new URL('../../packages/ui/src/chat-react.ts', import.meta.url).pathname], outfile: output.pathname, bundle: true,
     format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
   const { useChatDraft } = await import(output.href);
 

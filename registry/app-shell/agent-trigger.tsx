@@ -28,7 +28,8 @@ export function AgentTrigger({ className, children }: { readonly className?: str
   const controller = agent?.controller;
   useEffect(() => () => cancelHold(), [controller, cancelHold]);
   const { triggerUntil: triggerUntilRef } = layer;
-  if (!agent) return null;
+  // `composer="explore"`: the « Ask » toggle at the bottom right is the one way in.
+  if (!agent || layer.explore) return null;
 
   const toggle = () => {
     triggerUntilRef.current = Date.now() + 500;
