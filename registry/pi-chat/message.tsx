@@ -63,6 +63,8 @@ export interface RowContext {
   readonly natural?: boolean | undefined;
   /** `toolDetails="none"`: tool steps never show arguments, results or error text; a failed one carries `labels.toolFailedSummary`. */
   readonly plainTools?: boolean | undefined;
+  /** `hideTools`: no step rows while running or after; a failed activity still shows. */
+  readonly hideTools?: boolean | undefined;
   readonly groupTool: DeriveOptions['groupTool'];
   readonly commandMentions: CommandMentions | undefined;
   /** Host openers keep their single image argument; the workspace's default also accepts the message gallery. */
@@ -493,6 +495,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
               const failed = chunk.steps.some(failedStep) && (context.developer || (!active && !gotPast(row, chunk.steps, chunks.slice(at + 1))));
               const unfinished = chunk.steps.some(step => step.kind === 'tool' && step.entry.status === 'unfinished');
               const state: ActivityState = failed || row.stopReason === 'error' ? 'failed' : row.stopReason === 'aborted' || (!active && unfinished) ? 'stopped' : active && at === chunks.length - 1 ? 'running' : 'done';
+              if (context.hideTools && state !== 'failed') return null;
               return <ActivityBlock key={chunk.key} steps={chunk.steps} state={state} streaming={row.streaming} developer={context.developer} plain={context.plainTools === true} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
             }
             const part = chunk.part;
@@ -518,6 +521,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
               return <artifacts.Card key={part.key} artifact={artifact} open={artifact.state === 'ready' && (artifacts.isOpen?.(descriptor) ?? false)}
                 onOpen={artifact.state === 'ready' && artifacts.open ? () => artifacts.open(descriptor) : undefined} kinds={artifacts.kinds} />;
             }
+            if (context.hideTools && !part.entry.custom && part.entry.status !== 'failed') return null;
             return part.entry.custom ? <div key={part.key}>{part.entry.custom}</div> : <ToolCard key={part.key} entry={part.entry} plain={context.plainTools === true} {...(context.onOpenImage ? { onOpenImage: context.onOpenImage } : {})} />;
           })}
           <ImageThumbnails images={images} onOpenImage={context.onOpenImage} />

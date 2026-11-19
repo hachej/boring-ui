@@ -391,6 +391,12 @@ Limits: assistant prose that narrates technical work is kept (nothing is strippe
 
 `toolDetails="none"` wins over `mode="developer"` as `presentation="natural"` does. The kit's own switch (`?chatMode=developer`) still replaces it and shows everything. Cards from `renderTool` and `toolRenderers` keep priority over the step. `AgentSpec.chatProps` takes the prop like any `PiChat` prop, so `<AppShell agent={{ controller, chatProps: { toolDetails: 'none' } }} />` reaches the agent layer's conversation.
 
+## One spinner and `hideTools` in `pi-chat`
+
+While a tool runs, the step row (`Running mailbox search · 1 step`) shows a small muted pulsing dot (`--muted-foreground`, no rotation, static under `prefers-reduced-motion`) and a finished step shows none, so the "Agent is working" line keeps the only spinner on screen.
+
+`hideTools` (`boolean`, default `false`) on `PiChat` or `AmbientChat`: `true` renders no tool rows, not while running and not after; the "Agent is working" line carries the state. Approvals, questions, sub-agent cards, artifacts and a failed step still show. It changes rendering only, and `?chatMode=developer` replaces it. `AgentSpec.chatProps` takes it like any `PiChat` prop: `<AppShell agent={{ controller, chatProps: { hideTools: true } }} />`.
+
 ## Regular chat or shared chat
 
 Choose the copied item explicitly. The headless package root stays lean; channel data is available only from the existing `@hachej/boring-ui-kit/shared-chat` subpath.

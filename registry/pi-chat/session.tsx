@@ -41,6 +41,8 @@ export interface ChatFeatureProps {
    * `auto` (the default) is today's behaviour: a failed step opens with its arguments and error. `?chatMode=developer` replaces `none`, as it replaces `presentation="natural"`.
    */
   readonly toolDetails?: 'auto' | 'none';
+  /** Default false. `true` renders no tool rows ("Running X, n steps") while running or after: the "Agent is working" line carries the state. Approvals, questions, sub-agent cards, artifacts and a failed step still show. `?chatMode=developer` replaces it. */
+  readonly hideTools?: boolean;
   /** Show a retained voice message's audio player. Default false: transcript only; uploaded audio and stored tokens are unchanged. */
   readonly voiceReplay?: boolean;
   /** The words on the chip of a sent message that starts with a `<target>` block (point-and-speak). Undefined keeps the default label; the chip never shows the raw fields on hover. */
@@ -163,7 +165,7 @@ export function useCursorInOpened(textarea: { readonly current: HTMLTextAreaElem
 
 /** Presentation adapter; all session state and controller protocols live in the kit. */
 export function useChatSession(options: ChatSessionOptions) {
-  const { controller, activeController, mode, presentation, toolDetails, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, enterSends, onFiles, fileAccept,
+  const { controller, activeController, mode, presentation, toolDetails, hideTools, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, enterSends, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, sendContext, onOpenFile, fileChanges, composerChips, composerHeader, composerHasContent, onPickFiles, pasteToFile } = options;
   const { labels } = useChatText();
   const textarea = useRef<HTMLTextAreaElement | null>(null);
@@ -175,7 +177,7 @@ export function useChatSession(options: ChatSessionOptions) {
     afterSend, feedback: sendContext ?? feedback, onOpenFile, onPickFiles, commandMentions, labels, onFocus: () => textarea.current?.focus() });
   const { state, developer, natural, connected, working, sendBlocked, act } = session;
   const rowContext = useMemo<RowContext>(() => ({
-    developer, natural, plainTools: toolDetails === 'none', voiceReplay, targetLabel, sentContent, renderText, cards, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
+    developer, natural, plainTools: toolDetails === 'none', hideTools: hideTools === true, voiceReplay, targetLabel, sentContent, renderText, cards, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: session.activateMention } : undefined,
     answer: actions?.answer,
     artifacts: offered?.Card ? { open: offered.open, isOpen: offered.isOpen, kinds: offered.kinds, Card: offered.Card } : undefined,
@@ -184,7 +186,7 @@ export function useChatSession(options: ChatSessionOptions) {
     pieces: slash?.skills?.length || mentions || attachments ? { kinds: mentions?.kinds, mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview, audioUrl: mentions?.audioUrl } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the fields rows read, not whole objects: activateMention changes every render and must not rebuild every row.
-  }), [controller, developer, natural, toolDetails, voiceReplay, targetLabel, sentContent, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, offered?.open, offered?.isOpen, offered?.kinds, offered?.Card, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
+  }), [controller, developer, natural, toolDetails, hideTools, voiceReplay, targetLabel, sentContent, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, offered?.open, offered?.isOpen, offered?.kinds, offered?.Card, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {
