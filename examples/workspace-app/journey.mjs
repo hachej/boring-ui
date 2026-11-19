@@ -864,12 +864,15 @@ try {
     await browser.click(q('[data-testid=artifact-more]'));
     await browser.until('the renamed Float chat item', `${q('[data-testid=artifact-float-chat]')}?.textContent === 'Pop out chat'`, 5000);
     await browser.click(q('[data-testid=artifact-float-chat]'));
-    await browser.until('the floating chat with the dock action', `!!${q('[data-boring=ambient-chat]')} && !!${q('[data-testid=ambient-action-handoff]')}`, 10000);
+    await browser.until('the floating chat with the dock action', `!!${q('[data-boring=ambient-chat]')} && !!${q('[data-testid=agent-layer-action-handoff]')}`, 10000);
     await pause(300);
     await browser.screenshot('workspace-app-configured-floating.png');
-    await browser.click(q('[data-testid=ambient-action-handoff]'));
+    await browser.click(q('[data-testid=agent-layer-action-handoff]'));
     await browser.until('the host got handoff', `${logged('handoff')} === 1`, 5000);
-    await browser.click(q('[data-testid=ambient-dock]'));
+    // The composer's window lists Dock chat in its title row, or in the « … » menu when the row is full.
+    if (!(await browser.evaluate(`!!${q('[data-testid=agent-layer-action-dock]')}`))) await browser.click(q('[data-testid=agent-layer-more]'));
+    await browser.until('the dock action', `!!${q('[data-testid=agent-layer-action-dock]')}`, 5000);
+    await browser.click(q('[data-testid=agent-layer-action-dock]'));
     await browser.until('docked again', `!${q('[data-boring=ambient-chat]')} && !!${q('[data-boring=pi-chat]')}`, 10000);
     await browser.click(q('[data-testid=artifact-close]'));
     await browser.until('the panel closed', `!${q('[data-testid=artifact-panel]')}`, 5000);

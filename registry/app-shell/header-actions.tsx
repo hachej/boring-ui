@@ -23,6 +23,8 @@ export interface ScreenHeaderAction {
   readonly href?: string;
   readonly target?: string;
   readonly rel?: string;
+  /** `'menu'`: always in « … », never as a button, whatever the count. */
+  readonly placement?: 'menu';
   readonly onSelect: () => void;
 }
 
@@ -36,7 +38,8 @@ function ActionControl({ action, prefix, onSelect }: { readonly action: ScreenHe
 
 /** Up to two actions as controls; the rest go in « … » (a sheet when compact, a menu otherwise). `prefix` names the test ids. Shared with the AgentLayer header. */
 export function HeaderActions({ actions, compact, text, prefix, run }: { readonly actions: readonly ScreenHeaderAction[]; readonly compact: boolean; readonly text: AppShellText; readonly prefix: string; readonly run: (id: string) => void }) {
-  const shown = actions.slice(0, 2), extra = actions.slice(2);
+  const inline = actions.filter(action => action.placement !== 'menu');
+  const shown = inline.slice(0, 2), extra = [...inline.slice(2), ...actions.filter(action => action.placement === 'menu')];
   const [sheetOpen, setSheetOpen] = useState(false);
   // A link in the phone sheet: the sheet closes first and a same-tab navigation waits for its history entry (afterBack), so the Back
   // manager never undoes it. A new tab, or a modified click, keeps the browser's own default.

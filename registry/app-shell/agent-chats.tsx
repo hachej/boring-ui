@@ -26,12 +26,13 @@ import { cn } from '../utils/utils';
 import { ROW_MENTION, rowMentionKind } from '../viewer-code/row-reference';
 import { CITE_MENTION, citeMentionKind } from './cite-reference';
 import { useAgentBarChat } from '../agent-bar/use-agent-bar-chat';
-import type { ArtifactsConfig } from '../pi-artifacts/artifact';
+import type { ArtifactsConfig, PresentedArtifact } from '../pi-artifacts/artifact';
 import { basename, FileChip, isCitedFile, ReplyActionButton } from './file-chip';
 import type { AppShellLocale, AppShellText } from './text';
 import { HeaderActions } from './header-actions';
 import { chatWordLabels, composerLabels, shellWords, useInternal } from './layer-context';
 import type { AgentSpec, Snap, Which } from './layer-context';
+import { useAutoOpenTasks } from './task-present';
 import { BarMicButton, BarMicCancel, BarMicStatus, ConversationChevron, FoldedCard, SendProblem, TalkButton, useBarMic } from './agent-bar-parts';
 
 /** The bar's icon controls expose the same words on hover and keyboard focus. */
@@ -161,7 +162,10 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const kitOpen = role === 'agent' && !ownOpen ? layer.openFile : undefined;
   const openFile = ownOpen ?? kitOpen;
   // The agent's `present` and the chat's artifact cards open in the pane too, unless the app routes artifacts itself.
-  const presented = role === 'agent' && !spec.chatProps?.artifacts ? layer.presented : undefined;
+  const hostArtifacts = spec.chatProps?.artifacts as ArtifactsConfig | undefined;
+  // Artifact cards: the pane draws them (the kit's file viewer, or the host's `artifactPanel`); a host that routes artifacts itself (`chatProps.artifacts`) keeps its `open` and gets the viewer's reports from the layer.
+  const presented = role === 'agent' ? layer.presented : undefined;
+  useAutoOpenTasks(spec.controller, role === 'agent' && !spec.artifactPanel ? hostArtifacts : undefined, presented && { onShown: presented.shown, onFailed: presented.failed });
   // An app with `@` mentions also takes the table row reference (`row`): the pane's row action puts a `row` mention in the field, and it shows as a chip.
   const mentions = role === 'agent' ? spec.chatProps?.mentions : undefined;
   const openLabel = chatTextFor(locale).labels.openFile;
@@ -176,7 +180,11 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
     ...(mentions.renderSent ? { renderSent: (path: string) => mentions.renderSent?.(path) ?? fileChip(path) } : {}),
   } : undefined, [mentions, fileChip, citeWord]);
   const artifactKinds = spec.fileKinds?.filter(kind => kind.label) as ArtifactsConfig['kinds'];
-  const chatProps = kitOpen || presented || shellMentions ? { ...spec.chatProps, ...(shellMentions ? { mentions: shellMentions } : {}), ...(kitOpen ? { onOpenFile: (path: string) => kitOpen(path) } : {}), ...(presented ? { artifacts: { open: presented.open, isOpen: presented.isOpen, ...(artifactKinds?.length ? { kinds: artifactKinds } : {}) } } : {}) } : spec.chatProps;
+  const routed: ArtifactsConfig | undefined = !presented ? undefined : hostArtifacts ? { ...hostArtifacts,
+    open: (artifact, reports) => artifact.type === 'task' || !spec.artifactPanel ? hostArtifacts.open(artifact, reports ?? { onShown: presented.shown, onFailed: presented.failed }) : presented.open(artifact),
+    ...(spec.artifactPanel ? { isOpen: (artifact: PresentedArtifact) => artifact.type === 'task' ? hostArtifacts.isOpen?.(artifact) ?? false : presented.isOpen(artifact) } : {}) }
+    : { open: presented.open, isOpen: presented.isOpen, ...(artifactKinds?.length ? { kinds: artifactKinds } : {}) };
+  const chatProps = kitOpen || presented || shellMentions ? { ...spec.chatProps, ...(shellMentions ? { mentions: shellMentions } : {}), ...(kitOpen ? { onOpenFile: (path: string) => kitOpen(path) } : {}), ...(routed ? { artifacts: routed } : {}) } : spec.chatProps;
   const mic = useBarMic();
   const capturing = layer.voice.phase === 'starting' || layer.voice.phase === 'recording';
   const readOnly = oneRow ? spec.readOnly : undefined;
@@ -246,18 +254,28 @@ export function Chats({ showing }: { readonly showing: Which }) {
   </>;
 }
 
+/** The host's own controls in a title row (the layer's header, the floating window's): its `headerTools`, then its `headerActions` (two shown, the rest in « … »). Not for the product manager. */
+export function HeaderExtras({ text, compact }: { readonly text: AppShellText; readonly compact: boolean }) {
+  const layer = useInternal();
+  if (layer.showing === 'improve') return null;
+  const actions = layer.agent?.headerActions ?? [];
+  return <>
+    {layer.agent?.headerTools}
+    {actions.length > 0 && <HeaderActions actions={actions} compact={compact} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
+  </>;
+}
+
 /** Title row: « ← » when the improve view has an agent to go back to, the title, then Expand or Collapse (compact only), the dock controls (expanded only) and Close. */
 export function Header({ text, title, compactSnap, closeRef, controls, className, ...rest }: { readonly text: AppShellText; readonly title: string; readonly compactSnap?: Snap; readonly closeRef?: Ref<HTMLButtonElement>; readonly controls?: ReactNode } & Omit<HTMLAttributes<HTMLDivElement>, 'title'>) {
   const layer = useInternal();
   const back = layer.showing === 'improve' && layer.agent;
-  const actions = layer.showing === 'improve' ? [] : layer.agent?.headerActions ?? [];
   const library = layer.bar && layer.showing === 'agent' ? layer.openLibrary : undefined;
   return <div data-testid="agent-layer-header" {...rest} className={cn('flex h-13 shrink-0 items-center gap-1.5 px-2 md:px-3', className)}>
     {back && <Button variant="ghost" size="icon" data-testid="agent-layer-back" aria-label={text.back} title={text.back} onClick={layer.showAgent}><ArrowLeftIcon data-icon="inline-start" aria-hidden="true" /></Button>}
     <h2 data-testid="agent-layer-title" className="m-0 min-w-0 flex-1 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
     <HistoryButton />
     <LibraryButton open={library} text={text} testId="agent-layer-library" />
-    {actions.length > 0 && <HeaderActions actions={actions} compact={compactSnap !== undefined} text={text} prefix="agent-layer" run={id => actions.find(action => action.id === id)?.onSelect()} />}
+    <HeaderExtras text={text} compact={compactSnap !== undefined} />
     {!layer.bar && compactSnap === 'half' && <HeaderHint label={text.expand}><Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {!layer.bar && compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {controls}

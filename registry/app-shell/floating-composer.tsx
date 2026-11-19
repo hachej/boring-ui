@@ -11,11 +11,14 @@ import { ComposerClassContext, NoticeSlotContext } from './float-composer';
 import { BarBox } from './agent-placements';
 import { shellWords, useInternal } from './layer-context';
 import { NoticeHost } from './shell-notice';
+import { EmbeddedConversation, useHostedSpec } from './floating-host';
+import type { FloatingHostProps } from './floating-host';
+import { FloatPane } from './float-pane';
 import type { AppShellNotice } from './shell-notice';
 import type { AppShellLocale } from './text';
 import type { Persistence } from '../utils/persisted';
 
-export interface FloatingComposerProps {
+export interface FloatingComposerProps extends FloatingHostProps {
   /** The one assistant: the same `AgentSpec` as `AppShell`'s `agent`. */
   readonly agent: AgentSpec;
   /** The language of the composer's own words (default: the agent's `chatProps.locale`, then English). */
@@ -58,13 +61,17 @@ function Surface({ notices: given = NONE, autoDismissMs, maxToasts }: { readonly
       {/* A phone has no floating frame: the notice stands on the foot of the screen (`NoticeHost` lifts itself over the peek). */}
       {phone && host && <div data-testid="composer-notices" className="fixed inset-x-0 bottom-0 z-(--app-shell-z-layer)">{host}</div>}
       <AgentLayer />
+      {/* Wide: the pane's entries (an artifact, a file, an app view) open in a window beside the bar; a phone shows them full screen (`AgentLayer`). */}
+      {!phone && <FloatPane />}
     </div>
   </NoticeSlotContext.Provider>;
 }
 
 /** The one composer on a page that has no AppShell. Mount it once, anywhere: it positions itself over the page. */
-export function FloatingComposer({ agent, locale, appId, person, start = 'float', notices, storage = 'local', legacyPositionKey, legacyPositionStorage = 'session', className, autoDismissMs, maxToasts, children }: FloatingComposerProps): ReactElement {
-  return <AgentLayerProvider agent={agent} composer="bar" floating docks={false} agentLink={false} {...(locale ? { locale } : {})} startIn={start} storage={storage} modeIdentity={{ ...(appId ? { app: appId } : {}), ...(person ? { person } : {}) }}
+export function FloatingComposer({ agent, locale, appId, person, start = 'float', notices, storage = 'local', legacyPositionKey, legacyPositionStorage = 'session', className, autoDismissMs, maxToasts, children, embedded, headerTools, headerActions, onDock, onOpenFull, onFeedback, artifactPanel, artifacts, artifactTarget }: FloatingComposerProps): ReactElement {
+  const spec = useHostedSpec(agent, { locale, headerTools, headerActions, onDock, onOpenFull, onFeedback, artifactPanel, artifacts, artifactTarget });
+  if (embedded) return <EmbeddedConversation agent={spec} locale={locale} />;
+  return <AgentLayerProvider agent={spec} composer="bar" floating docks={false} agentLink={false} {...(locale ? { locale } : {})} startIn={start} storage={storage} modeIdentity={{ ...(appId ? { app: appId } : {}), ...(person ? { person } : {}) }}
     {...(legacyPositionKey ? { legacyPosition: { key: legacyPositionKey, storage: legacyPositionStorage } } : {})}>
     {children}
     <ComposerClassContext.Provider value={className}><Surface notices={notices} autoDismissMs={autoDismissMs} maxToasts={maxToasts} /></ComposerClassContext.Provider>

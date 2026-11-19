@@ -7,6 +7,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import type { ReactNode } from 'react';
 import { createNotificationStore, useRunNotifications } from '@hachej/boring-ui-kit/chat-react';
 import { FloatingComposer } from '../app-shell/floating-composer';
+import type { ScreenHeaderAction } from '../app-shell/header-actions';
+import type { BlockAction } from '../button/actions';
+import { CircleIcon } from '../_shared/icons';
 import { useAgentLayer } from '../app-shell/agent-layer';
 import type { AgentLayerApi, AgentSpec } from '../app-shell/layer-context';
 import type { AppShellNotice } from '../app-shell/shell-notice';
@@ -25,15 +28,18 @@ export { AgentNotifications, createNotificationStore, defaultNotificationLabels,
 export type { AgentNotification, AgentNotificationsProps, NewNotification, NotificationKind, NotificationLabels, NotificationStore } from './notifications';
 
 /**
- * The props the one composer does not take yet: each keeps the bar on the old window. `undefined` means the composer takes every prop the app gave, so the bar is the one composer.
- * Listed in `features/ambient.md`: the in-window artifact panel and host artifact cards, embedding in a host page, the bar's own actions, thumbs and "open in full chat" on replies and the dock button.
+ * The props the one composer does not take yet: each keeps the bar on the old window. None is left (the window content, the toast timing, `className`, `storage`, the old position and the system notifications are on the composer),
+ * so `undefined` means the bar is the one composer: a prop added to `AmbientChatProps` that the composer lacks is returned here and listed in `features/ambient.md`.
  */
-export function ambientGap(props: AmbientChatProps): string | undefined {
-  const keys = ['embedded', 'artifactPanel', 'artifacts', 'headerTools', 'onDock', 'onOpenFull', 'onFeedback'] as const;
-  const key = keys.find(name => props[name] !== undefined && props[name] !== false);
-  if (key) return key;
-  if (props.headerActions?.length) return 'headerActions';
+export function ambientGap(_props: AmbientChatProps): string | undefined {
   return undefined;
+}
+
+/** The old header actions as the composer's: a `menu` one stays in « … », a label-only one shows its label. A disabled action does nothing. */
+function headerActionsOf(actions: readonly BlockAction[] | undefined): readonly ScreenHeaderAction[] | undefined {
+  if (!actions?.length) return undefined;
+  return actions.map(action => ({ id: action.id, label: action.label, icon: (action.icon ?? CircleIcon) as ScreenHeaderAction['icon'], ...(action.icon ? {} : { showLabel: 'always' as const }),
+    ...(action.placement === 'menu' ? { placement: 'menu' as const } : {}), onSelect: () => { if (!action.disabled) action.onSelect(); } }));
 }
 
 /** The window levels the one composer has: folded to its icon, the bar, the conversation open. */
@@ -99,6 +105,9 @@ function noticesOf(items: readonly AgentNotification[], labels: AmbientLabels, o
     action: { label: labels.openShort, onSelect: () => { open(item); store.dismiss(item.id); } }, onDismiss: () => store.dismiss(item.id) }));
 }
 
+// Words the composer has in the app's language: taken from the app's own `labels` only when it gave them, so `locale` picks the rest.
+const SHELL_WORDS = { dock: 'dockChat', openFull: 'openFull', goodResponse: 'goodResponse', badResponse: 'badResponse', artifactPanel: 'artifactPanel' } as const;
+
 /** Inside the layer: a system notification for each new toast while the page is hidden (`systemNotifications`); its click brings the conversation. Draws nothing. */
 function SystemNotifier({ items, labels, activate }: { readonly items: readonly AgentNotification[]; readonly labels: AmbientLabels; readonly activate: (layer: Omit<AgentLayerApi, 'agent'>, item: AgentNotification) => void }) {
   const layer = useAgentLayer();
@@ -131,8 +140,7 @@ const CHAT_WORDS = ['placeholder', 'placeholderWorking', 'messageInput', 'send',
 function AmbientOnComposer(props: AmbientChatProps) {
   const { controller, labels: givenLabels, icons: givenIcons, variant = 'contrast', state, defaultState, onStateChange, storageKey, notifications, conversations, avatar, tools, belowComposer,
     // Props the composer has no use for (`ambientGap` keeps the ones that matter on the old window): the old window's own position, size and placement.
-    embedded: _embedded, headerActions: _headerActions, headerTools: _headerTools, storage = 'session', systemNotifications = false, autoDismissMs, maxToasts, composerLayout, renderComposer, className,
-    artifacts: _artifacts, artifactPanel: _panel, artifactTarget: _target, onDock: _dock, onOpenFull: _full, onFeedback: _feedback, ...rest } = props;
+    embedded, headerActions, headerTools, artifacts, artifactPanel, artifactTarget, onDock, onOpenFull, onFeedback, storage = 'session', systemNotifications = false, autoDismissMs, maxToasts, composerLayout, renderComposer, className, ...rest } = props;
   const { labels, icons } = useMergedText<AmbientLabels, AmbientIcons>(givenLabels, givenIcons, AMBIENT_TEXT);
   const internal = useMemo(() => createNotificationStore(), []);
   const store = notifications || internal;
@@ -142,7 +150,7 @@ function AmbientOnComposer(props: AmbientChatProps) {
   const conversationId = String(conversations?.activeId ?? snapshotId);
   const activeItem = conversations?.items.find(item => item.id === conversations.activeId);
   const title = activeItem?.title?.trim() || labels.title;
-  useRunNotifications(controller, store, { enabled: notifications !== false, conversationId, title, text: noticeTextOf(labels),
+  useRunNotifications(controller, store, { enabled: notifications !== false && !embedded, conversationId, title, text: noticeTextOf(labels),
     suppress: () => levelRef.current === 'expanded' && globalThis.document?.visibilityState !== 'hidden' });
   const items = useNotifications(store);
   // Built inside the composer's layer (a function of it), where Open can bring the bar or the icon back to the conversation.
@@ -161,14 +169,19 @@ function AmbientOnComposer(props: AmbientChatProps) {
   const words = useMemo(() => {
     const picked: Record<string, string> = { emptyTitle: labels.title };
     for (const key of CHAT_WORDS) { const word = (labels as unknown as Record<string, unknown>)[key]; if (typeof word === 'string') picked[key] = word; }
+    for (const [from, to] of Object.entries(SHELL_WORDS)) { const word = (givenLabels as Record<string, unknown> | undefined)?.[from]; if (typeof word === 'string') picked[to] = word; }
     return picked;
-  }, [labels]);
+  }, [labels, givenLabels]);
   const agent: AgentSpec = ({ controller, label: labels.title, words,
     chatProps: { ...rest, labels, icons, ...(renderComposer !== undefined ? { renderComposer } : {}), ...(composerLayout !== undefined ? { composerLayout } : {}), ...(avatar !== undefined ? { avatar } : {}), ...(tools !== undefined ? { tools } : {}), ...(belowComposer !== undefined ? { belowComposer } : {}), ...(conversations ? { conversations } : {}) } as Omit<PiChatProps, 'controller'> });
   const starts = (state ?? defaultState) === 'minimized' ? 'icon' : 'float';
   const bridge: ReactNode = <><StateBridge state={state} initial={defaultState} onChange={change} layerRef={layerRef} />{systemNotifications && notifications !== false && <SystemNotifier items={items} labels={labels} activate={activate} />}</>;
-  const composer = <FloatingComposer agent={agent} appId={storageKey ?? 'ambient'} start={starts} storage={storage} legacyPositionKey={storageKey ?? LEGACY_POSITION_KEY} legacyPositionStorage={storage}
-    {...(className !== undefined ? { className } : {})} {...(autoDismissMs !== undefined ? { autoDismissMs } : {})} {...(maxToasts !== undefined ? { maxToasts } : {})} {...(notifications === false ? {} : { notices })}>{bridge}</FloatingComposer>;
+  const actions = headerActionsOf(headerActions);
+  const host = { ...(embedded ? { embedded } : {}), ...(headerTools !== undefined ? { headerTools } : {}), ...(actions ? { headerActions: actions } : {}),
+    ...(onDock ? { onDock } : {}), ...(onOpenFull ? { onOpenFull } : {}), ...(onFeedback ? { onFeedback } : {}), ...(artifacts ? { artifacts } : {}),
+    ...(artifactPanel ? { artifactPanel } : {}), ...(artifactTarget ? { artifactTarget } : {}) };
+  const composer = <FloatingComposer agent={agent} appId={storageKey ?? 'ambient'} start={starts} storage={storage} legacyPositionKey={storageKey ?? LEGACY_POSITION_KEY} legacyPositionStorage={storage} {...host}
+    {...(className !== undefined ? { className } : {})} {...(autoDismissMs !== undefined ? { autoDismissMs } : {})} {...(maxToasts !== undefined ? { maxToasts } : {})} {...(notifications === false || embedded ? {} : { notices })}>{embedded ? null : bridge}</FloatingComposer>;
   return <div data-boring="ambient-chat" data-variant={variant} className={variant === 'contrast' ? 'dark scheme-dark contents' : 'contents'}>{composer}</div>;
 }
 

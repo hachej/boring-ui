@@ -76,6 +76,13 @@ export interface AppShellText {
   readonly sendFailed: string;
   /** The preview header's way to the app's files. */
   readonly library: string;
+  /** `FloatingComposer` `onDock`, `onOpenFull` and `onFeedback`: the window's two header actions and the thumbs on a reply. */
+  readonly dockChat: string;
+  readonly openFull: string;
+  readonly goodResponse: string;
+  readonly badResponse: string;
+  /** An artifact open in the window's side panel (its region's name). */
+  readonly artifactPanel: string;
   /** The edge between the page and the preview column (`composer: 'bar'`): drag it, or use the arrow keys, to resize the column. */
   readonly resizePreview: string;
   /** The pane's back control: « Retour à » and the title of what is under (the file goes back to « Écriture du 09/01 »). */
@@ -152,6 +159,11 @@ const en: AppShellText = {
   answerHere: 'Or answer here',
   sendFailed: 'The message was not sent: it is back in the field. Try again.',
   library: 'Library',
+  dockChat: 'Dock chat',
+  openFull: 'Open in full chat',
+  goodResponse: 'Good response',
+  badResponse: 'Bad response',
+  artifactPanel: 'Artifact panel',
   resizePreview: 'Resize the preview',
   backTo: 'Back to',
   previousFile: 'Previous file',
@@ -219,6 +231,11 @@ const fr: AppShellText = {
   answerHere: 'Ou répondez ici',
   sendFailed: 'Le message n’est pas parti : il est revenu dans le champ. Réessayez.',
   library: 'Bibliothèque',
+  dockChat: 'Ancrer la discussion',
+  openFull: 'Ouvrir dans la discussion complète',
+  goodResponse: 'Bonne réponse',
+  badResponse: 'Mauvaise réponse',
+  artifactPanel: 'Panneau de l’artefact',
   resizePreview: 'Redimensionner l’aperçu',
   backTo: 'Retour à',
   previousFile: 'Fichier précédent',

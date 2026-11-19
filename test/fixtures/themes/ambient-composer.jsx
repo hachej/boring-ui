@@ -20,7 +20,7 @@ window.__push = kind => store.push({ kind, title: 'Nightly export', summary: kin
 function App() {
   const [state, setState] = useState(params.get('state') ?? undefined);
   window.__set = setState;
-  const extra = useMemo(() => params.get('gap') === '1' ? { onOpenFull: () => {} } : {}, []);
+  const extra = useMemo(() => params.get('gap') === '1' ? { className: 'host-position' } : {}, []);
   return <main className="min-h-dvh p-6"><h1 className="text-lg font-medium">Harbor Garage (fictional site)</h1>
     <Button type="button" data-testid="page-button" variant="outline" onClick={() => { window.__clicks += 1; }}>Page action</Button>
     {Array.from({ length: 20 }, (_, index) => <p key={index} className="m-0 mt-3 rounded-md border p-3">Paragraph {index + 1}</p>)}

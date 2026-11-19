@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PanelRightOpenIcon } from 'lucide-react';
 import { artifactKey } from '../../registry/pi-artifacts/artifact.ts';
-import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
+// The lab stays on the old window (`AmbientWindow`): its journeys drive that window's own controls.
+import { AmbientWindow as AmbientChat } from '../../registry/pi-ambient/ambient-window.tsx';
 import { AgentWorkspace, useArtifactVersions, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
