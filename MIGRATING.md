@@ -1,5 +1,9 @@
 # Unreleased
 
+# Migrating to 0.5.15
+
+- **`sign-in`: the first-owner page waits for the Worker, and the block reads well on a phone (additive; re-run `boring-ui-blocks update`).** `signIn(options).handle` answers `GET /api/signin/first-owner` (the token in `x-boring-first-owner`) with `{ valid }`: `true` only while the link's hash matches and no owner exists, `false` for a used or an unknown link, and a check never uses the link up. `SignInPage` calls it for `/sign-in?first-owner=<token>` and shows « Vous installez … » and the owner's sign-up only on `true`; on `false` it shows the new label `linkRefused` above the ordinary sign-in. The block's full-width buttons are 48 px high on a phone, the two switch links take the text colour and are underlined, the error sits under the form, and `PeopleList` truncates a long address inside its row: an app drops any `[&_.grid]:grid-cols-1` override. Key elements carry `data-testid`s (`sign-in-submit`, `sign-in-switch`, `sign-in-google`, `sign-in-error`, `people-*`). An app that overrides `labels` needs no change; `linkRefused` is the only new label.
+
 # Migrating to 0.5.14
 
 - **`@hachej/boring-agent/caps/web`: web search and page reading as a plain import (additive).** New export with `search({ query, limit? }, options)` (Tavily, `TAVILY_API_KEY`), `fetch({ url }, options)` (the kit's own reader; import it as `fetch as readPage` beside the global) and `webTool({ searchProviders, ... })` (the pi-durable tools `web_search` and `web_fetch`); every result is marked `untrusted: true`. `@hachej/boring-agent` gains the dependencies `@mozilla/readability`, `linkedom` and `turndown`, loaded only on the first page read; nothing to change unless you want it. Runs in Workers without `nodejs_compat`. Feature: `features/cap-web.md`.
