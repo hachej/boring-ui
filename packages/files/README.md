@@ -224,7 +224,12 @@ Catalog defaults hide Git-ignored files, dependency/build folders and internal
 metadata. Configure `createWorkspaceProvider({ ..., catalog: { defaults: false,
 filter: entry => ... } })` to override them. Filters govern presentation, not
 access control. The host authorizes the whole selected workspace. Listings do
-not follow symlinks. Pagination is a live, lexical view, not a frozen snapshot;
+not follow symlinks unless the provider is created with `followLinks: true` (disk workspaces
+only; SQLite and virtual ones have no links): then listing, search and polling walk a link to
+a file or directory when its real target stays inside the workspace root, report what is under
+it by the link's path, and ignore, without throwing, a link that escapes the root, dangles or
+loops back into a directory being walked (the walk is also capped at 32 nested links). A link
+itself is never written through, whatever the option says. Pagination is a live, lexical view, not a frozen snapshot;
 refresh after concurrent changes. Traversal over the configured `maxEntries`
 (default 100,000) fails explicitly. History contains revisions retained by the
 workspace journal, not Git commits or an imported filesystem's prior history.
