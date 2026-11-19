@@ -806,6 +806,9 @@
           ".pi-chat [data-testid=\"composer\"] [data-slot=\"input-group\"]": {
             "background-color": "var(--card)"
           },
+          ".pi-chat [data-testid=\"composer\"] [data-slot=\"input-group\"]:not(:has([data-slot=\"input-group-control\"]:disabled))": {
+            "opacity": "1"
+          },
           "@media (width < 768px), (pointer: coarse)": {
             ".pi-chat [data-testid=\"message-feedback\"] [data-slot=\"button\"]": {
               "min-height": "3rem",

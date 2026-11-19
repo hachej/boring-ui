@@ -20,6 +20,9 @@ import type { DockApi } from '../dock/dock';
 import { useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
 import { chatTextFor } from '../pi-chat/locale';
 import { useBackLayer } from '../utils/back';
+import { readPersisted, readPersistedJson, writePersisted, writePersistedJson } from '../utils/persisted';
+import type { Persistence } from '../utils/persisted';
+import { legacyFloatPos } from './float-composer';
 import { parseAgentLink } from './agent-link';
 import { sidebarKey } from './sidebar-resize';
 import { closeShellLayer, registerAgentLayerCloser } from './shell-layer';
@@ -108,7 +111,7 @@ function useMeasuredPeek(probe: RefObject<HTMLDivElement | null>, peekRem: numbe
   return { peekPoint: `${px}px`, tabbar };
 }
 /** Places the layer in the app. `agent` is the one assistant; `panel` sits beside the app (the product manager). Either may be absent. */
-export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLink, appName, composer = 'dock', context, modeIdentity, floating = false, docks = true, startIn = 'bottom', children }: { readonly context?: ExploreContext | undefined; readonly floating?: boolean | undefined; readonly docks?: boolean | undefined; readonly startIn?: 'float' | 'icon' | 'bottom' | undefined; readonly modeIdentity?: { readonly app?: string | undefined; readonly person?: string | undefined; readonly screen?: boolean | undefined } | undefined; readonly composer?: AgentComposer | undefined; readonly agent?: AgentSpec | undefined; readonly panel?: ShellPanel | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly appName?: string | undefined; readonly children: ReactNode }): ReactElement {
+export function AgentLayerProvider({ storage: persist = 'local', legacyPosition, agent: own, panel: improve, locale, agentLink, appName, composer = 'dock', context, modeIdentity, floating = false, docks = true, startIn = 'bottom', children }: { readonly context?: ExploreContext | undefined; readonly storage?: Persistence | undefined; readonly legacyPosition?: { readonly key: string; readonly storage: Persistence } | undefined; readonly floating?: boolean | undefined; readonly docks?: boolean | undefined; readonly startIn?: 'float' | 'icon' | 'bottom' | undefined; readonly modeIdentity?: { readonly app?: string | undefined; readonly person?: string | undefined; readonly screen?: boolean | undefined } | undefined; readonly composer?: AgentComposer | undefined; readonly agent?: AgentSpec | undefined; readonly panel?: ShellPanel | undefined; readonly locale?: AppShellLocale | undefined; readonly agentLink?: false | undefined; readonly appName?: string | undefined; readonly children: ReactNode }): ReactElement {
   const compact = usePhone();
   const expanded = !compact;
   const together = useMedia(TOGETHER_QUERY) && expanded;
@@ -139,22 +142,33 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
   const [floatPos, setFloatPosState] = useState<FloatPos>({ corner: 'br' });
   const [signals, setSignals] = useState<ComposerSignals>({ unread: undefined, needsYou: false });
   // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after mount; reading it before paint keeps server and client markup equal without a flash
-  useLayoutEffect(() => { try { const saved = globalThis.localStorage?.getItem(placeKey); const next = PLACES.find(place => place === saved) ?? first; placeRef.current = next; setPlaceState(next); } catch { /* a convenience */ } }, [placeKey, first]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- same: the remembered position is read once the store exists
-  useLayoutEffect(() => { try { const saved = parseFloatPos(globalThis.localStorage?.getItem(posKey)); if (saved) setFloatPosState(saved); } catch { /* a convenience */ } }, [posKey]);
-  const setFloatPos = useCallback((next: FloatPos) => { setFloatPosState(next); try { globalThis.localStorage?.setItem(posKey, JSON.stringify(next)); } catch { /* a convenience */ } }, [posKey]);
+  useLayoutEffect(() => { try { const saved = readPersisted(placeKey, persist); const next = PLACES.find(place => place === saved) ?? first; placeRef.current = next; setPlaceState(next); } catch { /* a convenience */ } }, [placeKey, first, persist]);
+  // An app that had the old floating bar keeps where the person put it: with no place of this bar's own yet, the old bar's `{ right, bottom }` is read once and written as this bar's place.
+  const legacyKey = legacyPosition?.key, legacyStorage = legacyPosition?.storage;
+  useLayoutEffect(() => {
+    try {
+      let saved = parseFloatPos(readPersisted(posKey, persist));
+      if (!saved && legacyKey !== undefined && floatable) {
+        saved = legacyFloatPos(readPersistedJson(legacyKey, legacyStorage));
+        if (saved) writePersistedJson(posKey, saved, persist);
+      }
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- same: the remembered position is read once the store exists
+      if (saved) setFloatPosState(saved);
+    } catch { /* a convenience */ }
+  }, [posKey, persist, legacyKey, legacyStorage, floatable]);
+  const setFloatPos = useCallback((next: FloatPos) => { setFloatPosState(next); writePersistedJson(posKey, next, persist); }, [posKey, persist]);
   // The height the person dragged the open window to (px), remembered per app and person; unset means the default. It applies to the tray level only, and Full or Dock drop it.
   const heightKey = sidebarKey('composer-height', modeIdentity?.app, modeIdentity?.person);
   const [trayHeight, setTrayHeightState] = useState<number | undefined>(undefined);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- same: the remembered height is read once the store exists
-  useLayoutEffect(() => { try { const saved = Number(globalThis.localStorage?.getItem(heightKey)); setTrayHeightState(Number.isFinite(saved) && saved > 0 ? saved : undefined); } catch { /* a convenience */ } }, [heightKey]);
-  const setTrayHeight = useCallback((next: number | undefined) => { setTrayHeightState(next); try { if (next === undefined) globalThis.localStorage?.removeItem(heightKey); else globalThis.localStorage?.setItem(heightKey, String(Math.round(next))); } catch { /* a convenience */ } }, [heightKey]);
+  useLayoutEffect(() => { try { const saved = Number(readPersisted(heightKey, persist)); setTrayHeightState(Number.isFinite(saved) && saved > 0 ? saved : undefined); } catch { /* a convenience */ } }, [heightKey, persist]);
+  const setTrayHeight = useCallback((next: number | undefined) => { setTrayHeightState(next); try { if (next === undefined) writePersisted(heightKey, null, persist); else writePersisted(heightKey, String(Math.round(next)), persist); } catch { /* a convenience */ } }, [heightKey, persist]);
   // `composer="explore"`: the panel's width (px) the person dragged it to, remembered per app and person; unset means the default.
   const exploreKey = sidebarKey('explore-width', modeIdentity?.app, modeIdentity?.person);
   const [exploreWidth, setExploreWidthState] = useState<number | undefined>(undefined);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- same: the remembered width is read once the store exists
-  useLayoutEffect(() => { try { const saved = Number(globalThis.localStorage?.getItem(exploreKey)); setExploreWidthState(Number.isFinite(saved) && saved > 0 ? saved : undefined); } catch { /* a convenience */ } }, [exploreKey]);
-  const setExploreWidth = useCallback((next: number | undefined) => { setExploreWidthState(next); try { if (next === undefined) globalThis.localStorage?.removeItem(exploreKey); else globalThis.localStorage?.setItem(exploreKey, String(Math.round(next))); } catch { /* a convenience */ } }, [exploreKey]);
+  useLayoutEffect(() => { try { const saved = Number(readPersisted(exploreKey, persist)); setExploreWidthState(Number.isFinite(saved) && saved > 0 ? saved : undefined); } catch { /* a convenience */ } }, [exploreKey, persist]);
+  const setExploreWidth = useCallback((next: number | undefined) => { setExploreWidthState(next); try { if (next === undefined) writePersisted(exploreKey, null, persist); else writePersisted(exploreKey, String(Math.round(next)), persist); } catch { /* a convenience */ } }, [exploreKey, persist]);
   const explore = composer === 'explore';
   const lookingAt = explore ? context : undefined;
   const place: ComposerPlace = !floatable || agent === undefined ? 'bottom' : placeState.startsWith('icon') ? 'icon' : placeState === 'float' && expanded && anchor === null ? 'float' : 'bottom';
@@ -243,7 +257,7 @@ export function AgentLayerProvider({ agent: own, panel: improve, locale, agentLi
     if (!specs.current.together) setPmOpen(false);
     setShown('agent');
   }, []);
-  const remember = useCallback((next: PlaceState) => { placeRef.current = next; setPlaceState(next); try { globalThis.localStorage?.setItem(placeKey, next); } catch { /* a convenience */ } }, [placeKey]);
+  const remember = useCallback((next: PlaceState) => { placeRef.current = next; setPlaceState(next); writePersisted(placeKey, next, persist); }, [placeKey, persist]);
   const placeFocus = useRef(false);
   const leaveIcon = useCallback(() => { const now = placeRef.current; if (now.startsWith('icon')) { placeFocus.current = true; remember(now.slice(5) as PlaceState); } }, [remember]);
   // `dock`: the conversation in the right column (wide screens), as the tray's Dock button does; a phone opens it at half.
