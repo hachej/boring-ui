@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import type { ComponentType } from 'react';
 import { mediaTypeOf } from '@hachej/boring-files/file-types';
+import { Button } from '@/components/ui/button';
+import { DownloadIcon } from '../_shared/icons';
 import { downloadFile } from '../viewer-frame/download';
 import { IMAGE_TYPES, ImagePane } from '../viewer-image/image-pane';
 import { formatBytes } from '../viewer-frame/media';
@@ -97,7 +99,10 @@ function LocalText({ name, blob, mediaType, text: canRead, kind, subtitle, testI
     subtitle={<>{subtitle}{subtitle && <span aria-hidden="true">·</span>}{mediaType} · {formatBytes(blob.size)}</>}
     onDownload={() => downloadFile(title, blob, blob.type || mediaType)}>
     {text === undefined
-      ? <p role="status" className="m-0 p-4 text-sm text-muted-foreground">{loading ? labels.loading : labels.noPreview}</p>
+      ? loading ? <p role="status" className="m-0 p-4 text-sm text-muted-foreground">{labels.loading}</p>
+        // No preview (a spreadsheet, an archive…): the download is the one thing to do, so it is a button, not only the menu item.
+        : <div className="flex flex-col items-start gap-3 p-4"><p role="status" className="m-0 text-sm text-muted-foreground">{labels.noPreview}</p>
+          <Button data-testid={`${testId}-no-preview-download`} onClick={() => downloadFile(title, blob, blob.type || mediaType)}><DownloadIcon data-icon="inline-start" aria-hidden="true" />{labels.download}</Button></div>
       : kind ? <KindView kind={kind} text={text} title={title} testId={testId} loading={labels.loading} />
       : <div className="min-h-0 flex-1 overflow-auto p-3"><pre data-testid={`${testId}-text`} className="m-0 font-mono text-sm leading-relaxed break-words whitespace-pre-wrap">{text}</pre></div>}
   </ViewerFrame>;
