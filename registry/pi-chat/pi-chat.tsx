@@ -195,7 +195,7 @@ export function PiChat(hostProps: PiChatProps) {
   const developer = useSyncExternalStore(neverChanges, developerSwitch, () => false);
   const props = useMemo<PiChatProps>(() => {
     if (!developer) return hostProps;
-    const { presentation: _natural, toolDetails: _plain, ...rest } = hostProps;
+    const { presentation: _natural, toolDetails: _plain, hideTools: _hidden, ...rest } = hostProps;
     return { ...rest, mode: 'developer' };
   }, [developer, hostProps]);
   const active = useRef(props.controller);
@@ -222,7 +222,7 @@ const noVoice: VoiceRecorderHook = () => silent;
 /** A shell's pending voice row when no `voiceMessage.Bubble` is plugged in: nothing to draw. */
 function NoVoiceBubble(_: { readonly pending: PendingVoice | undefined }) { return null; }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, toolDetails, voiceReplay, targetLabel, sentContent, messageStyle = 'default', answeredBy, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, composerWhenEmpty, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerHost, dropZone, onSent, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, toolDetails, hideTools, voiceReplay, targetLabel, sentContent, messageStyle = 'default', answeredBy, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, composerWhenEmpty, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerHost, dropZone, onSent, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
   onOpenImage, onCopy, onComposerKeyDown, enterSends, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', composerBarActions, composerFileChips, composerRecording, composerRecordingSlots, composerEditLast = false, renderComposer, conversationTitle, onRenameTitle, feedback, sendContext, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
@@ -241,7 +241,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const own = useRef<OwnMessageActions | undefined>(undefined);
   const rowExtras = useMemo(() => canFork || messageStyle === 'messaging' || answeredBy || composerEditLast ? { ...(canFork ? { onFork: (entryId: string) => { void fork.current?.(entryId).catch(() => {}); } } : {}), ...(messageStyle === 'messaging' ? { messageStyle } : {}), ...(answeredBy ? { answeredBy } : {}),
     ...(composerEditLast ? { ownMessage: { resume: (key: string) => own.current?.resume(key), rewind: (key: string) => own.current?.rewind(key) } } : {}) } : undefined, [canFork, messageStyle, answeredBy, composerEditLast]);
-  const session = useChatSession({ controller, activeController: active, mode, presentation, toolDetails, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, enterSends, onFiles, camera, fileAccept,
+  const session = useChatSession({ controller, activeController: active, mode, presentation, toolDetails, hideTools, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, enterSends, onFiles, camera, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend: () => { if (timeline) timeline.afterSend?.(); else scrollToBottom.current(); onSent?.(); }, feedback, sendContext, rowExtras, onOpenFile, fileChanges, pasteToFile, composerChips, composerHeader, composerHasContent, onPickFiles });
   const { state, derived, rows: nativeRows, queued, queueActions, working, waitingForAnswer, connected, error, act, textarea, rowContext, composer, files, loading } = session;
   const replyAction = useContext(ReplyActionContext);
