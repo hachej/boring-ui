@@ -29,8 +29,8 @@ export function page({ title, description, depth, cards, current, body }) {
 export function framePage({ title, description, depth, body, cards, current }) {
   const up = depth ? '../' : '';
   const group = (label, list) => list.length ? `<optgroup label="${label}">${list.map(c => `<option value="${up}${esc(c.name)}/index.html"${c.name === current ? ' selected' : ''}>${esc(c.meta.title)}</option>`).join('')}</optgroup>` : '';
-  // Start: the design system (the home), then the agent cards; the rest follows by level.
-  const START = [DEFAULT_PAGE, 'component-agent-card'], first = START.flatMap(name => cards.filter(c => c.name === name)), rest = cards.filter(c => !START.includes(c.name));
+  // Start: the design system (the home), then the agent cards and the composer atlas; the rest follows by level.
+  const START = [DEFAULT_PAGE, 'component-agent-card', 'component-composer-atlas'], first = START.flatMap(name => cards.filter(c => c.name === name)), rest = cards.filter(c => !START.includes(c.name));
   const menu = `<select class="icon-btn" id="pages" aria-label="Page">${group('Start', first)}${group('Layouts', rest.filter(c => c.meta.level === 'layout'))}${group('Components', rest.filter(c => c.meta.level === 'component'))}</select>`;
   return `${head(title, depth, description)}<body class="app"><header class="bar">${menu}${body.switcher}${body.play}<span class="grow"></span><button type="button" class="icon-btn" id="theme" aria-pressed="false">Dark</button></header>${body.stage}</body></html>`;
 }

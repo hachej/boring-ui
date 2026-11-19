@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppShell } from '../../registry/app-shell/app-shell.tsx';
 import { ScreenBody } from '../../registry/app-shell/screen-body.tsx';
@@ -13,6 +13,8 @@ import { columnNames, rowMentionPath, rowReferenceLabel } from '../../registry/v
 import { createDemoController } from './demo-controller.mjs';
 import { installFakeMic } from './fake-mic.mjs';
 import script from '../scenarios/scripts/design-system.json';
+import atlas from '../atlas/composer-atlas.json';
+import { runSteps } from '../atlas/steps.mjs';
 import { demoSlash } from './demo-slash.jsx';
 import { TASKS, Task } from './agent-card-demo.jsx';
 import { NoticeHost } from '../../registry/app-shell/shell-notice.tsx';
@@ -158,8 +160,17 @@ const nav = [
   { id: 'empty', label: 'Empty app view', icon: FolderIcon, render: () => <ScreenBody><Placeholder /></ScreenBody> },
 ];
 const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the change', icon: <Undo2Icon />, onSelect() { window.__undone = (window.__undone ?? 0) + 1; } }, voice: { transcribe: async () => 'Dictated text (fictional)' }, files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: lang, actions, attachments, mentions, slash, labels: { placeholder: 'Ask, or type /' } } };
+// `?atlas=<state id>`: the page opens in that state of the Composer atlas (a thumbnail of the Atlas page): the state's own steps, run on the real controls.
+const atlasState = atlas.states.find(state => state.id === new URLSearchParams(location.search).get('atlas'));
 function App() {
   const [route, setRoute] = useState('design'), [theme, setTheme] = useState(initial), [notices, setNotices] = useState([]);
+  useEffect(() => {
+    if (!atlasState) return;
+    const hooks = { say: text => { void controller.send('followUp', { text, attachments: [], restore: { text: '', attachments: [] } }); }, notify: kind => notify(kind) };
+    // The shell takes its first interaction a moment after it mounts: the steps wait for it.
+    const timer = setTimeout(() => { void runSteps({ root: document, win: window, act: run => run(), hooks }, atlasState.reach).catch(error => console.error(String(error))); }, 800);
+    return () => clearTimeout(timer);
+  }, []);
   notify = kind => { const id = `${kind}-${Date.now()}`; setNotices([{ ...NOTICES[kind], id, onDismiss: () => setNotices(list => list.filter(n => n.id !== id)) }]); };
   return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} {...(explore ? { composer: 'explore', context: { title: 'Design system', detail: 'The components of the kit, in both themes' } } : { composer: 'bar', floatingComposer: true })} agent={agent} notices={notices}
     account={{ name: 'Visitor', menu: [], theme: { value: theme, onChange: value => { applyTheme(value); setTheme(value); } } }} />;
