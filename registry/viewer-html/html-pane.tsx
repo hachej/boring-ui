@@ -90,7 +90,7 @@ export function HtmlPane({ controller, labels: ownLabels, title = 'HTML document
     </>}>
     {error && <p role="alert" className="m-0 px-3 py-2">{error}</p>}
     {interactive && mode === 'preview'
-      ? <InteractiveFrame text={state.text} sources={interactive.scriptSources} reload={reload} title={`${title} (running)`} testId={testId} />
+      ? <InteractiveFrame text={state.text} sources={interactive.scriptSources} libraries={interactive.libraries} reload={reload} title={`${title} (running)`} testId={testId} />
       : <HtmlViewer components={editorControls} controller={controller} title={title} header={false} mode={mode === 'source' ? 'source' : 'preview'} onModeChange={next => setMode(next)} className="boring-html-pane" />}
   </ViewerFrame>;
 }

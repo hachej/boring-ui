@@ -115,3 +115,19 @@ test('region, bucket and prefix reach the client; a manifest path outside the se
   assert.match(listing.errors[0].message, /invalid or duplicate file/);
   assert.equal(listing.skills.length, 1, 'v1 stays');
 });
+
+test('a custom prefix and manifest key, and skill files whose key does not end in .md', async () => {
+  const b = bucket();
+  const files = { 'letters/SKILL': skillText('letters', 'No extension.'), 'notes/skill.txt': skillText('notes', 'Text file.') };
+  for (const [path, text] of Object.entries(files)) b.put(`team/a/b/v1/${path}`, text);
+  b.put('team/a/b/manifest.json', JSON.stringify({ version: 'v1', files: Object.entries(files).map(([path, text]) => ({ path, sha256: sha(text) })) }));
+  const source = s3SkillSource({ client: b.client, region: 'eu-west-1', bucket: 'clinic', prefix: 'team/a/b', manifest: 'manifest.json' });
+  const listing = await source.list(context);
+  assert.deepEqual(listing.errors, []);
+  assert.deepEqual(listing.skills.map(skill => skill.name).sort(), ['letters', 'notes']);
+  assert.equal(b.calls[0].key, 'team/a/b/manifest.json');
+  assert.ok(b.calls.some(call => call.key === 'team/a/b/v1/letters/SKILL'));
+  const bare = s3SkillSource({ client: b.client, region: 'r', bucket: 'clinic' });
+  b.put('current.json', JSON.stringify({ version: 'v1', files: [] }));
+  assert.equal((await bare.list(context)).errors.length, 0, 'no prefix: keys at the bucket root');
+});
