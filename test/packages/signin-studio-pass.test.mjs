@@ -40,7 +40,8 @@ async function standIn() {
 }
 
 /** An app linked to Studio (a real Studio for the owner list and the round trip, the stand-in for the keys), its owner Olive through Studio,
- *  and Ben, invited as a member and signed up directly. `fresh()` is another instance of the same app: same database, empty caches. */
+ *  and Ben, invited as a member and signed up directly. Mira is a Studio owner who never signed in to the app (`miraSub`). `fresh(extra)` is
+ *  another instance of the same app, same database and empty caches, whose `studio` option has `extra` (the creator's `owner`) added. */
 async function linked() {
   const w = world();
   const olive = browser(w.route);
@@ -49,14 +50,18 @@ async function linked() {
   const studio = await standIn();
   const database = new DatabaseSync(':memory:'), appSecret = secret();
   const fetch = async (input, init) => (new URL(String(input instanceof Request ? input.url : input)).pathname === '/.well-known/jwks.json' ? studio.serve() : w.studioFetch(input, init));
-  const fresh = () => w.makeApp({ database, secret: appSecret, studio: { origin: STUDIO, app: NAME, clientId, fetch, ownersTtlMs: 0 } });
+  const fresh = (extra = {}) => w.makeApp({ database, secret: appSecret, studio: { origin: STUDIO, app: NAME, clientId, fetch, ownersTtlMs: 0, ...extra } });
   const app = fresh();
+  await olive.json(`${STUDIO}/api/signin/people`, { method: 'POST', body: { email: 'mira@studio.test', role: 'owner' } });
+  const mira = browser(w.route);
+  assert.equal((await signUp(mira, STUDIO, 'mira@studio.test')).status, 200);
+  const miraSub = (await me(mira, STUDIO)).body.person.id;
   await throughStudio(olive);
   const invite = async (email, role) => assert.equal((await olive.json(`${APP}/api/signin/people`, { method: 'POST', body: { email, role } })).status, 201);
   const member = async (email) => { await invite(email); const b = browser(w.route); assert.equal((await signUp(b, APP, email)).status, 200); return b; };
   const ben = await member('ben@app.test');
   const oliveSub = (await me(olive, STUDIO)).body.person.id;
-  return { w, olive, oliveSub, ben, studio, database, app, fresh, invite, member };
+  return { w, olive, oliveSub, miraSub, ben, studio, database, app, fresh, invite, member };
 }
 
 /** The Worker's /mcp: who `mcpPerson` says, else `mcpRefusal`; `owner_only` is an operation for owners. */
@@ -92,7 +97,8 @@ async function refused(ctx, worker, token, why) {
   assert.deepEqual(counts(ctx.database), before, `${why}: no row written`);
 }
 
-const BEN = { email: 'ben@app.test', role: 'member' }, OLIVE = { email: 'olive@studio.test', role: 'owner' };
+const BEN = { email: 'ben@app.test', role: 'member' }, OLIVE = { email: 'olive@studio.test', role: 'owner' }, MIRA = { email: 'mira@studio.test', role: 'owner' };
+const rowsOf = (db, table) => JSON.stringify(db.prepare(`select * from "${table}" order by id`).all());
 
 test('Studio\'s pass opens /mcp as the app\'s person: by e-mail for a member, by Studio id first for an owner; the app\'s own token still works', async () => {
   const ctx = await linked(), worker = mcp(ctx.app);
@@ -267,4 +273,89 @@ test('adoption: the template\'s own worker/signin.ts, copied unchanged, takes th
   const page = await worker(new Request(`${APP}/api/anything`, { headers: { authorization: `Bearer ${appToken(NAME, adaPass)}` } }));
   assert.equal(page.status, 401, 'the pass opens nothing but /mcp');
   assert.deepEqual(ran, ['/mcp'], 'the stand-in operation ran once, for the member\'s pass');
+});
+
+test('the creator\'s first pass makes their record: a user and a studio account keyed by their Studio id, no invitation, owner as Studio lists them; a second pass makes nothing', async () => {
+  const ctx = await linked(), worker = mcp(ctx.fresh({ owner: ctx.miraSub }));
+  const { pass } = ctx.studio, before = counts(ctx.database);
+  const first = await worker.call(await pass({ sub: ctx.miraSub, email: 'Mira@Studio.Test', name: 'Mira Lang' }), 'owner_only');
+  assert.equal(first.status, 200, 'the creator calls the owner-only operation with no prior sign-in');
+  assert.deepEqual(await first.json(), { as: MIRA.email, role: 'owner' });
+  const after = counts(ctx.database);
+  assert.deepEqual(after, { ...before, user: before.user + 1, account: before.account + 1 });
+  const user = ctx.database.prepare('select * from "user" where email = ?').get('mira@studio.test');
+  assert.equal(user.name, 'Mira Lang');
+  assert.equal(user.emailVerified, 0);
+  const account = ctx.database.prepare('select * from "account" where userId = ?').all(user.id);
+  assert.deepEqual(account.map((a) => [a.providerId, a.accountId]), [['studio', ctx.miraSub]]);
+  assert.equal(ctx.database.prepare('select count(*) as n from "invitation" where email = ?').get('mira@studio.test').n, 0, 'no invitation row');
+
+  await accepted(worker, await pass({ sub: ctx.miraSub, email: 'mira@studio.test' }), MIRA, 'owner_only');
+  await accepted(mcp(ctx.fresh({ owner: ctx.miraSub })), await pass({ sub: ctx.miraSub, email: 'mira.new@studio.test', name: 'Other' }), MIRA, 'owner_only');
+  assert.deepEqual(counts(ctx.database), after, 'a second pass makes no second record');
+  assert.equal(ctx.database.prepare('select name from "user" where email = ?').get('mira@studio.test').name, 'Mira Lang', 'nothing overwritten');
+});
+
+test('the creator\'s name: the pass\'s name claim, else the local part of the e-mail', async () => {
+  const ctx = await linked(), worker = mcp(ctx.fresh({ owner: ctx.miraSub }));
+  await accepted(worker, await ctx.studio.pass({ sub: ctx.miraSub, email: 'mira@studio.test', name: undefined }), MIRA);
+  assert.equal(ctx.database.prepare('select name from "user" where email = ?').get('mira@studio.test').name, 'mira');
+});
+
+test('two first passes of the creator at once make one user and one studio account', async () => {
+  const ctx = await linked(), worker = mcp(ctx.fresh({ owner: ctx.miraSub })), before = counts(ctx.database);
+  const token = await ctx.studio.pass({ sub: ctx.miraSub, email: 'mira@studio.test' });
+  const answers = await Promise.all([worker.call(token), worker.call(token), worker.call(token)]);
+  assert.ok(answers.some((r) => r.status === 200), 'one of them gets in');
+  assert.ok(answers.every((r) => [200, 401].includes(r.status)), 'none is a 500');
+  assert.deepEqual(counts(ctx.database), { ...before, user: before.user + 1, account: before.account + 1 });
+  await accepted(worker, token, MIRA);
+});
+
+test('only the creator\'s Studio id makes a record: no option, an empty or an undefined one, another Studio user with the creator\'s e-mail, a creator Studio does not list', async () => {
+  const ctx = await linked(), { pass } = ctx.studio;
+  const creator = await pass({ sub: ctx.miraSub, email: 'mira@studio.test' });
+  for (const [why, extra] of [['no owner option', {}], ['owner undefined', { owner: undefined }], ['owner empty', { owner: '' }]]) {
+    await refused(ctx, mcp(ctx.fresh(extra)), creator, why);
+  }
+  const worker = mcp(ctx.fresh({ owner: ctx.miraSub }));
+  await refused(ctx, worker, await pass({ sub: 'studio-impostor', email: 'mira@studio.test' }), 'another Studio user with the creator\'s e-mail');
+  await refused(ctx, worker, await pass({ sub: 'studio-someone', email: 'someone@studio.test' }), 'any other sub with no account');
+  await refused(ctx, mcp(ctx.fresh({ owner: 'studio-ghost' })), await pass({ sub: 'studio-ghost', email: 'ghost@studio.test' }), 'a creator Studio\'s signed list does not name');
+  await accepted(worker, creator, MIRA);
+  await refused(ctx, worker, await pass({ sub: 'studio-impostor', email: 'mira@studio.test' }), 'another Studio user with the creator\'s e-mail, once the creator\'s record exists');
+});
+
+test('an invalid pass of the creator makes nothing: expired, another aud, a key Studio does not hold, a long pass', async () => {
+  const ctx = await linked(), worker = mcp(ctx.fresh({ owner: ctx.miraSub })), { pass } = ctx.studio;
+  const as = { sub: ctx.miraSub, email: 'mira@studio.test' };
+  const rogue = await generateKeyPair('EdDSA', { crv: 'Ed25519', extractable: true });
+  await refused(ctx, worker, await pass({ ...as, iat: seconds() - 400, exp: seconds() - 100 }), 'expired');
+  await refused(ctx, worker, await pass({ ...as, aud: `${NAME}draft` }), 'the other stage\'s aud');
+  await refused(ctx, worker, await pass(as, { key: rogue.privateKey }), 'a bad signature');
+  await refused(ctx, worker, await pass({ ...as, exp: seconds() + 301 }), 'a pass longer than 300 s');
+});
+
+test('a creator who already exists by another route is never duplicated nor overwritten', async () => {
+  const ctx = await linked(), worker = mcp(ctx.fresh({ owner: ctx.miraSub })), { pass } = ctx.studio;
+  const creator = await pass({ sub: ctx.miraSub, email: 'mira@studio.test' });
+  const quinn = browser(ctx.w.route);
+  await ctx.olive.json(`${STUDIO}/api/signin/people`, { method: 'POST', body: { email: 'quinn@studio.test', role: 'owner' } });
+  assert.equal((await signUp(quinn, STUDIO, 'quinn@studio.test')).status, 200);
+  await throughStudio(quinn);
+  ctx.database.prepare('update "user" set email = ? where email = ?').run('mira@studio.test', 'quinn@studio.test');
+  const kept = ['user', 'account', 'invitation'].map((t) => rowsOf(ctx.database, t));
+  await refused(ctx, worker, creator, 'the creator\'s e-mail held by a user with another Studio id');
+  assert.deepEqual(['user', 'account', 'invitation'].map((t) => rowsOf(ctx.database, t)), kept, 'the existing rows are untouched');
+  ctx.database.prepare('update "user" set email = ? where email = ?').run('quinn@studio.test', 'mira@studio.test');
+
+  await ctx.member('mira@studio.test');
+  const direct = ['user', 'account', 'invitation'].map((t) => rowsOf(ctx.database, t)), total = counts(ctx.database);
+  await accepted(worker, creator, { email: 'mira@studio.test', role: 'member' });
+  assert.deepEqual(counts(ctx.database), total, 'the direct account is not given a second record');
+  assert.deepEqual(['user', 'account', 'invitation'].map((t) => rowsOf(ctx.database, t)), direct, 'and nothing of it is overwritten');
+  await ctx.olive.json(`${APP}/api/signin/people?email=mira@studio.test`, { method: 'DELETE' });
+  const uninvited = ['user', 'account', 'invitation'].map((t) => rowsOf(ctx.database, t));
+  await refused(ctx, worker, creator, 'a direct account of the creator\'s e-mail that is on no list');
+  assert.deepEqual(['user', 'account', 'invitation'].map((t) => rowsOf(ctx.database, t)), uninvited);
 });
