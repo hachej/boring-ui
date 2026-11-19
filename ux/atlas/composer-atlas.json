@@ -1,0 +1,2327 @@
+{
+ "title": "The composer atlas",
+ "summary": "Every state of the one composer and every transition between them, read from the code and driven by a test.",
+ "scenes": {
+  "shell": {
+   "kind": "shell",
+   "width": 1280,
+   "props": {
+    "composer": "bar",
+    "floatingComposer": true
+   },
+   "viewport": [
+    1280,
+    800
+   ]
+  },
+  "phone": {
+   "kind": "shell",
+   "width": 390,
+   "props": {
+    "composer": "bar",
+    "floatingComposer": true
+   },
+   "viewport": [
+    390,
+    844
+   ]
+  },
+  "explore": {
+   "kind": "shell",
+   "width": 1280,
+   "props": {
+    "composer": "explore"
+   },
+   "viewport": [
+    1280,
+    800
+   ]
+  },
+  "explore-narrow": {
+   "kind": "shell",
+   "width": 1099,
+   "props": {
+    "composer": "explore"
+   },
+   "viewport": [
+    1099,
+    800
+   ]
+  },
+  "explore-phone": {
+   "kind": "shell",
+   "width": 390,
+   "props": {
+    "composer": "explore"
+   },
+   "viewport": [
+    390,
+    844
+   ]
+  },
+  "standalone": {
+   "kind": "standalone",
+   "width": 1280,
+   "props": {},
+   "viewport": [
+    1280,
+    800
+   ]
+  },
+  "card": {
+   "kind": "card",
+   "width": 1280,
+   "props": {}
+  },
+  "chat-empty": {
+   "kind": "chat",
+   "width": 1280,
+   "props": {}
+  },
+  "chat-loading": {
+   "kind": "chat",
+   "width": 1280,
+   "props": {},
+   "connection": "connecting"
+  },
+  "chat-error": {
+   "kind": "chat",
+   "width": 1280,
+   "props": {},
+   "connection": "error"
+  }
+ },
+ "unions": [
+  {
+   "id": "ConversationSize",
+   "file": "registry/app-shell/layer-context.ts",
+   "find": "export type ConversationSize = "
+  },
+  {
+   "id": "AgentMode",
+   "file": "registry/app-shell/layer-context.ts",
+   "find": "export type AgentMode = "
+  },
+  {
+   "id": "ComposerPlace",
+   "file": "registry/app-shell/layer-context.ts",
+   "find": "export type ComposerPlace = "
+  },
+  {
+   "id": "AgentLayerState",
+   "file": "registry/app-shell/layer-context.ts",
+   "find": "export type AgentLayerState = "
+  },
+  {
+   "id": "AgentComposer",
+   "file": "registry/app-shell/layer-context.ts",
+   "find": "export type AgentComposer = ",
+   "outOfScope": {
+    "dock": "the older side-dock composer: no bar, no atlas states of its own",
+    "content": "the older content composer (Coach Max): one field under the page, no levels"
+   }
+  },
+  {
+   "id": "ExploreMode",
+   "file": "registry/app-shell/explore.tsx",
+   "find": "readonly mode: "
+  },
+  {
+   "id": "AgentCardLevel",
+   "file": "registry/agent-card/agent-card.tsx",
+   "find": "export type AgentCardLevel = "
+  },
+  {
+   "id": "FoldedCardKind",
+   "file": "registry/agent-bar/folded-card.ts",
+   "find": "export type FoldedCardKind = "
+  }
+ ],
+ "states": [
+  {
+   "id": "bar",
+   "group": "Shell composer",
+   "name": "Bar",
+   "scene": "shell",
+   "reach": [],
+   "detect": {
+    "has": [
+     "agent-composer-box",
+     "agent-bar-conversation"
+    ],
+    "lacks": [
+     "agent-tray",
+     "agent-full",
+     "composer-floating",
+     "composer-icon"
+    ]
+   },
+   "options": [
+    "AgentLayerState:closed",
+    "AgentComposer:bar",
+    "ComposerPlace:bottom"
+   ],
+   "code": "registry/app-shell/agent-placements.tsx",
+   "sees": "One field at the foot of the page with the chevron on its top border. Nothing else covers the page."
+  },
+  {
+   "id": "tray",
+   "group": "Shell composer",
+   "name": "Tray",
+   "scene": "shell",
+   "reach": [
+    {
+     "click": "agent-bar-conversation"
+    }
+   ],
+   "detect": {
+    "has": [
+     "agent-tray"
+    ],
+    "lacks": [
+     "[data-testid=agent-tray][data-expanded=true]",
+     "agent-full"
+    ]
+   },
+   "options": [
+    "ConversationSize:open",
+    "AgentMode:tray"
+   ],
+   "code": "registry/app-shell/agent-placements.tsx",
+   "sees": "The conversation opens as a small tray above the field, about a third of the height; the page stays live behind it."
+  },
+  {
+   "id": "grown",
+   "group": "Shell composer",
+   "name": "Grown",
+   "scene": "shell",
+   "reach": [
+    {
+     "click": "agent-bar-conversation"
+    },
+    {
+     "click": "agent-tray-grow"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=agent-tray][data-expanded=true]"
+    ],
+    "lacks": [
+     "agent-full"
+    ]
+   },
+   "options": [
+    "ConversationSize:grown"
+   ],
+   "code": "registry/app-shell/agent-placements.tsx",
+   "sees": "The same tray, taller (about seven tenths of the height)."
+  },
+  {
+   "id": "full",
+   "group": "Shell composer",
+   "name": "Full",
+   "scene": "shell",
+   "reach": [
+    {
+     "click": "agent-bar-conversation"
+    },
+    {
+     "click": "agent-tray-full"
+    }
+   ],
+   "detect": {
+    "has": [
+     "agent-full"
+    ]
+   },
+   "options": [
+    "ConversationSize:full"
+   ],
+   "code": "registry/app-shell/agent-placements.tsx",
+   "sees": "The conversation fills the main area; the navigation and the right pane stay beside it, the page behind is inert."
+  },
+  {
+   "id": "docked",
+   "group": "Shell composer",
+   "name": "Docked",
+   "scene": "shell",
+   "reach": [
+    {
+     "click": "agent-bar-conversation"
+    },
+    {
+     "click": "agent-tray-dock"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=agent-layer][data-state=open]"
+    ],
+    "lacks": [
+     "agent-tray",
+     "agent-full"
+    ]
+   },
+   "options": [
+    "AgentLayerState:open",
+    "AgentMode:dock"
+   ],
+   "code": "registry/app-shell/agent-placements.tsx",
+   "sees": "The conversation and its field move to a column beside the page; nothing stays at the bottom."
+  },
+  {
+   "id": "floating",
+   "group": "Floating composer",
+   "name": "Floating (at a corner)",
+   "scene": "shell",
+   "reach": [
+    {
+     "click": "composer-float"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=composer-floating][data-corner]"
+    ],
+    "lacks": [
+     "agent-tray",
+     "composer-icon"
+    ]
+   },
+   "options": [
+    "ComposerPlace:float"
+   ],
+   "code": "registry/app-shell/float-composer.tsx",
+   "sees": "The bar detaches from the foot of the page and floats over it at a corner; the page under it stays usable. A six-dot grip shows on its left."
+  },
+  {
+   "id": "floating-free",
+   "group": "Floating composer",
+   "name": "Floating (free place)",
+   "scene": "shell",
+   "reach": [
+    {
+     "click": "composer-float"
+    },
+    {
+     "key": "ArrowLeft",
+     "on": "composer-grip"
+    }
+   ],
+   "detect": {
+    "has": [
+     "composer-floating"
+    ],
+    "lacks": [
+     "[data-testid=composer-floating][data-corner]",
+     "composer-icon"
+    ]
+   },
+   "options": [
+    "ComposerPlace:float"
+   ],
+   "code": "registry/app-shell/float-composer.tsx",
+   "sees": "The floating bar after the person moved it: it keeps the place they gave it (remembered per app and person)."
+  },
+  {
+   "id": "floating-window",
+   "group": "Floating composer",
+   "name": "Floating window",
+   "scene": "shell",
+   "reach": [
+    {
+     "click": "composer-float"
+    },
+    {
+     "click": "agent-bar-conversation"
+    }
+   ],
+   "detect": {
+    "has": [
+     "composer-floating",
+     "agent-tray"
+    ],
+    "lacks": [
+     "[data-testid=agent-tray][data-expanded=true]"
+    ]
+   },
+   "options": [
+    "ConversationSize:open"
+   ],
+   "code": "registry/app-shell/float-composer.tsx",
+   "sees": "The conversation opens as a window above the floating bar, with its own grip."
+  },
+  {
+   "id": "icon",
+   "group": "Floating composer",
+   "name": "Icon (folded)",
+   "scene": "shell",
+   "reach": [
+    {
+     "click": "composer-minimise"
+    }
+   ],
+   "detect": {
+    "has": [
+     "composer-icon"
+    ],
+    "lacks": [
+     "agent-composer-box",
+     "composer-floating"
+    ]
+   },
+   "options": [
+    "ComposerPlace:icon"
+   ],
+   "code": "registry/app-shell/float-composer.tsx",
+   "sees": "The bar folds to one round button at the corner. It carries the unread mark and the needs-you ring, so a result that arrives is never silent."
+  },
+  {
+   "id": "standalone-floating",
+   "group": "Floating composer",
+   "name": "Standalone, floating",
+   "scene": "standalone",
+   "reach": [],
+   "detect": {
+    "has": [
+     "composer-floating"
+    ],
+    "lacks": [
+     "composer-icon"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/floating-composer.tsx",
+   "sees": "FloatingComposer on a page with no AppShell: the same bar floating over the page.",
+   "thumb": "floating"
+  },
+  {
+   "id": "standalone-icon",
+   "group": "Floating composer",
+   "name": "Standalone, icon",
+   "scene": "standalone",
+   "reach": [
+    {
+     "click": "composer-minimise"
+    }
+   ],
+   "detect": {
+    "has": [
+     "composer-icon"
+    ],
+    "lacks": [
+     "composer-floating"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/floating-composer.tsx",
+   "sees": "The standalone composer folded to its icon.",
+   "thumb": "icon"
+  },
+  {
+   "id": "explore-closed",
+   "group": "Explore mode",
+   "name": "Closed",
+   "scene": "explore",
+   "reach": [],
+   "detect": {
+    "has": [
+     "explore-toggle"
+    ],
+    "lacks": [
+     "explore-panel",
+     "agent-layer"
+    ]
+   },
+   "options": [
+    "AgentComposer:explore"
+   ],
+   "code": "registry/app-shell/explore.tsx",
+   "sees": "Nothing at the bottom. A small Ask tab at the bottom right edge; the page keeps its whole width. Every visit starts here."
+  },
+  {
+   "id": "explore-push",
+   "group": "Explore mode",
+   "name": "Open, pushing the page",
+   "scene": "explore",
+   "reach": [
+    {
+     "click": "explore-toggle"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=explore-panel][data-mode=push]"
+    ]
+   },
+   "options": [
+    "ExploreMode:push"
+   ],
+   "code": "registry/app-shell/explore.tsx",
+   "sees": "A right panel beside the page (from 1100 px): the page narrows. The panel has the context line, History, the chat and the field."
+  },
+  {
+   "id": "explore-overlay",
+   "group": "Explore mode",
+   "name": "Open, over the page",
+   "scene": "explore-narrow",
+   "reach": [
+    {
+     "click": "explore-toggle"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=explore-panel][data-mode=overlay]"
+    ]
+   },
+   "options": [
+    "ExploreMode:overlay"
+   ],
+   "code": "registry/app-shell/explore.tsx",
+   "sees": "Below 1100 px the panel covers the right of the page, leaving an edge of the page visible."
+  },
+  {
+   "id": "explore-sheet",
+   "group": "Explore mode",
+   "name": "Phone sheet",
+   "scene": "explore-phone",
+   "reach": [
+    {
+     "click": "explore-toggle"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=agent-layer][data-state=half]"
+    ],
+    "lacks": [
+     "explore-panel"
+    ]
+   },
+   "options": [
+    "ExploreMode:sheet"
+   ],
+   "code": "registry/app-shell/explore.tsx",
+   "sees": "On a phone the panel is the bottom sheet, the same drawer as every other mode."
+  },
+  {
+   "id": "explore-unread",
+   "group": "Explore mode",
+   "name": "Closed, a reply waits",
+   "scene": "explore",
+   "reach": [
+    {
+     "say": "answer"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=explore-place] [data-testid=agent-bar-unread]"
+    ],
+    "lacks": [
+     "explore-panel"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/explore.tsx",
+   "sees": "The Ask tab carries a dot (a count from two replies)."
+  },
+  {
+   "id": "explore-needs-you",
+   "group": "Explore mode",
+   "name": "Closed, a decision waits",
+   "scene": "explore",
+   "reach": [
+    {
+     "say": "approval"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=explore-toggle][data-needs-you]"
+    ],
+    "lacks": [
+     "explore-panel"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/explore.tsx",
+   "sees": "The Ask tab has the warning ring: the agent waits for the person."
+  },
+  {
+   "id": "phone-peek",
+   "group": "Phone",
+   "name": "Peek (bar)",
+   "scene": "phone",
+   "reach": [],
+   "detect": {
+    "has": [
+     "[data-testid=agent-layer][data-state=peek]"
+    ]
+   },
+   "options": [
+    "AgentLayerState:peek"
+   ],
+   "code": "registry/app-shell/agent-compact.tsx",
+   "sees": "The one field sits above the tab bar, with the grabber on its top edge. The page stays visible."
+  },
+  {
+   "id": "phone-half",
+   "group": "Phone",
+   "name": "Half sheet",
+   "scene": "phone",
+   "reach": [
+    {
+     "click": "agent-bar-conversation"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=agent-layer][data-state=half]"
+    ]
+   },
+   "options": [
+    "AgentLayerState:half"
+   ],
+   "code": "registry/app-shell/agent-compact.tsx",
+   "sees": "The conversation is a bottom sheet over half the screen; the tab bar stays."
+  },
+  {
+   "id": "phone-full",
+   "group": "Phone",
+   "name": "Full sheet",
+   "scene": "phone",
+   "reach": [
+    {
+     "click": "agent-bar-conversation"
+    },
+    {
+     "tap": "[data-slot=drawer-swipe-handle]"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=agent-layer][data-state=full]"
+    ]
+   },
+   "options": [
+    "AgentLayerState:full"
+   ],
+   "code": "registry/app-shell/agent-compact.tsx",
+   "sees": "The sheet covers the whole screen, the tab bar included. One field, as at every other level."
+  },
+  {
+   "id": "phone-icon",
+   "group": "Phone",
+   "name": "Icon (folded)",
+   "scene": "phone",
+   "reach": [
+    {
+     "click": "composer-minimise"
+    }
+   ],
+   "detect": {
+    "has": [
+     "composer-icon"
+    ],
+    "lacks": [
+     "agent-layer"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/float-composer.tsx",
+   "sees": "A round icon above the tab bar. A phone never floats: Minimise and the icon are the only other place."
+  },
+  {
+   "id": "card-folded",
+   "group": "Agent card",
+   "name": "Folded",
+   "scene": "card",
+   "reach": [],
+   "detect": {
+    "has": [
+     "[data-testid=agent-card][data-level=\"0\"]"
+    ],
+    "lacks": [
+     "agent-card-composer"
+    ]
+   },
+   "options": [
+    "AgentCardLevel:0"
+   ],
+   "code": "registry/agent-card/agent-card.tsx",
+   "sees": "A header: the agent colour dot, the title, a status chip and one line of activity. A decision the agent waits for shows here. The chat bubble is the only control."
+  },
+  {
+   "id": "card-composer",
+   "group": "Agent card",
+   "name": "Composer",
+   "scene": "card",
+   "reach": [
+    {
+     "click": "agent-card-chat"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=agent-card][data-level=\"0\"]",
+     "agent-card-composer"
+    ]
+   },
+   "options": [],
+   "code": "registry/agent-card/agent-card.tsx",
+   "sees": "The folded card with the field open under it, for a quick word."
+  },
+  {
+   "id": "card-tray",
+   "group": "Agent card",
+   "name": "Tray",
+   "scene": "card",
+   "reach": [
+    {
+     "click": "agent-card-header"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=agent-card][data-level=\"1\"]"
+    ]
+   },
+   "options": [
+    "AgentCardLevel:1"
+   ],
+   "code": "registry/agent-card/agent-card.tsx",
+   "sees": "A small tray under the header: the conversation and its field."
+  },
+  {
+   "id": "card-full",
+   "group": "Agent card",
+   "name": "Full chat",
+   "scene": "card",
+   "reach": [
+    {
+     "click": "agent-card-header"
+    },
+    {
+     "click": "agent-card-expand-more"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=agent-card][data-level=\"2\"]"
+    ]
+   },
+   "options": [
+    "AgentCardLevel:2"
+   ],
+   "code": "registry/agent-card/agent-card.tsx",
+   "sees": "The whole chat in the card."
+  },
+  {
+   "id": "card-docked",
+   "group": "Agent card",
+   "name": "Docked",
+   "scene": "card",
+   "reach": [
+    {
+     "click": "agent-card-dock"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=agent-card][data-level=docked]",
+     "agent-card-docked-chat"
+    ]
+   },
+   "options": [],
+   "code": "registry/agent-card/agent-card.tsx",
+   "sees": "The chat moves to the place the host provides (a side column); the card keeps a Docked chip."
+  },
+  {
+   "id": "notice-host",
+   "group": "Notices and signals",
+   "name": "Host notice",
+   "scene": "shell",
+   "reach": [
+    {
+     "notify": "warning"
+    }
+   ],
+   "detect": {
+    "has": [
+     "notice"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/shell-notice.tsx",
+   "sees": "One notice above the bar, one at a time, with its action; it does not open the conversation or move focus."
+  },
+  {
+   "id": "bar-working",
+   "group": "Notices and signals",
+   "name": "Working card",
+   "scene": "shell",
+   "reach": [
+    {
+     "say": "tools",
+     "settle": 300
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=agent-card][data-state=working]"
+    ]
+   },
+   "options": [
+    "FoldedCardKind:working"
+   ],
+   "code": "registry/app-shell/agent-bar-parts.tsx",
+   "sees": "While the agent works with the conversation folded, one card joined to the field says what the tool does. Nothing opens by itself."
+  },
+  {
+   "id": "bar-reply",
+   "group": "Notices and signals",
+   "name": "Reply card and unread mark",
+   "scene": "shell",
+   "reach": [
+    {
+     "say": "answer",
+     "settle": 1500
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=agent-card][data-state=reply]",
+     "agent-bar-unread"
+    ]
+   },
+   "options": [
+    "FoldedCardKind:reply"
+   ],
+   "code": "registry/app-shell/agent-bar-parts.tsx",
+   "sees": "The reply as a card on the field, three lines, and a dot on the chevron (a count from two)."
+  },
+  {
+   "id": "bar-question",
+   "group": "Notices and signals",
+   "name": "Needs-you card",
+   "scene": "shell",
+   "reach": [
+    {
+     "say": "question",
+     "settle": 800
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=agent-card][data-state=question][data-needs-you]"
+    ]
+   },
+   "options": [
+    "FoldedCardKind:question"
+   ],
+   "code": "registry/app-shell/agent-bar-parts.tsx",
+   "sees": "The agent asks: the choices show on the card and the bar has the warning ring until the person answers."
+  },
+  {
+   "id": "bar-failed",
+   "group": "Notices and signals",
+   "name": "Failure line",
+   "scene": "shell",
+   "reach": [
+    {
+     "say": "error",
+     "settle": 1500
+    }
+   ],
+   "detect": {
+    "has": [
+     "agent-card-failed"
+    ]
+   },
+   "options": [
+    "FoldedCardKind:failed"
+   ],
+   "code": "registry/app-shell/agent-bar-parts.tsx",
+   "sees": "One sentence in the destructive colour on the card (the app's replyError, else the chat's own words) until the next turn starts."
+  },
+  {
+   "id": "chat-empty",
+   "group": "Chat",
+   "name": "Empty",
+   "scene": "chat-empty",
+   "reach": [],
+   "detect": {
+    "has": [
+     "empty-state"
+    ],
+    "lacks": [
+     "loading",
+     "connection-notice"
+    ]
+   },
+   "options": [],
+   "code": "registry/pi-chat/empty-state.tsx",
+   "sees": "No messages yet: the chat's empty state with its description."
+  },
+  {
+   "id": "chat-loading",
+   "group": "Chat",
+   "name": "Loading",
+   "scene": "chat-loading",
+   "reach": [],
+   "detect": {
+    "has": [
+     "loading"
+    ],
+    "lacks": [
+     "connection-notice"
+    ]
+   },
+   "options": [],
+   "code": "registry/pi-chat/pi-chat.tsx",
+   "sees": "The conversation is connecting: a spinner and one word."
+  },
+  {
+   "id": "chat-error",
+   "group": "Chat",
+   "name": "Connection error",
+   "scene": "chat-error",
+   "reach": [],
+   "detect": {
+    "has": [
+     "connection-notice"
+    ]
+   },
+   "options": [],
+   "code": "registry/pi-chat/notice.tsx",
+   "sees": "The conversation could not load: one notice with a Reconnect button."
+  },
+  {
+   "id": "chat-ready",
+   "group": "Chat",
+   "name": "With messages",
+   "scene": "chat-empty",
+   "reach": [
+    {
+     "say": "answer",
+     "settle": 1500
+    }
+   ],
+   "detect": {
+    "has": [
+     "transcript"
+    ],
+    "lacks": [
+     "empty-state",
+     "loading",
+     "connection-notice"
+    ]
+   },
+   "options": [],
+   "code": "registry/pi-chat/pi-chat.tsx",
+   "sees": "The transcript."
+  },
+  {
+   "id": "icon-unread",
+   "group": "Notices and signals",
+   "name": "Icon with the unread mark",
+   "scene": "shell",
+   "reach": [
+    {
+     "click": "composer-minimise"
+    },
+    {
+     "say": "answer",
+     "settle": 1500
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=composer-icon] [data-testid=agent-bar-unread]"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/float-composer.tsx",
+   "sees": "The folded icon carries a dot (a count from two replies): a result that arrives while collapsed is never silent."
+  },
+  {
+   "id": "icon-needs-you",
+   "group": "Notices and signals",
+   "name": "Icon with the needs-you ring",
+   "scene": "shell",
+   "reach": [
+    {
+     "click": "composer-minimise"
+    },
+    {
+     "say": "approval",
+     "settle": 800
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-testid=composer-icon][data-needs-you]"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/float-composer.tsx",
+   "sees": "The folded icon has the warning ring: the agent waits for a decision."
+  }
+ ],
+ "transitions": [
+  {
+   "id": "bar-tray",
+   "from": "bar",
+   "to": "tray",
+   "trigger": {
+    "kind": "click",
+    "label": "Conversation (the chevron)",
+    "do": [
+     {
+      "click": "agent-bar-conversation"
+     }
+    ]
+   },
+   "guard": "composer=\"bar\", not a phone"
+  },
+  {
+   "id": "bar-full",
+   "from": "bar",
+   "to": "full",
+   "trigger": {
+    "kind": "click",
+    "label": "Full screen (the strip, shown on hover or focus)",
+    "do": [
+     {
+      "click": "agent-tray-full"
+     }
+    ]
+   },
+   "guard": "composer=\"bar\", not a phone",
+   "note": "Back and Esc return to the bar, not to the tray: the conversation was never open."
+  },
+  {
+   "id": "tray-bar",
+   "from": "tray",
+   "to": "bar",
+   "trigger": {
+    "kind": "click",
+    "label": "Collapse (the chevron, or the X in the tray header)",
+    "do": [
+     {
+      "click": "agent-tray-reduce"
+     }
+    ]
+   },
+   "guard": "composer=\"bar\", not a phone"
+  },
+  {
+   "id": "tray-bar-esc",
+   "from": "tray",
+   "to": "bar",
+   "trigger": {
+    "kind": "key",
+    "label": "Esc",
+    "do": [
+     {
+      "key": "Escape",
+      "on": "composer-input"
+     }
+    ]
+   },
+   "guard": "focus in the tray, the field or the strip; no menu, list or dialog open"
+  },
+  {
+   "id": "tray-grown",
+   "from": "tray",
+   "to": "grown",
+   "trigger": {
+    "kind": "click",
+    "label": "Expand",
+    "do": [
+     {
+      "click": "agent-tray-grow"
+     }
+    ]
+   },
+   "guard": "composer=\"bar\", not a phone"
+  },
+  {
+   "id": "grown-bar",
+   "from": "grown",
+   "to": "bar",
+   "trigger": {
+    "kind": "click",
+    "label": "Collapse",
+    "do": [
+     {
+      "click": "agent-tray-reduce"
+     }
+    ]
+   },
+   "guard": "composer=\"bar\", not a phone"
+  },
+  {
+   "id": "grown-bar-esc",
+   "from": "grown",
+   "to": "bar",
+   "trigger": {
+    "kind": "key",
+    "label": "Esc",
+    "do": [
+     {
+      "key": "Escape",
+      "on": "composer-input"
+     }
+    ]
+   },
+   "guard": "focus in the tray, the field or the strip; no menu, list or dialog open"
+  },
+  {
+   "id": "tray-full",
+   "from": "tray",
+   "to": "full",
+   "trigger": {
+    "kind": "click",
+    "label": "Full screen",
+    "do": [
+     {
+      "click": "agent-tray-full"
+     }
+    ]
+   },
+   "guard": "composer=\"bar\", not a phone"
+  },
+  {
+   "id": "grown-full",
+   "from": "grown",
+   "to": "full",
+   "trigger": {
+    "kind": "click",
+    "label": "Full screen",
+    "do": [
+     {
+      "click": "agent-tray-full"
+     }
+    ]
+   },
+   "guard": "composer=\"bar\", not a phone"
+  },
+  {
+   "id": "full-grown",
+   "from": "full",
+   "to": "grown",
+   "trigger": {
+    "kind": "click",
+    "label": "Exit full screen (the back chevron)",
+    "do": [
+     {
+      "click": "agent-full-back"
+     }
+    ]
+   },
+   "guard": "opened from the tray or the grown tray"
+  },
+  {
+   "id": "full-grown-esc",
+   "from": "full",
+   "to": "grown",
+   "trigger": {
+    "kind": "key",
+    "label": "Esc",
+    "do": [
+     {
+      "key": "Escape"
+     }
+    ]
+   },
+   "guard": "no menu, list or dialog open over the conversation"
+  },
+  {
+   "id": "full-bar",
+   "from": "full",
+   "to": "bar",
+   "trigger": {
+    "kind": "click",
+    "label": "Close (the X in the header)",
+    "do": [
+     {
+      "click": "agent-full-close"
+     }
+    ]
+   },
+   "guard": "any origin"
+  },
+  {
+   "id": "full-bar-back",
+   "from": "full",
+   "to": "bar",
+   "trigger": {
+    "kind": "click",
+    "label": "Exit full screen (the back chevron)",
+    "do": [
+     {
+      "click": "agent-full-back"
+     }
+    ]
+   },
+   "guard": "opened from the bar (nothing was open before)",
+   "setup": [
+    {
+     "click": "agent-tray-full"
+    }
+   ]
+  },
+  {
+   "id": "full-docked",
+   "from": "full",
+   "to": "docked",
+   "trigger": {
+    "kind": "click",
+    "label": "Exit full screen (the back chevron)",
+    "do": [
+     {
+      "click": "agent-full-back"
+     }
+    ]
+   },
+   "guard": "opened from the docked column",
+   "setup": [
+    {
+     "click": "agent-bar-conversation"
+    },
+    {
+     "click": "agent-tray-dock"
+    },
+    {
+     "click": "agent-layer-full"
+    }
+   ]
+  },
+  {
+   "id": "tray-docked",
+   "from": "tray",
+   "to": "docked",
+   "trigger": {
+    "kind": "click",
+    "label": "Dock on the right (or the left)",
+    "do": [
+     {
+      "click": "agent-tray-dock"
+     }
+    ]
+   },
+   "guard": "docks (default), not a phone"
+  },
+  {
+   "id": "grown-docked",
+   "from": "grown",
+   "to": "docked",
+   "trigger": {
+    "kind": "click",
+    "label": "Dock on the right (or the left)",
+    "do": [
+     {
+      "click": "agent-tray-dock"
+     }
+    ]
+   },
+   "guard": "docks (default), not a phone"
+  },
+  {
+   "id": "docked-tray",
+   "from": "docked",
+   "to": "tray",
+   "trigger": {
+    "kind": "click",
+    "label": "Move to the bottom",
+    "do": [
+     {
+      "click": "agent-layer-undock"
+     }
+    ]
+   },
+   "guard": "docked"
+  },
+  {
+   "id": "docked-bar",
+   "from": "docked",
+   "to": "bar",
+   "trigger": {
+    "kind": "click",
+    "label": "Collapse",
+    "do": [
+     {
+      "click": "agent-layer-close"
+     }
+    ]
+   },
+   "guard": "docked"
+  },
+  {
+   "id": "docked-bar-esc",
+   "from": "docked",
+   "to": "bar",
+   "trigger": {
+    "kind": "key",
+    "label": "Esc",
+    "do": [
+     {
+      "key": "Escape"
+     }
+    ]
+   },
+   "guard": "no list or file opened over the column"
+  },
+  {
+   "id": "docked-full",
+   "from": "docked",
+   "to": "full",
+   "trigger": {
+    "kind": "click",
+    "label": "Full screen",
+    "do": [
+     {
+      "click": "agent-layer-full"
+     }
+    ]
+   },
+   "guard": "docked"
+  },
+  {
+   "id": "bar-floating",
+   "from": "bar",
+   "to": "floating",
+   "trigger": {
+    "kind": "click",
+    "label": "Float over the app",
+    "do": [
+     {
+      "click": "composer-float"
+     }
+    ]
+   },
+   "guard": "floatingComposer, a screen of at least phone width, the composer not anchored"
+  },
+  {
+   "id": "floating-bar",
+   "from": "floating",
+   "to": "bar",
+   "trigger": {
+    "kind": "click",
+    "label": "Dock to the bottom",
+    "do": [
+     {
+      "click": "composer-dock-bottom"
+     }
+    ]
+   },
+   "guard": "floatingComposer, a screen of at least phone width, the composer not anchored"
+  },
+  {
+   "id": "floating-window",
+   "from": "floating",
+   "to": "floating-window",
+   "trigger": {
+    "kind": "click",
+    "label": "Conversation (the chevron)",
+    "do": [
+     {
+      "click": "agent-bar-conversation"
+     }
+    ]
+   },
+   "guard": "floatingComposer, a screen of at least phone width, the composer not anchored"
+  },
+  {
+   "id": "window-floating",
+   "from": "floating-window",
+   "to": "floating",
+   "trigger": {
+    "kind": "click",
+    "label": "Collapse",
+    "do": [
+     {
+      "click": "agent-tray-reduce"
+     }
+    ]
+   },
+   "guard": "floatingComposer, a screen of at least phone width, the composer not anchored"
+  },
+  {
+   "id": "window-floating-esc",
+   "from": "floating-window",
+   "to": "floating",
+   "trigger": {
+    "kind": "key",
+    "label": "Esc",
+    "do": [
+     {
+      "key": "Escape",
+      "on": "composer-input"
+     }
+    ]
+   },
+   "guard": "focus in the tray, the field or the strip; no menu, list or dialog open"
+  },
+  {
+   "id": "floating-free",
+   "from": "floating",
+   "to": "floating-free",
+   "trigger": {
+    "kind": "key",
+    "label": "Arrow keys on the grip (16 px a step, 64 with Shift)",
+    "do": [
+     {
+      "key": "ArrowLeft",
+      "on": "composer-grip"
+     }
+    ]
+   },
+   "guard": "the grip has focus"
+  },
+  {
+   "id": "floating-drag",
+   "from": "floating",
+   "to": "floating-free",
+   "trigger": {
+    "kind": "drag",
+    "label": "Drag the grip away from the corner",
+    "do": [
+     {
+      "drag": {
+       "from": [
+        0,
+        0
+       ],
+       "to": [
+        640,
+        400
+       ]
+      }
+     }
+    ]
+   },
+   "guard": "a fine pointer or touch, wide screen"
+  },
+  {
+   "id": "free-snap",
+   "from": "floating-free",
+   "to": "floating",
+   "trigger": {
+    "kind": "drag",
+    "label": "Drop the grip within 120 px of a corner (snap)",
+    "do": [
+     {
+      "drag": {
+       "from": [
+        0,
+        0
+       ],
+       "to": [
+        1250,
+        760
+       ]
+      }
+     }
+    ]
+   },
+   "guard": "a fine pointer or touch, wide screen"
+  },
+  {
+   "id": "bar-icon",
+   "from": "bar",
+   "to": "icon",
+   "trigger": {
+    "kind": "click",
+    "label": "Minimise",
+    "do": [
+     {
+      "click": "composer-minimise"
+     }
+    ]
+   },
+   "guard": "floatingComposer"
+  },
+  {
+   "id": "floating-icon",
+   "from": "floating",
+   "to": "icon",
+   "trigger": {
+    "kind": "click",
+    "label": "Minimise",
+    "do": [
+     {
+      "click": "composer-minimise"
+     }
+    ]
+   },
+   "guard": "floatingComposer"
+  },
+  {
+   "id": "icon-bar",
+   "from": "icon",
+   "to": "bar",
+   "trigger": {
+    "kind": "click",
+    "label": "Open the assistant (the round icon)",
+    "do": [
+     {
+      "click": "composer-icon"
+     }
+    ]
+   },
+   "guard": "folded from the bar",
+   "setup": [
+    {
+     "click": "composer-minimise"
+    }
+   ],
+   "note": "The icon restores the place it came from."
+  },
+  {
+   "id": "icon-floating",
+   "from": "icon",
+   "to": "floating",
+   "trigger": {
+    "kind": "click",
+    "label": "Open the assistant (the round icon)",
+    "do": [
+     {
+      "click": "composer-icon"
+     }
+    ]
+   },
+   "guard": "folded from the floating bar",
+   "setup": [
+    {
+     "click": "composer-float"
+    },
+    {
+     "click": "composer-minimise"
+    }
+   ]
+  },
+  {
+   "id": "standalone-icon",
+   "from": "standalone-floating",
+   "to": "standalone-icon",
+   "trigger": {
+    "kind": "click",
+    "label": "Minimise",
+    "do": [
+     {
+      "click": "composer-minimise"
+     }
+    ]
+   },
+   "guard": "FloatingComposer"
+  },
+  {
+   "id": "standalone-restore",
+   "from": "standalone-icon",
+   "to": "standalone-floating",
+   "trigger": {
+    "kind": "click",
+    "label": "Open the assistant (the round icon)",
+    "do": [
+     {
+      "click": "composer-icon"
+     }
+    ]
+   },
+   "guard": "FloatingComposer"
+  },
+  {
+   "id": "explore-open",
+   "from": "explore-closed",
+   "to": "explore-push",
+   "trigger": {
+    "kind": "click",
+    "label": "Ask (the tab)",
+    "do": [
+     {
+      "click": "explore-toggle"
+     }
+    ],
+    "alt": [
+     [
+      {
+       "key": "Control+j"
+      }
+     ],
+     [
+      {
+       "key": "Meta+j"
+      }
+     ]
+    ]
+   },
+   "guard": "composer=\"explore\", width of 1100 or more"
+  },
+  {
+   "id": "explore-open-overlay",
+   "from": "explore-closed",
+   "to": "explore-overlay",
+   "trigger": {
+    "kind": "click",
+    "label": "Ask (the tab)",
+    "do": [
+     {
+      "click": "explore-toggle"
+     }
+    ],
+    "alt": [
+     [
+      {
+       "key": "Control+j"
+      }
+     ]
+    ]
+   },
+   "guard": "composer=\"explore\", width from phone to 1099",
+   "scene": "explore-narrow",
+   "note": "Same trigger as above: the width chooses push or overlay."
+  },
+  {
+   "id": "explore-close-esc",
+   "from": "explore-push",
+   "to": "explore-closed",
+   "trigger": {
+    "kind": "key",
+    "label": "Esc",
+    "do": [
+     {
+      "key": "Escape"
+     }
+    ],
+    "alt": [
+     [
+      {
+       "key": "Control+j"
+      }
+     ],
+     [
+      {
+       "click": "agent-layer-close"
+      }
+     ]
+    ]
+   },
+   "guard": "no list, menu or file opened over the panel"
+  },
+  {
+   "id": "explore-overlay-close",
+   "from": "explore-overlay",
+   "to": "explore-closed",
+   "trigger": {
+    "kind": "key",
+    "label": "Esc",
+    "do": [
+     {
+      "key": "Escape"
+     }
+    ],
+    "alt": [
+     [
+      {
+       "key": "Control+j"
+      }
+     ],
+     [
+      {
+       "click": "agent-layer-close"
+      }
+     ]
+    ]
+   },
+   "guard": "no list, menu or file opened over the panel"
+  },
+  {
+   "id": "explore-sheet-open",
+   "from": "explore-closed",
+   "to": "explore-sheet",
+   "trigger": {
+    "kind": "click",
+    "label": "Ask (the tab)",
+    "do": [
+     {
+      "click": "explore-toggle"
+     }
+    ]
+   },
+   "guard": "composer=\"explore\", phone",
+   "scene": "explore-phone",
+   "note": "On a phone the first press opens the sheet; focus stays on the sheet until the field is tapped."
+  },
+  {
+   "id": "explore-sheet-close",
+   "from": "explore-sheet",
+   "to": "explore-closed",
+   "trigger": {
+    "kind": "click",
+    "label": "Close",
+    "do": [
+     {
+      "click": "agent-layer-close"
+     }
+    ]
+   },
+   "guard": "phone"
+  },
+  {
+   "id": "explore-to-overlay",
+   "from": "explore-push",
+   "to": "explore-overlay",
+   "trigger": {
+    "kind": "resize",
+    "label": "The window narrows below 1100 px",
+    "do": [
+     {
+      "resize": 1099
+     }
+    ]
+   },
+   "guard": "width < 1100 while open"
+  },
+  {
+   "id": "explore-to-push",
+   "from": "explore-overlay",
+   "to": "explore-push",
+   "trigger": {
+    "kind": "resize",
+    "label": "The window widens to 1100 px",
+    "do": [
+     {
+      "resize": 1100
+     }
+    ]
+   },
+   "guard": "width >= 1100 while open"
+  },
+  {
+   "id": "explore-reply",
+   "from": "explore-closed",
+   "to": "explore-unread",
+   "trigger": {
+    "kind": "event",
+    "label": "A reply arrives while the panel is closed",
+    "do": [
+     {
+      "say": "answer"
+     }
+    ]
+   },
+   "guard": "composer=\"explore\""
+  },
+  {
+   "id": "explore-decision",
+   "from": "explore-closed",
+   "to": "explore-needs-you",
+   "trigger": {
+    "kind": "event",
+    "label": "The agent waits for a decision while the panel is closed",
+    "do": [
+     {
+      "say": "approval"
+     }
+    ]
+   },
+   "guard": "composer=\"explore\""
+  },
+  {
+   "id": "explore-read",
+   "from": "explore-unread",
+   "to": "explore-push",
+   "trigger": {
+    "kind": "click",
+    "label": "Ask (the tab with the dot)",
+    "do": [
+     {
+      "click": "explore-toggle"
+     }
+    ]
+   },
+   "guard": "opening reads the reply",
+   "after": {
+    "lacks": [
+     "agent-bar-unread"
+    ]
+   }
+  },
+  {
+   "id": "explore-decide",
+   "from": "explore-needs-you",
+   "to": "explore-push",
+   "trigger": {
+    "kind": "click",
+    "label": "Ask (the tab with the ring)",
+    "do": [
+     {
+      "click": "explore-toggle"
+     }
+    ]
+   },
+   "guard": "the decision is in the panel"
+  },
+  {
+   "id": "peek-half",
+   "from": "phone-peek",
+   "to": "phone-half",
+   "trigger": {
+    "kind": "click",
+    "label": "Conversation (the chevron, or a tap on the grabber)",
+    "do": [
+     {
+      "click": "agent-bar-conversation"
+     }
+    ]
+   },
+   "guard": "phone"
+  },
+  {
+   "id": "half-full",
+   "from": "phone-half",
+   "to": "phone-full",
+   "trigger": {
+    "kind": "tap",
+    "label": "Tap the grabber (or drag it up)",
+    "do": [
+     {
+      "tap": "[data-slot=drawer-swipe-handle]"
+     }
+    ]
+   },
+   "guard": "phone"
+  },
+  {
+   "id": "full-peek",
+   "from": "phone-full",
+   "to": "phone-peek",
+   "trigger": {
+    "kind": "tap",
+    "label": "Tap the grabber (or drag it down)",
+    "do": [
+     {
+      "tap": "[data-slot=drawer-swipe-handle]"
+     }
+    ]
+   },
+   "guard": "phone"
+  },
+  {
+   "id": "half-peek",
+   "from": "phone-half",
+   "to": "phone-peek",
+   "trigger": {
+    "kind": "click",
+    "label": "Collapse (the X in the sheet header)",
+    "do": [
+     {
+      "click": "agent-layer-close"
+     }
+    ]
+   },
+   "guard": "phone"
+  },
+  {
+   "id": "peek-icon",
+   "from": "phone-peek",
+   "to": "phone-icon",
+   "trigger": {
+    "kind": "click",
+    "label": "Minimise",
+    "do": [
+     {
+      "click": "composer-minimise"
+     }
+    ]
+   },
+   "guard": "floatingComposer, phone"
+  },
+  {
+   "id": "icon-peek",
+   "from": "phone-icon",
+   "to": "phone-peek",
+   "trigger": {
+    "kind": "click",
+    "label": "Open the assistant (the round icon)",
+    "do": [
+     {
+      "click": "composer-icon"
+     }
+    ]
+   },
+   "guard": "phone",
+   "note": "The bar comes back at rest, the conversation is not opened."
+  },
+  {
+   "id": "card-chat",
+   "from": "card-folded",
+   "to": "card-composer",
+   "trigger": {
+    "kind": "click",
+    "label": "Open the chat (the bubble on the strip)",
+    "do": [
+     {
+      "click": "agent-card-chat"
+     }
+    ]
+   },
+   "guard": "the card"
+  },
+  {
+   "id": "composer-folded",
+   "from": "card-composer",
+   "to": "card-folded",
+   "trigger": {
+    "kind": "click",
+    "label": "Collapse",
+    "do": [
+     {
+      "click": "agent-card-collapse"
+     }
+    ]
+   },
+   "guard": "the card"
+  },
+  {
+   "id": "composer-tray",
+   "from": "card-composer",
+   "to": "card-tray",
+   "trigger": {
+    "kind": "click",
+    "label": "Expand",
+    "do": [
+     {
+      "click": "agent-card-expand"
+     }
+    ]
+   },
+   "guard": "the card"
+  },
+  {
+   "id": "folded-tray",
+   "from": "card-folded",
+   "to": "card-tray",
+   "trigger": {
+    "kind": "click",
+    "label": "The header (\"<title>, Expand\")",
+    "do": [
+     {
+      "click": "agent-card-header"
+     }
+    ]
+   },
+   "guard": "the card"
+  },
+  {
+   "id": "tray-composer",
+   "from": "card-tray",
+   "to": "card-composer",
+   "trigger": {
+    "kind": "click",
+    "label": "Collapse",
+    "do": [
+     {
+      "click": "agent-card-collapse"
+     }
+    ]
+   },
+   "guard": "the card"
+  },
+  {
+   "id": "tray-card-full",
+   "from": "card-tray",
+   "to": "card-full",
+   "trigger": {
+    "kind": "click",
+    "label": "Expand more",
+    "do": [
+     {
+      "click": "agent-card-expand-more"
+     }
+    ]
+   },
+   "guard": "the card"
+  },
+  {
+   "id": "card-full-tray",
+   "from": "card-full",
+   "to": "card-tray",
+   "trigger": {
+    "kind": "click",
+    "label": "Collapse",
+    "do": [
+     {
+      "click": "agent-card-collapse"
+     }
+    ]
+   },
+   "guard": "the card"
+  },
+  {
+   "id": "card-tray-folded-esc",
+   "from": "card-tray",
+   "to": "card-folded",
+   "trigger": {
+    "kind": "key",
+    "label": "Esc",
+    "do": [
+     {
+      "key": "Escape",
+      "on": "agent-card"
+     }
+    ]
+   },
+   "guard": "a level above folded, not docked"
+  },
+  {
+   "id": "card-full-folded-esc",
+   "from": "card-full",
+   "to": "card-folded",
+   "trigger": {
+    "kind": "key",
+    "label": "Esc",
+    "do": [
+     {
+      "key": "Escape",
+      "on": "agent-card"
+     }
+    ]
+   },
+   "guard": "a level above folded, not docked"
+  },
+  {
+   "id": "card-dock",
+   "from": "card-folded",
+   "to": "card-docked",
+   "trigger": {
+    "kind": "click",
+    "label": "Dock",
+    "do": [
+     {
+      "click": "agent-card-dock"
+     }
+    ]
+   },
+   "guard": "the host gives a dock element"
+  },
+  {
+   "id": "card-composer-dock",
+   "from": "card-composer",
+   "to": "card-docked",
+   "trigger": {
+    "kind": "click",
+    "label": "Dock",
+    "do": [
+     {
+      "click": "agent-card-dock"
+     }
+    ]
+   },
+   "guard": "the host gives a dock element"
+  },
+  {
+   "id": "card-tray-dock",
+   "from": "card-tray",
+   "to": "card-docked",
+   "trigger": {
+    "kind": "click",
+    "label": "Dock",
+    "do": [
+     {
+      "click": "agent-card-dock"
+     }
+    ]
+   },
+   "guard": "the host gives a dock element"
+  },
+  {
+   "id": "card-full-dock",
+   "from": "card-full",
+   "to": "card-docked",
+   "trigger": {
+    "kind": "click",
+    "label": "Dock",
+    "do": [
+     {
+      "click": "agent-card-dock"
+     }
+    ]
+   },
+   "guard": "the host gives a dock element"
+  },
+  {
+   "id": "card-undock",
+   "from": "card-docked",
+   "to": "card-folded",
+   "trigger": {
+    "kind": "click",
+    "label": "Undock",
+    "do": [
+     {
+      "click": "agent-card-undock"
+     }
+    ]
+   },
+   "guard": "docked"
+  },
+  {
+   "id": "bar-notice",
+   "from": "bar",
+   "to": "notice-host",
+   "trigger": {
+    "kind": "event",
+    "label": "The host shows a notice",
+    "do": [
+     {
+      "notify": "warning"
+     }
+    ]
+   },
+   "guard": "the app passes `notices`"
+  },
+  {
+   "id": "notice-dismiss",
+   "from": "notice-host",
+   "to": "bar",
+   "trigger": {
+    "kind": "click",
+    "label": "Dismiss",
+    "do": [
+     {
+      "click": "notice-dismiss"
+     }
+    ]
+   },
+   "guard": "a notice on show"
+  },
+  {
+   "id": "bar-working",
+   "from": "bar",
+   "to": "bar-working",
+   "trigger": {
+    "kind": "event",
+    "label": "A message is sent while the conversation is folded",
+    "do": [
+     {
+      "say": "tools",
+      "settle": 300
+     }
+    ]
+   },
+   "guard": "composer=\"bar\", not a phone",
+   "note": "The conversation stays folded: a send never opens it."
+  },
+  {
+   "id": "working-reply",
+   "from": "bar-working",
+   "to": "bar-reply",
+   "trigger": {
+    "kind": "event",
+    "label": "The agent finishes while folded",
+    "do": [
+     {
+      "wait": 3000
+     }
+    ]
+   },
+   "guard": "conversation folded"
+  },
+  {
+   "id": "bar-reply",
+   "from": "bar",
+   "to": "bar-reply",
+   "trigger": {
+    "kind": "event",
+    "label": "A reply arrives while folded",
+    "do": [
+     {
+      "say": "answer",
+      "settle": 1500
+     }
+    ]
+   },
+   "guard": "conversation folded"
+  },
+  {
+   "id": "reply-tray",
+   "from": "bar-reply",
+   "to": "tray",
+   "trigger": {
+    "kind": "click",
+    "label": "Conversation (the chevron)",
+    "do": [
+     {
+      "click": "agent-bar-conversation"
+     }
+    ]
+   },
+   "guard": "opening reads the reply",
+   "after": {
+    "lacks": [
+     "agent-bar-unread"
+    ]
+   }
+  },
+  {
+   "id": "bar-question",
+   "from": "bar",
+   "to": "bar-question",
+   "trigger": {
+    "kind": "event",
+    "label": "The agent asks a question while folded",
+    "do": [
+     {
+      "say": "question",
+      "settle": 800
+     }
+    ]
+   },
+   "guard": "conversation folded"
+  },
+  {
+   "id": "bar-failed",
+   "from": "bar",
+   "to": "bar-failed",
+   "trigger": {
+    "kind": "event",
+    "label": "A turn fails while folded",
+    "do": [
+     {
+      "say": "error",
+      "settle": 1500
+     }
+    ]
+   },
+   "guard": "conversation folded"
+  },
+  {
+   "id": "failed-working",
+   "from": "bar-failed",
+   "to": "bar-working",
+   "trigger": {
+    "kind": "event",
+    "label": "The next turn starts",
+    "do": [
+     {
+      "say": "tools",
+      "settle": 300
+     }
+    ]
+   },
+   "guard": "conversation folded",
+   "after": {
+    "lacks": [
+     "agent-card-failed"
+    ]
+   }
+  },
+  {
+   "id": "icon-reply",
+   "from": "icon",
+   "to": "icon-unread",
+   "trigger": {
+    "kind": "event",
+    "label": "A reply arrives while collapsed",
+    "do": [
+     {
+      "say": "answer",
+      "settle": 1500
+     }
+    ]
+   },
+   "guard": "the icon"
+  },
+  {
+   "id": "icon-decision",
+   "from": "icon",
+   "to": "icon-needs-you",
+   "trigger": {
+    "kind": "event",
+    "label": "The agent waits for a decision while collapsed",
+    "do": [
+     {
+      "say": "approval",
+      "settle": 800
+     }
+    ]
+   },
+   "guard": "the icon"
+  },
+  {
+   "id": "icon-unread-open",
+   "from": "icon-unread",
+   "to": "bar",
+   "trigger": {
+    "kind": "click",
+    "label": "Open the assistant (the round icon with the dot)",
+    "do": [
+     {
+      "click": "composer-icon"
+     }
+    ]
+   },
+   "guard": "the icon",
+   "setup": [
+    {
+     "click": "composer-minimise"
+    },
+    {
+     "say": "answer",
+     "settle": 1500
+    }
+   ]
+  },
+  {
+   "id": "loading-empty",
+   "from": "chat-loading",
+   "to": "chat-empty",
+   "trigger": {
+    "kind": "event",
+    "label": "The connection opens",
+    "do": [
+     {
+      "connection": "connected"
+     }
+    ]
+   },
+   "guard": "the conversation is connecting"
+  },
+  {
+   "id": "error-empty",
+   "from": "chat-error",
+   "to": "chat-empty",
+   "trigger": {
+    "kind": "click",
+    "label": "Reconnect",
+    "do": [
+     {
+      "click": "[data-testid=connection-notice] button"
+     }
+    ]
+   },
+   "guard": "the conversation is not disposed"
+  },
+  {
+   "id": "empty-ready",
+   "from": "chat-empty",
+   "to": "chat-ready",
+   "trigger": {
+    "kind": "event",
+    "label": "A message is sent",
+    "do": [
+     {
+      "say": "answer",
+      "settle": 1500
+     }
+    ]
+   },
+   "guard": "connected"
+  }
+ ]
+}
