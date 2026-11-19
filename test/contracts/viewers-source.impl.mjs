@@ -302,7 +302,7 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
     assert.equal(view.q('[data-testid="viewer-text"]').textContent, 'new fictional text');
   });
 
-  await t.test('LocalFileViewer offers no preview for unknown, invalid or unreadable files and downloads the original bytes', async t => {
+  await t.test('LocalFileViewer offers no preview for unknown, invalid or unreadable files and downloads the original bytes, from a visible button too', async t => {
     const { LocalFileViewer } = await load('local-file-viewer.tsx');
     const created = [], revoked = [], downloads = [];
     const create = URL.createObjectURL, revoke = URL.revokeObjectURL, click = window.HTMLAnchorElement.prototype.click;
@@ -326,6 +326,8 @@ test('viewer frame, panes and share (DOM environment, not browser qualification)
       assert.equal(downloads.at(-1).url, created.at(-1).url);
       assert.equal(created.at(-1).blob.size, blob.size);
       if (!(blob instanceof UnreadableBlob)) assert.deepEqual(await created.at(-1).blob.arrayBuffer(), await blob.arrayBuffer());
+      await view.click('[data-testid="viewer-no-preview-download"]');
+      assert.equal(downloads.at(-1).name, name, 'the button in the pane downloads the same file');
       await view.render(null);
     }
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 1100)); });
