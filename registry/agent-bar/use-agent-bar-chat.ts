@@ -86,19 +86,21 @@ type Entry = { readonly model?: readonly { readonly role: string; readonly conte
 const record = (value: unknown): Record<string, unknown> | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 
 /** The calls of the conversation's last turn (after the person's last message) and the ids that have a result. */
-function lastTurn(entries: readonly Entry[]): { readonly calls: readonly Call[]; readonly done: ReadonlySet<string> } {
+function lastTurn(entries: readonly Entry[]): { readonly calls: readonly Call[]; readonly done: ReadonlySet<string>; readonly spoke: boolean } {
   const messages = entries.flatMap(entry => entry.model ?? []);
   const start = messages.findLastIndex(message => message.role === 'user');
   const calls: Call[] = [], done = new Set<string>();
+  let spoke = false;
   for (const message of messages.slice(start + 1)) {
     if (message.role === 'toolResult' && message.toolCallId) done.add(message.toolCallId);
     if (message.role !== 'assistant' || !Array.isArray(message.content)) continue;
     for (const part of message.content as unknown[]) {
       const call = record(part);
+      if (call?.['type'] === 'text' && typeof call['text'] === 'string' && call['text'].trim()) spoke = true;
       if (call?.['type'] === 'toolCall' && typeof call['id'] === 'string' && typeof call['name'] === 'string') calls.push({ type: 'toolCall', id: call['id'], name: call['name'], arguments: (record(call['arguments']) ?? {}) as Call['arguments'] });
     }
   }
-  return { calls, done };
+  return { calls, done, spoke };
 }
 const ASK = 'ask_user';
 const base = (hint: string) => hint.split('/').filter(Boolean).at(-1) ?? hint;
@@ -185,12 +187,20 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
   // The reply of the run that just ended: kept until read. History found at mount is not a new reply (`finished` needs work seen here).
   const lastReply = derived.rows.findLast(row => row.type === 'assistant');
   const [read, setRead] = useState<string | undefined>();
+  // A turn that only used tools and ended with no text is still a result: it has no row of its own (natural presentation hides tool rows), so it is read from the turn's calls, and the card names what it used.
+  const used = useMemo(() => [...new Set(turn.calls.filter(call => call.name !== ASK).map(call => base(preview(call.arguments))).filter(Boolean))], [turn]);
+  const silentKey = turn.spoke || turn.calls.length === 0 ? undefined : `turn:${turn.calls.at(-1)!.id}`;
   const reply = useMemo<AgentBarChatReply | undefined>(() => {
-    if (!finished || lastReply?.type !== 'assistant' || !lastReply.text.trim() || lastReply.key === read) return undefined;
-    const used = [...new Set(turn.calls.filter(call => call.name !== ASK).map(call => base(preview(call.arguments))).filter(Boolean))];
+    if (!finished) return undefined;
+    if (silentKey !== undefined) return silentKey === read || used.length === 0 ? undefined : { key: silentKey, text: '', used, files: [] };
+    if (lastReply?.type !== 'assistant' || !lastReply.text.trim() || lastReply.key === read) return undefined;
     return { key: lastReply.key, text: lastReply.text.trim(), used, files: mentionedPaths(lastReply.text) };
-  }, [finished, lastReply, read, turn]);
-  const replyKey = reply?.key;
+  }, [finished, lastReply, read, used, silentKey]);
+  // A turn that ended in an error: kept until a later message. Work in progress hides it (`foldedCardKind`), so the next turn clears it as soon as it starts.
+  const failed = useMemo(() => failedReply(derived.rows), [derived.rows]);
+  // A failed turn the person has not looked at counts as unread, so the folded icon and the chevron say something came.
+  const failedKey = finished && failed && failed.key !== read ? failed.key : undefined;
+  const replyKey = reply?.key ?? failedKey;
   // Every reply that ended unseen is counted, and the count outlives the next run: it clears only when the person looks (`markRead`).
   const [unseen, setUnseen] = useState<readonly string[]>([]);
   if (replyKey !== undefined && !unseen.includes(replyKey)) setUnseen([...unseen, replyKey]);
@@ -202,9 +212,6 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
     if (live.getSnapshot().disposed || !value.trim()) return;
     void live.send('followUp', { text: value, attachments: [], restore: { text: value, attachments: [] } }).catch(() => {});
   }, []);
-
-  // A turn that ended in an error: kept until a later message. Work in progress hides it (`foldedCardKind`), so the next turn clears it as soon as it starts.
-  const failed = useMemo(() => failedReply(derived.rows), [derived.rows]);
 
   const status = working ? { state: 'working' as const, text: doing, onCancel }
     : finished ? { state: 'done' as const, text: text.done } : undefined;

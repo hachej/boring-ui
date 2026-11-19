@@ -322,8 +322,9 @@ export function AgentLayerProvider({ storage: persist = 'local', legacyPosition,
   // The chats live in one element that is moved into the open drawer or panel; React keeps them mounted (and so their presentation state
   // and uploads) while the layer is closed, on a phone and on a wide screen. Nothing is mounted before the layer is first opened.
   const opened = useRef(false);
+  // A composer folded to its icon is mounted too (a phone starts there after a reload): its unread mark and ring come from the chat, so a reply must find it listening.
   // eslint-disable-next-line react-hooks/refs -- a monotonic "ever opened" latch for this render: no re-render, no setState during render
-  if (snap !== 'closed' || contentComposer || (explore && agent !== undefined)) opened.current = true;
+  if (snap !== 'closed' || contentComposer || (bar && place === 'icon') || (explore && agent !== undefined)) opened.current = true;
 
   // Consume the launch URL before an open layer pushes its Back entry. Keep the parsed request through StrictMode's effect replay.
   const launch = useRef<ReturnType<typeof parseAgentLink> | undefined>(undefined);
