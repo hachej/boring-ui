@@ -8,7 +8,8 @@ import { Experience } from '@hachej/boring-ui-kit/experience';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { Dock, DockLayout, DockMain, useDock } from '../../registry/dock/dock.tsx';
 import { ArtifactWorkspace } from '../../registry/pi-workspace/workspace.tsx';
-import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
+// The demo stays on the old window (`AmbientWindow`, what `AmbientChat` rendered for its props before the one composer took them): its journey drives that window's own controls.
+import { AmbientWindow as AmbientChat } from '../../registry/pi-ambient/ambient-window.tsx';
 import { useRemoteChat } from '@hachej/boring-ui-kit/chat-react';
 import { VoiceInput } from '../../registry/pi-chat-voice/voice-input.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
