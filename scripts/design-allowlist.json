@@ -9,7 +9,8 @@
     { "id": "drawing-document", "reason": "A drawing's own white page and the native renderers' output (Excalidraw, and the vendored diagrams.net viewer run only inside the drawing viewer's opaque sandbox frame) are document content drawn as the tool draws it, never host chrome or a control skin. D-1398." },
     { "id": "state-dot-shape", "reason": "A nav state dot is a circle by meaning (D-2028): a round 8px mark that is told apart from a count or a button. The shape is not skin; the colour stays on the tone tokens (info, success, warning, destructive). Only the app-shell nav dot and the agent-bar history dot may do this." },
     { "id": "inline-text-link", "reason": "A link inside a sentence is text, not a control box: a plain anchor without padding or height breaks across lines like the text around it (D-1715, D-1696). Only StatusNarrative's link parts may do this, and only for the focus ring radius (rounded-sm)." },
-    { "id": "controller-notch", "reason": "The composer controller's cells are 16 px high and 28 to 32 px wide, smaller than any kit Button size, so they are plain buttons with a hover fill (no chip or circle), a hidden 44 px hit area and the notch's pill shape. Only the controller's ControllerCell may do this." }
+    { "id": "controller-notch", "reason": "The composer controller's cells are 16 px high and 28 to 32 px wide, smaller than any kit Button size, so they are plain buttons with a hover fill (no chip or circle), a hidden 44 px hit area and the notch's pill shape. Only the controller's ControllerCell may do this." },
+    { "id": "explore-tab", "reason": "The explore composer's toggle is the approved mockup's slim vertical tab, 30 by 76 px, narrower than any kit Button size and with a vertical label, so it is a plain button with the theme colours, like the controller notch." }
   ],
   "allow": [
     { "file": "registry/agent-bar/agent-bar.tsx", "rules": ["radius"], "pattern": "^rounded-full$", "exception": "state-dot-shape" },
@@ -28,6 +29,7 @@
     { "file": "packages/ui/src/vendor/drawio-viewer-static.ts", "rules": ["shadow", "radius", "border-width", "color", "font", "motion", "primitive"], "pattern": ".*", "exception": "drawing-document" },
     { "file": "registry/pi-chat-markdown/markdown.tsx", "rules": ["design-no-x-scroll"], "pattern": "^overflow-x-auto$", "exception": "editor-document" },
     { "file": "registry/app-shell/agent-bar-parts.tsx", "rules": ["primitive"], "pattern": "^<button", "exception": "controller-notch" },
+    { "file": "registry/app-shell/explore.tsx", "rules": ["primitive"], "pattern": "^<button", "exception": "explore-tab" },
     { "file": "registry/app-shell/agent-bar-parts.tsx", "rules": ["radius"], "pattern": "^rounded-(?:full|l-full|r-full)$", "exception": "controller-notch" },
     { "file": "registry/_shared/controller-strip.tsx", "rules": ["primitive"], "pattern": "^<button", "exception": "controller-notch" },
     { "file": "registry/_shared/controller-strip.tsx", "rules": ["radius"], "pattern": "^rounded-(?:full|l-full|r-full)$", "exception": "controller-notch" }

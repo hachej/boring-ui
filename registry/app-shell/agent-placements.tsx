@@ -24,6 +24,7 @@ import { CompactSheet } from './agent-compact';
 import { PaneDock, PaneStack } from './agent-pane';
 import { ComposerFab, FloatFrame, NoticeSlot } from './float-composer';
 import { Grip } from './composer-grip';
+import { ExploreController, ExplorePanel, ExploreToggle, useExplorePlace } from './explore';
 
 /** The panel inside the dock: the same element docked or floating, so a placement change keeps focus and the chats where they are. */
 function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSide }) {
@@ -255,13 +256,16 @@ function ContentTray() {
 export function AgentDockLayout({ children }: { readonly children: ReactNode }): ReactElement {
   const layer = useInternal();
   const { title } = useTitle();
-  const dock = layer.expanded && (layer.agent || layer.improve) ? <AgentDock side={layer.side} /> : null;
+  const place = useExplorePlace();
+  // `composer="explore"`: the panel takes the dock's place (`ExplorePanel`, closed by default); the dock stays only for an app that has no assistant of its own.
+  const dock = layer.expanded && (layer.agent || layer.improve) && !place.active ? <AgentDock side={layer.side} /> : null;
   // The PM column sits inside the main content: while it is open beside the dock, the dock leaves the screen its least width beside it.
   return <DockLayout storageKey={DOCK_KEY} persist="local" minMain={MIN_MAIN + (layer.besidePanel ? PM_COLUMN : 0)} {...(layer.bar ? { className: '@container/agent-layout' } : {})}>
     {layer.side === 'left' && dock}
     <DockMain>{layer.contentColumn ? <ContentColumn>{children}</ContentColumn> : children}</DockMain>
     {layer.bar && layer.expanded && layer.stack.length > 0 && !layer.paneStacked && <PaneDock assistant={title} />}
     {layer.side === 'right' && dock}
+    {place.open && place.mode === 'push' && <ExplorePanel mode="push" />}
   </DockLayout>;
 }
 
@@ -352,6 +356,7 @@ export function AgentLayer(): ReactElement | null {
   const commenting = commentingAgent ? layer.agent?.feedback : undefined;
   // Back ends pointing first (the `point` priority), like Done: the notes wait for the next message. The layer keeps its own history entry underneath.
   useBackLayer(session !== undefined, () => { void session?.done(); }, 'point');
+  const explore = useExplorePlace();
   if (!layer.agent && !layer.improve) return null;
   const pointed = layer.agent;
   const transcribe = (pointed?.voice ?? layer.agent?.voice)?.transcribe;
@@ -359,6 +364,8 @@ export function AgentLayer(): ReactElement | null {
   // Comment mode shows its banner either way: on a phone (point mode) above the tab bar, outside the layer, while the compact sheet steps
   // aside; on a wide screen at the top, the dock beside the app. The note bubble is here only while pointing (else inside the layer).
   return <>
+    {explore.active && <><ExploreToggle /><ExploreController /></>}
+    {explore.open && explore.mode === 'overlay' && <ExplorePanel mode="overlay" />}
     {layer.expanded && layer.trayOpen && layer.size === 'full' && <FullScreen />}
     {!layer.expanded && layer.place !== 'icon' && <CompactSheet pointing={session !== undefined} />}
     {!layer.expanded && layer.place === 'icon' && <ComposerFab />}

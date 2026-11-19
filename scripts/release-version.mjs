@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -6,6 +6,26 @@ export function validReleaseVersion(value) {
   if (typeof value !== 'string' || value.length > 128 || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.test(value)) return false;
   if (value.split('-')[0].split('.').some(part => !Number.isSafeInteger(Number(part)))) return false;
   return !(value.split('-').slice(1).join('-').split('.').some(part => /^\d+$/.test(part) && part.length > 1 && part.startsWith('0')));
+}
+
+// A per-PR fragment is migrating/<name>.md (README.md is documentation); gathered in filename order.
+export const isFragment = path => /^migrating\/(?!README\.md$)[^/]+\.md$/.test(path);
+
+export function readFragments(root) {
+  const dir = join(root, 'migrating');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter(name => isFragment(`migrating/${name}`)).sort().map(name => ({ path: `migrating/${name}`, text: readFileSync(join(dir, name), 'utf8') }));
+}
+
+// Append fragment text to the end of the # Unreleased section, after any bullets already there.
+export function withFragments(notes, fragments) {
+  const texts = fragments.map(fragment => fragment.text.trim()).filter(Boolean);
+  if (!texts.length) return notes;
+  const head = /^# Unreleased\r?$/m.exec(notes);
+  if (!head || head.index !== 0) return notes;
+  const rest = notes.slice(head[0].length), next = rest.search(/^# /m);
+  const body = next === -1 ? rest : rest.slice(0, next), tail = next === -1 ? '' : rest.slice(next);
+  return `${head[0]}${body.trimEnd()}\n\n${texts.join('\n\n')}\n${tail ? '\n' + tail : ''}`;
 }
 
 export function unreleasedNotes(notes) {
@@ -18,7 +38,8 @@ export function unreleasedNotes(notes) {
 
 export function setReleaseVersion(root, version) {
   if (!validReleaseVersion(version)) throw new Error('Use an exact release version, for example 1.1.0 or 1.1.0-rc.1');
-  const notes = readFileSync(join(root, 'MIGRATING.md'), 'utf8');
+  const fragments = readFragments(root);
+  const notes = withFragments(readFileSync(join(root, 'MIGRATING.md'), 'utf8'), fragments);
   unreleasedNotes(notes);
   if (notes.includes(`# Migrating to ${version}\n`)) throw new Error('This version already has migration notes');
   const promoted = notes.replace(/^# Unreleased\r?/, `# Unreleased\n\n# Migrating to ${version}`);
@@ -69,7 +90,8 @@ export function setReleaseVersion(root, version) {
   for (const file of readdirSync(join(root, 'public/r')).filter(name => name.endsWith('.json'))) registryPins(read(`public/r/${file}`));
   for (const [path, value] of edits) writeFileSync(join(root, path), JSON.stringify(value, null, 2) + '\n');
   writeFileSync(join(root, 'MIGRATING.md'), promoted);
-  return [...edits.keys(), 'MIGRATING.md'];
+  for (const fragment of fragments) unlinkSync(join(root, fragment.path));
+  return [...edits.keys(), 'MIGRATING.md', ...fragments.map(fragment => fragment.path)];
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

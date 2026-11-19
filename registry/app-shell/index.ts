@@ -19,7 +19,7 @@ export { ScreenHeader, useScreenHeader } from './header';
 export type { ScreenHeaderSpec } from './header';
 export { useIsCompact } from './compact';
 export { AgentComposerAnchor, AgentDockLayout, AgentLayer, AgentTrigger, useAgentLayer, useAgentLoan, usePaneFrame } from './agent-layer';
-export type { AgentComposer, AgentLoan, AgentSpec, ComposerPlace } from './agent-layer';
+export type { AgentComposer, AgentLoan, AgentSpec, ComposerPlace, ExploreContext } from './agent-layer';
 export { FloatingComposer } from './floating-composer';
 export type { FloatingComposerProps } from './floating-composer';
 export { readAgentContext, useAgentContext, useScreenActive } from './agent-context';

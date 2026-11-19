@@ -12,7 +12,9 @@ export interface S3SkillSourceOptions {
   readonly region: string;
   readonly bucket: string;
   /** Folder in the bucket: `<prefix>/current.json` names the active set, `<prefix>/<version>/<path>` holds its files. */
-  readonly prefix: string;
+  readonly prefix?: string;
+  /** The key of the manifest under the prefix. Default `current.json`. */
+  readonly manifest?: string;
 }
 
 /** `current.json`: the active set. A set is immutable once written; it switches by rewriting this one object. */
@@ -46,7 +48,8 @@ export interface S3SkillSource extends SkillSource {
 interface SkillSet { readonly version: string; readonly skills: readonly Skill[]; readonly hashes: ReadonlyMap<string, string> }
 
 const VERSION = /^(?!\.\.?$)[^/\\\u0000-\u001f]{1,128}$/;
-const PATH = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[^\\\u0000-\u001f]{1,256}\.md$/;
+/** The object key names the file: any extension (`SKILL.md`, `SKILL`, `skill.txt`); the skill's name comes from its front matter. */
+const PATH = /^(?!\/)(?!.*(?:^|\/)\.\.?(?:\/|$))[^\\\u0000-\u001f]{1,256}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const reason = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -71,13 +74,14 @@ function manifestOf(text: string): SkillManifest {
  * activated only when all of it passes; otherwise the last good set stays and `lastRefreshed().failed` says why.
  */
 export function s3SkillSource(options: S3SkillSourceOptions): S3SkillSource {
-  const prefix = options.prefix.replace(/^\/+|\/+$/g, '');
+  const prefix = (options.prefix ?? '').replace(/^\/+|\/+$/g, '');
   const key = (rest: string) => ({ region: options.region, bucket: options.bucket, key: prefix ? `${prefix}/${rest}` : rest });
+  const manifestName = options.manifest ?? 'current.json';
   const sets = new Map<string, SkillSet>();
   let good: string | undefined, refreshed: S3Refresh = {};
 
   async function fetchSet(context: Context): Promise<SkillSet> {
-    const text = await options.client.getText(key('current.json'), context);
+    const text = await options.client.getText(key(manifestName), context);
     if (text === undefined) throw new Error('current.json does not exist');
     const manifest = manifestOf(text);
     const skills: Skill[] = [], names = new Set<string>(), hashes = new Map<string, string>();
@@ -95,7 +99,7 @@ export function s3SkillSource(options: S3SkillSourceOptions): S3SkillSource {
     return { version: manifest.version, skills, hashes };
   }
   const attempt = (context: Context): Promise<SkillSet | SkillError> =>
-    fetchSet(context).catch((error): SkillError => ({ path: key('current.json').key, message: reason(error) }));
+    fetchSet(context).catch((error): SkillError => ({ path: key(manifestName).key, message: reason(error) }));
 
   const versions: SkillVersions = {
     current: async context => {

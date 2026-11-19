@@ -441,3 +441,53 @@ test('a non-latest dist-tag creates a prerelease that is never Latest, and falls
   assert.ok(!result.create.includes('--latest'));
   assert.ok(result.create.includes('--generate-notes') && !result.create.includes('--notes-file'));
 });
+
+test('release version gathers migrating/ fragments in filename order after existing bullets and deletes them', t => {
+  const f = fixture(t);
+  f.write('migrating/README.md', 'Docs, not a note.\n');
+  f.write('migrating/20-b.md', '- Second fragment.\n');
+  f.write('migrating/10-a.md', '- First fragment.\n');
+  const changed = setReleaseVersion(f.root, '1.1.0');
+  assert.equal(readFileSync(join(f.root, 'MIGRATING.md'), 'utf8'), '# Unreleased\n\n# Migrating to 1.1.0\n\n- Fictional package change.\n\n- First fragment.\n\n- Second fragment.\n\n# Migrating to 1.0.0\n\nPrevious notes.\n');
+  assert.deepEqual(readdirSync(join(f.root, 'migrating')), ['README.md']);
+  assert.ok(changed.includes('migrating/10-a.md'));
+});
+
+test('release version works with fragments only, with no migrating/ directory, and refuses an empty fragment set', t => {
+  const only = fixture(t);
+  only.write('MIGRATING.md', '# Unreleased\n\n# Migrating to 1.0.0\n\nPrevious notes.\n');
+  only.write('migrating/1-x.md', '- Only fragment.\n');
+  setReleaseVersion(only.root, '1.1.0');
+  assert.equal(readFileSync(join(only.root, 'MIGRATING.md'), 'utf8'), '# Unreleased\n\n# Migrating to 1.1.0\n\n- Only fragment.\n\n# Migrating to 1.0.0\n\nPrevious notes.\n');
+  const none = fixture(t);
+  setReleaseVersion(none.root, '1.1.0');
+  assert.equal(existsSync(join(none.root, 'migrating')), false);
+  const empty = fixture(t);
+  empty.write('MIGRATING.md', '# Unreleased\n\n# Migrating to 1.0.0\n');
+  empty.write('migrating/README.md', 'Docs.\n');
+  assert.throws(() => setReleaseVersion(empty.root, '1.1.0'), /Unreleased/);
+});
+
+test('PR migration-note policy accepts a new migrating/ fragment, rejects none, and accepts the fragment release promotion', t => {
+  for (const kind of ['fragment', 'neither', 'readme-only', 'promotion']) {
+    const f = fixture(t);
+    const git = args => {
+      const result = spawnSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', ...args], { cwd: f.root, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout.trim();
+    };
+    if (kind === 'promotion') f.write('migrating/5-x.md', '- Fragment note.\n');
+    git(['init', '-q']); git(['add', '.']); git(['commit', '-qm', 'fictional baseline']);
+    const base = git(['rev-parse', 'HEAD']);
+    if (kind === 'promotion') setReleaseVersion(f.root, '1.1.0');
+    else {
+      f.write('packages/agent/dist/index.js', 'fictional changed bytes\n');
+      if (kind === 'fragment') f.write('migrating/7-y.md', '- A fragment note.\n');
+      if (kind === 'readme-only') f.write('migrating/README.md', '- Not a note.\n');
+    }
+    git(['add', '-A']); git(['commit', '-qm', 'fictional candidate']);
+    const head = git(['rev-parse', 'HEAD']);
+    if (['neither', 'readme-only'].includes(kind)) assert.throws(() => checkReleaseNotes(f.root, base, head), /own line under # Unreleased/, kind);
+    else assert.deepEqual(checkReleaseNotes(f.root, base, head), { required: true, promoted: kind === 'promotion' });
+  }
+});

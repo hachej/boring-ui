@@ -1,0 +1,27 @@
+{
+ "target": "component:composer-atlas",
+ "title": "Composer atlas",
+ "summary": "Every state of the one composer and every transition between them: the levels of the bar, the floating bar and its icon, explore mode, the phone's sheet, the agent card's ladder, the notices and the chat's own states.",
+ "purpose": "The single reference of the one composer. Each state has a name, what the person sees, its test id and a live thumbnail of the real component; each transition has its from-state, to-state, trigger (a button label, a key, a drag, an event, a resize) and guard (a width, a phone, a prop). The page and test/contracts/composer-atlas.test.mjs read one data file (ux/atlas/composer-atlas.json); the test drives every listed state and transition through the real controls, so the page cannot say what the code does not do. Built from kit parts and tokens only.",
+ "fixture": {
+  "entry": "ux/fixtures/composer-atlas.jsx",
+  "query": "",
+  "ready": "[data-testid=atlas-states] [data-testid=atlas-state-bar]",
+  "install": "npx shadcn@4.23.0 add theme button card badge table input kbd",
+  "usage": "import { Card } from '@/components/ui/card'  // the kit's parts, no app classes"
+ },
+ "viewports": [
+  { "name": "390", "width": 390, "height": 844, "touch": true },
+  { "name": "1280", "width": 1280, "height": 800 }
+ ],
+ "thresholds": { "cls": 0.2, "settledMs": 2500, "touchTarget": 44 },
+ "notes": "A reference page, not a flow: it has no gestures. The thumbnails of the shell's states are the design-system page in frames, loaded as they scroll into view; the transition table scrolls inside its own container on a phone.",
+ "try": [
+  { "label": "Filter the transitions", "steps": [{ "do": "type", "target": "atlas-filter", "text": "Esc", "until": "visible:atlas-transition-tray-bar-esc" }] }
+ ],
+ "states": [
+  { "id": "01", "name": "rest", "steps": [] },
+  { "id": "02", "name": "dark", "query": "dark=1", "steps": [] }
+ ],
+ "flows": []
+}

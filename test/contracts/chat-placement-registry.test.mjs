@@ -14,7 +14,7 @@ test('one presenter unmounting leaves the other presenter\'s placement in place'
   mkdirSync(out, { recursive: true });
   writeFileSync(`${out}/registry.tsx`, `
     import { createElement as h } from 'react';
-    import { readChatPlacement, useChatPlacement } from '${root}registry/pi-chat/use-remote-chat.ts';
+    import { readChatPlacement, useChatPlacement } from '@hachej/boring-ui-kit/chat-react';
     export { readChatPlacement };
     export const Presenter = ({ controller, placement }) => { useChatPlacement(controller, placement); return null; };
     export const show = (controller, presenters) => presenters.map(([key, placement]) => h(Presenter, { key, controller, placement }));`);

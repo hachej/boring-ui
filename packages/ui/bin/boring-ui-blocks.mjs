@@ -438,7 +438,11 @@ function isWorkspaceRoot(dir) {
 const ID = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$/;
 const SYNTHETIC = /^[^/\\\s]+\.synthetic\.[^/\\\s]+$/;
 const STATE_KEYS = ['id', 'page', 'title', 'given', 'flow', 'after'];
-const VERBS = ['open', 'upload', 'click', 'fill', 'wait'];
+const VERBS = ['open', 'upload', 'click', 'fill', 'wait', 'expect', 'absent'];
+/** The verbs that check text: `wait`/`expect` (it appears) and `absent` (it is not, or no longer, on the page), each with an optional time. */
+const TEXT_VERBS = ['wait', 'expect', 'absent'];
+/** The longest a text check may wait: an agent's run, a file being read. */
+const MAX_WAIT = 600000;
 const nonEmpty = v => typeof v === 'string' && v.trim() !== '';
 const isObject = v => v && typeof v === 'object' && !Array.isArray(v);
 // The step grammar is boring-factory's, copied: templates/app/test/examples-core.ts (QUOTES line 13, token 16-25, phrase 28, parseStep 32-43).
@@ -467,7 +471,9 @@ function phrase(text) {
   return { value: t && !t.rest ? t.value : text.trim() };
 }
 
-/** Reads a step: `{ verb, args }`, or `{ error }`. `open <screen>`, `upload [<fixture>]`, `click <label>`, `fill <label> <value>`, `wait <text>`. */
+/** Reads a step: `{ verb, args }`, or `{ error }`. `open <screen>`, `upload [<fixture>]`, `click <label>`, `fill <label> <value>`, and the text
+ * checks `wait <text>`, `expect <text>` (it appears) and `absent <text>` (it is not on the page), each optionally led by a time such as `90s` or
+ * `2m` (at most 10 minutes; 10 s otherwise): `wait 90s "Terminé"`. A text check's args are `[text, ms?]`. */
 export function parseStep(step) {
   if (typeof step !== 'string') return { error: 'a step is a string' };
   const text = step.trim();
@@ -475,6 +481,15 @@ export function parseStep(step) {
   if (!VERBS.includes(verb)) return { error: `unknown step verb "${verb}" (${VERBS.join(', ')})` };
   const rest = text.slice(verb.length).trim();
   if (!rest) return verb === 'upload' ? { verb, args: [] } : { error: `${verb} needs ${verb === 'fill' ? 'a label and a value' : 'an argument'}` };
+  if (TEXT_VERBS.includes(verb)) {
+    const timed = /^(\d+)(s|m)\s+(\S[\s\S]*)$/.exec(rest);
+    if (timed) {
+      const ms = Number(timed[1]) * (timed[2] === 'm' ? 60000 : 1000);
+      if (ms < 1000 || ms > MAX_WAIT) return { error: `${verb} waits between 1s and ${MAX_WAIT / 60000}m, not ${timed[1]}${timed[2]}` };
+      const p = phrase(timed[3]);
+      return p.error ? p : { verb, args: [p.value, ms] };
+    }
+  }
   if (verb !== 'fill') { const p = phrase(rest); return p.error ? p : { verb, args: [p.value] }; }
   const label = token(rest);
   if (label.error) return label;
@@ -535,7 +550,7 @@ export function checkAtlas(manifest, { fixtures } = {}) {
   return found;
 }
 
-export const ATLAS_USAGE = 'usage: boring-ui-blocks atlas <dir> --check [--fixtures <dir>] [--json]\n       boring-ui-blocks atlas <dir> --url <base url> --out <dir> [--fixtures <dir>] [--since <index.json>] [--chromium <path>] [--commit <sha>] [--json]';
+export const ATLAS_USAGE = 'usage: boring-ui-blocks atlas <dir> --check [--fixtures <dir>] [--json]\n       boring-ui-blocks atlas <dir> --url <base url> --out <dir> [--fixtures <dir>] [--since <index.json>] [--chromium <path>] [--commit <sha>] [--only <flow or state>]... [--quick] [--steps] [--json]';
 
 /** The `atlas` command. `<dir>/atlas.json` is read and checked (exit 1 on any finding, 2 for a use error); without `--check` the states are then shot, and the result is a promise. */
 export function atlasMain(args, cwd, log, error) {
@@ -544,6 +559,13 @@ export function atlasMain(args, cwd, log, error) {
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--check') flags.check = true;
     else if (args[i] === '--json') flags.json = true;
+    else if (args[i] === '--quick') flags.quick = true;
+    else if (args[i] === '--steps') flags.steps = true;
+    else if (args[i] === '--only') {
+      const name = args[++i];
+      if (!name) { error(ATLAS_USAGE); return 2; }
+      (flags.only ??= []).push(name);
+    }
     else if (['--fixtures', '--url', '--out', '--since', '--chromium', '--commit'].includes(args[i])) {
       const name = args[i].slice(2);
       flags[name] = args[++i];
@@ -749,9 +771,9 @@ async function evaluate(page, expression) {
   return r.result.value;
 }
 
-/** Calls `probe` every 100 ms for up to 10 s; its first truthy value, or null. A page that is navigating throws meanwhile: that is a retry. */
-async function poll(probe) {
-  const end = Date.now() + STEP_TIMEOUT;
+/** Calls `probe` every 100 ms for up to `timeout` (10 s); its first truthy value, or null. A page that is navigating throws meanwhile: that is a retry. */
+async function poll(probe, timeout = STEP_TIMEOUT) {
+  const end = Date.now() + timeout;
   for (;;) {
     const left = end - Date.now();
     if (left <= 0) return null;
@@ -808,7 +830,20 @@ async function runStep(page, { verb, args }, ctx) {
     if (!nodeId) throw new Error('no file input on the page');
     return page.send('DOM.setFileInputFiles', { files: [file], nodeId });
   }
-  if (!await poll(() => evaluate(page, `document.body.innerText.includes(${JSON.stringify(args[0])})`))) throw new Error(`the text "${args[0]}" did not appear within ${STEP_TIMEOUT / 1000} s`);
+  const wait = args[1] ?? STEP_TIMEOUT, present = `document.body.innerText.includes(${JSON.stringify(args[0])})`;
+  if (verb === 'absent') {
+    if (!await poll(() => evaluate(page, `!${present}`), wait)) throw new Error(`the text "${args[0]}" is still on the page after ${wait / 1000} s`);
+    return;
+  }
+  if (!await poll(() => evaluate(page, present), wait)) throw new Error(`the text "${args[0]}" did not appear within ${wait / 1000} s`);
+}
+
+/** How long a step may take: its own time for a text check, else the step timeout. */
+const stepTime = step => (TEXT_VERBS.includes(step.verb) && step.args[1]) || STEP_TIMEOUT;
+
+/** Writes the page as it is now to `<out>/<file>`; on any error, nothing (a failure's screen is a help, never a second failure). */
+async function snapshot(page, viewport, out, file) {
+  try { const { png } = await capture(page, viewport.height); writeFileSync(join(out, file), png); return file; } catch { return undefined; }
 }
 
 /** The full-page PNG of the page as it is now, once the page's requests are done, fonts are loaded and two frames are painted. */
@@ -893,6 +928,12 @@ async function shootAtlas({ manifest, flags, cwd, fixtures, log, error }) {
   if (!chromium) { error('atlas: no browser. Pass --chromium <path> or set CHROMIUM to a Chromium or chrome-headless-shell binary'); return 2; }
   if (!existsSync(chromium)) { error(`atlas: the browser ${chromium} does not exist`); return 2; }
   mkdirSync(out, { recursive: true });
+  // --only keeps the states of a flow (its name) or a state (its id, or an id prefix ending at a dot): one workflow, checked in a minute.
+  const only = flags.only;
+  const chosen = only ? manifest.states.filter(st => only.some(o => st.flow === o || st.id === o || st.id.startsWith(`${o}.`))) : manifest.states;
+  if (only && !chosen.length) { error(`atlas: --only ${only.join(', ')} names no flow and no state`); return 2; }
+  // --quick: desktop light only, the fast check of a live app.
+  const viewports = flags.quick ? VIEWPORTS.filter(v => !v.touch) : VIEWPORTS, modes = flags.quick ? ['light'] : MODES;
   const states = [];
   let failed = 0;
   let browser, cdp, cleaning;
@@ -908,15 +949,18 @@ async function shootAtlas({ manifest, flags, cwd, fixtures, log, error }) {
   browser = launchChromium(chromium);
   try {
     cdp = await connectCdp(await browser.url);
-    for (const state of manifest.states) {
+    for (const state of chosen) {
       const entry = { id: state.id, page: state.page, title: state.title, ...(state.flow ? { flow: state.flow } : {}), ...(state.after ? { after: state.after } : {}), shots: [] };
       states.push(entry);
       const before = since?.states?.find(s => s.id === state.id);
       const steps = (state.given.steps ?? []).map(parseStep);
-      shots: for (const viewport of VIEWPORTS) for (const mode of MODES) {
+      // --steps: the page after each step, once (desktop light), so a flow reads as its sequence of screens.
+      let stepped = !flags.steps;
+      shots: for (const viewport of viewports) for (const mode of modes) {
         let page, at = 'open';
         const control = { over: false };
-        const deadline = SHOT_TIMEOUT + steps.length * STEP_TIMEOUT;
+        const deadline = SHOT_TIMEOUT + steps.reduce((t, st) => t + stepTime(st), 0);
+        const stepping = !stepped && !viewport.touch && mode === 'light';
         try {
           page = await openPage(cdp, viewport, mode);
           let timer;
@@ -926,7 +970,12 @@ async function shootAtlas({ manifest, flags, cwd, fixtures, log, error }) {
           for (let n = 0; n < steps.length; n++) {
             at = `step ${n + 1} "${state.given.steps[n]}"`;
             await runStep(page, steps[n], ctx);
+            if (stepping) {
+              const file = await snapshot(page, viewport, out, `${state.id}.step-${n + 1}.${viewport.width}.${mode}.png`);
+              if (file) (entry.steps ??= []).push({ n: n + 1, step: state.given.steps[n], file });
+            }
           }
+          if (stepping) stepped = true;
           at = 'shoot';
           const { png, truncated, height } = await capture(page, viewport.height);
           if (control.over) return;
@@ -946,10 +995,15 @@ async function shootAtlas({ manifest, flags, cwd, fixtures, log, error }) {
           })(), new Promise((_, reject) => { timer = setTimeout(() => { control.over = true; reject(new Error(`the page did not answer within ${deadline / 1000} s (is it stuck in a loop?)`)); }, deadline); })]).finally(() => clearTimeout(timer));
         } catch (e) {
           failed++;
-          error(`state ${state.id} ${at === 'open' || at === 'shoot' ? `${at} (${viewport.width} ${mode})` : at}: ${e.message}`);
+          const where = at === 'open' || at === 'shoot' ? `${at} (${viewport.width} ${mode})` : at;
+          error(`✖ state ${state.id} ${where}: ${e.message}`);
+          // The screen at the moment it failed: what a person would have seen.
+          const file = page && !control.over ? await snapshot(page, viewport, out, `${state.id}.failed.${viewport.width}.${mode}.png`) : undefined;
+          entry.failure = { viewport: viewport.width, mode, at: where, reason: e.message, ...(file ? { file } : {}) };
           break shots;
         } finally { await page?.close(); }
       }
+      if (!flags.json && !entry.failure) log(`✔ state ${state.id}`);
     }
   } finally { process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal); cdp?.close(); await browser.close(); }
   const index = { version: 1, commit: commitOf(flags.commit, cwd), url: flags.url, createdAt: new Date().toISOString(), states };

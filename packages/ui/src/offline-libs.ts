@@ -15,6 +15,24 @@ export const offlineLibraries: Record<string, OfflineLibrary> = {
   d3: { version: '7.9.1', load: () => import('./offline-libs/d3.js') },
 };
 
+const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const VERSION = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+
+/**
+ * The built-in libraries plus the host's own: `extra` maps a lowercase name to a vendored copy with a pinned `version` (x.y.z) and a `load`
+ * that returns its source from the host's bundle. Nothing is fetched at render time. A bad name or version, or a name that is already built in, throws.
+ */
+export function withOfflineLibraries(extra: Readonly<Record<string, OfflineLibrary>> = {}): Record<string, OfflineLibrary> {
+  const all: Record<string, OfflineLibrary> = { ...offlineLibraries };
+  for (const [name, library] of Object.entries(extra)) {
+    if (!NAME.test(name)) throw new TypeError(`Offline library name ${JSON.stringify(name.slice(0, 80))} must be lowercase letters, digits, dot, dash or underscore`);
+    if (Object.hasOwn(offlineLibraries, name)) throw new TypeError(`Offline library "${name}" is built in`);
+    if (typeof library?.version !== 'string' || !VERSION.test(library.version) || typeof library.load !== 'function') throw new TypeError(`Offline library "${name}" needs a pinned x.y.z version and a load function`);
+    all[name] = library;
+  }
+  return all;
+}
+
 const DECLARATION = /<!--\s*lib\s*:([^>]*?)-->/gi;
 
 /** The library names a document declares, lowercased, in first-seen order and without repeats. */

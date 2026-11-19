@@ -95,10 +95,12 @@ export interface WorkspaceBarProps {
    * (`onOpenChange(true)`, then `onOpen`), and the same id requested while it is shown closes it (`onOpenChange(false)`), back to the chat. An unknown id does nothing.
    */
   readonly command?: { readonly kind: 'history' | 'library' | 'new' | (string & {}); readonly n: number } | undefined;
+  /** Called with the new value when the bar's Library panel opens or closes (also when another panel replaces it). */
+  readonly onLibraryOpenChange?: ((open: boolean) => void) | undefined;
 }
 
 /** The bar, or only its controls in the app shell's header when the page sits in a shell screen (then nothing renders here). */
-export function WorkspaceBar({ title, subtitle, conversations, library, panels, panelsFirst = false, narrow, controls, hidden = false, command }: WorkspaceBarProps) {
+export function WorkspaceBar({ title, subtitle, conversations, library, panels, panelsFirst = false, narrow, controls, hidden = false, command, onLibraryOpenChange }: WorkspaceBarProps) {
   const { labels, icons } = useAppText();
   const slot = useScreenHeaderSlot();
   const [shown, setShown] = useState<string | null>(null);
@@ -106,6 +108,8 @@ export function WorkspaceBar({ title, subtitle, conversations, library, panels, 
     if (next === shown) return;
     panels?.find(panel => panel.id === shown)?.onOpenChange?.(false);
     panels?.find(panel => panel.id === next)?.onOpenChange?.(true);
+    if (shown === 'library') onLibraryOpenChange?.(false);
+    if (next === 'library') onLibraryOpenChange?.(true);
     setShown(next);
   };
   const [handled, setHandled] = useState(command?.n);
