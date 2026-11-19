@@ -2757,6 +2757,11 @@
           "target": "components/app-shell/composer-resize.tsx"
         },
         {
+          "path": "registry/app-shell/explore.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/explore.tsx"
+        },
+        {
           "path": "registry/app-shell/float-composer.tsx",
           "type": "registry:component",
           "target": "components/app-shell/float-composer.tsx"

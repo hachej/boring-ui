@@ -46,6 +46,8 @@ const COLOURS = [['background', 'bg-background'], ['foreground', 'bg-foreground'
 const SCALE = ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl', 'text-2xl'];
 const Section = ({ id, title, children }) => <section data-testid={`ds-${id}`} className="flex flex-col gap-3"><h2 className="m-0 text-lg font-semibold">{title}</h2>{children}</section>;
 const lang = new URLSearchParams(location.search).get('lang') === 'fr' ? 'fr' : 'en';
+// `?composer=explore`: the same page in the explore mode (closed, an Ask toggle at the bottom right, the panel on demand) instead of the bar.
+const explore = new URLSearchParams(location.search).get('composer') === 'explore';
 const Row = ({ children }) => <div className="flex flex-wrap items-center gap-2">{children}</div>;
 
 // The « Agent cards » section: the kit's AgentCard for three agents in their colours (Reader, Mailer, Ledger) and a task card, folded by default;
@@ -106,6 +108,14 @@ function Page() {
         <Button variant="outline" data-testid="ds-icon-reply" onClick={() => { layer.setPlace('icon'); layer.close(); void controller.send('followUp', { text: 'answer', attachments: [], restore: { text: '', attachments: [] } }); }}>Minimise, then a reply arrives</Button>
       </Row>
     </Section>
+    <Section id="explore-composer" title="Explore composer">
+      <p className="m-0 text-muted-foreground">For screens people read. With <code>composer="explore"</code> nothing sits at the bottom: the page keeps its whole width and a small Ask tab waits at the bottom right (Ctrl or Cmd + J also opens it). Open, the panel pushes the page from 1100 px, overlays it below that and is a bottom sheet on a phone; it shows what the person is looking at and sends it with the turn. A reply that arrives while it is closed puts a dot on the tab, a decision the agent waits for rings it. This page is in the bar mode: open it in explore mode to try.</p>
+      <Row>
+        <Button variant="outline" data-testid="ds-explore-open" render={<a href={`?composer=explore${lang === 'fr' ? '&lang=fr' : ''}`} />}>Open this page in explore mode</Button>
+        {explore && <Button variant="outline" data-testid="ds-explore-reply" onClick={() => { layer.close(); void controller.send('followUp', { text: 'answer', attachments: [], restore: { text: '', attachments: [] } }); }}>A reply arrives while closed</Button>}
+        {explore && <Button variant="outline" data-testid="ds-explore-needs" onClick={() => { layer.close(); void controller.send('followUp', { text: 'approval', attachments: [], restore: { text: '', attachments: [] } }); }}>Needs you while closed</Button>}
+      </Row>
+    </Section>
     <Section id="navigation" title="Tabs, dialog, empty, loading">
       <Tabs defaultValue="a"><TabsList><TabsTrigger value="a">All</TabsTrigger><TabsTrigger value="b">Gaps</TabsTrigger></TabsList><TabsContent value="a">Everything</TabsContent><TabsContent value="b">Only gaps</TabsContent></Tabs>
       <Dialog><DialogTrigger render={<Button variant="outline" className="self-start">Open a dialog</Button>} /><DialogContent><DialogHeader><DialogTitle>A dialog</DialogTitle><DialogDescription>Kit defaults.</DialogDescription></DialogHeader></DialogContent></Dialog>
@@ -151,7 +161,7 @@ const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the 
 function App() {
   const [route, setRoute] = useState('design'), [theme, setTheme] = useState(initial), [notices, setNotices] = useState([]);
   notify = kind => { const id = `${kind}-${Date.now()}`; setNotices([{ ...NOTICES[kind], id, onDismiss: () => setNotices(list => list.filter(n => n.id !== id)) }]); };
-  return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} composer="bar" floatingComposer agent={agent} notices={notices}
+  return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} {...(explore ? { composer: 'explore', context: { title: 'Design system', detail: 'The components of the kit, in both themes' } } : { composer: 'bar', floatingComposer: true })} agent={agent} notices={notices}
     account={{ name: 'Visitor', menu: [], theme: { value: theme, onChange: value => { applyTheme(value); setTheme(value); } } }} />;
 }
 createRoot(document.getElementById('root')).render(<App />);
