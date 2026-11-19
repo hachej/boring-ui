@@ -28,14 +28,10 @@ export { AgentNotifications, createNotificationStore, defaultNotificationLabels,
 export type { AgentNotification, AgentNotificationsProps, NewNotification, NotificationKind, NotificationLabels, NotificationStore } from './notifications';
 
 /**
- * The props the one composer does not take yet: each keeps the bar on the old window. `undefined` means the composer takes every prop the app gave, so the bar is the one composer.
-/**
  * The props the one composer does not take yet: each keeps the bar on the old window. None is left (the window content, the toast timing, `className`, `storage`, the old position and the system notifications are on the composer),
  * so `undefined` means the bar is the one composer: a prop added to `AmbientChatProps` that the composer lacks is returned here and listed in `features/ambient.md`.
  */
 export function ambientGap(_props: AmbientChatProps): string | undefined {
-  return undefined;
-}
   return undefined;
 }
 
