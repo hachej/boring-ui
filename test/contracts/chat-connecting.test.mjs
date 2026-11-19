@@ -13,7 +13,7 @@ mkdirSync(out, { recursive: true });
 writeFileSync(`${out}/entry.tsx`, `
   import { createElement as h } from 'react';
   import { PiChat } from '${root}registry/pi-chat/pi-chat.tsx';
-  import { useRemoteChat } from '${root}registry/pi-chat/use-remote-chat.ts';
+  import { useRemoteChat } from '@hachej/boring-ui-kit/chat-react';
   // A host that shows the chat as soon as it has a controller (the new contract), and its status beside it.
   export function Host({ fetch, onState, conversationId = 'c1' }) {
     const chat = useRemoteChat({ conversationId, endpoint: id => new URL('https://fixture.invalid/chat?c=' + id), fetch,
