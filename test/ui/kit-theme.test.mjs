@@ -56,7 +56,7 @@ const resolved = (window, element, property) => window.getComputedStyle(element)
 
 test('the ambient contrast window is a .dark subtree of the host tokens; surface follows the page', async t => {
   const { window, createElement, mount } = await harness(t);
-  const { AmbientChat } = await load('registry/pi-ambient/ambient.tsx', 'ambient');
+  const { AmbientWindow: AmbientChat } = await load('registry/pi-ambient/ambient-window.tsx', 'ambient');
   const { createNativeChatController } = await import('@hachej/boring-ui-kit/native-chat');
   const controller = () => createNativeChatController({ identity: { runtimeId: 'fictional', scopeId: 'fictional', principalId: 'alice' },
     conversation: { id: 1 }, context: { value: () => undefined, toString: () => 'fictional' }, history: false,

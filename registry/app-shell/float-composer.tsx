@@ -3,7 +3,7 @@
 // The one composer floating over a page (`floatingComposer`) and folded to its icon. `FloatFrame` is the bar detached: fixed over the page, which stays usable under it, moved by its
 // grip (pointer drag, arrow keys); dropped near a corner it snaps there. The place is the person's, remembered per app and person (`composer-pos`). `ComposerFab` is the round
 // button the bar folds into: the unread mark and the needs-you ring of the conversation, and a tap puts everything back where it was. Host concern: Pi has no layout.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { SparklesIcon } from '../_shared/icons';
 import { UnreadMark } from '../_shared/controller-strip';
@@ -44,6 +44,19 @@ function placement(pos: FloatPos, trayOpen: boolean): CSSProperties {
   const top = (px: number) => trayOpen ? `max(${px}px, ${room})` : px;
   if ('corner' in pos) return { ...(pos.corner.endsWith('l') ? { left: MARGIN } : { right: MARGIN }), ...(pos.corner.startsWith('t') ? { top: top(MARGIN) } : { bottom: `max(${MARGIN}px, env(safe-area-inset-bottom))` }) };
   return { left: pos.left, top: top(pos.top) };
+}
+
+/**
+ * The standalone entry's notices (`FloatingComposer notices`), drawn by whichever place the composer is in: above the floating bar (below it when the bar sits in a top corner),
+ * above the folded icon, above the bottom bar. Null for a composer with no notices, so the shell's own places carry nothing.
+ */
+export const NoticeSlotContext = createContext<ReactNode>(null);
+
+/** Where the notices sit around a box: above it, or below it for a bar in a top corner (above would leave the window). */
+export function NoticeSlot({ below = false, className }: { readonly below?: boolean; readonly className?: string }) {
+  const notices = useContext(NoticeSlotContext);
+  if (!notices) return null;
+  return <div data-testid="composer-notices" className={cn('absolute inset-x-0', below ? 'top-full' : 'bottom-full', className)}>{notices}</div>;
 }
 
 /** The bar detached from the page: `children` is the one composer's box. */
@@ -88,7 +101,7 @@ export function FloatFrame({ children }: { readonly children: ReactNode }) {
   const style = { ...placement(pos, trayOpen), ...(trayOpen ? { '--app-shell-bar-tray-size': tall, '--app-shell-bar-tray-expanded': tall } : {}) } as CSSProperties;
   return <GripContext.Provider value={handlers}>
     <div ref={box} data-testid="composer-floating" data-corner={'corner' in pos ? pos.corner : undefined} role="group" aria-label={text.assistant} style={style}
-      className="fixed z-(--app-shell-z-layer) w-[min(22rem,calc(100vw-2rem))]">{children}</div>
+      className="fixed z-(--app-shell-z-layer) w-[min(22rem,calc(100vw-2rem))]">{children}<NoticeSlot below={cornerOf(pos, 0, 0).startsWith('t')} /></div>
   </GripContext.Provider>;
 }
 
@@ -111,5 +124,6 @@ export function ComposerFab() {
       <Icon aria-hidden="true" />
       {signals.unread && <UnreadMark unread={signals.unread} dot="top-0 right-0" pill="-top-1 -right-2" />}
     </Button>
+    <NoticeSlot below={corner.startsWith('t')} className={cn('w-[min(22rem,calc(100vw-2rem))]', corner.endsWith('l') ? 'left-0 right-auto' : 'right-0 left-auto')} />
   </span>;
 }

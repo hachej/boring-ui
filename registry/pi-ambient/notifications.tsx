@@ -34,6 +34,7 @@ export function pendingQuestion(rows: readonly Row[], text?: NoticeText): string
 /**
  * Feeds a store from a conversation the host keeps connected in the background (a task, a subagent, another chat): a toast when its
  * run finishes or fails and while a question waits. Returns the unsubscribe. `AmbientChat` does the same for its own conversation.
+ * @deprecated Use `watchConversation` of `@hachej/boring-ui-kit/chat-react` (the same state machine); the store it feeds shows as the one composer's notices. Kept so an installed app keeps working.
  */
 export function watchConversation(controller: NativeChatController, store: NotificationStore, options: { readonly conversationId: string; readonly title: string | (() => string); readonly labels?: Partial<NotificationLabels> | undefined }): () => void {
   return watchKitConversation(controller, store, { ...options, text: noticeTextOf({ ...defaultNotificationLabels, ...options.labels }) });
@@ -64,6 +65,8 @@ export const defaultNotificationLabels = {
   openNotification: (kind: string, title: string, summary: string | undefined) => `${kind}: ${title}${summary ? `. ${summary}` : ''}. Open`,
   dismissNotification: (title: string) => `Dismiss: ${title}`,
   dismissShort: 'Dismiss',
+  /** The action on a notice (the one composer shows the toasts as its notices): opens that conversation. */
+  openShort: 'Open',
 };
 export type NotificationLabels = typeof defaultNotificationLabels;
 
@@ -78,6 +81,7 @@ export const frenchNotificationLabels: NotificationLabels = {
   openNotification: (kind, title, summary) => `${kind} : ${title}${summary ? `. ${summary}` : ''}. Ouvrir`,
   dismissNotification: title => `Fermer : ${title}`,
   dismissShort: 'Fermer',
+  openShort: 'Ouvrir',
 };
 
 /** The status icon of a notification, also used by the ambient header. */
@@ -134,6 +138,7 @@ export interface AgentNotificationsProps {
 /**
  * A stack of toasts for finished, failed and waiting tasks, driven by a `NotificationStore`. It is a polite live region;
  * Escape closes the focused toast. `AmbientChat` renders one above its bar; use this directly for a host-placed stack.
+ * @deprecated The one composer shows them: give `FloatingComposer` (or `AppShell`) `notices`, built from the store's items. Kept so an installed app keeps working.
  */
 export function AgentNotifications({ store, max = 3, autoDismissMs = 8000, onActivate, systemNotifications = false, variant = 'contrast', placement = 'fixed', labels: given, className }: AgentNotificationsProps) {
   const labels = useMemo(() => withDefaults(defaultNotificationLabels, given), [given]);

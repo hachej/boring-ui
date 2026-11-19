@@ -22,7 +22,7 @@ import { OneBox, VoiceProblem } from './agent-bar-parts';
 import { ChatSlot, Header, HeaderHint, HistoryButton, LibraryButton, useTitle } from './agent-chats';
 import { CompactSheet } from './agent-compact';
 import { PaneDock, PaneStack } from './agent-pane';
-import { ComposerFab, FloatFrame } from './float-composer';
+import { ComposerFab, FloatFrame, NoticeSlot } from './float-composer';
 import { Grip } from './composer-grip';
 import { ExploreController, ExplorePanel, ExploreToggle, useExplorePlace } from './explore';
 
@@ -158,7 +158,7 @@ export function BarBox({ standalone = false }: { readonly standalone?: boolean }
   }, [place, focusRef, composerSlot]);
   if (place === 'float') return <FloatFrame><OneBox floating>{slots}</OneBox></FloatFrame>;
   if (place === 'icon') return <><div hidden><OneBox>{slots}</OneBox></div><ComposerFab /></>;
-  return standalone ? <div className="@container fixed inset-x-0 bottom-0 z-(--app-shell-z-layer)"><OneBox>{slots}</OneBox></div> : <OneBox>{slots}</OneBox>;
+  return standalone ? <div className="@container fixed inset-x-0 bottom-0 z-(--app-shell-z-layer)"><NoticeSlot /><OneBox>{slots}</OneBox></div> : <OneBox>{slots}</OneBox>;
 }
 
 /**

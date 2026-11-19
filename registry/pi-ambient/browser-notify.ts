@@ -13,12 +13,14 @@ const api = (): NotificationLike | undefined => {
   return typeof candidate === 'function' ? candidate : undefined;
 };
 
+/** @deprecated The one composer has no bell: a host that wants system notifications asks for the permission itself. Kept so an installed app keeps working. */
 export function notifyPermission(): NotifyPermission {
   const Notify = api();
   return Notify ? Notify.permission : 'unsupported';
 }
 
 /** Ask for permission. Call this only from a person's own action (a click), never on load. */
+/** @deprecated See `notifyPermission`. */
 export async function requestNotifyPermission(): Promise<NotifyPermission> {
   const Notify = api();
   if (!Notify) return 'unsupported';
@@ -26,6 +28,7 @@ export async function requestNotifyPermission(): Promise<NotifyPermission> {
 }
 
 /** A system notification, only while the page is hidden and permission was granted. Returns whether one was shown. */
+/** @deprecated See `notifyPermission`. */
 export function notifyWhenHidden(title: string, body: string, tag: string, onClick: () => void): boolean {
   const Notify = api();
   if (!Notify || Notify.permission !== 'granted' || globalThis.document?.visibilityState !== 'hidden') return false;
