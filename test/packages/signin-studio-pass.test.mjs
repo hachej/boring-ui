@@ -157,8 +157,8 @@ test('Studio\'s keys cannot be had: a failing, an empty or an unreachable answer
 
   const bare = world(), first = link(), database = new DatabaseSync(':memory:'), alone = bare.makeApp({ firstOwnerHash: first.hash, database }), ada = browser(bare.route);
   assert.equal((await signUp(ada, APP, 'ada@app.test', { 'x-boring-first-owner': first.token })).status, 200);
-  await refused({ database }, mcp(alone), await ctx.studio.pass({ email: 'ada@app.test' }), 'an app with no Studio link');
   await accepted(mcp(alone), await assistantToken(ada, APP), { email: 'ada@app.test', role: 'owner' });
+  await refused({ database }, mcp(alone), await ctx.studio.pass({ email: 'ada@app.test' }), 'an app with no Studio link');
 });
 
 test('Studio\'s keys are kept 5 minutes, fetched again on an unknown kid at most every 30 s, and a burst of unknown kids makes one fetch', async (t) => {

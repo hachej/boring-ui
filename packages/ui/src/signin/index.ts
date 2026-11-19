@@ -9,9 +9,9 @@
 //   /api/signin/studio                 an app linked to Studio: the round trip that proves an owner
 //   /api/signin/owners                 Studio: its signed owner list
 //   /api/signin/links                  Studio: an owner links an app (registers its client for the round trip)
-import { createLocalJWKSet, jwtVerify } from 'jose';
+import { createLocalJWKSet, decodeJwt, jwtVerify } from 'jose';
 import { makeAuth, MCP_SCOPES, normalEmail, type Person, type Role, type SignInOptions } from './auth.js';
-import { OWNERS_AUDIENCE, STUDIO, STUDIO_SCOPES, studioCallback } from './studio.js';
+import { OWNERS_AUDIENCE, STUDIO, STUDIO_SCOPES, studioCallback, type PassClaims } from './studio.js';
 import { inWords, langOf, refuse } from './words.js';
 
 export type { Person, Role, SignInOptions } from './auth.js';
@@ -21,6 +21,7 @@ export { langOf, say, type Lang } from './words.js';
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const loopback = (u: string) => { try { const x = new URL(u); return x.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(x.hostname); } catch { return false; } };
+const issuerOf = (token: string) => { try { return decodeJwt(token).iss; } catch { return undefined; } };
 const sha256 = async (text: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, '0')).join('');
 
 export function signIn(options: SignInOptions) {
@@ -41,16 +42,38 @@ export function signIn(options: SignInOptions) {
     return withRole(s?.user);
   };
 
-  /** The person an MCP bearer token stands for (a token this app issued for `<origin>/mcp`), or nobody. */
+  /** The person a bearer token of this app's own OAuth provider (issued for `<origin>/mcp`) stands for. */
+  const appTokenPerson = async (token: string): Promise<Person | undefined> => {
+    // The signing keys come from Better Auth directly: a Worker cannot fetch its own address.
+    const jwks = await (await auth.handler(new Request(`${origin}/api/auth/jwks`))).json() as { keys: never[] };
+    const claims = await jwtVerify(token, createLocalJWKSet(jwks as never), { issuer: `${origin}/api/auth`, audience: `${origin}/mcp` })
+      .then((r) => r.payload, () => undefined);
+    return claims?.sub ? withRole(await (await db()).findOne<User>({ model: 'user', where: [{ field: 'id', value: claims.sub }] })) : undefined;
+  };
+
+  /** The app's person a verified Studio pass names: the user holding the `studio` account of its `sub`, else the user of its e-mail when they
+   *  hold no `studio` account under another `sub`. Looks only: no user and no invitation is ever made here. */
+  const studioPassPerson = async ({ sub, email }: PassClaims): Promise<Person | undefined> => {
+    const store = await db();
+    const studioAccountOf = (userId: string) => store.findOne<{ userId: string }>({ model: 'account', where: [{ field: 'userId', value: userId }, { field: 'providerId', value: STUDIO }] });
+    const account = await store.findOne<{ userId: string }>({ model: 'account', where: [{ field: 'providerId', value: STUDIO }, { field: 'accountId', value: sub }] });
+    if (account) return withRole(await store.findOne<User>({ model: 'user', where: [{ field: 'id', value: account.userId }] }));
+    const user = await store.findOne<User>({ model: 'user', where: [{ field: 'email', value: normalEmail(email) }] });
+    return user && !await studioAccountOf(user.id) ? withRole(user) : undefined;
+  };
+
+  /** The person an MCP bearer token stands for, or nobody: a token this app issued for `<origin>/mcp`, or, in an app linked to Studio, Studio's
+   *  5-minute pass (issuer Studio's origin), whose role is still the app's own at this request. Only here: `personOf` never takes a pass. */
   const mcpPerson = async (request: Request): Promise<Person | undefined> => {
     await ready();
     const header = request.headers.get('authorization') ?? '';
     if (!header.startsWith('Bearer ')) return undefined;
-    // The signing keys come from Better Auth directly: a Worker cannot fetch its own address.
-    const jwks = await (await auth.handler(new Request(`${origin}/api/auth/jwks`))).json() as { keys: never[] };
-    const claims = await jwtVerify(header.slice(7), createLocalJWKSet(jwks as never), { issuer: `${origin}/api/auth`, audience: `${origin}/mcp` })
-      .then((r) => r.payload, () => undefined);
-    return claims?.sub ? withRole(await (await db()).findOne<User>({ model: 'user', where: [{ field: 'id', value: claims.sub }] })) : undefined;
+    const token = header.slice(7);
+    if (a.link && issuerOf(token) === options.studio?.origin) {
+      const pass = await a.link.verifyPass(token);
+      return pass ? studioPassPerson(pass) : undefined;
+    }
+    return appTokenPerson(token);
   };
 
   const mcpRefusal = (request: Request) => refuse('MCP_TOKEN', 401, langOf(request), {
