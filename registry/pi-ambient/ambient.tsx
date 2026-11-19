@@ -13,7 +13,7 @@ import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { BlockActions } from '../button/actions';
 import type { BlockAction, BlockIcon } from '../button/actions';
-import { useChatPlacement } from '../pi-chat/use-remote-chat';
+import { useChatPlacement } from '@hachej/boring-ui-kit/chat-react';
 import { CopyButton } from '../pi-chat/code-block';
 import { Composer } from '../pi-chat/composer';
 import type { ComposerFeedback, ComposerProps } from '../pi-chat/composer';

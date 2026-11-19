@@ -24,7 +24,7 @@ import { AgentWorkspace, useConversations } from '../../registry/pi-app/agent-wo
 import { ConversationHistory } from '../../registry/pi-chat/history.tsx';
 import { PlacedAgentWorkspace, usePlacedAgentState } from '../../registry/placed-agent/placed-agent-workspace.tsx';
 import { defaultKinds } from '../../registry/pi-app-kinds/pi-app-kinds.ts';
-import { useRemoteChat } from '../../registry/pi-chat/use-remote-chat.ts';
+import { useRemoteChat } from '@hachej/boring-ui-kit/chat-react';
 import { attachmentPath, imageData } from '../../registry/pi-app/revision-files.ts';
 import { randomUUID } from '@hachej/boring-files/platform';
 
