@@ -70,7 +70,9 @@ test('wide: collapsing floats the same conversation, the page keeps its node, op
   assert.equal(floating.querySelector('[data-testid=composer-input]').value, 'Résume la semaine', 'the draft follows (one controller)');
   assert.equal(p.window.localStorage.getItem('fictional.agent.placement'), 'ambient', 'the placement is remembered');
   assert.ok(p.q('[data-testid=placed-agent]').hidden, 'the page is hidden, not unmounted');
-  await p.click(p.q('[data-testid=ambient-dock]'));
+  // « Dock chat » is a button of the floating window's title row (the one composer).
+  assert.ok(await p.settle(() => p.q('[data-boring=ambient-chat] [data-testid=agent-layer-action-dock]')), 'the title row has Dock chat');
+  await p.click(p.q('[data-boring=ambient-chat] [data-testid=agent-layer-action-dock]'));
   assert.equal(p.q('[data-testid=placed-agent]').dataset.mode, 'tab');
   assert.equal(p.q('[data-boring=ambient-chat]'), null);
   assert.ok(p.q('[data-testid=placed-agent] [data-testid=composer-input]') === composer, 'the page keeps its exact composer');
