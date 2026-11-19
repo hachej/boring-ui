@@ -149,6 +149,10 @@
       "types": "./dist/caps/decision/index.d.ts",
       "import": "./dist/caps/decision/index.js"
     },
+    "./caps/web": {
+      "types": "./dist/caps/web/index.d.ts",
+      "import": "./dist/caps/web/index.js"
+    },
     "./memory/optchat": {
       "types": "./dist/memory/optchat.d.ts",
       "import": "./dist/memory/optchat.js"
@@ -222,6 +226,9 @@
     "boring-host-build": "./dist/host-build-cli.js"
   },
   "dependencies": {
+    "@mozilla/readability": "0.6.0",
+    "linkedom": "0.18.13",
+    "turndown": "7.2.4",
     "unpdf": "1.9.1"
   },
   "devDependencies": {
