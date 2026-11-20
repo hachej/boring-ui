@@ -30,6 +30,7 @@ import type { AppShellLocale } from './text';
 import { AgentContextProvider } from './agent-context';
 import type { ShellPanel } from './shell-panel';
 import { barReserve } from './bar-reserve';
+import { resolveComposer } from './composer-config';
 import { LayerContext, PEEK_BAR_REM, PEEK_REM, SIDE_KEY, TOGETHER_QUERY, Z, useInternal } from './layer-context';
 import type { AgentComposer, AgentLayerApi, AgentLayerState, AgentMode, AgentPreview, AgentSpec, ComposerPlace, ComposerSignals, ConversationSize, DockSide, ExploreContext, FloatCorner, FloatPos, Internal, Snap, Which } from './layer-context';
 import { Chats } from './agent-chats';
@@ -133,7 +134,8 @@ export function AgentLayerProvider({ storage: persist = 'local', legacyPosition,
   const agent = own ?? lent;
   const [shown, setShown] = useState<Which>(agent ? 'agent' : 'improve');
   // `floatingComposer`: where the one composer sits. Stored as one word: `bottom`, `float`, or `icon:<where it comes back to>`; read after mount like the other choices.
-  const floatable = floating && composer === 'bar';
+  const flags = useMemo(() => resolveComposer({ composer, floatingComposer: floating }).flags, [composer, floating]);
+  const floatable = flags.floatable;
   const placeKey = sidebarKey('composer-place', modeIdentity?.app, modeIdentity?.person);
   const posKey = sidebarKey('composer-pos', modeIdentity?.app, modeIdentity?.person);
   const first: PlaceState = startIn === 'icon' ? 'icon:float' : startIn;
@@ -169,15 +171,15 @@ export function AgentLayerProvider({ storage: persist = 'local', legacyPosition,
   // eslint-disable-next-line react-hooks/set-state-in-effect -- same: the remembered width is read once the store exists
   useLayoutEffect(() => { try { const saved = Number(readPersisted(exploreKey, persist)); setExploreWidthState(Number.isFinite(saved) && saved > 0 ? saved : undefined); } catch { /* a convenience */ } }, [exploreKey, persist]);
   const setExploreWidth = useCallback((next: number | undefined) => { setExploreWidthState(next); try { if (next === undefined) writePersisted(exploreKey, null, persist); else writePersisted(exploreKey, String(Math.round(next)), persist); } catch { /* a convenience */ } }, [exploreKey, persist]);
-  const explore = composer === 'explore';
+  const explore = flags.explore;
   const lookingAt = explore ? context : undefined;
   const place: ComposerPlace = !floatable || agent === undefined ? 'bottom' : placeState.startsWith('icon') ? 'icon' : placeState === 'float' && expanded && anchor === null ? 'float' : 'bottom';
   // `bar` on a phone (AC-20): the one composer is never closed away; at rest it is the peek, the field right above the tabs. Close and Échap come back here.
-  const snap: Snap = composer === 'bar' && compact && place !== 'icon' && agent !== undefined && shown === 'agent' && snapState === 'closed' ? 'peek' : snapState;
+  const snap: Snap = flags.bar && compact && place !== 'icon' && agent !== undefined && shown === 'agent' && snapState === 'closed' ? 'peek' : snapState;
   // The phone's peek grows by the card's height, so the card shows above the field and the field stays where it was relative to the tabs.
   const [cardPx, setCardPx] = useState(0);
   const probe = useRef<HTMLDivElement>(null);
-  const { peekPoint, tabbar } = useMeasuredPeek(probe, composer === 'bar' && own !== undefined ? PEEK_BAR_REM : PEEK_REM, compact ? cardPx : 0);
+  const { peekPoint, tabbar } = useMeasuredPeek(probe, flags.bar && own !== undefined ? PEEK_BAR_REM : PEEK_REM, compact ? cardPx : 0);
   const triggerUntil = useRef(0);
   const restoreFocus = useRef(false);
   const [side, setSideState] = useState<DockSide>('right');
@@ -197,12 +199,12 @@ export function AgentLayerProvider({ storage: persist = 'local', legacyPosition,
   const moveToDock = useCallback(() => { if (!docks) return; setTrayHeight(undefined); restoreFocus.current = true; dockApi.current?.dock(); setMode('dock'); }, [setMode, docks, setTrayHeight]);
   // The column is there from the first frame, assistant or not: wrapping the page only once the agent arrives remounted the whole screen
   // (Chase, 17 November: every screen loaded twice when its chat connected). Its composer still waits for the agent.
-  const contentColumn = composer === 'content' || composer === 'bar';
+  const contentColumn = flags.contentColumn;
   const contentComposer = contentColumn && agent !== undefined && expanded;
-  const bar = composer === 'bar' && agent !== undefined;
+  const bar = flags.bar && agent !== undefined;
   const [columnCard, setCardSlot] = useState<HTMLElement | null>(null);
   const [phoneCard, setPhoneCard] = useState<HTMLElement | null>(null);
-  const cardSlot = anchor?.card ?? columnCard ?? (composer === 'bar' ? phoneCard : null);
+  const cardSlot = anchor?.card ?? columnCard ?? (flags.bar ? phoneCard : null);
   const specs = useRef({ agent, improve, snap, shown, pmOpen, together, contentComposer, mode, expanded });
   // eslint-disable-next-line react-hooks/refs -- latest-value ref: open/lend/showAgent may be called from a child's layout effect, before this component's own effects run
   specs.current = { agent, improve, snap, shown, pmOpen, together, contentComposer, mode, expanded };
@@ -484,9 +486,9 @@ export function AgentLayerProvider({ storage: persist = 'local', legacyPosition,
   }, [close, dockHere, setSize]);
   const value = useMemo<Internal>(() => ({
     state, showing: snap !== 'closed' ? shown : improveOpen ? 'improve' : null, open, close, closeShowing, talkAbout, status, fieldStatus, talkRecording, expanded, agent, improve, snap, setSnap, dockFloating, setDockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, restoreFocus, contentComposer, contentColumn, composerSlot, dropZone, setComposerSlot: setSlot, anchored: anchor !== null, setAnchor, setDropZone, onSent, mode, setMode, moveToDock: dockHere, registerDock, size, setSize, enterFull, leaveFull, setFullField, trayOpen, dockOpen,
-    place, setPlace, restore, placeFocus, floatable, docks, floatPos, setFloatPos, trayHeight, setTrayHeight, signals, setSignals,
+    place, setPlace, restore, placeFocus, floatable, composerFlags: flags, docks, floatPos, setFloatPos, trayHeight, setTrayHeight, signals, setSignals,
     bar, explore, lookingAt, exploreWidth, setExploreWidth, folded, cardSlot, setCardSlot, setPhoneCard, cardPx, setCardPx, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, holdSend,
-  }), [state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, status, fieldStatus, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, dockHere, registerDock, size, setSize, enterFull, leaveFull, setFullField, trayOpen, dockOpen, place, setPlace, restore, floatable, docks, floatPos, setFloatPos, trayHeight, setTrayHeight, signals, bar, explore, lookingAt, exploreWidth, setExploreWidth, folded, cardSlot, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, cardPx]);
+  }), [flags, state, snap, shown, improveOpen, open, close, closeShowing, talkAbout, status, fieldStatus, talkRecording, expanded, agent, improve, setSnap, dockFloating, showAgent, besidePanel, triggerUntil, voice, peekPoint, tabbar, host, locale, side, setSide, contentComposer, contentColumn, composerSlot, dropZone, setSlot, anchor, onSent, mode, setMode, dockHere, registerDock, size, setSize, enterFull, leaveFull, setFullField, trayOpen, dockOpen, place, setPlace, restore, floatable, docks, floatPos, setFloatPos, trayHeight, setTrayHeight, signals, bar, explore, lookingAt, exploreWidth, setExploreWidth, folded, cardSlot, stack, paneStacked, preview, pane, openLibrary, openFile, step, presented, cardPx]);
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   // `--agent-bar-reserve`: what the bar takes from the bottom of a screen (the phone's peek and its card; see `barReserve`). The shell pads the bottom of each screen with it (a sticky bar inside a screen already sticks above that padding); a host element placed against the screen's box uses it as `bottom`.

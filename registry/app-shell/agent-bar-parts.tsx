@@ -23,6 +23,8 @@ import { UnreadMark } from '../_shared/controller-strip';
 import type { ControllerAction, Unread } from '../_shared/controller-strip';
 import { composerLabels, shellWords, useInternal } from './layer-context';
 import { Grip } from './composer-grip';
+import { stripPlan } from './composer-config';
+import type { StripPlanItem } from './composer-config';
 import { ResizeHandle } from './composer-resize';
 import { FileChip, isCitedFile, ReplyActionButton } from './file-chip';
 
@@ -134,38 +136,29 @@ export function VoiceProblem() {
   return voice.problem ? <p role="alert" data-testid="agent-voice-problem" className="m-0 shrink-0 px-3 pb-1 text-xs leading-4 text-destructive">{voice.problem}</p> : null;
 }
 
-/** The actions of the conversation's layout in the state it is in: the chevron (expand or collapse) first, then what the state offers (expand more, split or undock). */
+/** The actions of the conversation's layout in the state it is in: the plan (ids, test ids, order) comes from the one table in `composer-config`; here each gets its label, icon and what it does. */
 function useControllerActions(): readonly ControllerAction[] {
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const focusField = () => requestAnimationFrame(() => (layer.host?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]'))?.focus({ preventScroll: true }));
   const up = <ChevronUpIcon aria-hidden="true" />, down = <ChevronDownIcon aria-hidden="true" />;
-  const more = (onSelect: () => void): ControllerAction => ({ id: 'more', testId: 'agent-tray-grow', label: text.expand, icon: <ChevronsUpIcon aria-hidden="true" />, onSelect });
-  const full: ControllerAction = { id: 'full', testId: 'agent-tray-full', label: text.fullScreen, icon: <MaximizeIcon aria-hidden="true" />, onSelect: () => layer.setSize('full') };
-  if (!layer.expanded) {
-    const open = layer.snap === 'half' || layer.snap === 'full';
-    return [{ id: 'chevron', testId: 'agent-bar-conversation', label: open ? text.collapse : text.conversation, icon: open ? down : up, expanded: open, primary: true, onSelect: () => { if (open) { layer.close(); focusField(); } else layer.open('agent'); } },
-      ...(layer.snap === 'half' ? [more(() => layer.setSnap('full'))] : [])];
-  }
-  if (layer.trayOpen && layer.size === 'full') return [{ id: 'chevron', testId: 'agent-full-back', label: text.exitFullScreen, icon: down, expanded: true, primary: true, onSelect: layer.leaveFull }];
-  if (layer.dockOpen) return [];
-  // `floatingComposer`: the bar floats or sits at the bottom, and can fold to its icon. Floating, the strip is Expand (or Collapse), Dock to the bottom and Minimise.
-  const minimise: ControllerAction = { id: 'minimise', testId: 'composer-minimise', label: text.minimise, icon: <MinusIcon aria-hidden="true" />, onSelect: () => layer.setPlace('icon') };
-  const floats = layer.floatable && !layer.anchored;
-  if (layer.place === 'float') return [
-    layer.trayOpen ? { id: 'chevron', testId: 'agent-tray-reduce', label: text.collapse, icon: down, expanded: true, primary: true, onSelect: () => { layer.close(); focusField(); } }
-      : { id: 'chevron', testId: 'agent-bar-conversation', label: text.conversation, icon: up, expanded: false, primary: true, onSelect: () => layer.open('agent') },
-    { id: 'dock', testId: 'composer-dock-bottom', label: text.dock, icon: <PanelBottomIcon aria-hidden="true" />, onSelect: () => layer.setPlace('bottom') },
-    minimise];
-  const places: readonly ControllerAction[] = floats ? [{ id: 'float', testId: 'composer-float', label: text.float, icon: <PictureInPicture2Icon aria-hidden="true" />, onSelect: () => layer.setPlace('float') }, minimise] : [];
-  if (layer.trayOpen) return [
-    { id: 'chevron', testId: 'agent-tray-reduce', label: text.collapse, icon: down, expanded: true, primary: true, onSelect: () => { layer.close(); focusField(); } },
-    ...(layer.size === 'open' ? [more(() => layer.setSize('grown'))] : []),
-    ...(layer.docks ? [{ id: 'split', testId: 'agent-tray-dock', label: layer.side === 'left' ? text.dockLeft : text.dockRight, icon: <PanelRightIcon aria-hidden="true" />, onSelect: layer.moveToDock }] : []),
-    full, ...places,
-  ];
-  return [{ id: 'chevron', testId: 'agent-bar-conversation', label: text.conversation, icon: up, expanded: false, primary: true, onSelect: () => layer.open('agent') },
-    { ...full, onSelect: () => layer.enterFull('folded') }, ...places];
+  const plan = stripPlan(layer.composerFlags, { expanded: layer.expanded, snap: layer.snap, trayOpen: layer.trayOpen, dockOpen: layer.dockOpen, size: layer.size, place: layer.place, anchored: layer.anchored, docks: layer.docks });
+  const reduce = () => { layer.close(); focusField(); };
+  const make = (entry: StripPlanItem): ControllerAction => {
+    const { id, testId } = entry;
+    switch (entry.key) {
+      case 'conversation': { const open = entry.open === true; return { id, testId, label: open ? text.collapse : text.conversation, icon: open ? down : up, expanded: open, primary: true, onSelect: () => { if (open) reduce(); else layer.open('agent'); } }; }
+      case 'reduce': return { id, testId, label: text.collapse, icon: down, expanded: true, primary: true, onSelect: reduce };
+      case 'back': return { id, testId, label: text.exitFullScreen, icon: down, expanded: true, primary: true, onSelect: layer.leaveFull };
+      case 'more': return { id, testId, label: text.expand, icon: <ChevronsUpIcon aria-hidden="true" />, onSelect: () => { if (layer.expanded) layer.setSize('grown'); else layer.setSnap('full'); } };
+      case 'full': return { id, testId, label: text.fullScreen, icon: <MaximizeIcon aria-hidden="true" />, onSelect: () => { if (layer.trayOpen) layer.setSize('full'); else layer.enterFull('folded'); } };
+      case 'split': return { id, testId, label: layer.side === 'left' ? text.dockLeft : text.dockRight, icon: <PanelRightIcon aria-hidden="true" />, onSelect: layer.moveToDock };
+      case 'float': return { id, testId, label: text.float, icon: <PictureInPicture2Icon aria-hidden="true" />, onSelect: () => layer.setPlace('float') };
+      case 'dock': return { id, testId, label: text.dock, icon: <PanelBottomIcon aria-hidden="true" />, onSelect: () => layer.setPlace('bottom') };
+      case 'minimise': return { id, testId, label: text.minimise, icon: <MinusIcon aria-hidden="true" />, onSelect: () => layer.setPlace('icon') };
+    }
+  };
+  return plan.map(make);
 }
 
 /**
