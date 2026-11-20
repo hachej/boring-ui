@@ -6,6 +6,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { RefObject } from 'react';
 import type { Avoid, Corner, Length } from './composer-config';
+import type { LauncherOwner } from './layer-context';
+export type { LauncherOwner } from './layer-context';
 
 /** The circle's size in px (3.25 rem) and the gap between launchers on one corner. */
 export const CIRCLE_SIZE = 52;
@@ -18,7 +20,8 @@ export const DEFAULT_OFFSET = 16;
 /** A `Length` as CSS: a number is px. */
 export const css = (length: Length): string => typeof length === 'number' ? `${length}px` : length;
 
-interface Launcher { readonly key: object; readonly id: string | undefined; readonly corner: Corner; readonly rank: number; readonly seq: number; readonly reserve: boolean; readonly inline: string; readonly block: string }
+/** One launcher of the page: `corner` is `null` for one that sits in the page's flow (a bar under the content): it keeps its `id` in the registry and takes no place on a corner. `w` and `h` are its box in px (a circle by default). */
+interface Launcher { readonly key: object; readonly id: string | undefined; readonly corner: Corner | null; readonly rank: number; readonly seq: number; readonly reserve: boolean; readonly inline: string; readonly block: string; readonly w?: number; readonly h?: number }
 let launchers: readonly Launcher[] = [];
 const listeners = new Set<() => void>();
 let counter = 0;
@@ -27,19 +30,27 @@ const subscribe = (notify: () => void) => { listeners.add(notify); return () => 
 const snapshot = () => launchers;
 const serverSnapshot = () => EMPTY;
 
+/** One composer's place in the registry: the n-th composer to mount takes n, so `auto` stacks in the order the page mounted them. The layer owns it for its whole life, whichever surface (bar, icon, circle, tab) is drawn. */
+export const newLauncherOwner = (): LauncherOwner => ({ key: {}, seq: ++counter });
+
 const before = (a: { readonly rank: number; readonly seq: number }, b: { readonly rank: number; readonly seq: number }) => a.rank !== b.rank ? a.rank < b.rank : a.seq < b.seq;
 /** How many launchers on `corner` sit nearer it than the one with this rank: its place in the stack (0 is the corner's own). */
-export function slotOf(all: readonly { readonly corner: Corner; readonly rank: number; readonly seq: number; readonly key?: object }[], mine: { readonly key?: object; readonly corner: Corner; readonly rank: number; readonly seq: number }): number {
-  return all.filter(other => other.corner === mine.corner && other.key !== mine.key && before(other, mine)).length;
+export function slotOf(all: readonly { readonly corner: Corner | null; readonly rank: number; readonly seq: number; readonly key?: object }[], mine: { readonly key?: object; readonly corner: Corner | null; readonly rank: number; readonly seq: number }): number {
+  return mine.corner === null ? 0 : all.filter(other => other.corner === mine.corner && other.key !== mine.key && before(other, mine)).length;
+}
+const sizeH = (launcher: { readonly h?: number }) => launcher.h ?? CIRCLE_SIZE;
+/** The distance in px from the corner's edge to the near side of a launcher: the height of every launcher nearer the corner, and a gap after each (boxes of different heights stack without overlap). */
+export function liftOf(all: readonly Launcher[], mine: { readonly key?: object; readonly corner: Corner | null; readonly rank: number; readonly seq: number }): number {
+  return mine.corner === null ? 0 : all.filter(other => other.corner === mine.corner && other.key !== mine.key && before(other, mine)).reduce((sum, other) => sum + sizeH(other) + STACK_GAP, 0);
 }
 /** The distance from the corner's edge to the far side of the launcher in slot `index`, as px. */
 export const stackLift = (index: number): number => index * (CIRCLE_SIZE + STACK_GAP);
 
 /** The footprint of the launchers, as the CSS the two variables take: from the window's bottom edge up to the top of the highest stack, and from the inline end edge in. */
 export function reserveOf(all: readonly Launcher[]): { readonly block: string | undefined; readonly inline: string | undefined } {
-  const bottoms = all.filter(launcher => launcher.reserve && launcher.corner.startsWith('bottom'));
-  const blocks = bottoms.map(launcher => `calc(${launcher.block} + ${stackLift(slotOf(all, launcher)) + CIRCLE_SIZE}px)`);
-  const inlines = bottoms.filter(launcher => launcher.corner.endsWith('end')).map(launcher => `calc(${launcher.inline} + ${CIRCLE_SIZE}px)`);
+  const bottoms = all.filter(launcher => launcher.reserve && launcher.corner !== null && launcher.corner.startsWith('bottom'));
+  const blocks = bottoms.map(launcher => `calc(${launcher.block} + ${liftOf(all, launcher) + sizeH(launcher)}px)`);
+  const inlines = bottoms.filter(launcher => launcher.corner?.endsWith('end')).map(launcher => `calc(${launcher.inline} + ${launcher.w ?? CIRCLE_SIZE}px)`);
   const join = (list: readonly string[]) => list.length === 0 ? undefined : list.length === 1 ? list[0] : `max(${list.join(', ')})`;
   return { block: join(blocks), inline: join(inlines) };
 }
@@ -54,34 +65,41 @@ function publish(): void {
 }
 const changed = () => { publish(); for (const listener of [...listeners]) listener(); };
 
-/** What the shell's screens keep free at their foot for the launchers: the bar's own reserve, or the launchers' footprint above the tab bar, whichever is more. */
-export const circleReserve = (bar: string, circle: boolean): string => circle ? `max(${bar}, max(0px, calc(var(--composer-reserve-block, 0px) - var(--app-shell-tabbar, 0px))))` : bar;
+/** What the shell's screens keep free at their foot for the launchers: the bar's own reserve, or the launchers' footprint above the tab bar, whichever is more. `config`: the composer was given as a config object (any launcher): a string preset keeps what it always reserved. */
+export const circleReserve = (bar: string, config: boolean): string => config ? `max(${bar}, max(0px, calc(var(--composer-reserve-block, 0px) - var(--app-shell-tabbar, 0px))))` : bar;
 
-export interface LauncherSpec { readonly id: string | undefined; readonly corner: Corner; readonly stack: 'auto' | number; readonly reserve: boolean; readonly inline: Length; readonly block: Length }
+export interface LauncherSpec { readonly id: string | undefined; readonly corner: Corner | null; readonly stack: 'auto' | number; readonly reserve: boolean; readonly inline: Length; readonly block: Length; readonly w?: number; readonly h?: number }
 
-/** Registers a launcher on its corner while `active` and returns its slot in the stack: 0 nearest the corner. Two launchers with one `id`, or one explicit `stack`, are a mistake the console names. */
-export function useLauncherSlot(spec: LauncherSpec, active: boolean): { readonly slot: number; readonly first: boolean } {
-  // The mount order: the n-th launcher to mount takes n, so `auto` stacks in the order the page mounted them.
-  const [key] = useState<object>(() => ({}));
-  const [seq] = useState(() => ++counter);
-  const { id, corner, stack, reserve } = spec;
+/** Registers a launcher on its corner while `active` and returns its slot in the stack: 0 nearest the corner, and the px it lifts. Two launchers with one `id`, or one explicit `stack`, are a mistake the console names. `owner`: the layer's own, so the surface it draws can change (bar, icon, tab) without losing its place. */
+export function useLauncherSlot(spec: LauncherSpec, active: boolean, owner?: LauncherOwner): { readonly slot: number; readonly lift: number; readonly first: boolean } {
+  const [own] = useState<LauncherOwner>(() => owner ?? newLauncherOwner());
+  const { key, seq } = owner ?? own;
+  const { id, corner, stack, reserve, w, h } = spec;
   const inline = css(spec.inline), block = css(spec.block);
   const rank = typeof stack === 'number' ? stack : seq;
   useLayoutEffect(() => {
     if (!active) return;
-    const mine: Launcher = { key, id, corner, rank, seq, reserve, inline, block };
+    const mine: Launcher = { key, id, corner, rank, seq, reserve, inline, block, ...(w === undefined ? {} : { w }), ...(h === undefined ? {} : { h }) };
     for (const other of launchers) {
       if (other.key === key) continue;
       if (id !== undefined && other.id === id) console.error(`composer: two launchers have the id "${id}": give each its own \`id\` (it names the storage keys and Ctrl+J).`);
-      if (typeof stack === 'number' && other.corner === corner && other.rank === stack) console.error(`composer: two launchers on ${corner} share \`at.stack: ${stack}\`: give each its own, or leave it out to stack by mount order.`);
+      if (typeof stack === 'number' && corner !== null && other.corner === corner && other.rank === stack) console.error(`composer: two launchers on ${corner} share \`at.stack: ${stack}\`: give each its own, or leave it out to stack by mount order.`);
     }
     launchers = [...launchers.filter(other => other.key !== key), mine];
     changed();
     return () => { launchers = launchers.filter(other => other.key !== key); changed(); };
-  }, [active, key, id, corner, stack, rank, seq, reserve, inline, block]);
+  }, [active, key, id, corner, stack, rank, seq, reserve, inline, block, w, h]);
+  return useLauncherPlace(owner ?? own, corner, rank);
+}
+
+/** The place a registered launcher has on its corner (read only: the registrant is `useLauncherSlot`). */
+export function useLauncherPlace(owner: LauncherOwner, corner: Corner | null, rank: number = owner.seq): { readonly slot: number; readonly lift: number; readonly first: boolean } {
   const all = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
-  const first = all.every(other => other.key === key || before({ rank, seq }, other));
-  return { slot: slotOf(all, { key, corner, rank, seq }), first };
+  const { key, seq } = owner;
+  const mine = all.find(other => other.key === key);
+  const at = { key, corner, rank: mine?.rank ?? rank, seq };
+  const first = all.every(other => other.key === key || before(at, other));
+  return { slot: slotOf(all, at), lift: liftOf(all, at), first };
 }
 
 interface Box { readonly left: number; readonly right: number; readonly top: number; readonly bottom: number }

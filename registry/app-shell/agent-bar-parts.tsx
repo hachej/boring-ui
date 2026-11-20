@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, Loader2Icon, MicIcon, MaximizeIcon, MinusIcon, PanelBottomIcon, PanelRightIcon, PictureInPicture2Icon, ShieldAlertIcon, SquareIcon, XIcon } from '../_shared/icons';
+import { AlertCircleIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, ChevronsUpIcon, ExternalLinkIcon, Loader2Icon, MicIcon, MaximizeIcon, MinusIcon, PanelBottomIcon, PanelRightIcon, PictureInPicture2Icon, ShieldAlertIcon, SquareIcon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
@@ -23,7 +23,8 @@ import { UnreadMark } from '../_shared/controller-strip';
 import type { ControllerAction, Unread } from '../_shared/controller-strip';
 import { composerLabels, shellWords, useInternal } from './layer-context';
 import { Grip } from './composer-grip';
-import { stripPlan } from './composer-config';
+import { configOf, stripPlan } from './composer-config';
+import { useOpenFull } from './composer-actions';
 import type { StripPlanItem } from './composer-config';
 import { ResizeHandle } from './composer-resize';
 import { FileChip, isCitedFile, ReplyActionButton } from './file-chip';
@@ -142,7 +143,8 @@ function useControllerActions(): readonly ControllerAction[] {
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const focusField = () => requestAnimationFrame(() => (layer.host?.querySelector<HTMLElement>('[data-testid=composer-input]') ?? layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]'))?.focus({ preventScroll: true }));
   const up = <ChevronUpIcon aria-hidden="true" />, down = <ChevronDownIcon aria-hidden="true" />;
-  const plan = stripPlan(layer.composerFlags, { expanded: layer.expanded, snap: layer.snap, trayOpen: layer.trayOpen, dockOpen: layer.dockOpen, size: layer.size, place: layer.place, anchored: layer.anchored, docks: layer.docks });
+  const full = useOpenFull();
+  const plan = stripPlan(layer.composerFlags, { expanded: layer.expanded, snap: layer.snap, trayOpen: layer.trayOpen, dockOpen: layer.dockOpen, size: layer.size, place: layer.place, anchored: layer.anchored, docks: layer.docks }, configOf(layer));
   const reduce = () => { layer.close(); focusField(); };
   const make = (entry: StripPlanItem): ControllerAction => {
     const { id, testId } = entry;
@@ -155,6 +157,7 @@ function useControllerActions(): readonly ControllerAction[] {
       case 'split': return { id, testId, label: layer.side === 'left' ? text.dockLeft : text.dockRight, icon: <PanelRightIcon aria-hidden="true" />, onSelect: layer.moveToDock };
       case 'float': return { id, testId, label: text.float, icon: <PictureInPicture2Icon aria-hidden="true" />, onSelect: () => layer.setPlace('float') };
       case 'dock': return { id, testId, label: text.dock, icon: <PanelBottomIcon aria-hidden="true" />, onSelect: () => layer.setPlace('bottom') };
+      case 'openFull': return { id, testId, label: text.openFull, icon: <ExternalLinkIcon aria-hidden="true" />, disabled: full.disabled, onSelect: () => full.run?.() };
       case 'minimise': return { id, testId, label: text.minimise, icon: <MinusIcon aria-hidden="true" />, onSelect: () => layer.setPlace('icon') };
       default: throw new Error(`composer: the strip of a bar has no "${entry.key}" action (a circle's panel draws its own title row)`);
     }

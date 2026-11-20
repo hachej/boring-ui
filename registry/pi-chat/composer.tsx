@@ -46,6 +46,8 @@ export interface ComposerFeedback extends ChatSessionFeedback {
   readonly count: number;
   /** Removes the notes (the count chip's remove button). */
   readonly clear: () => void;
+  /** `false`: the app draws its own control for the pointing tool (`AgentSpec.feedbackSlot`), so the composer draws no toggle; the notes chip stays. */
+  readonly toggle?: boolean | undefined;
 
 }
 
@@ -452,7 +454,7 @@ export function Composer(props: ComposerProps) {
       {!pill && <div data-slot="composer-recording" aria-hidden="true" className="min-h-11 w-0 shrink-0" />}
       <InputGroupAddon align={pill ? 'inline-start' : 'block-end'} data-testid="composer-controls" className="w-full">{props.recording}</InputGroupAddon>
     </InputGroup> : pill ? <InputGroup>
-      <InputGroupAddon>{startAndPlus}{feedback && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
+      <InputGroupAddon>{startAndPlus}{feedback && feedback.toggle !== false && <AnnotateButton feedback={feedback} disabled={disabled} />}</InputGroupAddon>
       {input}
       <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>
     </InputGroup> : <InputGroup>

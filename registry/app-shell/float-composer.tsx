@@ -12,6 +12,9 @@ import { useDraggable } from '../utils/use-draggable';
 import type { DragPosition } from '../utils/use-draggable';
 import { cn } from '../utils/utils';
 import { GripContext } from './composer-grip';
+import { LauncherNote, useNote } from './composer-actions';
+import { useCornerPlace } from './composer-place';
+import type { Corner } from './composer-config';
 import type { GripHandlers } from './composer-grip';
 import { shellWords, useInternal } from './layer-context';
 import type { FloatCorner, FloatPos } from './layer-context';
@@ -28,6 +31,10 @@ const BIG_STEP = 64;
 const ARROWS: Readonly<Record<string, readonly [number, number]>> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 
 const clamp = (value: number, low: number, high: number) => Math.min(Math.max(value, low), Math.max(low, high));
+/** The logical corner of a float corner (`bl` is the bottom inline start). */
+const LOGICAL: Readonly<Record<FloatCorner, Corner>> = { tl: 'top-start', tr: 'top-end', bl: 'bottom-start', br: 'bottom-end' };
+const BOTTOM_EDGE = `max(${MARGIN}px, env(safe-area-inset-bottom))`;
+
 export const cornerOf = (pos: FloatPos, width = 0, height = 0): FloatCorner => 'corner' in pos ? pos.corner
   : `${pos.top + height / 2 < window.innerHeight / 2 ? 't' : 'b'}${pos.left + width / 2 < window.innerWidth / 2 ? 'l' : 'r'}`;
 
@@ -118,10 +125,16 @@ export function FloatFrame({ children }: { readonly children: ReactNode }) {
   }), [drag, commit, setFloatPos]);
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const tall = layer.size === 'open' && layer.trayHeight !== undefined ? `${layer.trayHeight}px` : 'min(26rem, 55dvh)';
-  const style = { ...placement(pos, trayOpen), ...(trayOpen ? { '--app-shell-bar-tray-size': tall, '--app-shell-bar-tray-expanded': tall } : {}) } as CSSProperties;
+  // A config object places a bar in a corner by its `at.offset`, `at.stack`, `avoid` and `layer`; a bar the person dragged free, and a composer given as a string, keep their own place.
+  const corner = 'corner' in pos ? LOGICAL[pos.corner] : null;
+  const around = useCornerPlace({ ref: box, corner, defaults: { inline: MARGIN, block: corner?.startsWith('top') ? MARGIN : BOTTOM_EDGE }, size: { w: BAR_WIDTH, h: BAR_HEIGHT }, active: true });
+  const note = useNote();
+  const room = `calc(var(--app-shell-bar-tray-size) + ${MARGIN}px)`;
+  const where: CSSProperties = around.style ? { ...around.style, ...(trayOpen && corner?.startsWith('top') ? { insetBlockStart: `max(${String(around.style.insetBlockStart)}, ${room})` } : {}) } : placement(pos, trayOpen);
+  const style = { ...where, ...(trayOpen ? { '--app-shell-bar-tray-size': tall, '--app-shell-bar-tray-expanded': tall } : {}) } as CSSProperties;
   return <GripContext.Provider value={handlers}>
     <div ref={box} data-testid="composer-floating" data-corner={'corner' in pos ? pos.corner : undefined} role="group" aria-label={text.assistant} style={style}
-      className={cn('fixed z-(--app-shell-z-layer) w-[min(22rem,calc(100vw-2rem))]', className)}>{children}<NoticeSlot below={cornerOf(pos, 0, 0).startsWith('t')} /></div>
+      className={cn('fixed z-(--app-shell-z-layer) w-[min(22rem,calc(100vw-2rem))]', className)} data-composer={around.style ? layer.composerFlags.id : undefined}>{children}<NoticeSlot below={cornerOf(pos, 0, 0).startsWith('t')} />{note && !trayOpen && <LauncherNote note={note} placement="above" className={corner?.startsWith('top') ? 'top-full bottom-auto mt-2 mb-0' : undefined} />}</div>
   </GripContext.Provider>;
 }
 
@@ -136,18 +149,22 @@ export function ComposerFab() {
   useEffect(() => { if (focusRef.current) { focusRef.current = false; button.current?.focus({ preventScroll: true }); } }, [focusRef]);
   const corner = expanded ? cornerOf(floatPos, 352, 56) : 'br';
   const Icon = layer.agent?.icon ?? SparklesIcon;
-  const style: CSSProperties = expanded
+  const box = useRef<HTMLSpanElement>(null);
+  const placed = useCornerPlace({ ref: box, corner: LOGICAL[corner], defaults: { inline: MARGIN, block: corner.startsWith('t') ? MARGIN : expanded ? BOTTOM_EDGE : `calc(${tabbar}px + ${BOTTOM_EDGE})` }, size: { w: 52, h: 52 }, active: true });
+  const note = useNote();
+  const style: CSSProperties = placed.style ? placed.style : expanded
     ? { ...(corner.endsWith('l') ? { left: MARGIN } : { right: MARGIN }), ...(corner.startsWith('t') ? { top: MARGIN } : { bottom: `max(${MARGIN}px, env(safe-area-inset-bottom))` }) }
     : { right: MARGIN, bottom: `calc(${tabbar}px + max(${MARGIN}px, env(safe-area-inset-bottom)))` };
   const label = signals.unread ? `${text.restore} (${signals.unread.label}${signals.unread.count && signals.unread.count > 1 ? `, ${signals.unread.count}` : ''})` : text.restore;
   // The agent at work: a thin ring pulses round the icon (still when the person prefers less motion). A decision that waits shows its own ring, which wins.
   const working = signals.working === true && !signals.needsYou;
-  return <span style={style} className={cn('fixed z-(--app-shell-z-layer) size-13 rounded-pm-round shadow-pm-popover', signals.needsYou && 'ring-2 ring-warning outline-3 outline-warning/25', className)}>
+  return <span ref={box} style={style} data-composer={placed.style ? layer.composerFlags.id : undefined} className={cn('fixed z-(--app-shell-z-layer) size-13 rounded-pm-round shadow-pm-popover', signals.needsYou && 'ring-2 ring-warning outline-3 outline-warning/25', className)}>
     <Button ref={button} type="button" size="icon" data-testid="composer-icon" data-needs-you={signals.needsYou || undefined} data-working={working || undefined} aria-busy={working || undefined} aria-label={label} title={text.restore} onClick={restore}>
       <Icon aria-hidden="true" />
       {signals.unread && <UnreadMark unread={signals.unread} dot="top-0 right-0" pill="-top-1 -right-2" />}
     </Button>
       {working && <span data-testid="composer-icon-working" aria-hidden="true" className="pointer-events-none absolute -inset-0.5 rounded-pm-round ring-2 ring-primary animate-pulse motion-reduce:animate-none" />}
     <NoticeSlot below={corner.startsWith('t')} className={cn('w-[min(22rem,calc(100vw-2rem))]', corner.endsWith('l') ? 'left-0 right-auto' : 'right-0 left-auto')} />
+    {note && <LauncherNote note={note} />}
   </span>;
 }

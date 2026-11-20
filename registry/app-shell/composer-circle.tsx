@@ -4,33 +4,22 @@
 // the annotate toggle (an agent with a pointing tool), Open in full (a `handoff`: the app's full page for the conversation) and Close. The circle carries the unread mark, the needs-you ring,
 // a run's pulse and a count of the notes taken; several launchers stack on one corner and step around the page's `avoid` rectangles (`composer-stack`). On a phone the panel is the bottom sheet
 // (`CompactSheet`). Host concern: Pi has no layout; the conversation is the layer's one chat, moved into the panel.
-import { useContext, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
+import { useContext, useEffect, useLayoutEffect, useRef } from 'react';
 import type { CSSProperties, ReactElement } from 'react';
-import { ExternalLinkIcon, MessageSquarePlusIcon, SparklesIcon, XIcon } from '../_shared/icons';
+import { SparklesIcon, XIcon } from '../_shared/icons';
 import { UnreadMark } from '../_shared/controller-strip';
 import { Button } from '@/components/ui/button';
-import { Toggle } from '@/components/ui/toggle';
-import { clearUnread } from '../agent-bar/use-agent-bar-chat';
-import { useComposerFeedback } from '../feedback/feedback-session';
+import { AnnotateControl, LauncherNote, OpenFullButton, escapeOwnedElsewhere, useNote } from './composer-actions';
 import { cn } from '../utils/utils';
 import { ChatSlot, HeaderExtras, HistoryButton, useCircleCollapsed, useTitle } from './agent-chats';
 import { VoiceProblem } from './agent-bar-parts';
 import { CIRCLE_ACTIONS, configOf } from './composer-config';
 import { ComposerClassContext, NoticeSlot } from './float-composer';
 import type { Corner } from './composer-config';
-import { DEFAULT_OFFSET, css, stackLift, useAvoidShift, useLauncherSlot } from './composer-stack';
+import { DEFAULT_OFFSET, css, useAvoidShift, useLauncherSlot } from './composer-stack';
 import { composerLabels, shellWords, useInternal } from './layer-context';
 
 const MARGIN = `max(${DEFAULT_OFFSET}px, env(safe-area-inset-bottom, 0px))`;
-
-/** The conversation has no message yet (nothing to continue on a full page). */
-function useEmpty(): boolean {
-  const { agent } = useInternal();
-  const controller = agent?.controller;
-  const read = () => { const snapshot = controller?.getSnapshot(); return !snapshot || ((snapshot.view?.entries?.length ?? 0) === 0 && (snapshot.echo?.length ?? 0) === 0 && snapshot.outbox.length === 0); };
-  return useSyncExternalStore(controller?.subscribe ?? NEVER, read, read);
-}
-const NEVER = () => () => {};
 
 /** What the circle's geometry reads from the config: its corner and the two distances, the phone's tab bar added when the app gives no block offset. */
 function useGeometry() {
@@ -47,31 +36,15 @@ function useGeometry() {
 export function CircleControls({ withClose = true }: { readonly withClose?: boolean }): ReactElement | null {
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  const labels = composerLabels(layer.locale, layer.agent);
-  const config = configOf(layer);
-  const feedback = useComposerFeedback(layer.agent?.feedback);
-  const empty = useEmpty();
-  const controller = layer.agent?.controller;
-  const full = config?.handoff?.openFull ?? config?.on?.openFull;
-  const allowEmpty = config?.handoff?.allowEmpty === true;
-  const openFull = () => {
-    if (!full || !controller) return;
-    const id = String(layer.agent?.chatProps?.conversations?.activeId ?? controller.getSnapshot().conversationId);
-    (full as (id: string, context: { readonly empty: boolean }) => void)(id, { empty });
-    // The person goes where the whole conversation is: what was unread is read, in every instance mounted on it, and the panel closes unless the app says it stays.
-    clearUnread(controller);
-    if ((config?.handoff?.then ?? 'close') === 'close') layer.close();
-  };
   return <span data-testid="composer-controller" className="flex shrink-0 items-center gap-0.5">
-    {feedback && <Toggle className="min-h-11 min-w-11" data-testid={CIRCLE_ACTIONS.annotate.testId} data-action={CIRCLE_ACTIONS.annotate.id} pressed={feedback.active} aria-label={labels.annotate} title={labels.annotateHint}
-      onPressedChange={() => feedback.annotate()}><MessageSquarePlusIcon data-icon="inline-start" aria-hidden="true" /></Toggle>}
-    {full && <Button variant="ghost" size="icon" data-testid={CIRCLE_ACTIONS.openFull.testId} data-action={CIRCLE_ACTIONS.openFull.id} aria-label={text.openFull} title={text.openFull} disabled={empty && !allowEmpty} onClick={openFull}><ExternalLinkIcon data-icon="inline-start" aria-hidden="true" /></Button>}
+    <AnnotateControl />
+    <OpenFullButton />
     {withClose && <Button variant="ghost" size="icon" data-testid={CIRCLE_ACTIONS.close.testId} data-action={CIRCLE_ACTIONS.close.id} aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
   </span>;
 }
 
 /** The round launcher: a tap opens the panel. Unread mark, needs-you ring, the run's pulse, the notes taken and the app's status note. */
-function Launcher({ hidden, slot }: { readonly hidden: boolean; readonly slot: number }): ReactElement {
+function Launcher({ hidden, slot, lift }: { readonly hidden: boolean; readonly slot: number; readonly lift: number }): ReactElement {
   const { layer, config, corner, inline, block, bottom, end, z } = useGeometry();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const labels = composerLabels(layer.locale, layer.agent);
@@ -80,10 +53,10 @@ function Launcher({ hidden, slot }: { readonly hidden: boolean; readonly slot: n
   const hostClass = useContext(ComposerClassContext);
   const shift = useAvoidShift(box, corner, config?.avoid, !hidden);
   const Icon = layer.agent?.icon ?? SparklesIcon;
-  const note = config?.note?.(signals) ?? null;
+  const note = useNote();
   const label = signals.unread ? `${text.restore} (${signals.unread.label}${signals.unread.count && signals.unread.count > 1 ? `, ${signals.unread.count}` : ''})` : text.restore;
   const working = signals.working === true && !signals.needsYou;
-  const style: CSSProperties = { zIndex: z, [end ? 'insetInlineEnd' : 'insetInlineStart']: `calc(${css(inline)} + ${shift}px)`, [bottom ? 'insetBlockEnd' : 'insetBlockStart']: `calc(${css(block)} + ${stackLift(slot)}px)` };
+  const style: CSSProperties = { zIndex: z, [end ? 'insetInlineEnd' : 'insetInlineStart']: `calc(${css(inline)} + ${shift}px)`, [bottom ? 'insetBlockEnd' : 'insetBlockStart']: `calc(${css(block)} + ${lift}px)` };
   // Hidden (the panel is open, or the full page is on show) the box keeps its slot in the stack and out of the way: the others do not shift.
   return <span ref={box} hidden={hidden} style={style} data-composer={config?.id} data-testid="composer-circle-box" data-slot-index={slot}
     className={cn('fixed size-13 rounded-pm-round shadow-pm-popover', signals.needsYou && 'ring-2 ring-warning outline-3 outline-warning/25', hostClass)}>
@@ -95,18 +68,18 @@ function Launcher({ hidden, slot }: { readonly hidden: boolean; readonly slot: n
     {(signals.notes ?? 0) > 0 && <span role="img" aria-label={labels.annotateNotes(signals.notes ?? 0)} data-testid="composer-circle-notes" data-count={signals.notes}
       className="pointer-events-none absolute -bottom-1 -left-1 flex h-5 min-w-5 items-center justify-center rounded-pm-round bg-foreground px-1 text-xs leading-none font-semibold tabular-nums text-background ring-2 ring-background">{signals.notes}</span>}
     <NoticeSlot below={!bottom} className={cn('w-[min(22rem,calc(100vw-2rem))]', end ? 'right-0 left-auto' : 'left-0 right-auto')} />
-    {note && <span role="status" data-testid="composer-circle-note" className="pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-pm-round bg-card ring-1 ring-border px-3 py-1.5 text-xs whitespace-nowrap text-card-foreground shadow-pm-popover [inset-inline-end:calc(100%+0.5rem)]">{note}</span>}
+    {note && <LauncherNote note={note} testId="composer-circle-note" />}
   </span>;
 }
 
 /** The wide panel: the layer's one conversation in a window at the launcher's corner, title row, thread and field. */
-function Panel({ slot }: { readonly slot: number }): ReactElement {
+function Panel({ lift }: { readonly lift: number }): ReactElement {
   const { config, corner, inline, block, bottom, end, z } = useGeometry();
   const { text, title } = useTitle();
   const box = useRef<HTMLDivElement>(null);
   const shift = useAvoidShift(box, corner, config?.avoid, true);
-  const style: CSSProperties = { zIndex: z + 1, [end ? 'insetInlineEnd' : 'insetInlineStart']: `calc(${css(inline)} + ${shift}px)`, [bottom ? 'insetBlockEnd' : 'insetBlockStart']: `calc(${css(block)} + ${stackLift(slot)}px)`,
-    maxBlockSize: `calc(100dvh - ${css(block)} - ${stackLift(slot)}px - ${DEFAULT_OFFSET}px)` };
+  const style: CSSProperties = { zIndex: z + 1, [end ? 'insetInlineEnd' : 'insetInlineStart']: `calc(${css(inline)} + ${shift}px)`, [bottom ? 'insetBlockEnd' : 'insetBlockStart']: `calc(${css(block)} + ${lift}px)`,
+    maxBlockSize: `calc(100dvh - ${css(block)} - ${lift}px - ${DEFAULT_OFFSET}px)` };
   return <div ref={box} data-testid="composer-circle-panel" data-composer={config?.id} data-state="open" role="dialog" aria-label={title} style={style}
     className="app-shell fixed isolate flex h-[36rem] w-[min(24rem,calc(100vw-2rem))] flex-col text-card-foreground [&_[data-boring=pi-chat]>header]:hidden [&_[data-testid=composer-annotate]]:hidden">
     <div aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10 rounded-(--radius-3xl) bg-card shadow-pm-popover ring-1 ring-border" />
@@ -136,9 +109,9 @@ function CircleController({ open, first }: { readonly open: boolean; readonly fi
         if (isOpen) api.close(); else api.open('agent');
         return;
       }
-      if (event.key !== 'Escape' || event.defaultPrevented || !isOpen || !api.expanded) return;
-      // A list, menu or file opened over the panel takes its own Escape first.
-      if (document.querySelector('[data-testid=conversations], [data-testid=agent-preview], [role=menu], [role=listbox], [role=alertdialog], [data-boring-overlay]') || (event.target instanceof Element && event.target.closest('[aria-haspopup][aria-expanded=true]'))) return;
+      if (event.key !== 'Escape' || !isOpen || !api.expanded) return;
+      // Feedback, then a list, menu or file opened over the panel, take their own Escape first; the panel closes last.
+      if (escapeOwnedElsewhere(event)) return;
       event.preventDefault();
       api.close();
     };
@@ -179,13 +152,13 @@ export function CircleHost(): ReactElement | null {
   const collapsed = useCircleCollapsed();
   const { config, corner, inline, block } = useGeometry();
   // One place in the stack for the launcher and its panel: they are the same launcher at two levels.
-  const { slot, first } = useLauncherSlot({ id: config?.id, corner, stack: config?.at?.stack ?? 'auto', reserve: config?.reserve !== 'none', inline, block }, layer.agent !== undefined && !layer.suspended);
+  const { slot, lift, first } = useLauncherSlot({ id: config?.id, corner, stack: config?.at?.stack ?? 'auto', reserve: config?.reserve !== 'none', inline, block }, layer.agent !== undefined && !layer.suspended, layer.launcherOwner);
   if (!layer.agent) return null;
   const open = layer.snap !== 'closed' && layer.showing === 'agent';
   const shown = open && !collapsed && !layer.suspended;
   return <>
     <CircleController open={shown} first={first} />
-    {layer.expanded && shown && <Panel slot={slot} />}
-    {!layer.suspended && <Launcher hidden={shown} slot={slot} />}
+    {layer.expanded && shown && <Panel lift={lift} />}
+    {!layer.suspended && <Launcher hidden={shown} slot={slot} lift={lift} />}
   </>;
 }

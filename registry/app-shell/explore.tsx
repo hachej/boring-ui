@@ -14,6 +14,8 @@ import { useLookingAt } from './agent-context';
 import { ChatSlot, Header, useTitle } from './agent-chats';
 import { VoiceProblem } from './agent-bar-parts';
 import { shellWords, useInternal } from './layer-context';
+import { LauncherNote, OpenFullButton, escapeInFeedback, useNote } from './composer-actions';
+import { layerStyle, useCornerPlace } from './composer-place';
 
 /** The panel pushes the page from this viewport width (px); below it the panel overlays the page. A phone (below 768) has the bottom sheet. */
 export const EXPLORE_PUSH_FROM = 1100;
@@ -57,13 +59,19 @@ export function ExploreToggle() {
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
   const unread = signals.unread;
   const label = unread ? `${text.ask} (${unread.label}${unread.count && unread.count > 1 ? `, ${unread.count}` : ''})` : text.ask;
-  const style: CSSProperties = { right: 'env(safe-area-inset-right, 0px)', bottom: expanded ? 'max(1rem, env(safe-area-inset-bottom))' : `calc(${tabbar}px + max(1rem, env(safe-area-inset-bottom)))` };
+  const box = useRef<HTMLSpanElement>(null);
+  const note = useNote();
+  // A config object places the tab by its `at.offset` (flush with the edge by default), `at.stack`, `avoid` and `layer`; a string keeps the place it always had.
+  const placed = useCornerPlace({ ref: box, corner: 'bottom-end', defaults: { inline: 0, block: expanded ? 'max(1rem, env(safe-area-inset-bottom))' : `calc(${tabbar}px + max(1rem, env(safe-area-inset-bottom)))` }, size: { w: 30, h: 76 }, active: !open && !layer.suspended });
+  const style: CSSProperties = placed.style ?? { right: 'env(safe-area-inset-right, 0px)', bottom: expanded ? 'max(1rem, env(safe-area-inset-bottom))' : `calc(${tabbar}px + max(1rem, env(safe-area-inset-bottom)))` };
+  if (layer.suspended) return null;
   // The approved tab: slim (30 px by 76 px), flush with the right edge, with its inner corners curved, the label set vertically; the unread mark sits on its top corner.
-  return <span hidden={open} style={style} data-testid="explore-place" className={cn('fixed z-(--app-shell-z-layer) h-19 w-7.5 rounded-l-(--radius-lg) shadow-pm-popover', signals.needsYou && 'ring-2 ring-warning outline-3 outline-warning/25')}>
+  return <span ref={box} hidden={open} style={style} data-composer={layer.composerFlags.id} data-testid="explore-place" className={cn('fixed z-(--app-shell-z-layer) h-19 w-7.5 rounded-l-(--radius-lg) shadow-pm-popover', signals.needsYou && 'ring-2 ring-warning outline-3 outline-warning/25')}>
     <button type="button" data-testid="explore-toggle" data-needs-you={signals.needsYou || undefined} aria-label={label} aria-expanded={open} aria-keyshortcuts="Control+J Meta+J" title={`${text.ask} (Ctrl+J)`} onClick={() => layer.open('agent')}
       style={{ writingMode: 'vertical-rl' }}
       className="relative flex size-full items-center justify-center rounded-l-(--radius-lg) bg-primary text-xs font-medium tracking-wider text-primary-foreground outline-ring select-none before:absolute before:-inset-2 before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2">{text.ask}</button>
     {unread && <UnreadMark unread={unread} dot="-top-1 -left-1" pill="-top-2 -left-3" className="ring-2 ring-background" />}
+    {note && <LauncherNote note={note} />}
   </span>;
 }
 
@@ -83,7 +91,7 @@ export function ExploreController() {
         if (isOpen) api.close(); else api.open('agent');
         return;
       }
-      if (event.key !== 'Escape' || event.defaultPrevented || !isOpen || place === 'sheet') return;
+      if (event.key !== 'Escape' || event.defaultPrevented || !isOpen || place === 'sheet' || escapeInFeedback(event)) return;
       // A list, menu or file opened over the panel takes its own Escape first.
       if (document.querySelector('[data-testid=conversations], [data-testid=agent-preview]') || (event.target instanceof Element && event.target.closest('[role=menu], [role=listbox], [aria-haspopup][aria-expanded=true]'))) return;
       event.preventDefault();
@@ -172,12 +180,12 @@ export function ExplorePanel({ mode }: { readonly mode: 'push' | 'overlay' }) {
   const width = dragged ?? layer.exploreWidth ?? EXPLORE_DEFAULT;
   const commit = useCallback((next: number | undefined) => { setDragged(undefined); layer.setExploreWidth(next); }, [layer]);
   const push = mode === 'push';
-  return <aside data-testid="explore-panel" data-mode={mode} role={push ? 'complementary' : 'dialog'} aria-label={title}
-    style={{ width, maxWidth: push ? `calc(100% - ${MIN_PAGE / 16 + 0.5}rem)` : `calc(100vw - ${EDGE / 16}rem)` }}
+  return <aside data-testid="explore-panel" data-mode={mode} data-composer={layer.composerFlags.id} role={push ? 'complementary' : 'dialog'} aria-label={title}
+    style={{ ...layerStyle(layer, 1), width, maxWidth: push ? `calc(100% - ${MIN_PAGE / 16 + 0.5}rem)` : `calc(100vw - ${EDGE / 16}rem)` }}
     className={cn('app-shell flex min-h-0 flex-col bg-card text-card-foreground', push ? 'relative h-full shrink-0' : 'fixed inset-y-0 right-0 z-(--app-shell-z-layer) shadow-pm-popover')}>
     <Separator orientation="vertical" className="absolute inset-y-0 left-0" />
     <ResizeEdge mode={mode} width={width} live={setDragged} commit={commit} />
-    <Header text={text} title={title} />
+    <Header text={text} title={title} controls={<OpenFullButton />} />
     <ExploreContextLine />
     <VoiceProblem />
     <ChatSlot />

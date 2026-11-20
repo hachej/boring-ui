@@ -1944,6 +1944,11 @@
           "target": "components/feedback/use-external.ts"
         },
         {
+          "path": "registry/feedback/review-place.ts",
+          "type": "registry:hook",
+          "target": "components/feedback/review-place.ts"
+        },
+        {
           "path": "registry/feedback/feedback-card.tsx",
           "type": "registry:component",
           "target": "components/feedback/feedback-card.tsx"
@@ -2869,6 +2874,21 @@
           "path": "registry/app-shell/composer-circle.tsx",
           "type": "registry:component",
           "target": "components/app-shell/composer-circle.tsx"
+        },
+        {
+          "path": "registry/app-shell/composer-actions.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/composer-actions.tsx"
+        },
+        {
+          "path": "registry/app-shell/composer-level.ts",
+          "type": "registry:hook",
+          "target": "components/app-shell/composer-level.ts"
+        },
+        {
+          "path": "registry/app-shell/composer-place.ts",
+          "type": "registry:hook",
+          "target": "components/app-shell/composer-place.ts"
         },
         {
           "path": "registry/app-shell/sidebar-resize.tsx",

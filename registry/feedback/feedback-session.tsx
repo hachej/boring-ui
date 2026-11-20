@@ -18,6 +18,7 @@ import { createVoiceCapture, type VoiceCapture } from '@hachej/boring-feedback/p
 import { pinMark, surfacePointToViewport, type FeedbackSession, type FeedbackSessionSnapshot, type SessionNote } from '@hachej/boring-feedback/ui';
 import { useHoldToRecord } from '../pi-chat-voice/use-hold-to-record';
 import { useExternal } from './use-external';
+import { reviewSide } from './review-place';
 import { plainElement, withLabels, type FeedbackLabels } from './feedback-labels';
 
 const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
@@ -322,13 +323,16 @@ export function FeedbackChip({ session, defaultOpen = false, copy = false }: Fee
   </span>;
 }
 
-function reviewPlace(anchor: Element | null): CSSProperties | undefined {
+export function reviewPlace(anchor: Element | null): CSSProperties | undefined {
   if (!anchor) return undefined;
   const view = anchor.ownerDocument.defaultView;
   const width = view?.innerWidth ?? 1024, height = view?.innerHeight ?? 768;
   const rect = anchor.getBoundingClientRect();
   const panel = Math.min(416, width - 24);
-  return { position: 'fixed', left: Math.min(Math.max(12, rect.left), width - panel - 12), bottom: Math.max(12, height - rect.top + 8), width: panel };
+  const left = Math.min(Math.max(12, rect.left), width - panel - 12);
+  const { side, room } = reviewSide(rect, { height });
+  // Below a chip anchored at the top; the review scrolls inside the room it has either way.
+  return side === 'above' ? { position: 'fixed', left, bottom: Math.max(12, height - rect.top + 8), width: panel, maxHeight: `min(${room}px, 28rem)` } : { position: 'fixed', left, top: Math.max(12, rect.bottom + 8), width: panel, maxHeight: `min(${room}px, 28rem)` };
 }
 
 /** The compact review: notes in order, editable and removable; hovering a note highlights its element in the page, or says it is not here. */

@@ -249,7 +249,7 @@ test('the resolver throws, naming the fix, for a combination that would do nothi
   assert.match(await message((kit, agent) => standalone(kit, agent, circle({ sizes: ['open', 'full'] }))), /handoff\.openFull/);
   assert.match(await message((kit, agent) => standalone(kit, agent, circle({ level: 'full', on: { level() {} } }))), /two levels.*handoff\.openFull/);
   assert.match(await message((kit, agent) => standalone(kit, agent, circle({ level: 'open' }))), /on\.level/);
-  assert.match(await message((kit, agent) => standalone(kit, agent, { launcher: 'bar', sizes: ['open'], avoid: ['.x'] })), /circle launcher/);
+  assert.match(await message((kit, agent) => standalone(kit, agent, { launcher: 'bar', sizes: ['open'], level: 'grown', on: { level() {} } })), /no 'grown' level/);
   assert.match(await message((kit, agent) => standalone(kit, agent, { launcher: 'bar', dock: true })), /no side dock/);
   assert.match(await message((kit, agent) => standalone(kit, agent, circle({ at: { place: 'float' } }))), /corner/);
   assert.match(await message((kit, agent) => standalone(kit, agent, circle(), { start: 'icon' })), /replaces .start./);

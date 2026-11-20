@@ -18,7 +18,7 @@
  ],
  "watch": [["notice", "[data-testid=update-notice]"], ["last", "[data-testid=close-month]"]],
  "thresholds": { "cls": 0.08, "settledMs": 1200, "touchTarget": 44 },
- "notes": "The notice is a status row in the flow, not an overlay: the screen above it shrinks, so the last control of a long screen stays reachable and is never under the notice. It takes no focus. Reload and the dismiss are 44 px on a phone. A dismiss holds for the version named; another version shows it again.",
+ "notes": "With a support circle in the corner (`circle=1`) the row ends before the circle (it reads --composer-reserve-inline) and the last control still clears both. The notice is a status row in the flow, not an overlay: the screen above it shrinks, so the last control of a long screen stays reachable and is never under the notice. It takes no focus. Reload and the dismiss are 44 px on a phone. A dismiss holds for the version named; another version shows it again.",
  "states": [
   { "id": "01", "name": "rest", "steps": [] },
   { "id": "02", "name": "notice", "query": "update=1", "steps": [] },
@@ -26,7 +26,10 @@
   { "id": "04", "name": "notice-fr", "query": "update=1&lang=fr", "steps": [] },
   { "id": "05", "name": "notice-fr-dark", "query": "update=1&lang=fr&dark=1", "steps": [] },
   { "id": "06", "name": "last-control", "query": "update=1", "steps": [{ "do": "scroll", "target": "screen-journal", "to": 9999 }] },
-  { "id": "07", "name": "last-control-dark", "query": "update=1&dark=1", "steps": [{ "do": "scroll", "target": "screen-journal", "to": 9999 }] }
+  { "id": "07", "name": "last-control-dark", "query": "update=1&dark=1", "steps": [{ "do": "scroll", "target": "screen-journal", "to": 9999 }] },
+  { "id": "08", "name": "notice-circle", "query": "update=1&circle=1", "steps": [] },
+  { "id": "09", "name": "notice-circle-dark", "query": "update=1&circle=1&dark=1", "steps": [] },
+  { "id": "10", "name": "last-control-circle", "query": "update=1&circle=1", "steps": [{ "do": "scroll", "target": "screen-journal", "to": 9999 }] }
  ],
  "flows": [
   { "id": "F01", "name": "A newer version comes online", "steps": [

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useRecordingCancellation } from '../pi-chat-voice/use-hold-to-record';
 import { cn } from '../utils/utils';
 import { HOLD_MS, shellWords, useInternal } from './layer-context';
+import { useNote } from './composer-actions';
 
 /** The header button that opens the layer: a tap opens half; with `agent.voice`, press and hold records and a slide off cancels. Absent without `agent`. */
 export function AgentTrigger({ className, children }: { readonly className?: string; readonly children?: ReactNode }) {
@@ -28,8 +29,10 @@ export function AgentTrigger({ className, children }: { readonly className?: str
   const controller = agent?.controller;
   useEffect(() => () => cancelHold(), [controller, cancelHold]);
   const { triggerUntil: triggerUntilRef } = layer;
+  const note = useNote();
   // `composer="explore"`: the « Ask » toggle at the bottom right is the one way in.
-  if (!agent || layer.explore) return null;
+  // The full page is on show (`suspended`): the trigger is hidden. A circle and the other launchers draw their own.
+  if (!agent || layer.explore || layer.suspended) return null;
 
   const toggle = () => {
     triggerUntilRef.current = Date.now() + 500;
@@ -72,9 +75,11 @@ export function AgentTrigger({ className, children }: { readonly className?: str
     }
   };
   const name = agent.label ?? text.open;
+  // The app's status text (`note`) is part of the trigger's name: a header button has no room for a pill.
+  const named = note ? `${name} · ${note}` : name;
   const Icon = agent.icon;
   const exposed = layer.showing === 'agent' && (layer.state === 'half' || layer.state === 'full');
-  return <Button variant="ghost" size="icon" data-agent-trigger="" data-testid="agent-trigger" aria-label={name} title={name} aria-expanded={layer.state !== 'closed'}
+  return <Button variant="ghost" size="icon" data-agent-trigger="" data-testid="agent-trigger" data-composer={layer.composerFlags.id} aria-label={named} title={named} aria-expanded={layer.state !== 'closed'}
     // Base UI 1.9.0 markOthers (FloatingFocusManager) skips an [aria-live] element and its ancestors in its aria-hidden pass: while the agent's own sheet is
     // modal (half, full) that keeps the trigger a reachable button; "off" announces nothing. Never otherwise: another modal (a Dialog) must hide it.
     aria-live={exposed ? 'off' : undefined}

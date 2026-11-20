@@ -103,6 +103,32 @@
     1280,
     800
    ]
+  },
+  "circle-shell": {
+   "kind": "shell",
+   "width": 1280,
+   "props": {
+    "composer": {
+     "launcher": "circle"
+    }
+   },
+   "viewport": [
+    1280,
+    800
+   ]
+  },
+  "circle-shell-phone": {
+   "kind": "shell",
+   "width": 390,
+   "props": {
+    "composer": {
+     "launcher": "circle"
+    }
+   },
+   "viewport": [
+    390,
+    844
+   ]
   }
  },
  "unions": [
@@ -1060,6 +1086,90 @@
    "code": "registry/app-shell/composer-circle.tsx",
    "sees": "The app's own full page for the conversation. The panel closed after the hand-off, the circle is hidden while the page shows, and what was unread is read.",
    "thumb": "circle-page"
+  },
+  {
+   "id": "circle-reserve",
+   "group": "Circle launcher",
+   "name": "Circle with a reserve",
+   "scene": "circle-shell",
+   "reach": [],
+   "detect": {
+    "has": [
+     "composer-circle"
+    ],
+    "lacks": [
+     "composer-circle-panel",
+     "notice"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/composer-circle.tsx",
+   "sees": "The circle in an AppShell over a long screen (layout:bar-reserve, circle states): the screen keeps its end clear of it through the published --composer-reserve-block, and a phone's tab bar is not counted twice."
+  },
+  {
+   "id": "circle-notice",
+   "group": "Circle launcher",
+   "name": "Circle with a notice row",
+   "scene": "circle-shell",
+   "reach": [
+    {
+     "notify": "warning"
+    }
+   ],
+   "detect": {
+    "has": [
+     "composer-circle",
+     "notice"
+    ],
+    "lacks": [
+     "composer-circle-panel"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/composer-circle.tsx",
+   "sees": "The host's notice row (layout:update-notice, circle states) ends before the circle: it keeps the circle's inline footprint free (--composer-reserve-inline)."
+  },
+  {
+   "id": "circle-reserve-phone",
+   "group": "Circle launcher",
+   "name": "Circle with a reserve (phone)",
+   "scene": "circle-shell-phone",
+   "reach": [],
+   "detect": {
+    "has": [
+     "composer-circle"
+    ],
+    "lacks": [
+     "composer-circle-panel",
+     "notice"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/composer-circle.tsx",
+   "sees": "On a phone the circle sits above the tab bar; the screen keeps its end clear of both."
+  },
+  {
+   "id": "circle-notice-phone",
+   "group": "Circle launcher",
+   "name": "Circle with a notice row (phone)",
+   "scene": "circle-shell-phone",
+   "reach": [
+    {
+     "notify": "warning"
+    }
+   ],
+   "detect": {
+    "has": [
+     "composer-circle",
+     "notice"
+    ],
+    "lacks": [
+     "composer-circle-panel"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/composer-circle.tsx",
+   "sees": "On a phone the notice row, above the tab bar, ends before the circle."
   }
  ],
  "transitions": [
@@ -2476,6 +2586,68 @@
     }
    ],
    "note": "The app navigates to its page and sets suspended: the circle is hidden and the conversation is read."
+  },
+  {
+   "id": "circle-reserve-notice",
+   "from": "circle-reserve",
+   "to": "circle-notice",
+   "trigger": {
+    "kind": "event",
+    "label": "The host shows a notice",
+    "do": [
+     {
+      "notify": "warning"
+     }
+    ]
+   },
+   "guard": "the app passes `notices`; a circle launcher",
+   "note": "The row reads the circle's footprint and stops before it."
+  },
+  {
+   "id": "circle-notice-dismiss",
+   "from": "circle-notice",
+   "to": "circle-reserve",
+   "trigger": {
+    "kind": "click",
+    "label": "Dismiss",
+    "do": [
+     {
+      "click": "notice-dismiss"
+     }
+    ]
+   },
+   "guard": "a notice on show"
+  },
+  {
+   "id": "circle-reserve-notice-phone",
+   "from": "circle-reserve-phone",
+   "to": "circle-notice-phone",
+   "trigger": {
+    "kind": "event",
+    "label": "The host shows a notice",
+    "do": [
+     {
+      "notify": "warning"
+     }
+    ]
+   },
+   "guard": "the app passes `notices`; a circle launcher",
+   "note": "Above the tab bar, before the circle."
+  },
+  {
+   "id": "circle-notice-dismiss-phone",
+   "from": "circle-notice-phone",
+   "to": "circle-reserve-phone",
+   "trigger": {
+    "kind": "click",
+    "label": "Dismiss",
+    "do": [
+     {
+      "click": "notice-dismiss"
+     }
+    ]
+   },
+   "guard": "a notice on show"
   }
  ]
 }

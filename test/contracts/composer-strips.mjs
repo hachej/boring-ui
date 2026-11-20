@@ -27,6 +27,6 @@ export const NOT_A_STRIP = {
   'explore-closed': 'a tab, no strip', 'explore-push': 'a tab, no strip', 'explore-overlay': 'a tab, no strip', 'explore-sheet': 'a tab, no strip', 'explore-unread': 'a tab, no strip', 'explore-needs-you': 'a tab, no strip',
   'card-folded': 'the agent card has its own header', 'card-composer': 'the agent card', 'card-tray': 'the agent card', 'card-full': 'the agent card', 'card-docked': 'the agent card',
   'notice-host': 'not a composer level', 'bar-working': 'the folded card on the bar: the bar state\'s strip', 'bar-reply': 'the folded card on the bar: the bar state\'s strip', 'bar-question': 'the folded card on the bar: the bar state\'s strip', 'bar-failed': 'the folded card on the bar: the bar state\'s strip',
-  circle: 'the folded circle replaces the strip', 'circle-page': 'the app\'s own page: no composer strip',
+  circle: 'the folded circle replaces the strip', 'circle-reserve': 'the folded circle replaces the strip', 'circle-notice': 'the folded circle replaces the strip', 'circle-reserve-phone': 'the folded circle replaces the strip', 'circle-notice-phone': 'the folded circle replaces the strip', 'circle-page': 'the app\'s own page: no composer strip',
   'chat-empty': 'the chat alone', 'chat-loading': 'the chat alone', 'chat-error': 'the chat alone', 'chat-ready': 'the chat alone',
 };

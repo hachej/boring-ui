@@ -12,6 +12,7 @@ import { afterBack, BACK_SETTLE_MS, useBackLayer } from '../utils/back';
 import { NavUser } from './account';
 import { useAgentLayer } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
+import type { ComposerConfig } from './composer-config';
 import type { AccountSpec } from './account';
 import { AppSheet, SHEET_ROW } from './app-sheet';
 import { InsideNavSheet, useExclusiveSheet } from './use-exclusive-sheet';
@@ -37,6 +38,8 @@ export interface NavItem {
   readonly sidebarLabel?: string;
   /** Where this item sits against a screen's own sidebar content: `'before-sidebar'` puts it above that content, `'after-sidebar'` (the default) below. Items marked before come first everywhere (the tab bar and the phone sheet too); each side keeps the registered order. */
   readonly placement?: 'before-sidebar' | 'after-sidebar';
+  /** The composer on this screen: `false` hides it here (the launcher is suspended and the conversation read: the full-page support route), or a config object replaces the app's `composer` for this screen. Absent: the app's own. */
+  readonly composer?: ComposerConfig | false;
 }
 
 /** The items marked `before-sidebar`, then the others, each in registered order. */

@@ -3,7 +3,7 @@
 // The wide placements: the dock (docked or floating), the content column with its tray and anchor, the preview column, and the layer root.
 import { STRIP_ACTIONS } from './composer-config';
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { ComponentType, ReactElement, ReactNode } from 'react';
+import type { ComponentType, CSSProperties, ReactElement, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDownIcon, ChevronUpIcon, MaximizeIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon, PictureInPicture2Icon, XIcon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,10 @@ import { ComposerClassContext, ComposerFab, FloatFrame, NoticeSlot } from './flo
 import { Grip } from './composer-grip';
 import { ExploreController, ExplorePanel, ExploreToggle, useExplorePlace } from './explore';
 import { CircleHost } from './composer-circle';
+import { OpenFullButton, escapeInFeedback, useEscapeGuard } from './composer-actions';
+import { layerStyle } from './composer-place';
+import { configOf } from './composer-config';
+import { DEFAULT_OFFSET, css, useAvoidShift } from './composer-stack';
 
 /** The panel inside the dock: the same element docked or floating, so a placement change keeps focus and the chats where they are. */
 function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSide }) {
@@ -56,7 +60,7 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (event.key !== 'Escape' || escapeInFeedback(event)) return;
       // A list, menu or file opened over the column takes its own Escape first.
       if (document.querySelector('[data-testid=conversations], [data-testid=agent-preview]') || (event.target instanceof Element && event.target.closest('[role=menu], [role=listbox]'))) return;
       layer.close();
@@ -80,21 +84,27 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
     if (wanted) box.current?.querySelector<HTMLElement>('[data-dock-control]')?.focus({ preventScroll: true });
   }, [api.placement, side, restoreFocusRef]);
   const drag = useDraggable({ box, position: open ? pos : null, onPositionChange: setPos, enabled: floating });
+  // The floating window's first place: the corner by `at.offset`, stepping around `avoid`; a window the person moved keeps where they put it.
+  const config = configOf(layer);
+  const shift = useAvoidShift(box, 'bottom-end', config?.avoid, floating && open && pos === null);
+  const first: CSSProperties = config ? { insetInlineEnd: `calc(${css(config.at?.offset?.inline ?? DEFAULT_OFFSET)} + ${shift}px)`, insetBlockEnd: css(config.at?.offset?.block ?? DEFAULT_OFFSET) } : { right: 16, bottom: 16 };
   const act = (run: () => void) => () => { restoreFocusRef.current = true; run(); };
   const control = (id: string, label: string, Icon: ComponentType<{ className?: string }>, run: () => void) =>
     <Button variant="ghost" size="icon" key={id} data-testid={`agent-layer-${id}`} data-dock-control="" aria-label={label} title={label} onClick={act(run)}><Icon data-icon="inline-start" aria-hidden="true" /></Button>;
   const controls = layer.bar ? <>
+    <OpenFullButton />
     <Button variant="ghost" size="icon" data-testid="agent-layer-full" aria-label={text.fullScreen} title={text.fullScreen} onClick={() => layer.enterFull('dock')}><MaximizeIcon data-icon="inline-start" aria-hidden="true" /></Button>
     <Button variant="ghost" size="icon" data-testid="agent-layer-undock" aria-label={text.undock} title={text.undock} aria-pressed onClick={() => { layer.setMode('tray'); requestAnimationFrame(() => layer.composerSlot?.querySelector<HTMLElement>('[data-testid=composer-input]')?.focus({ preventScroll: true })); }}><PanelBottomIcon data-icon="inline-start" aria-hidden="true" /></Button>
     <Button variant="ghost" size="icon" data-testid="agent-layer-close" aria-label={text.collapse} title={text.collapse} onClick={layer.close}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button>
   </> : <>
+    <OpenFullButton />
     {!floating && control('float', text.float, PictureInPicture2Icon, () => api.float())}
     {(floating || side === 'right') && control('dock-left', text.dockLeft, PanelLeftIcon, () => { layer.setSide('left'); api.dock(); })}
     {(floating || side === 'left') && control('dock-right', text.dockRight, PanelRightIcon, () => { layer.setSide('right'); api.dock(); })}
   </>;
   // Floating, the host's Card is drawn behind the layer (a sibling layer, so docking or floating never remounts the chat).
-  return <div ref={box} data-testid="agent-layer" data-state={open ? 'open' : 'closed'} data-placement={api.placement} data-side={side} role={floating ? 'dialog' : 'complementary'} aria-label={title}
-    style={floating ? pos ?? { right: 16, bottom: 16 } : undefined}
+  return <div ref={box} data-testid="agent-layer" data-composer={layer.composerFlags.id} data-state={open ? 'open' : 'closed'} data-placement={api.placement} data-side={side} role={floating ? 'dialog' : 'complementary'} aria-label={title}
+    style={floating ? { ...layerStyle(layer), ...(pos ?? first) } : undefined}
     className={cn('app-shell relative flex min-h-0 flex-col',
       floating ? 'fixed isolate z-(--app-shell-z-layer) h-[min(36rem,calc(100dvh-2rem))] w-[min(24rem,calc(100vw-2rem))]'
         : 'h-full min-w-0 flex-1 bg-card text-foreground')}>
@@ -211,7 +221,7 @@ function ContentTray() {
   // Esc goes back to the bare field, unless something else owns it: an open menu, dialog or popup, an IME composition, a handled key.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229 || escapeInFeedback(event)) return;
       // Only a key pressed in the tray, in the one field or on the controller strip is the tray's; a host dock beside the content, a menu or a dialog keep their own Esc.
       if (!(event.target instanceof Element) || !event.target.closest('[data-testid=agent-tray], [data-testid=agent-content-composer], [data-testid=agent-composer-anchor], [data-testid=composer-controller]')) return;
       if (document.querySelector('[role=menu],[role=listbox],[role=dialog],[role=alertdialog],[data-boring-overlay]')) return;
@@ -238,6 +248,7 @@ function ContentTray() {
         {layer.bar && <LibraryButton open={layer.openLibrary} text={text} testId="agent-layer-library" />}
         {layer.bar && <HeaderExtras text={text} compact={false} />}
         {boxed ? null : <>
+          <OpenFullButton />
           <HeaderHint label={dockLabel}><Button variant="ghost" size="icon" data-testid={STRIP_ACTIONS.split.testId} aria-label={dockLabel} title={dockLabel}
             onClick={moveToDock}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>
           <Button variant="ghost" size="icon" data-testid={STRIP_ACTIONS.more.testId} aria-label={text.expand} title={text.expand} aria-pressed={grown}
@@ -363,6 +374,7 @@ export function AgentLayer(): ReactElement | null {
   // Back ends pointing first (the `point` priority), like Done: the notes wait for the next message. The layer keeps its own history entry underneath.
   useBackLayer(session !== undefined, () => { void session?.done(); }, 'point');
   const explore = useExplorePlace();
+  useEscapeGuard();
   if (!layer.agent && !layer.improve) return null;
   const pointed = layer.agent;
   const transcribe = (pointed?.voice ?? layer.agent?.voice)?.transcribe;
@@ -374,8 +386,8 @@ export function AgentLayer(): ReactElement | null {
     {explore.open && explore.mode === 'overlay' && <ExplorePanel mode="overlay" />}
     {layer.circle && <CircleHost />}
     {layer.expanded && layer.trayOpen && layer.size === 'full' && <FullScreen />}
-    {!layer.expanded && layer.place !== 'icon' && <CompactSheet pointing={session !== undefined} />}
-    {!layer.expanded && layer.place === 'icon' && <ComposerFab />}
+    {!layer.expanded && layer.place !== 'icon' && !layer.suspended && <CompactSheet pointing={session !== undefined} />}
+    {!layer.expanded && layer.place === 'icon' && !layer.suspended && <ComposerFab />}
     {layer.bar && !layer.expanded && layer.stack.length > 0 && <PaneStack placement="screen" assistant={title} />}
     {commenting && <CommentBanner session={commenting} bottomOffset={`${layer.tabbar}px`} className="z-[60]" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
     {session && <NoteBubble session={session} {...(transcribe ? { transcribe } : {})} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
