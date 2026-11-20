@@ -1,6 +1,8 @@
 {
  "target": "component:tool-steps",
  "title": "Tool steps",
+ "group": "Chat and files",
+ "hint": "a failed step",
  "summary": "A failed tool step stays closed and says one plain sentence, with no arguments or error text, for a chat read by non-technical people.",
  "purpose": "PiChat toolDetails: with \"none\" a tool step never shows its arguments, its result or its error text, a failed step is not opened and its line carries the host's plain sentence (labels.toolFailedSummary), and the header of a failed activity names no tool. The default (\"auto\") opens a failed step with both, and the kit's developer switch shows everything again. The assistant is scripted: no model, no network.",
  "try": [

@@ -1,6 +1,9 @@
 {
  "target": "component:design-system",
  "title": "Design system",
+ "group": "Start here",
+ "hint": "every part",
+ "order": 1,
  "summary": "The kit's defaults, light and dark: colours, type, radius and shadow, buttons, form controls, status, the update notice, rows, tables, cards, tabs, a dialog, the empty state, and the default layout.",
  "try": [{ "label": "Plain answer", "steps": [{ "do": "type", "target": "composer-input", "text": "answer" }, { "do": "tap", "target": "composer-submit", "until": "text:conversation-content~A plain answer", "timeout": 14000 }] },
   { "label": "Markdown answer", "steps": [{ "do": "type", "target": "composer-input", "text": "markdown" }, { "do": "tap", "target": "composer-submit", "until": "text:conversation-content~A Markdown answer", "timeout": 14000 }] },

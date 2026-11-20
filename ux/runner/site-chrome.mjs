@@ -25,12 +25,22 @@ export function page({ title, description, depth, cards, current, body }) {
 <footer>Kit ${esc(cards[0]?.meta.kitVersion)} · commit ${esc(cards[0]?.meta.commit)} · <a href="${DOCS}">How this site is made</a></footer></main></div></div></body></html>`;
 }
 
-// A demo page: ONE top bar (the page menu, the Phone and Desktop switch, the theme switch) and the app filling the rest. cards: [{ name, meta }]; current: a card name.
+// The switcher's groups, in order. A page's `group` (in its scenario) picks one; a missing or unknown group falls to "More".
+export const GROUPS = ['Start here', 'Composer and layout', 'Chat and files', 'Reference'];
+export const FALLBACK_GROUP = 'More';
+
+// A demo page: ONE top bar (the page switcher with search, the page's Options menu, the Phone and Desktop switch, the theme switch) and the app filling the rest.
+// cards: [{ name, meta: { title, group?, hint?, order?, keys? } }]; current: a card name. On a phone the bar is the page name and a "more" menu.
 export function framePage({ title, description, depth, body, cards, current }) {
   const up = depth ? '../' : '';
-  const group = (label, list) => list.length ? `<optgroup label="${label}">${list.map(c => `<option value="${up}${esc(c.name)}/index.html"${c.name === current ? ' selected' : ''}>${esc(c.meta.title)}</option>`).join('')}</optgroup>` : '';
-  // Start: the design system (the home), then the agent cards and the composer atlas; the rest follows by level.
-  const START = [DEFAULT_PAGE, 'component-agent-card', 'component-composer-atlas'], first = START.flatMap(name => cards.filter(c => c.name === name)), rest = cards.filter(c => !START.includes(c.name));
-  const menu = `<select class="icon-btn" id="pages" aria-label="Page">${group('Start', first)}${group('Layouts', rest.filter(c => c.meta.level === 'layout'))}${group('Components', rest.filter(c => c.meta.level === 'component'))}</select>`;
-  return `${head(title, depth, description)}<body class="app"><header class="bar">${menu}${body.switcher}${body.play}<span class="grow"></span><button type="button" class="icon-btn" id="theme" aria-pressed="false">Dark</button></header>${body.stage}</body></html>`;
+  const groupOf = c => (GROUPS.includes(c.meta.group) ? c.meta.group : FALLBACK_GROUP);
+  const here = cards.find(c => c.name === current);
+  const byOrder = (a, b) => (a.meta.order ?? 100) - (b.meta.order ?? 100) || a.meta.title.localeCompare(b.meta.title);
+  const sections = [...GROUPS, FALLBACK_GROUP].map(label => ({ label, list: cards.filter(c => groupOf(c) === label).sort(byOrder) })).filter(g => g.list.length);
+  const find = c => [c.meta.title, c.meta.hint, groupOf(c), ...(c.meta.keys ?? [])].filter(Boolean).join(' ').toLowerCase();
+  const item = c => `<a class="sw-item" href="${up}${esc(c.name)}/index.html" data-find="${esc(find(c))}"${c.name === current ? ' aria-current="page"' : ''}><span class="sw-title">${esc(c.meta.title)}</span>${c.meta.hint ? `<small class="sw-hint">${esc(c.meta.hint)}</small>` : ''}</a>`;
+  const switcher = `<div class="switcher"><button type="button" class="icon-btn sw-btn" id="pages" aria-haspopup="dialog" aria-expanded="false" aria-controls="sw-panel" aria-keyshortcuts="Control+K Meta+K /" title="Pages (Ctrl+K or /)"><span class="sw-name">${esc(here?.meta.title ?? 'Pages')}</span><span aria-hidden="true"> ⌄</span></button>
+<div class="sw-backdrop" id="sw-backdrop" hidden></div><div class="sw-panel" id="sw-panel" role="dialog" aria-label="Pages" hidden><input type="search" id="sw-search" class="sw-search" placeholder="Search pages…" aria-label="Search pages" autocomplete="off" spellcheck="false">
+<nav class="sw-list" id="sw-list" aria-label="Pages">${sections.map(g => `<section class="sw-section" data-sw-group><p class="sw-group">${esc(g.label)}</p>${g.list.map(item).join('')}</section>`).join('')}</nav><p class="sw-empty" id="sw-empty" hidden>No page matches.</p></div></div>`;
+  return `${head(title, depth, description)}<body class="app"><header class="bar">${switcher}<button type="button" class="chip-on" id="options-chip" hidden></button><span class="grow"></span><button type="button" class="icon-btn more" id="more" aria-haspopup="true" aria-expanded="false" aria-controls="tools" aria-label="More">⋯</button><div class="tools" id="tools">${body.options}${body.switcher}<button type="button" class="icon-btn" id="theme" aria-pressed="false">Dark</button></div></header>${body.stage}</body></html>`;
 }

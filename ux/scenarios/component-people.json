@@ -1,6 +1,8 @@
 {
  "target": "component:people",
  "title": "People list",
+ "group": "Reference",
+ "hint": "invitations",
  "summary": "The owner's invitation list: an e-mail field, a role picker, « Inviter », and one row per person with « Retirer ».",
  "purpose": "The registry block's PeopleList mounted the way an app mounts it: in the kit's Sheet (bottom sheet on a phone, right sheet on a computer), no class on its wrapper but padding, with the role picker shown, over a fake Worker. At 390 px a 40-character address is cut with an ellipsis inside its row and never pushes « Retirer » or « Inviter » out of the screen; nobody invited and a refusal (« Seuls les propriétaires de l’app peuvent faire cela. ») read well too.",
  "fixture": {

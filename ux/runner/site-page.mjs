@@ -42,7 +42,7 @@ function tries(scenario) {
 }
 
 // Start states: the scenario's states that are a query (and not only the dark theme, which the header switch covers).
-function variants(scenario) {
+export function variants(scenario) {
   const seen = new Set(), out = [];
   for (const st of scenario.states) {
     const params = new URLSearchParams(st.query ?? ''); params.delete('dark');
@@ -104,17 +104,23 @@ export function targetBody({ meta, scenario, result, home, demoBase = '', lead }
   return `${home ? '' : `<span class="badge">${meta.level === 'layout' ? 'Layout' : 'Component'}</span>`}<h1>${esc(home ?? meta.title)}</h1><p class="lead">${esc(lead ?? scenario?.summary ?? firstSentence(meta.purpose))}</p>
 ${scenario ? demoBlock(scenario, demoBase) : ''}${home ? '' : `${usage(fixture)}${status(scenario, result)}${flows(result, scenario)}`}`;
 }
-/** The Play menu's options: the ungrouped items, then one `<optgroup>` per `group`. The value is the item's index in the list. */
-const playOptions = list => {
-  const option = (t, i) => `<option value="${i}">${esc(t.label)}</option>`;
+/** The Options menu: the page's start states, then its "things to try" (ungrouped under "Play", then one heading per `group`), then Reset. The buttons are the ones the page script drives (`data-variant`, `data-try`, `data-reset`). Empty when the page has none. */
+function optionsMenu(start, list) {
+  const tryItem = (t, i) => `<button type="button" role="menuitem" class="menu-item" data-try="${i}">${esc(t.label)}</button>`;
   const groups = [...new Set(list.flatMap(t => t.group ? [t.group] : []))];
-  return list.map((t, i) => t.group ? '' : option(t, i)).join('') + groups.map(g => `<optgroup label="${esc(g)}">${list.map((t, i) => t.group === g ? option(t, i) : '').join('')}</optgroup>`).join('');
-};
+  const section = (label, items) => `<div class="menu-section" data-options-group="${esc(label)}"><p class="sw-group">${esc(label)}</p>${items}</div>`;
+  const parts = [
+    start.length ? section('Start state', start.map((v, i) => `<button type="button" role="menuitemradio" class="menu-item" data-variant="${i}" aria-checked="false" aria-pressed="false">${esc(v.label)}</button>`).join('')) : '',
+    list.some(t => !t.group) ? section('Play', list.map((t, i) => t.group ? '' : tryItem(t, i)).join('')) : '',
+    ...groups.map(g => section(g, list.map((t, i) => t.group === g ? tryItem(t, i) : '').join(''))),
+    list.length ? `<div class="menu-section"><button type="button" role="menuitem" class="menu-item" data-reset>Reset the conversation</button></div>` : '',
+  ].join('');
+  return parts ? `<div class="options"><button type="button" class="icon-btn" id="options" aria-haspopup="menu" aria-expanded="false" aria-controls="options-panel">Options<span aria-hidden="true"> ⌄</span></button><div class="menu-panel" id="options-panel" role="menu" aria-label="Options" hidden>${parts}</div></div>` : '';
+}
 // A `fullscreen` scenario: the demo fills the page under the site's top bar, which carries the one Phone and Desktop switch. No headings, no usage, no status.
 export function frameBody(scenario, base) {
-  const { views, list, data } = demoData(scenario, base);
-  const play = list.length ? `<select class="icon-btn" id="play" aria-label="Play"><option value="">Play…</option>${playOptions(list)}<option value="reset">Reset the conversation</option></select>` : '';
-  return { play, switcher: `<div class="seg" role="group" aria-label="Screen">${views.map((v, i) => `<button type="button" data-vp="${i}" aria-pressed="false">${v.label}</button>`).join('')}</div>`,
+  const { views, list, start, data } = demoData(scenario, base);
+  return { options: optionsMenu(start, list), switcher: `<div class="seg" role="group" aria-label="Screen">${views.map((v, i) => `<button type="button" data-vp="${i}" aria-pressed="false">${v.label}</button>`).join('')}</div>`,
     stage: `<div class="stage" id="stage" data-full><iframe id="demo" title="Live demo"></iframe></div><script type="application/json" id="page-data">${data}</script>` };
 }
 export { esc };

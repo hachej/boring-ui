@@ -1,6 +1,9 @@
 {
  "target": "component:composer-atlas",
  "title": "Composer atlas",
+ "group": "Start here",
+ "hint": "every state and move",
+ "order": 2,
  "summary": "Every state of the one composer and every transition between them: the levels of the bar, the floating bar and its icon, explore mode, the phone's sheet, the agent card's ladder, the notices and the chat's own states.",
  "purpose": "The single reference of the one composer. Each state has a name, what the person sees, its test id and a live thumbnail of the real component; each transition has its from-state, to-state, trigger (a button label, a key, a drag, an event, a resize) and guard (a width, a phone, a prop). The page and test/contracts/composer-atlas.test.mjs read one data file (ux/atlas/composer-atlas.json); the test drives every listed state and transition through the real controls, so the page cannot say what the code does not do. Built from kit parts and tokens only.",
  "fixture": {

@@ -1,6 +1,8 @@
 {
  "target": "layout:screen-active",
  "title": "Active screen",
+ "group": "Composer and layout",
+ "hint": "which screen is on show",
  "site": false,
  "summary": "The shell keeps every screen mounted; useScreenActive() tells each one whether it is the screen on show.",
  "try": [{"label": "Switch screens", "flow": "A1"}],

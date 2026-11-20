@@ -1,6 +1,8 @@
 {
  "target": "component:inline-actions",
  "title": "Inline actions",
+ "group": "Chat and files",
+ "hint": "links at text height",
  "summary": "A link-style action at text height, in a row that wraps, a table cell and a sentence, with a touch area that never overlaps its neighbours.",
  "try": [{"label": "Tap an action in a wrapped row", "flow": "F01"}, {"label": "Tap an action in a table row", "flow": "F02"}],
  "purpose": "Button size=\"inline\" (the bundled primitive): a link label at text height whose 44 px touch area is a pseudo-element. It reaches into the room the layout leaves and no further, so in a row that wraps onto two lines a tap always lands on the button that shows under the finger. Four French actions of different lengths wrap in a narrow row that declares its gaps (--inline-gap-x, --inline-gap-y, set next to the row's own gap); the same row with nothing declared; one inline button per table cell; one in a sentence. Scripted, no model.",

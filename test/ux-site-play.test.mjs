@@ -41,13 +41,25 @@ async function openSite(t, viewport = { width: 1280, height: 800 }) {
   return { page, demo };
 }
 
-test('the Play menu plays a response into the design system page, and the demo has the attach and dictation buttons', { skip, timeout: 180000 }, async t => {
+/** On a phone the Phone/Desktop switch, Options and Dark sit in the "more" menu: open it when it is shown and closed. */
+async function openTools(page) {
+  const more = page.locator('#more');
+  if (await more.isVisible() && (await more.getAttribute('aria-expanded')) !== 'true') await more.click();
+}
+/** Pick an item of the Options menu by its words (opens the "more" menu on a phone, then Options). */
+async function choose(page, label) {
+  await openTools(page);
+  if ((await page.locator('#options').getAttribute('aria-expanded')) !== 'true') await page.locator('#options').click();
+  await page.locator('#options-panel').getByRole('menuitem', { name: label, exact: true }).click();
+}
+
+test('the Options menu plays a response into the design system page, and the demo has the attach and dictation buttons', { skip, timeout: 180000 }, async t => {
   const { page, demo } = await openSite(t);
   assert.equal(await demo.locator('[data-testid=composer-bar-attach]').count(), 1, 'the bar has the attach button');
   assert.equal(await demo.locator('[data-testid=agent-talk]').count(), 1, 'the bar has the dictation button');
-  const items = await page.locator('#play option').allTextContents();
+  const items = await page.locator('#options-panel .menu-item').allTextContents();
   assert.ok(items.includes('Markdown answer') && items.includes('Question card: choices') && items.includes('Error') && items.at(-1) === 'Reset the conversation', `the menu lists the page's flows (${items})`);
-  await page.selectOption('#play', { label: 'Markdown answer' });
+  await choose(page, 'Markdown answer');
   await demo.getByText('A Markdown answer').first().waitFor({ timeout: 40000 });
   const folded = await demo.locator('[data-testid=agent-card-reply]').first().textContent();
   assert.ok(!/#|\*|`/.test(folded), `the folded card shows the Markdown reply as plain text (${JSON.stringify(folded)})`);
@@ -55,11 +67,11 @@ test('the Play menu plays a response into the design system page, and the demo h
   await demo.locator('[data-testid=agent-bar-conversation]').click();
   await demo.locator('[data-testid=agent-tray] [data-testid=transcript] h2').first().waitFor({ timeout: 10000 });
   assert.ok(await demo.locator('[data-testid=agent-tray] [data-testid=transcript] strong').count() >= 1, 'the open conversation still renders bold');
-  await page.selectOption('#play', { label: 'Approval card' });
+  await choose(page, 'Approval card');
   await demo.locator('[data-testid=approval-card]').first().waitFor({ timeout: 40000 });
-  await page.selectOption('#play', { label: 'Reply card with an action' });
+  await choose(page, 'Reply card with an action');
   await demo.locator('[data-testid=agent-card-action]').waitFor({ timeout: 40000 });
-  await page.selectOption('#play', { label: 'Reset the conversation' });
+  await choose(page, 'Reset the conversation');
   await demo.locator('[data-testid=composer-input]').waitFor();
   assert.equal(await demo.getByText('A Markdown answer').count(), 0, 'Reset starts a fresh conversation');
 });
@@ -71,23 +83,23 @@ test('the Play menu has a Notifications group: info, success, warning, error and
   for (const [width, height, label] of [[1440, 900, 'desktop'], [390, 844, 'phone']]) {
     const { page, demo } = await openSite(t, { width, height });
     if (label === 'phone') await page.locator('[data-vp]').filter({ hasText: 'Phone' }).first().click().catch(() => {});
-    const group = await page.locator('#play optgroup[label=Notifications] option').allTextContents();
+    const group = await page.locator('[data-options-group=Notifications] .menu-item').allTextContents();
     assert.deepEqual(group, ['Notification: info', 'Notification: success', 'Notification: warning', 'Notification: error', 'Notification: needs you'], 'the group lists the five patterns');
     for (const theme of ['light', 'dark']) {
-      if ((await page.evaluate(() => document.documentElement.dataset.theme)) !== theme) { await page.locator('#theme').click(); await page.waitForFunction(value => document.documentElement.dataset.theme === value, theme); }
+      if ((await page.evaluate(() => document.documentElement.dataset.theme)) !== theme) { await openTools(page); await page.locator('#theme').click(); await page.waitForFunction(value => document.documentElement.dataset.theme === value, theme); }
       for (const kind of ['info', 'success', 'warning', 'error']) {
-        await page.selectOption('#play', { label: `Notification: ${kind}` });
+        await choose(page, `Notification: ${kind}`);
         await demo.locator(`[data-testid=notice][data-notice-kind=${kind}]`).waitFor({ timeout: 20000 });
         assert.equal(await demo.locator('[data-testid=notice]').count(), 1, 'one notice at the composer (the page\'s own sample is the update notice)');
         assert.equal(await demo.locator('[data-testid=agent-tray]').count(), 0, 'no tray opened');
         await page.screenshot({ path: join(shots, `notifications-play-${kind}-${label}-${theme}.png`) });
         if (kind === 'warning' || kind === 'error') assert.equal(await demo.locator('[data-testid=notice-reference]').count(), 1, 'the @ is there');
       }
-      await page.selectOption('#play', { label: 'Notification: needs you' });
+      await choose(page, 'Notification: needs you');
       await demo.locator('[data-testid=agent-card][data-needs-you]').waitFor({ timeout: 40000 });
       assert.equal(await demo.locator('[data-testid=agent-tray]').count(), 0, 'no tray for a decision');
       await page.screenshot({ path: join(shots, `notifications-play-needs-you-${label}-${theme}.png`) });
-      await page.selectOption('#play', { label: 'Reset the conversation' });
+      await choose(page, 'Reset the conversation');
       await demo.locator('[data-testid=composer-input]').waitFor();
     }
   }
