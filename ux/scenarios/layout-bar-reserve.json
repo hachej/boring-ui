@@ -56,7 +56,7 @@
   "settledMs": 1200,
   "touchTarget": 44
  },
- "notes": "The last control of a screen scrolled to its end sits fully above the assistant's bar, whatever the bar holds (the field alone, a reply card above it) and whatever is under it (a tab bar, nothing). The bar keeps its place; the padding is the shell's, not the screen's. On a wide screen the bar is in the column's flow and the reserve is 0.",
+ "notes": "With a circle launcher (`circle=1`: `composer={{ launcher: 'circle' }}`) the screen keeps its end clear of the circle too, through the published --composer-reserve-block (the tab bar is not counted twice). The last control of a screen scrolled to its end sits fully above the assistant's bar, whatever the bar holds (the field alone, a reply card above it) and whatever is under it (a tab bar, nothing). The bar keeps its place; the padding is the shell's, not the screen's. On a wide screen the bar is in the column's flow and the reserve is 0.",
  "states": [
   {
    "id": "01",
@@ -133,6 +133,34 @@
      "to": 99999,
      "say": "Scroll to the end of the list",
      "until": "eval:(() => { const el = document.querySelector('[data-testid=last-control]'), a = el.getBoundingClientRect(), b = (document.querySelector('[data-testid=agent-layer][data-peek=true]') ?? document.querySelector('[data-testid=agent-composer-box]')).getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()"
+    }
+   ]
+  },
+  {
+   "id": "06",
+   "name": "end-of-list-circle",
+   "query": "circle=1",
+   "steps": [
+    {
+     "do": "scroll",
+     "target": "screen-orders",
+     "to": 99999,
+     "say": "Scroll to the end of the list",
+     "until": "eval:(() => { const el = document.querySelector('[data-testid=last-control]'), a = el.getBoundingClientRect(), b = document.querySelector('[data-testid=composer-circle-box]').getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()"
+    }
+   ]
+  },
+  {
+   "id": "07",
+   "name": "end-of-list-circle-dark",
+   "query": "circle=1&dark=1",
+   "steps": [
+    {
+     "do": "scroll",
+     "target": "screen-orders",
+     "to": 99999,
+     "say": "Scroll to the end of the list",
+     "until": "eval:(() => { const el = document.querySelector('[data-testid=last-control]'), a = el.getBoundingClientRect(), b = document.querySelector('[data-testid=composer-circle-box]').getBoundingClientRect(); const hit = document.elementFromPoint(a.left + a.width / 2, a.bottom - 2); return a.bottom <= b.top + 0.5 && !!hit && el.contains(hit); })()"
     }
    ]
   },

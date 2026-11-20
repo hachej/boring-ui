@@ -16,7 +16,7 @@ import type { AccountSpec } from './account';
 import { AgentDockLayout, AgentLayer, AgentLayerProvider } from './agent-layer';
 import type { ExploreContext } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
-import { resolveComposer } from './composer-config';
+import { composerForScreen, resolveComposer } from './composer-config';
 import type { ComposerInput } from './composer-config';
 import { useComposerInput } from './composer-input';
 import { NoPanelLayout } from './shell-panel';
@@ -205,10 +205,12 @@ export function AppShell(props: AppShellProps) {
   const mcp = props.mcp && { ...props.mcp, locale: props.mcp.locale ?? (locale === 'fr' ? 'fr' : 'en') };
   useOverlayBlur(props.overlayBlur ?? false);
   // `composer` is a preset string, a config object (`launcher: 'circle'`...) or a function of `{ phone, width, route }` that gives one; the layer and the shell read it resolved.
-  const composer = useComposerInput(props.composer, route.id);
+  const given = useComposerInput(props.composer, route.id);
+  // A screen may hide the composer or give its own (`NavItem.composer`).
+  const { composer, floating } = composerForScreen(given, props.floatingComposer === true, nav.find(item => item.id === route.id)?.composer);
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;
-  return <AgentLayerProvider agent={agent} composer={composer} context={props.context} floating={props.floatingComposer === true} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title} modeIdentity={{ app: props.appId || title, person: account?.email, screen: layout === 'screen' }}>
-    <HeaderProvider><Shell single={props.sidebar === false} bar={resolveComposer({ composer, floatingComposer: props.floatingComposer === true }).flags.bar} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} update={props.update} notices={props.notices ?? NONE} mcp={mcp} /></HeaderProvider>
+  return <AgentLayerProvider agent={agent} composer={composer} context={props.context} floating={floating} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title} modeIdentity={{ app: props.appId || title, person: account?.email, screen: layout === 'screen' }}>
+    <HeaderProvider><Shell single={props.sidebar === false} bar={resolveComposer({ composer, floatingComposer: floating }).flags.bar} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} update={props.update} notices={props.notices ?? NONE} mcp={mcp} /></HeaderProvider>
   </AgentLayerProvider>;
 }

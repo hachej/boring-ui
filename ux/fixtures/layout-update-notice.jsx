@@ -8,7 +8,7 @@ import { FileTextIcon, ListIcon } from '../../registry/_shared/icons.ts';
 
 // Layout scenario `layout:update-notice`: the real AppShell (layout="screen", two screens, no agent) with its `update` prop on, over a long screen
 // whose last control is a button. The host's version check is a tiny store: `window.__ux` flips it, as a poll or a service worker would.
-// Query: dark=1, lang=fr|en (default en), version=<name> (the version that is online; default v2), update=1 (online from the start).
+// Query: dark=1, lang=fr|en (default en), version=<name> (the version that is online; default v2), update=1 (online from the start), circle=1 (a support circle in the corner: the notice row keeps clear of it, through `--composer-reserve-inline`).
 // `window.__ux`: setUpdate(bool), newVersion(name), reloads() (what the Reload action was asked, in place of location.reload()), closed() (taps on the last control).
 const params = new URLSearchParams(location.search);
 if (params.get('dark') === '1') document.documentElement.classList.add('dark');
@@ -19,6 +19,12 @@ const listeners = new Set();
 const change = patch => { state = { ...state, ...patch }; for (const listener of listeners) listener(); };
 const useStore = () => useSyncExternalStore(listener => { listeners.add(listener); return () => listeners.delete(listener); }, () => state);
 window.__ux = { setUpdate: available => change({ available }), newVersion: version => change({ version, available: true }), reloads: () => state.reloads, closed: () => state.closed };
+
+// A fictional assistant for `circle=1`: nothing is said, the circle is only there.
+const snapshot = { identity: { runtimeId: 'fictional', scopeId: 'update-notice', principalId: 'fictional-reader' }, conversationId: 'update-notice', connection: { kind: 'connected' }, view: { entries: [], docs: {} },
+  draft: { text: '', attachments: [], version: 0 }, outbox: [], echo: [], history: { kind: 'disabled' }, send: { kind: 'idle' }, stop: 'idle', disposed: false };
+const controller = { getSnapshot: () => snapshot, subscribe: () => () => {}, setText() {}, setAttachments() {}, send: async () => undefined, connect: async () => {}, stop: async () => {}, dispose: async () => {}, clearHistory() {}, loadEarlier: async () => {}, reconcile: async () => {}, retrySameRequest: async () => {} };
+const circle = params.get('circle') === '1';
 
 const ENTRIES = Array.from({ length: 14 }, (_, index) => ({ id: index + 1, label: `Entry ${index + 1} of Harbor Studio (fictional)`, amount: `${(index + 3) * 41}.00` }));
 
@@ -44,7 +50,7 @@ function Demo() {
   const [route, setRoute] = useState('journal');
   const { available, version } = useStore();
   const onReload = () => change({ reloads: state.reloads + 1 });
-  return <AppShell layout="screen" title="Harbor Studio" nav={nav} route={{ id: route, onChange: setRoute }} locale={locale} update={{ available, version, onReload }} />;
+  return <AppShell layout="screen" title="Harbor Studio" nav={nav} route={{ id: route, onChange: setRoute }} locale={locale} update={{ available, version, onReload }} {...(circle ? { agent: { controller, label: 'Support', chatProps: { title: 'Support', locale } }, composer: { launcher: 'circle', id: 'support' } } : {})} />;
 }
 
 createRoot(document.getElementById('root')).render(<Demo />);

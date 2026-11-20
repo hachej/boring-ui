@@ -31,6 +31,7 @@ import { basename, FileChip, isCitedFile, ReplyActionButton } from './file-chip'
 import type { AppShellLocale, AppShellText } from './text';
 import { HeaderActions } from './header-actions';
 import { configOf } from './composer-config';
+import { FieldFeedbackSlot, feedbackWhere } from './composer-actions';
 import { chatWordLabels, composerLabels, shellWords, useInternal } from './layer-context';
 import type { AgentSpec, Snap, Which } from './layer-context';
 import { useAutoOpenTasks } from './task-present';
@@ -40,7 +41,10 @@ import { BarMicButton, BarMicCancel, BarMicStatus, ConversationChevron, FoldedCa
 export function useCircleCollapsed(): boolean {
   const layer = useInternal();
   const annotating = useCommenting(layer.agent?.feedback);
-  return layer.circle && annotating && (configOf(layer)?.feedback?.while ?? 'folded') === 'folded';
+  if (!annotating) return false;
+  if (layer.circle) return (configOf(layer)?.feedback?.while ?? 'folded') === 'folded';
+  // A bar given as a config, folded on a wide screen (its field is all there is, or `feedback.while` folded it): the conversation is not in the page, so the layer draws the note's editor over it, as for a circle.
+  return layer.bar && configOf(layer) !== undefined && layer.expanded && !layer.trayOpen && !layer.dockOpen && layer.snap === 'closed';
 }
 
 /** The bar's icon controls expose the same words on hover and keyboard focus. */
@@ -160,16 +164,16 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const readRun = () => Boolean(spec.controller.getSnapshot().view?.docs['pi.live']?.['run']);
   const running = useSyncExternalStore(spec.controller.subscribe, readRun, readRun);
   const working = (running && stop !== 'confirmed') || barChat.status?.state === 'working';
-  // A circle shows the same signals, and the notes taken while annotating (`useComposerFeedback`'s count).
+  // Every launcher shows the same signals (unread, a decision that waits, a run), and the notes taken while annotating (`useComposerFeedback`'s count): the app reads them with `on.signals` and `useAgentLayer().signals`.
   const circling = role === 'agent' && layer.circle;
   const feedback = useComposerFeedback(spec.feedback);
-  const notes = circling ? feedback?.count ?? 0 : 0;
-  useEffect(() => { if (barred || exploring || circling) setSignals({ unread: unreadLabel === undefined ? undefined : { label: unreadLabel, count: unreadCount }, needsYou, working, ...(circling ? { notes } : {}) }); }, [barred, exploring, circling, setSignals, unreadLabel, unreadCount, needsYou, working, notes]);
+  const notes = role === 'agent' ? feedback?.count ?? 0 : 0;
+  useEffect(() => { if (role === 'agent') setSignals({ unread: unreadLabel === undefined ? undefined : { label: unreadLabel, count: unreadCount }, needsYou, working, notes }); }, [role, setSignals, unreadLabel, unreadCount, needsYou, working, notes]);
   const collapsed = useCircleCollapsed();
   const unfolded = (barred && !layer.folded) || (exploring && layer.showing === 'agent') || (circling && layer.snap !== 'closed' && layer.showing === 'agent' && !collapsed);
   useEffect(() => { if (unfolded) markRead(); }, [unfolded, markRead]);
   // The full page is on show (`suspended`): what arrives meanwhile is read there.
-  const suspended = circling && layer.suspended;
+  const suspended = role === 'agent' && layer.suspended;
   useEffect(() => { if (suspended) clearUnread(spec.controller); }, [suspended, unreadCount, spec.controller]);
   // Docked, the bar's field goes with the thread: nothing stays at the bottom.
   const hosted = role === 'agent' && layer.contentComposer && !(barred && layer.dockOpen);
@@ -231,10 +235,14 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
   const replyAction = barred ? spec.replyAction : undefined;
   const fr = locale === 'fr';
+  // The app's own control for the pointing tool (`feedbackSlot`) takes the place of the chat's toggle: in the composer's row for every launcher but a circle, whose panel draws it in its title row.
+  const slot = role === 'agent' ? spec.feedbackSlot : undefined;
+  const inField = slot !== undefined && slot !== null && slot !== false && feedbackWhere(layer.composerFlags.launcher) === 'field';
+  const base = role === 'agent' && spec.voice && !oneRow ? <>{spec.chatProps?.tools}<TalkButton /></> : spec.chatProps?.tools;
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
     <ReplyActionContext.Provider value={replyAction ? <ReplyActionButton action={replyAction} testid="agent-reply-action" /> : null}>
-    <PiChat {...withChatPlugins(chatProps ?? {})} {...barProps} {...(Object.keys(wordLabels).length > 0 ? { labels: { ...wordLabels, ...spec.chatProps?.labels } } : {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating && !layer.circle ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
-      {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: oneRow ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: capturing && !oneRow ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
+    <PiChat {...withChatPlugins(chatProps ?? {})} {...barProps} {...(Object.keys(wordLabels).length > 0 ? { labels: { ...wordLabels, ...spec.chatProps?.labels } } : {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating && !layer.circle ? 'docked' : 'floating'} {...(feedback ? { feedback: inField ? { ...feedback, toggle: false } : feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
+      {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: oneRow ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: capturing && !oneRow ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} {...(inField ? { tools: <>{base}<FieldFeedbackSlot slot={slot} /></> } : {})} />
     </ReplyActionContext.Provider>
     {barred && !readOnly && layer.folded && layer.cardSlot && createPortal(<><SendProblem controller={spec.controller} /><FoldedCard bar={barChat} onOpenFile={openFile} /></>, layer.cardSlot)}
     {/* The note editor of ordinary feedback lives inside the layer, in the modal's focus tree; while pointing the layer steps aside and AgentLayer renders it. */}

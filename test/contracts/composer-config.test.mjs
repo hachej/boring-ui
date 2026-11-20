@@ -60,7 +60,7 @@ test('the presets resolve to the flags the string compares gave', () => {
 });
 
 test('the action table is one: every id and test id the strip and the tray header use', () => {
-  assert.deepEqual(Object.values(STRIP_ACTIONS).map(action => action.testId).sort(), ['agent-bar-conversation', 'agent-full-back', 'agent-tray-dock', 'agent-tray-full', 'agent-tray-grow', 'agent-tray-reduce', 'composer-dock-bottom', 'composer-float', 'composer-minimise'].sort());
+  assert.deepEqual(Object.values(STRIP_ACTIONS).map(action => action.testId).sort(), ['agent-bar-conversation', 'agent-full-back', 'agent-tray-dock', 'agent-tray-full', 'agent-tray-grow', 'agent-tray-reduce', 'composer-dock-bottom', 'composer-float', 'composer-minimise', 'composer-open-full'].sort());
   const placements = readFileSync(`${root}registry/app-shell/agent-placements.tsx`, 'utf8');
   for (const literal of ['agent-tray-dock', 'agent-tray-grow', 'agent-tray-reduce']) assert.ok(!placements.includes(`data-testid="${literal}"`), `the tray header names ${literal} itself instead of reading the table`);
   const parts = readFileSync(`${root}registry/app-shell/agent-bar-parts.tsx`, 'utf8');

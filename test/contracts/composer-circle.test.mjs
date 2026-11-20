@@ -40,10 +40,20 @@ test('invalid combinations throw with a message that names the fix', () => {
   bad(circle({ at: { stack: -1 } }), /`at\.stack`/);
   bad(circle({ at: { offset: { block: '' } } }), /`at\.offset\.block`/);
   bad(circle({ id: '' }), /`id`/);
-  bad({ launcher: 'bar', sizes: ['open'], avoid: ['.x'] }, /`avoid` is for the circle launcher/);
-  bad({ launcher: 'bar', sizes: ['open'], level: 'open' }, /`level` is for the circle launcher/);
-  bad({ launcher: 'tab', handoff: { openFull() {} } }, /`handoff` is for the circle launcher/);
-  bad({ launcher: 'bar', sizes: ['open'], at: { offset: { inline: 4 } } }, /`at\.offset` and `at\.stack` place a circle/);
+  // The common options are every launcher's (the bar, the tab and the header take them); what stays invalid names its fix.
+  bad({ launcher: 'bar', sizes: ['open'], level: 'open' }, /`level` is controlled: pass `on\.level`/);
+  bad({ launcher: 'bar', sizes: ['open'], level: 'grown', on: { level() {} } }, /bar launcher has no 'grown' level.*add 'grown' to `sizes`/);
+  bad({ launcher: 'bar', sizes: ['open'], dock: false, defaultLevel: 'docked' }, /no 'docked' level.*dock: true/);
+  bad({ launcher: 'tab', defaultLevel: 'full' }, /tab launcher has no 'full' level/);
+  bad({ launcher: 'bar', sizes: ['open'], at: { stack: -1 } }, /`at\.stack`/);
+  bad({ launcher: 'bar', sizes: ['open'], at: { place: 'nowhere' } }, /`at\.place`/);
+  bad({ launcher: 'bar', sizes: ['open'], reserve: 'some' }, /`reserve`/);
+  bad({ launcher: 'bar', sizes: ['open'], avoid: [4] }, /`avoid` is a list/);
+  bad({ launcher: 'tab', handoff: { openFull() {}, then: 'leave' } }, /`handoff\.then`/);
+  bad({ launcher: 'bar', sizes: ['open'], feedback: { while: 'grown' } }, /`feedback\.while`/);
+  bad({ launcher: 'bar', sizes: ['open'], handoff: { openFull() {} }, on: { openFull() {} } }, /keep one/);
+  for (const composer of [{ launcher: 'bar', sizes: ['open', 'grown'], dock: true, avoid: ['.x'], layer: 30, reserve: 'none', level: 'grown', on: { level() {} }, note: () => null, feedback: { while: 'folded' }, handoff: { openFull() {} }, suspended: true, at: { offset: { inline: 4 }, stack: 2, remember: false }, id: 'a' },
+    { launcher: 'tab', avoid: ['.x'], defaultLevel: 'open', handoff: { openFull() {} } }, { launcher: 'header', suspended: true, note: () => 'x', at: { offset: { block: 8 } } }]) assert.doesNotThrow(() => resolveComposer({ composer }), 'the common options are valid on every launcher');
   bad({ launcher: 'bar', dock: true }, /FloatingComposer. has no side dock/, { standalone: true });
   bad({ launcher: 'header' }, /no header trigger/, { standalone: true });
   bad(circle(), /replaces .start., .onOpenFull./, { legacy: ['start', 'onOpenFull'] });

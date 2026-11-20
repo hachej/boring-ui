@@ -29,6 +29,11 @@ export interface AgentSpec {
   readonly voice?: VoiceMessageConfig & { readonly send?: 'auto' | 'draft' | 'message' };
   /** The pointing tool, from the `feedback` item: the composer's annotate toggle and point mode on the app's surface. */
   readonly feedback?: FeedbackSession;
+  /**
+   * The app's own control for the pointing tool, drawn in place of the built-in annotate toggle: a node, or a function of `{ level, setLevel, phase, count, where }` (`where`: `field` in the composer's row, `title` in the
+   * panel's title row of a launcher with no resting field). `feedback` stays the session; the slot is what the person sees and taps. Absent: the built-in toggle.
+   */
+  readonly feedbackSlot?: FeedbackSlot | undefined;
   /** Host actions in the layer's title row (before the dock controls, or the snap and close controls when compact), as the screen header's. Two shown, the rest in « … ». Not at peek. */
   readonly headerActions?: readonly ScreenHeaderAction[];
   /** Host-owned controls in the layer's title row, before the actions (for example an icon-anchored popover). Not at peek. */
@@ -117,6 +122,21 @@ export type FloatCorner = 'tl' | 'tr' | 'bl' | 'br';
 /** The floating bar's place: a corner (it stays there when the window resizes) or free, in px from the window's top left. */
 export type FloatPos = { readonly corner: FloatCorner } | { readonly left: number; readonly top: number };
 /** What the icon shows of the conversation: what is unread, and whether a decision waits for the person. */
+/** What the app's feedback slot is given. */
+export interface FeedbackSlotContext {
+  /** Where the conversation is now (`folded`, `open`, `grown`, `full`, `docked`). */
+  readonly level: Level;
+  /** Takes the conversation to a level the launcher has (an app's own preview dock can fold the panel). */
+  readonly setLevel: (level: Level) => void;
+  /** The session's phase: `idle`, `active` (annotating), `processing`, or `review` (a finished draft). */
+  readonly phase: string;
+  /** The notes taken so far (the one being typed counts). */
+  readonly count: number;
+  /** Starts annotating, or ends it (Done): the same toggle as the built-in one, with point mode on a phone and Escape as a way out. */
+  readonly annotate: () => void;
+  readonly where: 'field' | 'title';
+}
+export type FeedbackSlot = ReactNode | ((context: FeedbackSlotContext) => ReactNode);
 export interface ComposerSignals { readonly unread: { readonly label: string; readonly count?: number | undefined } | undefined; readonly needsYou: boolean; /** A run is under way: the folded icon pulses a ring round itself. */ readonly working?: boolean; /** Notes taken while annotating (the pointing tool): the circle and the tab show the count. */ readonly notes?: number }
 export interface AgentLayerApi {
   readonly agent: NativeChatController | undefined;
@@ -251,8 +271,15 @@ export interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly composerFlags: ResolvedComposer;
   /** The composer config object the layer was given (`undefined` for a string preset), read through `current` so a new object each render changes nothing. Typed by `configOf` in composer-config.ts (this file imports nothing from it). */
   readonly composerConfig: { readonly current: unknown };
-  /** `circle`: the full page is on show (`suspended`): the launcher is hidden and the conversation is read. */
+  /** The full page is on show (`suspended`): the launcher is hidden and the conversation is read. */
   readonly suspended: boolean;
+  /** The app's status text for the folded launcher (`note`), read each time the app draws: a launcher reads it here, so a change of what the app says (not only of the signals) reaches it. */
+  readonly note: string | null;
+  /** Where the conversation is now, as a level of the composer's config, and the way to take it to another (clamped to the levels the launcher has). */
+  readonly level: Level;
+  readonly setLevel: (level: Level) => void;
+  /** This composer's place in the page's launcher registry (its stack, its reserve), kept whichever surface it draws. */
+  readonly launcherOwner: LauncherOwner;
   /** False for the standalone entry: no dock column beside the page, so no action docks the conversation to a side. */
   readonly docks: boolean;
   readonly floatPos: FloatPos;
@@ -379,6 +406,10 @@ export interface PanePresent {
 
 /** One state for "how big is the conversation": the wide tray's three sizes, and on a phone the drawer's half (`open`) and full (`full`). */
 export type ConversationSize = 'open' | 'grown' | 'full';
+/** The levels a conversation can be at, on every launcher (`composer-level.ts`): the fold, a size, or the side dock. The full page is the app's route, never a level. */
+export type Level = 'folded' | ConversationSize | 'docked';
+/** One composer's place in the page's launcher registry (`composer-stack.ts`): the layer owns it for its whole life, whichever surface it draws. */
+export interface LauncherOwner { readonly key: object; readonly seq: number }
 export type DockSide = 'left' | 'right';
 /** Where a thread sent from the content composer opens on a wide screen: `tray` above the field, or `dock` beside the app. */
 export type AgentMode = 'tray' | 'dock';

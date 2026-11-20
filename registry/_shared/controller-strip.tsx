@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '../utils/utils';
 
 /** One action of a controller strip: its name (aria-label and tooltip), icon and what it does; `primary` is the chevron, always shown. */
-export interface ControllerAction { readonly id: string; readonly testId: string; readonly label: string; readonly icon: ReactNode; readonly onSelect: () => void; readonly primary?: boolean; readonly expanded?: boolean; readonly on?: boolean }
+export interface ControllerAction { readonly id: string; readonly testId: string; readonly label: string; readonly icon: ReactNode; readonly onSelect: () => void; readonly primary?: boolean; readonly expanded?: boolean; readonly on?: boolean; readonly disabled?: boolean }
 
 /**
  * The arrows of a strip point the way the container grows: on a top border (the composer) expanding is up, on a bottom border (the agent card) it is down.
@@ -19,7 +19,7 @@ export function stripIcons(edge: 'top' | 'bottom'): { readonly expand: ReactNode
 
 /** One cell of the controller notch: a plain 16 px high button (no chip, no circle: a hover fill only) whose 44 px hit area is its invisible ::before. `extra` cells start closed (0 wide). */
 function ControllerCell({ action, extra, round, dot, ...rest }: { readonly action: ControllerAction; readonly extra: boolean; readonly round: boolean; readonly dot: { readonly label: string } | undefined } & Record<string, unknown>) {
-  return <button type="button" {...rest} data-testid={action.testId} data-action={action.id} aria-label={action.label} onClick={action.onSelect}
+  return <button type="button" {...rest} data-testid={action.testId} data-action={action.id} aria-label={action.label} onClick={action.onSelect} {...(action.disabled ? { disabled: true } : {})}
     {...(action.expanded !== undefined ? { 'aria-expanded': action.expanded } : {})} {...(action.on ? { 'aria-pressed': true } : {})}
     className={cn('relative inline-flex h-4 shrink-0 items-center justify-center text-muted-foreground transition-colors duration-(--duration-fast) pointer-fine:hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground aria-pressed:text-foreground motion-reduce:transition-none max-md:h-11 pointer-coarse:h-11',
       'md:before:absolute md:before:-inset-y-3.5 md:before:inset-x-0 md:before:content-[""] [&_svg]:size-[11px]',
