@@ -1,6 +1,6 @@
 // The composer's placement as flags. Today's `composer` strings are presets of this config; every place that used to compare `composer` to a string reads the resolved flags instead,
 // and the strip's actions (the chevron and what the state offers) and the tray header's buttons read ONE action table. Internal: the public `composer` type is not widened here.
-import type { AgentComposer, ComposerLauncher, ComposerPlace, ConversationSize, ResolvedComposer } from './layer-context';
+import type { AgentComposer, ComposerPlace, ConversationSize, ResolvedComposer } from './layer-context';
 export type { ComposerLauncher, ResolvedComposer } from './layer-context';
 
 
