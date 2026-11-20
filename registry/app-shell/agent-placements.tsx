@@ -20,12 +20,13 @@ import { useBackLayer } from '../utils/back';
 import { DOCK_KEY, FOLDED_FIELD, LayerContext, MIN_MAIN, PM_COLUMN, TRAY_MAX, useInternal } from './layer-context';
 import type { DockSide } from './layer-context';
 import { OneBox, VoiceProblem } from './agent-bar-parts';
-import { ChatSlot, Header, HeaderExtras, HeaderHint, HistoryButton, LibraryButton, useTitle } from './agent-chats';
+import { ChatSlot, Header, HeaderExtras, HeaderHint, HistoryButton, LibraryButton, useCircleCollapsed, useTitle } from './agent-chats';
 import { CompactSheet } from './agent-compact';
 import { PaneDock, PaneStack } from './agent-pane';
 import { ComposerClassContext, ComposerFab, FloatFrame, NoticeSlot } from './float-composer';
 import { Grip } from './composer-grip';
 import { ExploreController, ExplorePanel, ExploreToggle, useExplorePlace } from './explore';
+import { CircleHost } from './composer-circle';
 
 /** The panel inside the dock: the same element docked or floating, so a placement change keeps focus and the chats where they are. */
 function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSide }) {
@@ -261,7 +262,7 @@ export function AgentDockLayout({ children }: { readonly children: ReactNode }):
   const { title } = useTitle();
   const place = useExplorePlace();
   // `composer="explore"`: the panel takes the dock's place (`ExplorePanel`, closed by default); the dock stays only for an app that has no assistant of its own.
-  const dock = layer.expanded && (layer.agent || layer.improve) && !place.active ? <AgentDock side={layer.side} /> : null;
+  const dock = layer.expanded && (layer.agent || layer.improve) && !place.active && !layer.circle ? <AgentDock side={layer.side} /> : null;
   // The PM column sits inside the main content: while it is open beside the dock, the dock leaves the screen its least width beside it.
   return <DockLayout storageKey={DOCK_KEY} persist="local" minMain={MIN_MAIN + (layer.besidePanel ? PM_COLUMN : 0)} {...(layer.bar ? { className: '@container/agent-layout' } : {})}>
     {layer.side === 'left' && dock}
@@ -354,7 +355,9 @@ export function AgentLayer(): ReactElement | null {
   const layer = useInternal();
   const { title } = useTitle();
   const pointingAgent = usePointing(layer.agent?.feedback);
-  const session = pointingAgent ? layer.agent?.feedback : undefined;
+  // A circle's panel steps aside while annotating (`feedback.while`): like a phone's point mode, the layer then draws the note bubble and answers Back.
+  const circleCollapsed = useCircleCollapsed();
+  const session = pointingAgent || circleCollapsed ? layer.agent?.feedback : undefined;
   const commentingAgent = useCommenting(layer.agent?.feedback);
   const commenting = commentingAgent ? layer.agent?.feedback : undefined;
   // Back ends pointing first (the `point` priority), like Done: the notes wait for the next message. The layer keeps its own history entry underneath.
@@ -369,6 +372,7 @@ export function AgentLayer(): ReactElement | null {
   return <>
     {explore.active && <><ExploreToggle /><ExploreController /></>}
     {explore.open && explore.mode === 'overlay' && <ExplorePanel mode="overlay" />}
+    {layer.circle && <CircleHost />}
     {layer.expanded && layer.trayOpen && layer.size === 'full' && <FullScreen />}
     {!layer.expanded && layer.place !== 'icon' && <CompactSheet pointing={session !== undefined} />}
     {!layer.expanded && layer.place === 'icon' && <ComposerFab />}

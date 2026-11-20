@@ -37,7 +37,7 @@ const testId = state => state.detect.has.join(' + ');
 const frameBase = location.pathname.endsWith('/demo.html') ? '../component-design-system/demo.html' : 'component-design-system.html';
 const frameUrl = (state, isDark) => {
   const scene = atlas.scenes[state.scene];
-  return `${frameBase}?${[`atlas=${state.thumb ?? state.id}`, scene.props.composer === 'explore' ? 'composer=explore' : '', isDark ? 'dark=1' : ''].filter(Boolean).join('&')}`;
+  return `${frameBase}?${[`atlas=${state.thumb ?? state.id}`, scene.props.composer === 'explore' ? 'composer=explore' : scene.props.composer?.launcher === 'circle' ? 'composer=circle' : '', isDark ? 'dark=1' : ''].filter(Boolean).join('&')}`;
 };
 
 /** The page's dark switch (the site's top bar sets the `dark` class of this document): the thumbnails follow it. */

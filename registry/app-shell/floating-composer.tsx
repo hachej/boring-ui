@@ -10,6 +10,8 @@ import type { AgentLayerApi, AgentSpec } from './layer-context';
 import { ComposerClassContext, NoticeSlotContext } from './float-composer';
 import { BarBox } from './agent-placements';
 import { shellWords, useInternal } from './layer-context';
+import type { ComposerConfig, ComposerEnv } from './composer-config';
+import { useComposerInput } from './composer-input';
 import { NoticeHost } from './shell-notice';
 import { EmbeddedConversation, useHostedSpec } from './floating-host';
 import type { FloatingHostProps } from './floating-host';
@@ -21,6 +23,11 @@ import type { Persistence } from '../utils/persisted';
 export interface FloatingComposerProps extends FloatingHostProps {
   /** The one assistant: the same `AgentSpec` as `AppShell`'s `agent`. */
   readonly agent: AgentSpec;
+  /**
+   * The composer's config (`ComposerConfig`), or a function of `{ phone, width, route }` that gives it: `{ launcher: 'circle', handoff: { openFull } }` is a round launcher that opens one panel
+   * and hands the conversation to the app's full page; `{ launcher: 'bar', fold: 'circle', float: { movable: true } }` is the bar this component draws by default. The object replaces `start`, `storage` and `onOpenFull`: given with it, they throw.
+   */
+  readonly composer?: ComposerConfig | ((env: ComposerEnv) => ComposerConfig) | undefined;
   /** The language of the composer's own words (default: the agent's `chatProps.locale`, then English). */
   readonly locale?: AppShellLocale;
   /** A stable id of the host site and, when known, the person: the place and the floating or folded choice are remembered per app and person. */
@@ -49,6 +56,7 @@ export interface FloatingComposerProps extends FloatingHostProps {
 }
 
 const NONE: readonly AppShellNotice[] = [];
+const NO_LEGACY: readonly string[] = [];
 
 function Surface({ notices: given = NONE, autoDismissMs, maxToasts }: { readonly notices?: FloatingComposerProps['notices']; readonly autoDismissMs?: number | undefined; readonly maxToasts?: number | undefined }): ReactElement {
   const layer = useInternal();
@@ -68,10 +76,15 @@ function Surface({ notices: given = NONE, autoDismissMs, maxToasts }: { readonly
 }
 
 /** The one composer on a page that has no AppShell. Mount it once, anywhere: it positions itself over the page. */
-export function FloatingComposer({ agent, locale, appId, person, start = 'float', notices, storage = 'local', legacyPositionKey, legacyPositionStorage = 'session', className, autoDismissMs, maxToasts, children, embedded, headerTools, headerActions, onDock, onOpenFull, onFeedback, artifactPanel, artifacts, artifactTarget }: FloatingComposerProps): ReactElement {
+export function FloatingComposer({ agent, composer, locale, appId, person, start, notices, storage, legacyPositionKey, legacyPositionStorage = 'session', className, autoDismissMs, maxToasts, children, embedded, headerTools, headerActions, onDock, onOpenFull, onFeedback, artifactPanel, artifacts, artifactTarget }: FloatingComposerProps): ReactElement {
+  const resolved = useComposerInput(composer);
+  const config = typeof resolved === 'object' ? resolved : undefined;
+  // The object replaces the props it makes second sources; the resolver throws when it is given next to them.
+  const legacy = config ? [['start', start], ['storage', storage], ['onOpenFull', onOpenFull]].flatMap(([name, value]) => value === undefined ? [] : [name as string]) : NO_LEGACY;
   const spec = useHostedSpec(agent, { locale, headerTools, headerActions, onDock, onOpenFull, onFeedback, artifactPanel, artifacts, artifactTarget });
   if (embedded) return <EmbeddedConversation agent={spec} locale={locale} />;
-  return <AgentLayerProvider agent={spec} composer="bar" floating docks={false} agentLink={false} {...(locale ? { locale } : {})} startIn={start} storage={storage} modeIdentity={{ ...(appId ? { app: appId } : {}), ...(person ? { person } : {}) }}
+  const remember = config?.at?.remember === undefined ? undefined : config.at.remember === 'local' ? 'local' : 'session';
+  return <AgentLayerProvider agent={spec} composer={config ?? 'bar'} floating={config === undefined} standalone legacy={legacy} docks={false} agentLink={false} {...(locale ? { locale } : {})} startIn={start ?? 'float'} storage={storage ?? remember ?? 'local'} modeIdentity={{ ...(appId ? { app: appId } : {}), ...(person ? { person } : {}) }}
     {...(legacyPositionKey ? { legacyPosition: { key: legacyPositionKey, storage: legacyPositionStorage } } : {})}>
     {children}
     <ComposerClassContext.Provider value={className}><Surface notices={notices} autoDismissMs={autoDismissMs} maxToasts={maxToasts} /></ComposerClassContext.Provider>

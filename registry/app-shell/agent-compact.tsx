@@ -16,6 +16,7 @@ import type { Snap } from './layer-context';
 import { NEEDS_YOU, VoiceProblem } from './agent-bar-parts';
 import { ChatSlot, Header, useTitle } from './agent-chats';
 import { ExploreContextLine } from './explore';
+import { CircleControls } from './composer-circle';
 
 /**
  * What a close request from the drawer becomes. A swipe, an outside press, a lost focus and Escape never close the layer: they step down
@@ -72,7 +73,7 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const layer = useInternal();
   const { snap, agent, voice } = layer;
   // `composer="explore"`: closed means closed, with no peek bar: a swipe down or an outside press closes the sheet.
-  const hasPeek = Boolean(agent) && !layer.explore;
+  const hasPeek = Boolean(agent) && !layer.explore && !layer.circle;
   const { text, title } = useTitle();
   const liveViewport = useVisualViewport();
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -261,7 +262,7 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
       if (isOverlayEvent(details)) { details.cancel(); return; }
       // A tap on the tabs kept under the half switches screens; it is not a press outside the conversation.
       if (keepTabs && details.reason === 'outside-press' && details.event?.target instanceof Element && details.event.target.closest('[data-testid=tabbar]')) { details.cancel(); return; }
-      if (layer.explore && details.reason !== 'focus-out') { closing.current = true; layer.close(); return; }
+      if ((layer.explore || layer.circle) && details.reason !== 'focus-out') { closing.current = true; layer.close(); return; }
       const outcome = nextSnapOnClose(details.reason, hasPeek);
       if (outcome === 'close') { closing.current = true; layer.close(); return; }
       details.cancel();
@@ -309,7 +310,7 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
               '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-annotate]]:hidden'],
             layer.bar && '[&_[data-testid=composer-dock]]:px-2 [&_[data-testid=composer-dock]]:pt-2 [&_[data-testid=composer-dock]]:pb-4',
             peek && layer.bar && ['[&_[data-boring=pi-chat]>.relative]:hidden [&_[data-testid=conversation-content]]:hidden', FOLDED_FIELD])}>
-          {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} className={layer.bar ? 'absolute inset-x-0 top-0 z-10 bg-popover' : undefined} />}
+          {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} {...(layer.circle ? { controls: <CircleControls withClose={false} /> } : {})} className={layer.bar ? 'absolute inset-x-0 top-0 z-10 bg-popover' : undefined} />}
           {!peek && <ExploreContextLine />}
           {!peek && <VoiceProblem />}
           {peek && recording && <div aria-hidden="true" data-testid="agent-listening" data-phase={voice.phase} className="sr-only">

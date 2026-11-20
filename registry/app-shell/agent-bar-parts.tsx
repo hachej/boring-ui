@@ -156,6 +156,7 @@ function useControllerActions(): readonly ControllerAction[] {
       case 'float': return { id, testId, label: text.float, icon: <PictureInPicture2Icon aria-hidden="true" />, onSelect: () => layer.setPlace('float') };
       case 'dock': return { id, testId, label: text.dock, icon: <PanelBottomIcon aria-hidden="true" />, onSelect: () => layer.setPlace('bottom') };
       case 'minimise': return { id, testId, label: text.minimise, icon: <MinusIcon aria-hidden="true" />, onSelect: () => layer.setPlace('icon') };
+      default: throw new Error(`composer: the strip of a bar has no "${entry.key}" action (a circle's panel draws its own title row)`);
     }
   };
   return plan.map(make);

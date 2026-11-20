@@ -1,15 +1,64 @@
 // The composer's placement as flags. Today's `composer` strings are presets of this config; every place that used to compare `composer` to a string reads the resolved flags instead,
-// and the strip's actions (the chevron and what the state offers) and the tray header's buttons read ONE action table. Internal: the public `composer` type is not widened here.
-import type { AgentComposer, ComposerPlace, ConversationSize, ResolvedComposer } from './layer-context';
+// and the strip's actions (the chevron and what the state offers) and the tray header's buttons read ONE action table. `composer` takes a preset string, this config object, or a
+// function of the viewport and route that gives the object. The circle launcher is the first non-preset behaviour: invalid combinations throw, naming the fix.
+import type { AgentComposer, ComposerPlace, ComposerSignals, ConversationSize, ResolvedComposer } from './layer-context';
 export type { ComposerLauncher, ResolvedComposer } from './layer-context';
 
+/** A corner in logical terms (a right-to-left page mirrors it): `bottom-end` is the bottom right in a left-to-right page. */
+export type Corner = 'bottom-end' | 'bottom-start' | 'top-end' | 'top-start';
+/** A distance: px as a number, or a CSS length (`'var(--phone-band-h)'`). */
+export type Length = number | string;
+/** What a launcher steps around: a selector of the page's fixed elements, or a live rectangle (`null`: nothing there now). */
+export type Avoid = string | (() => DOMRect | null);
+/** The levels a conversation can be at. The circle has two: `folded` (the circle) and `open` (the panel). The full page is the app's route (`handoff`), never a level. */
+export type Level = 'folded' | ConversationSize | 'docked';
+/** What a `composer` function reads: the viewport and the route. */
+export interface ComposerEnv { readonly phone: boolean; readonly width: number; readonly route?: string | undefined }
 
-/** The config a preset stands for (the spec's key names: `at`, `side`). Only what today's presets use. */
-export type ComposerConfig = { readonly id?: string; readonly at?: { readonly place?: 'bottom' | 'float' | 'right-edge'; readonly remember?: 'local' | 'session' | false } } & (
+interface ComposerCommon {
+  /** Names this launcher: the storage keys, `data-composer`, and Ctrl or Cmd + J (the first launcher answers). Absent: today's keys. */
+  readonly id?: string;
+  readonly at?: {
+    readonly place?: 'bottom' | 'float' | Corner | 'right-edge';
+    /** The gap to the corner's two edges, 16 and 16 by default. A phone's tab bar is added when `block` is not given. */
+    readonly offset?: { readonly inline?: Length; readonly block?: Length };
+    /** The order among launchers on one corner, lowest nearest the corner: `auto` (default) is by mount order. */
+    readonly stack?: 'auto' | number;
+    readonly remember?: 'local' | 'session' | false;
+  };
+  /** Publishes the launcher's footprint as `--composer-reserve-block` and `--composer-reserve-inline` (default `auto`), which the screens, the notice row and a host's own toasts read. */
+  readonly reserve?: 'auto' | 'none';
+  /** Rectangles the launcher and its panel step around (a drawer's tab, a band). */
+  readonly avoid?: readonly Avoid[];
+  /** The launcher's z-index (default 40; its panel is one above): below the app's sheets (50 and up) and above the page. */
+  readonly layer?: number;
+  /** Controlled when `level` is set: the app reads and sets it through `on.level`. */
+  readonly level?: Level;
+  readonly defaultLevel?: Level;
+  readonly on?: {
+    readonly level?: (level: Level) => void;
+    readonly signals?: (signals: ComposerSignals) => void;
+    /** Shorthand of `handoff.openFull`: hand the conversation to the app's full page. */
+    readonly openFull?: (conversationId: string) => void;
+  };
+  /** The status text beside the folded launcher (`'réfléchit'`), or `null` for none. */
+  readonly note?: (signals: ComposerSignals) => string | null;
+  /** The pointing tool (`AgentSpec.feedback`): its toggle sits in the panel's title row; `while` is the level taken while annotating (default `folded`). */
+  readonly feedback?: { readonly while?: Level };
+  /** Adds Open in full: the app's full page for the conversation. */
+  readonly handoff?: { readonly openFull: (conversationId: string, context: { readonly empty: boolean }) => void; readonly then?: 'close' | 'stay'; readonly allowEmpty?: boolean };
+  /** The full page is on show: the launcher is hidden and the conversation is marked read, in every mounted instance. */
+  readonly suspended?: boolean;
+}
+
+/** The config a preset stands for (the spec's key names: `at`, `side`). */
+export type ComposerConfig = ComposerCommon & (
   | { readonly launcher: 'bar'; readonly sizes?: readonly ConversationSize[]; readonly dock?: boolean; readonly fold?: 'circle' | false; readonly float?: boolean | { readonly movable?: boolean } }
   | { readonly launcher: 'circle'; readonly sizes?: readonly ConversationSize[] }
   | { readonly launcher: 'tab'; readonly sizes?: readonly ConversationSize[]; readonly side?: { readonly mode?: 'push' | 'overlay' | 'auto'; readonly width?: number | string } }
   | { readonly launcher: 'header'; readonly float?: boolean });
+/** What `composer` takes: a preset string, the config object, or a function of the viewport and route that gives the object. */
+export type ComposerInput = AgentComposer | ComposerConfig | ((env: ComposerEnv) => ComposerConfig);
 
 /** The presets, one per string. `bar` with the shell's `floatingComposer` and the standalone `FloatingComposer` are the two variants below. */
 export const COMPOSER_PRESETS = {
@@ -37,6 +86,8 @@ export interface StripState {
   readonly anchored: boolean;
   /** The layer offers the side dock (false for the standalone entry). */
   readonly docks: boolean;
+  /** The agent has a pointing tool (`AgentSpec.feedback`): a circle's title row carries its toggle. */
+  readonly feedback?: boolean;
 }
 
 /** The one action table: the strip and the tray header draw their ids and test ids from here. Labels, icons and what they do belong to the caller. */
@@ -52,47 +103,99 @@ export const STRIP_ACTIONS = {
   minimise: { id: 'minimise', testId: 'composer-minimise' },
 } as const;
 export type StripKey = keyof typeof STRIP_ACTIONS;
+/** The circle panel's title-row actions: the annotate toggle (an agent with a pointing tool), Open in full (a `handoff`) and Close. Only what the config allows is drawn. */
+export const CIRCLE_ACTIONS = {
+  annotate: { id: 'annotate', testId: 'composer-annotate-title' },
+  openFull: { id: 'open-full', testId: 'composer-open-full' },
+  close: { id: 'close', testId: 'agent-layer-close' },
+} as const;
+export type CircleKey = keyof typeof CIRCLE_ACTIONS;
 /** One action of the plan: `open` marks the phone chevron that collapses (its label), the rest is the table's. */
-export interface StripPlanItem { readonly key: StripKey; readonly id: string; readonly testId: string; readonly open?: boolean }
+export interface StripPlanItem { readonly key: StripKey | CircleKey; readonly id: string; readonly testId: string; readonly open?: boolean }
 
 const item = (key: StripKey, open?: boolean): StripPlanItem => ({ key, ...STRIP_ACTIONS[key], ...(open === undefined ? {} : { open }) });
 
-const clean = (config: ComposerConfig): ResolvedComposer => {
-  const fail = (why: string): never => { throw new Error(`composer: ${why}`); };
+const fail = (why: string): never => { throw new Error(`composer: ${why}`); };
+const LEVELS: readonly string[] = ['folded', 'open', 'grown', 'full', 'docked'];
+const CORNERS: readonly string[] = ['bottom-end', 'bottom-start', 'top-end', 'top-start'];
+/** The keys of the object that only the circle applies so far: given to another launcher they would type-check and do nothing, so they throw. */
+const CIRCLE_ONLY = ['avoid', 'layer', 'reserve', 'level', 'defaultLevel', 'on', 'note', 'feedback', 'handoff', 'suspended'] as const;
+
+const checkLength = (name: string, value: unknown) => { if (value !== undefined && !(typeof value === 'number' && Number.isFinite(value)) && !(typeof value === 'string' && value.trim() !== '')) fail(`\`at.offset.${name}\` is a number of px or a CSS length such as 'var(--tabbar-h)'`); };
+
+/** The circle's own rules: every invalid combination names the fix. */
+function checkCircle(config: ComposerConfig & { readonly launcher: 'circle' }): void {
+  const { at, level, defaultLevel, on, handoff, feedback, sizes } = config;
+  const stack = at?.stack;
+  if (sizes?.some(size => size !== 'open')) fail("a circle opens one panel: take 'grown' and 'full' out of `sizes`; to show the whole conversation on a page, give `handoff.openFull` (the page is your route)");
+  if (at?.place !== undefined && !CORNERS.includes(at.place)) fail(`a circle sits in a corner: \`at.place\` is one of ${CORNERS.map(corner => `'${corner}'`).join(', ')}, not '${at.place}'`);
+  for (const [name, value] of [['level', level], ['defaultLevel', defaultLevel]] as const) {
+    if (value === undefined) continue;
+    if (value !== 'folded' && value !== 'open') fail(LEVELS.includes(value) ? `a circle has two levels, 'folded' (the circle) and 'open' (the panel): \`${name}: '${value}'\` is for the bar; to show the whole conversation, give \`handoff.openFull\`` : `\`${name}\` is 'folded' or 'open'`);
+  }
+  if (level !== undefined && !on?.level) fail('`level` is controlled: pass `on.level` to change it, or use `defaultLevel` for a start the person can change');
+  if (handoff && on?.openFull) fail('`handoff.openFull` and `on.openFull` both hand the conversation to the full page: keep one');
+  if (handoff?.then !== undefined && handoff.then !== 'close' && handoff.then !== 'stay') fail("`handoff.then` is 'close' (default) or 'stay'");
+  if (feedback?.while !== undefined && feedback.while !== 'folded' && feedback.while !== 'open') fail("`feedback.while` is 'folded' (the panel steps aside while annotating, default) or 'open'");
+  if (stack !== undefined && stack !== 'auto' && !(Number.isInteger(stack) && stack >= 0)) fail("`at.stack` is 'auto' or a whole number from 0 (the one nearest the corner)");
+  if (config.layer !== undefined && !Number.isFinite(config.layer)) fail('`layer` is a z-index number');
+  checkLength('inline', at?.offset?.inline); checkLength('block', at?.offset?.block);
+}
+
+const clean = (config: ComposerConfig, standalone: boolean, given: boolean): ResolvedComposer => {
+  if (config.id !== undefined && (typeof config.id !== 'string' || config.id.trim() === '')) fail('`id` is a non-empty string');
   const sizes = 'sizes' in config && config.sizes ? config.sizes : config.launcher === 'tab' || config.launcher === 'header' ? [] : ['open'] as const;
   if ('sizes' in config && config.sizes && config.sizes.length === 0) fail('`sizes` is empty');
   if (config.launcher === 'circle' && ('dock' in config || 'fold' in config || 'float' in config)) fail('a circle launcher is always folded: no `dock`, `fold` or `float`');
   if (config.launcher === 'tab' && ('dock' in config || 'fold' in config || 'float' in config)) fail('a tab launcher takes no `dock`, `fold` or `float`');
   if (config.launcher === 'header' && 'sizes' in config) fail('a header launcher has no sizes: it is the docked trigger');
   if (config.launcher !== 'bar' && 'fold' in config) fail('`fold` is for a bar');
+  if (given && standalone && config.launcher === 'header') fail('`FloatingComposer` has no header trigger: use launcher \'bar\' or \'circle\'');
+  if (given && standalone && config.launcher === 'bar' && config.dock === true) fail('`FloatingComposer` has no side dock: leave `dock` out (or set it to false)');
+  if (config.launcher === 'circle') checkCircle(config);
+  else {
+    for (const key of CIRCLE_ONLY) if (config[key] !== undefined) fail(`\`${key}\` is for the circle launcher: set \`launcher: 'circle'\` (the ${config.launcher} does not take it yet)`);
+    if (config.at?.offset !== undefined || config.at?.stack !== undefined) fail(`\`at.offset\` and \`at.stack\` place a circle: set \`launcher: 'circle'\` (the ${config.launcher} does not take them yet)`);
+  }
   const float = config.launcher === 'bar' || config.launcher === 'header' ? config.float === true || (typeof config.float === 'object' && config.float !== null) : false;
   const fold = config.launcher === 'bar' ? config.fold === 'circle' : false;
   if (config.launcher === 'bar' && fold !== (config.float !== undefined && config.float !== false)) fail('a bar folds to its circle exactly when it floats: set `fold` and `float` together');
   const bar = config.launcher === 'bar' && sizes.includes('grown');
-  return { launcher: config.launcher, sizes, dock: config.launcher === 'bar' ? config.dock !== false : config.launcher === 'header', floatable: config.launcher === 'bar' && float && fold && bar,
-    contentColumn: config.launcher === 'bar', bar, explore: config.launcher === 'tab' };
+  return { launcher: config.launcher, sizes, dock: config.launcher === 'bar' ? !standalone && config.dock !== false : config.launcher === 'header', floatable: config.launcher === 'bar' && float && fold && bar,
+    contentColumn: config.launcher === 'bar', bar, explore: config.launcher === 'tab', circle: config.launcher === 'circle', id: config.id };
 };
 
 /**
  * The flags of a `composer` string (or config) and, given the conversation's state, the ordered strip actions. `floatingComposer` only turns the `bar` preset into
- * its floating variant (as today: `content` ignores it). Invalid combinations throw.
+ * its floating variant (as today: `content` ignores it). `standalone` is the `FloatingComposer` entry (no side dock, no header trigger); `legacy` names the old props the
+ * caller was given next to an object (`floatingComposer`, `storage`, `start`, `onOpenFull`), which the object replaces. Invalid combinations throw.
  */
-export function resolveComposer(input: { readonly composer?: AgentComposer | ComposerConfig | undefined; readonly floatingComposer?: boolean | undefined; readonly state?: StripState | undefined }): { readonly flags: ResolvedComposer; readonly actions: readonly StripPlanItem[] } {
-  const { composer = 'dock', floatingComposer = false, state } = input;
+export function resolveComposer(input: { readonly composer?: AgentComposer | ComposerConfig | undefined; readonly floatingComposer?: boolean | undefined; readonly state?: StripState | undefined; readonly standalone?: boolean | undefined; readonly legacy?: readonly string[] | undefined }): { readonly flags: ResolvedComposer; readonly config: ComposerConfig; readonly actions: readonly StripPlanItem[] } {
+  const { composer = 'dock', floatingComposer = false, state, standalone = false, legacy = [] } = input;
   let config: ComposerConfig;
   if (typeof composer === 'string') {
     if (!(composer in COMPOSER_PRESETS)) throw new Error(`composer: "${String(composer)}" is not a composer preset`);
     config = composer === 'bar' && floatingComposer ? BAR_FLOATING_PRESET : COMPOSER_PRESETS[composer];
   } else {
+    if (typeof composer !== 'object' || composer === null) fail('`composer` is a preset string, a config object or a function that gives one');
     if (floatingComposer) throw new Error('composer: a composer config replaces `floatingComposer`: set `fold` and `float` on it');
+    if (legacy.length > 0) fail(`a composer config replaces ${legacy.map(name => `\`${name}\``).join(', ')}: put it on the config (\`at.remember\`, \`defaultLevel\`, \`handoff.openFull\`) and remove the prop`);
     config = composer;
   }
-  const flags = clean(config);
-  return { flags, actions: state ? stripPlan(flags, state) : [] };
+  const flags = clean(config, standalone, typeof composer === 'object');
+  return { flags, config, actions: state ? stripPlan(flags, state, config) : [] };
 }
 
-/** The strip in a state, as today: the chevron first, then what the state offers. */
-export function stripPlan(flags: ResolvedComposer, s: StripState): readonly StripPlanItem[] {
+/** The config object the layer was given (`undefined` for a string preset): `Internal.composerConfig` holds it untyped. */
+export const configOf = (layer: { readonly composerConfig: { readonly current: unknown } }): ComposerConfig | undefined => layer.composerConfig.current as ComposerConfig | undefined;
+
+/** The strip in a state, as today: the chevron first, then what the state offers. A circle's panel has only what its config allows: Open in full (a `handoff`) and Close. */
+export function stripPlan(flags: ResolvedComposer, s: StripState, config?: ComposerConfig): readonly StripPlanItem[] {
+  if (flags.circle) {
+    if (s.snap === 'closed') return [];
+    const handoff = config?.handoff !== undefined || config?.on?.openFull !== undefined;
+    return [...(s.feedback ? [{ key: 'annotate' as const, ...CIRCLE_ACTIONS.annotate }] : []), ...(handoff ? [{ key: 'openFull' as const, ...CIRCLE_ACTIONS.openFull }] : []), { key: 'close' as const, ...CIRCLE_ACTIONS.close }];
+  }
   if (!s.expanded) {
     const open = s.snap === 'half' || s.snap === 'full';
     return [item('conversation', open), ...(s.snap === 'half' ? [item('more')] : [])];

@@ -89,6 +89,20 @@
    "width": 1280,
    "props": {},
    "connection": "error"
+  },
+  "circle": {
+   "kind": "standalone",
+   "width": 1280,
+   "props": {
+    "composer": {
+     "launcher": "circle"
+    }
+   },
+   "handoff": true,
+   "viewport": [
+    1280,
+    800
+   ]
   }
  },
  "unions": [
@@ -969,6 +983,83 @@
    "options": [],
    "code": "registry/app-shell/float-composer.tsx",
    "sees": "The folded icon has the warning ring: the agent waits for a decision."
+  },
+  {
+   "id": "circle",
+   "group": "Circle launcher",
+   "name": "Circle (folded)",
+   "scene": "circle",
+   "reach": [],
+   "detect": {
+    "has": [
+     "composer-circle"
+    ],
+    "lacks": [
+     "composer-circle-panel",
+     "[data-atlas-page]"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/composer-circle.tsx",
+   "sees": "A round launcher in the corner, the whole resting state of a support chat. It carries the unread mark, the needs-you ring, the notes taken and the app's status note; the page keeps a reserve under it.",
+   "thumb": "circle"
+  },
+  {
+   "id": "circle-panel",
+   "group": "Circle launcher",
+   "name": "Panel",
+   "scene": "circle",
+   "reach": [
+    {
+     "click": "composer-circle"
+    }
+   ],
+   "detect": {
+    "has": [
+     "composer-circle-panel",
+     "composer-input"
+    ],
+    "lacks": [
+     "composer-circle",
+     "[data-atlas-page]",
+     "agent-bar-conversation"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/composer-circle.tsx",
+   "sees": "One tap on the circle opens the conversation window in place: no folded bar first. The title row has only what the config allows: Open in full (a handoff) and Close.",
+   "thumb": "circle-panel"
+  },
+  {
+   "id": "circle-page",
+   "group": "Circle launcher",
+   "name": "Full page (hand-off)",
+   "scene": "circle",
+   "reach": [
+    {
+     "click": "composer-circle"
+    },
+    {
+     "say": "answer",
+     "settle": 1500
+    },
+    {
+     "click": "composer-open-full"
+    }
+   ],
+   "detect": {
+    "has": [
+     "[data-atlas-page]"
+    ],
+    "lacks": [
+     "composer-circle",
+     "composer-circle-panel"
+    ]
+   },
+   "options": [],
+   "code": "registry/app-shell/composer-circle.tsx",
+   "sees": "The app's own full page for the conversation. The panel closed after the hand-off, the circle is hidden while the page shows, and what was unread is read.",
+   "thumb": "circle-page"
   }
  ],
  "transitions": [
@@ -2322,6 +2413,69 @@
     ]
    },
    "guard": "connected"
+  },
+  {
+   "id": "circle-panel",
+   "from": "circle",
+   "to": "circle-panel",
+   "trigger": {
+    "kind": "click",
+    "label": "Tap the circle",
+    "do": [
+     {
+      "click": "composer-circle"
+     }
+    ]
+   },
+   "guard": "launcher: circle"
+  },
+  {
+   "id": "panel-circle",
+   "from": "circle-panel",
+   "to": "circle",
+   "trigger": {
+    "kind": "click",
+    "label": "Close",
+    "do": [
+     {
+      "click": "agent-layer-close"
+     }
+    ],
+    "alt": [
+     [
+      {
+       "key": "Escape"
+      }
+     ]
+    ]
+   },
+   "guard": "launcher: circle",
+   "note": "Esc closes it too, unless a menu, a note bubble or annotating takes the key first."
+  },
+  {
+   "id": "panel-page",
+   "from": "circle-panel",
+   "to": "circle-page",
+   "trigger": {
+    "kind": "click",
+    "label": "Open in full",
+    "do": [
+     {
+      "click": "composer-open-full"
+     }
+    ]
+   },
+   "guard": "a handoff, and a message sent (or allowEmpty)",
+   "setup": [
+    {
+     "click": "composer-circle"
+    },
+    {
+     "say": "answer",
+     "settle": 1500
+    }
+   ],
+   "note": "The app navigates to its page and sets suspended: the circle is hidden and the conversation is read."
   }
  ]
 }
