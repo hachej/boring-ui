@@ -16,6 +16,7 @@ import type { AccountSpec } from './account';
 import { AgentDockLayout, AgentLayer, AgentLayerProvider } from './agent-layer';
 import type { AgentComposer, ExploreContext } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
+import { resolveComposer } from './composer-config';
 import { NoPanelLayout } from './shell-panel';
 import type { ShellPanel } from './shell-panel';
 import { ScreenActiveContext, useAgentContext } from './agent-context';
@@ -203,6 +204,6 @@ export function AppShell(props: AppShellProps) {
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;
   return <AgentLayerProvider agent={agent} composer={props.composer} context={props.context} floating={props.floatingComposer === true} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title} modeIdentity={{ app: props.appId || title, person: account?.email, screen: layout === 'screen' }}>
-    <HeaderProvider><Shell single={props.sidebar === false} bar={props.composer === 'bar'} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} update={props.update} notices={props.notices ?? NONE} mcp={mcp} /></HeaderProvider>
+    <HeaderProvider><Shell single={props.sidebar === false} bar={resolveComposer({ composer: props.composer, floatingComposer: props.floatingComposer === true }).flags.bar} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} update={props.update} notices={props.notices ?? NONE} mcp={mcp} /></HeaderProvider>
   </AgentLayerProvider>;
 }

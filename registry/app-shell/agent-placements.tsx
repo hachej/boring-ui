@@ -1,6 +1,7 @@
 'use client';
 
 // The wide placements: the dock (docked or floating), the content column with its tray and anchor, the preview column, and the layer root.
+import { STRIP_ACTIONS } from './composer-config';
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactElement, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -236,11 +237,11 @@ function ContentTray() {
         {layer.bar && <LibraryButton open={layer.openLibrary} text={text} testId="agent-layer-library" />}
         {layer.bar && <HeaderExtras text={text} compact={false} />}
         {boxed ? null : <>
-          <HeaderHint label={dockLabel}><Button variant="ghost" size="icon" data-testid="agent-tray-dock" aria-label={dockLabel} title={dockLabel}
+          <HeaderHint label={dockLabel}><Button variant="ghost" size="icon" data-testid={STRIP_ACTIONS.split.testId} aria-label={dockLabel} title={dockLabel}
             onClick={moveToDock}><DockIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>
-          <Button variant="ghost" size="icon" data-testid="agent-tray-grow" aria-label={text.expand} title={text.expand} aria-pressed={grown}
+          <Button variant="ghost" size="icon" data-testid={STRIP_ACTIONS.more.testId} aria-label={text.expand} title={text.expand} aria-pressed={grown}
             onClick={() => setSize(grown ? 'open' : 'grown')}>{grown ? <ChevronDownIcon className="size-4" aria-hidden="true" /> : <ChevronUpIcon className="size-4" aria-hidden="true" />}</Button>
-          <Button variant="ghost" size="icon" data-testid="agent-tray-reduce" aria-label={text.collapse} title={text.collapse} onClick={reduce}><XIcon className="size-4" aria-hidden="true" /></Button>
+          <Button variant="ghost" size="icon" data-testid={STRIP_ACTIONS.reduce.testId} aria-label={text.collapse} title={text.collapse} onClick={reduce}><XIcon className="size-4" aria-hidden="true" /></Button>
         </>}
       </div>
       <VoiceProblem />

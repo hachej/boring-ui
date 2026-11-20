@@ -7,6 +7,7 @@ import { Window } from 'happy-dom';
 import { createDemoController } from '../../ux/fixtures/demo-controller.mjs';
 import { controlled } from '../../ux/atlas/connection.mjs';
 import { isIn, runSteps } from '../../ux/atlas/steps.mjs';
+import { STRIPS } from './composer-strips.mjs';
 
 // The Atlas (ux/atlas/composer-atlas.json) driven through the public path: for every state, the real component is rendered in happy-dom over a scripted fake agent (fictional), taken to
 // the state by the state's own `reach` steps, and the state's marker is read; for every transition, the from-state is reached, the trigger is done on the real control (a click on its
@@ -117,4 +118,16 @@ for (const transition of atlas.transitions) {
     assert.equal(await arrive(ui, to), true, `after ${transition.trigger.label}: ${to.id} (${JSON.stringify(to.detect)}) is not on the page; the page has: ${seen(ui)}`);
     if (transition.after) assert.equal(isIn(ui.env.root, { has: transition.after.has ?? [], lacks: transition.after.lacks ?? [] }), true, `after ${transition.trigger.label}: ${JSON.stringify(transition.after)}`);
   }));
+}
+
+// The strip the real component draws in each wide state is the table's (composer-strips.mjs): the ids, the test ids and their order, as they were before the composer was a config.
+for (const [id, { wide, actions }] of Object.entries(STRIPS)) {
+  if (!wide) continue;
+  test(`strip ${id}: the real component's actions are the table's`, async t => {
+    const state = byId.get(id);
+    const ui = await reach(t, state);
+    assert.equal(await arrive(ui, state), true, `${id} is not on the page; the page has: ${seen(ui)}`);
+    const drawn = [...ui.env.root.querySelectorAll('[data-testid=composer-controller] [data-action]')].map(element => [element.getAttribute('data-action'), element.getAttribute('data-testid')]);
+    assert.deepEqual(drawn, actions, `${id}: the strip drawn`);
+  });
 }

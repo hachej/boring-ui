@@ -222,9 +222,27 @@ export const TOGETHER_QUERY = `(width >= ${TOGETHER_FROM}px)`;
 /** The PM column's width in px (26rem): while it is open beside the dock, the dock leaves the screen its least width beside both. */
 export const PM_COLUMN = 416;
 export const MIN_MAIN = 360;
+export type ComposerLauncher = 'bar' | 'circle' | 'tab' | 'header';
+/** The normalised flags every consumer reads. */
+export interface ResolvedComposer {
+  readonly launcher: ComposerLauncher;
+  readonly sizes: readonly ConversationSize[];
+  readonly dock: boolean;
+  /** The bar may float and fold to its circle (the old `floatable`). */
+  readonly floatable: boolean;
+  /** One column of page content with the field under it (`content` and `bar`). */
+  readonly contentColumn: boolean;
+  /** The one composer: a bar that grows through the sizes (`bar`), with its phone peek, strip and library. */
+  readonly bar: boolean;
+  /** A tab at the edge opening a side panel (`explore`). */
+  readonly explore: boolean;
+}
+
 export interface Internal extends Omit<AgentLayerApi, 'agent'> {
   /** `floatingComposer`: the composer may float and fold (the shell's `floatingComposer` prop, or the standalone entry). */
   readonly floatable: boolean;
+  /** The `composer` string resolved to flags (composer-config): what the layer used to learn by comparing strings. */
+  readonly composerFlags: ResolvedComposer;
   /** False for the standalone entry: no dock column beside the page, so no action docks the conversation to a side. */
   readonly docks: boolean;
   readonly floatPos: FloatPos;

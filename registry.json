@@ -2851,6 +2851,11 @@
           "target": "components/app-shell/compact.ts"
         },
         {
+          "path": "registry/app-shell/composer-config.ts",
+          "type": "registry:hook",
+          "target": "components/app-shell/composer-config.ts"
+        },
+        {
           "path": "registry/app-shell/sidebar-resize.tsx",
           "type": "registry:component",
           "target": "components/app-shell/sidebar-resize.tsx"
