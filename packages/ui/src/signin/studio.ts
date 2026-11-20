@@ -6,13 +6,16 @@
 //   the client Studio registered when it linked the app). The app stores Studio's `sub` on the person's `studio` account.
 // - Owner in the app = a `studio` account whose `sub` is on Studio's current signed list. A direct sign-up with an owner's e-mail has no
 //   `studio` account, so no role; a person removed in Studio drops off the list, so loses the role within the cache's few minutes.
-import { createLocalJWKSet, jwtVerify } from 'jose';
+import { createLocalJWKSet, decodeProtectedHeader, jwtVerify } from 'jose';
 
 export const STUDIO = 'studio';
 export const STUDIO_SCOPES = ['openid', 'profile', 'email'];
 /** The audience of Studio's owner list. */
 export const OWNERS_AUDIENCE = 'boring-studio-owners';
 const LIST_TTL_MS = 3 * 60 * 1000;
+const PASS_KEYS_TTL_MS = 5 * 60 * 1000;
+const PASS_REFETCH_MS = 30 * 1000;
+const PASS_SECONDS = 300;
 
 export interface StudioClientOptions {
   /** Studio's origin, such as `https://studio.example`. */
@@ -23,11 +26,15 @@ export interface StudioClientOptions {
   readonly clientId: string;
   /** How this Worker reaches Studio: a service binding's fetch, or the global fetch (needs `global_fetch_strictly_public` on workers.dev). */
   readonly fetch?: typeof fetch;
+  /** The creator's Studio id (`sub`): the first valid pass of this person, whom Studio's signed owner list names, makes their user and `studio` account in the app (no invitation), so they reach `/mcp` with no prior sign-in. Never matched by e-mail; unset or empty, no record is ever made by a pass. */
+  readonly owner?: string | undefined;
   /** How long the app keeps Studio's owner list and keys before asking again: 3 minutes by default. */
   readonly ownersTtlMs?: number | undefined;
 }
 
 export interface Owner { readonly sub: string }
+/** Who Studio's pass vouches for: its user id, e-mail and name, nothing else (the role is the app's own). */
+export interface PassClaims { readonly sub: string; readonly email: string; readonly name?: string | undefined }
 
 /** The redirect address of an app's Studio round trip. */
 export const studioCallback = (appOrigin: string) => `${new URL(appOrigin).origin}/api/auth/callback/${STUDIO}`;
@@ -42,6 +49,35 @@ export function studioLink(studio: StudioClientOptions) {
   const keySet = async () => {
     if (!keys || Date.now() - keys.at > LIST_TTL_MS) keys = { at: Date.now(), set: createLocalJWKSet(await (await get(`${issuer}/jwks`)).json() as never) };
     return keys.set;
+  };
+  // Studio's pass keys (`/.well-known/jwks.json`): kept 5 minutes, fetched again on an unknown kid at most every 30 s, one fetch for a burst.
+  let passKeys: { at: number; kids: Set<string | undefined>; set: ReturnType<typeof createLocalJWKSet> } | undefined;
+  let passFetch: { at: number; done: Promise<void> } | undefined;
+  const loadPassKeys = async () => {
+    const r = await get(`${studio.origin}/.well-known/jwks.json`);
+    const jwks = await r.json() as { keys?: { kid?: string }[] };
+    if (!r.ok || !Array.isArray(jwks.keys) || !jwks.keys.length) throw new Error('Studio served no pass keys');
+    passKeys = { at: Date.now(), kids: new Set(jwks.keys.map((k) => k.kid)), set: createLocalJWKSet(jwks as never) };
+  };
+  const passKeySet = async (kid: string | undefined) => {
+    const now = Date.now();
+    if (!passKeys || now - passKeys.at > PASS_KEYS_TTL_MS || (kid !== undefined && !passKeys.kids.has(kid))) {
+      if (!passFetch || now - passFetch.at >= PASS_REFETCH_MS) passFetch = { at: now, done: loadPassKeys().catch(() => undefined) };
+      await passFetch.done;
+    }
+    if (!passKeys || Date.now() - passKeys.at > PASS_KEYS_TTL_MS) throw new Error('no fresh pass keys');
+    return passKeys.set;
+  };
+  /** Studio's pass (a 5-minute EdDSA JWT, issuer Studio's origin, audience this app's name): who it vouches for, or undefined for any other token. */
+  const verifyPass = async (token: string): Promise<PassClaims | undefined> => {
+    try {
+      const { alg, kid } = decodeProtectedHeader(token);
+      if (alg !== 'EdDSA') return undefined;
+      const { payload } = await jwtVerify(token, await passKeySet(kid), { issuer: studio.origin, audience: studio.app, algorithms: ['EdDSA'], requiredClaims: ['exp', 'iat', 'sub', 'email'] });
+      const { sub, email, aud, exp, iat } = payload;
+      if (aud !== studio.app || typeof sub !== 'string' || !sub || typeof email !== 'string' || !email || exp! - iat! > PASS_SECONDS) return undefined;
+      return { sub, email, name: typeof payload['name'] === 'string' ? payload['name'].trim() : undefined };
+    } catch { return undefined; }
   };
   /** The Studio ids of Studio's owners now; empty when Studio cannot be reached or its token does not check (no owner, never a guess). */
   const ownerSubs = async (): Promise<Set<string>> => {
@@ -86,5 +122,5 @@ export function studioLink(studio: StudioClientOptions) {
         name: typeof info['name'] === 'string' && info['name'] ? info['name'] : info['email'] };
     },
   });
-  return { ownerSubs, provider, entry: `${studio.origin}/?app=${encodeURIComponent(studio.app)}` };
+  return { ownerSubs, verifyPass, provider, entry: `${studio.origin}/?app=${encodeURIComponent(studio.app)}` };
 }
