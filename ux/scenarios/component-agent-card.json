@@ -1,6 +1,9 @@
 {
  "target": "component:agent-card",
  "title": "Agent cards",
+ "group": "Start here",
+ "hint": "the ladder, folded to open",
+ "order": 3,
  "summary": "One unit of agent work (a run, a task, a job) as a card that keeps working while folded: a status chip, one line of activity, a decision on the card, and the composer's levels on a strip.",
  "purpose": "AgentCard and AgentChat over a scripted agent: one card per state (queued, running, needs you, done, failed) with three agents in three colours, plus a task card (the same card with a meta). Folded, a card shows the agent's colour dot, a title, a status chip and one line; a decision the agent waits for shows on the folded card. The strip on its lower border is one ladder, a step at a time: chat bubble, composer, a small tray (the conversation and its field), the whole chat; Dock at every step.",
  "try": [

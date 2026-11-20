@@ -1,6 +1,8 @@
 {
  "target": "component:sign-in",
  "title": "Sign-in page",
+ "group": "Reference",
+ "hint": "e-mail, Google, invitation",
  "summary": "The sign-in page of an app: e-mail and password, Google, account creation by invitation, the one-use first-owner link.",
  "purpose": "The registry block's SignInPage alone over a fake Worker, in Coach Max's theme (lime primary on paper, light and dark), in French and English. A person opens it for the first time, switches between sign-in and account creation, signs in with a wrong password and then the right one; opened from the first-owner link it waits for the Worker, then shows the owner's sign-up for a good link and a refusal above the ordinary form for a used or unknown one.",
  "fixture": {

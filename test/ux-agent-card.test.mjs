@@ -166,7 +166,7 @@ test('the showcase site lists Agent cards and plays the page', { skip, timeout: 
   t.after(() => browser.close());
   const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
-  assert.ok((await page.locator('#pages option').allTextContents()).includes('Agent cards'), 'the top bar menu lists Agent cards');
+  assert.ok((await page.locator('#sw-list .sw-title').allTextContents()).includes('Agent cards'), 'the page switcher lists Agent cards');
   const demo = page.frameLocator('#demo');
   await demo.locator(task('needs', 'approval-card')).waitFor({ timeout: 30000 });
   await demo.locator(task('done', 'agent-card-chat')).click();

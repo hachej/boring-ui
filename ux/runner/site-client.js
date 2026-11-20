@@ -14,7 +14,57 @@
     try { frame?.contentDocument.documentElement.classList.toggle('dark', next === 'dark'); } catch { /* not loaded */ }
   };
   $('#theme')?.addEventListener('click', () => setTheme(theme === 'dark' ? 'light' : 'dark'));
-  $('#pages')?.addEventListener('change', e => { location.href = e.target.value; });
+  // The bar's popovers: the page switcher (search, groups) and the Options menu. One open at a time; Esc closes and gives the focus back to its button.
+  const pop = { pages: ['#pages', '#sw-panel'], options: ['#options', '#options-panel'], more: ['#more', '#tools'] };
+  const isOpen = key => { const [b] = pop[key]; return $(b)?.getAttribute('aria-expanded') === 'true'; };
+  const close = (key, back) => {
+    const [b, p] = pop[key].map(s => $(s)); if (!b) return;
+    b.setAttribute('aria-expanded', 'false'); if (key === 'more') p.classList.remove('open'); else p.hidden = true;
+    if (key === 'pages') { const bd = $('#sw-backdrop'); if (bd) bd.hidden = true; document.body.classList.remove('sheet-open'); }
+    if (back) b.focus();
+  };
+  const closeAll = except => { for (const key of Object.keys(pop)) if (key !== except && isOpen(key)) close(key); };
+  const open = key => {
+    closeAll(key === 'options' && isOpen('more') ? 'more' : key);
+    const [b, p] = pop[key].map(s => $(s)); if (!b) return;
+    b.setAttribute('aria-expanded', 'true'); if (key === 'more') p.classList.add('open'); else p.hidden = false;
+    if (key === 'pages') { $('#sw-backdrop').hidden = false; document.body.classList.add('sheet-open'); const input = $('#sw-search'); input.value = ''; filter(); input.focus(); }
+    if (key === 'options') $('.menu-item:not([hidden])', p)?.focus();
+  };
+  const toggle = key => (isOpen(key) ? close(key, true) : open(key));
+  const filter = () => {
+    const words = $('#sw-search').value.toLowerCase().split(/\s+/).filter(Boolean);
+    let any = false;
+    $$('#sw-list .sw-item').forEach(a => { const show = words.every(w => a.dataset.find.includes(w)); a.hidden = !show; any ||= show; });
+    $$('#sw-list [data-sw-group]').forEach(g => { g.hidden = !$$('.sw-item', g).some(a => !a.hidden); });
+    $('#sw-empty').hidden = any;
+  };
+  const visibleItems = () => $$('#sw-list .sw-item').filter(a => !a.hidden);
+  $('#pages')?.addEventListener('click', () => toggle('pages'));
+  $('#options')?.addEventListener('click', () => toggle('options'));
+  $('#more')?.addEventListener('click', () => toggle('more'));
+  $('#sw-backdrop')?.addEventListener('click', () => close('pages', true));
+  $('#sw-search')?.addEventListener('input', filter);
+  $('#sw-panel')?.addEventListener('keydown', e => {
+    const items = visibleItems(), at = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); (items[at + 1] ?? items[0])?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (at <= 0) $('#sw-search').focus(); else items[at - 1].focus(); }
+    else if (e.key === 'Enter' && document.activeElement === $('#sw-search')) { e.preventDefault(); items[0]?.click(); }
+  });
+  $('#options-panel')?.addEventListener('keydown', e => {
+    const items = $$('.menu-item', $('#options-panel')).filter(b => !b.hidden), at = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); items[(at + 1) % items.length]?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(at - 1 + items.length) % items.length]?.focus(); }
+  });
+  $('#options-panel')?.addEventListener('click', e => { if (e.target.closest('.menu-item')) close('options', true); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { const key = Object.keys(pop).find(isOpen); if (key) { e.preventDefault(); close(key, true); } return; }
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
+    if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') || (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey)) { if (!$('#pages')) return; e.preventDefault(); if (!isOpen('pages')) open('pages'); else $('#sw-search').focus(); }
+  });
+  // A click inside the demo frame does not reach this document; the focus moving into the frame closes the popovers.
+  addEventListener('blur', () => { if (document.activeElement === $('#demo')) closeAll(); });
+  document.addEventListener('click', e => { for (const key of Object.keys(pop)) if (isOpen(key) && !e.target.closest(`${pop[key][1]}, ${pop[key][0]}`)) close(key); });
   $('#menu')?.addEventListener('click', () => { const open = document.body.classList.toggle('nav-open'); $('#menu').setAttribute('aria-expanded', String(open)); });
   $$('.side a').forEach(a => a.addEventListener('click', () => document.body.classList.remove('nav-open')));
   $$('[data-copy]').forEach(b => b.addEventListener('click', async () => {
@@ -39,7 +89,11 @@
     const mark = () => {
       $$('[data-vp]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.vp === vp)));
       $$('[data-try]').forEach(b => { b.hidden = !D.tries[+b.dataset.try].steps[D.views[vp].name]; });
-      $$('[data-variant]').forEach(b => { const v = D.variants[+b.dataset.variant]; b.setAttribute('aria-pressed', String(v.query === extra)); b.hidden = !!v.only && v.only !== D.views[vp].name; });
+      $$('[data-variant]').forEach(b => { const v = D.variants[+b.dataset.variant]; b.setAttribute('aria-pressed', String(v.query === extra)); b.setAttribute('aria-checked', String(v.query === extra)); b.hidden = !!v.only && v.only !== D.views[vp].name; });
+      $$('.menu-section').forEach(s => { s.hidden = !$$('.menu-item', s).some(b => !b.hidden); });
+      // Only a non-default choice shows in the bar.
+      const chip = $('#options-chip'), on = D.variants.find(v => v.query === extra && extra);
+      if (chip) { chip.hidden = !on; chip.textContent = on ? on.label + ' ×' : ''; chip.title = 'Back to the default'; }
     };
     const load = () => new Promise(done => {
       const v = D.views[vp], url = D.base + 'demo.html?' + [v.query, extra, theme === 'dark' ? 'dark=1' : ''].filter(Boolean).join('&');
@@ -48,27 +102,33 @@
       frame.contentWindow.location.replace(url);
     });
     $$('[data-vp]').forEach(b => b.addEventListener('click', () => { vp = +b.dataset.vp; try { localStorage.setItem('ux-view', D.views[vp].phone ? 'phone' : 'desktop'); } catch { /* private mode */ } void load(); }));
-    $$('[data-variant]').forEach(b => b.addEventListener('click', () => { const q = D.variants[+b.dataset.variant].query; extra = extra === q ? '' : q; void load(); }));
+    // A start state is also in the page's address (?state=tray), so a link reproduces it; the demo's own address is unchanged.
+    const slug = label => label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const choose = q => {
+      extra = q;
+      const v = D.variants.find(x => x.query === q);
+      try { const url = new URL(location.href); if (v) url.searchParams.set('state', slug(v.label)); else url.searchParams.delete('state'); history.replaceState(null, '', url); } catch { /* not a page address */ }
+    };
+    $$('[data-variant]').forEach(b => b.addEventListener('click', () => { const q = D.variants[+b.dataset.variant].query; choose(extra === q ? '' : q); void load(); }));
+    $('#options-chip')?.addEventListener('click', () => { choose(''); void load(); });
+    const fromAddress = new URLSearchParams(location.search).get('state'), first = D.variants.find(v => slug(v.label) === fromAddress);
+    if (first) extra = first.query;
     // The top bar's Play menu (and the page's own buttons): the scenario's "things to try", each reloads the demo and plays its steps in it.
     const playTry = async index => {
       const item = D.tries[index];
-      $$('[data-try]').forEach(x => { x.disabled = true; });
+      $$('[data-try]:not(.menu-item)').forEach(x => { x.disabled = true; });
       status && (status.textContent = 'Loading the demo…');
       extra = item.query || '';
       await load(); const mine = run; await ready(D.ready); await sleep(400);
       const steps = item.steps[D.views[vp].name];
-      if (!steps) { $$('[data-try]').forEach(x => { x.disabled = false; }); status && (status.textContent = ''); return; }
+      if (!steps) { $$('[data-try]:not(.menu-item)').forEach(x => { x.disabled = false; }); status && (status.textContent = ''); return; }
       status && (status.textContent = 'Playing: ' + item.label);
       const ok = await play(steps, () => mine === run);
-      $$('[data-try]').forEach(x => { x.disabled = false; });
+      $$('[data-try]:not(.menu-item)').forEach(x => { x.disabled = false; });
       status && (status.textContent = mine !== run ? '' : ok ? 'Done. Keep going in the demo.' : 'Stopped: this step did not complete.');
     };
     $$('[data-try]').forEach(b => b.addEventListener('click', () => { void playTry(+b.dataset.try); }));
-    $('#play')?.addEventListener('change', event => {
-      const value = event.target.value; event.target.value = '';
-      if (value === 'reset') { void load(); return; }
-      if (value !== '') void playTry(+value);
-    });
+    $('[data-reset]')?.addEventListener('click', () => { void load(); });
     addEventListener('resize', size);
     void load();
   }

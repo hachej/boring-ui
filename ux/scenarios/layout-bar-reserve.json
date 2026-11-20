@@ -1,6 +1,8 @@
 {
  "target": "layout:bar-reserve",
  "title": "Bar reserve",
+ "group": "Composer and layout",
+ "hint": "room above the bar",
  "site": false,
  "summary": "The shell keeps the assistant's bar from covering the end of a screen: the last control of a long list, and a screen's own bottom bar, stay above it.",
  "try": [

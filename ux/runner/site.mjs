@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { root } from './build.mjs';
 import { slug } from './scenario.mjs';
 import { framePage, page } from './site-chrome.mjs';
-import { frameBody, summary, targetBody } from './site-page.mjs';
+import { frameBody, summary, targetBody, variants } from './site-page.mjs';
 import { siteCss } from './site-theme.mjs';
 
 const json = file => JSON.parse(readFileSync(file, 'utf8'));
@@ -40,7 +40,8 @@ export async function site({ from, out, scenarios = [] }) {
     copyTarget(from, out, name, hasDemo);
     cards.push({ name, meta, result, scenario: hasDemo ? scenario : undefined, kitVersion: meta.kitVersion, sum: summary(scenario, result) });
   }
-  const nav = cards.map(c => ({ name: c.name, meta: { ...c.meta, kitVersion: c.kitVersion } }));
+  // The switcher's group, one-line hint and order come from the page's scenario; its search also reads the page's start-state names.
+  const nav = cards.map(c => ({ name: c.name, meta: { ...c.meta, kitVersion: c.kitVersion, group: c.scenario?.group, hint: c.scenario?.hint, order: c.scenario?.order, keys: c.scenario ? variants(c.scenario).map(v => v.label) : [] } }));
   // A page with a demo is the top bar and the app in a frame; a target without one keeps the documentation page.
   const frame = (c, depth) => framePage({ title: depth ? `${c.meta.title} · Boring UI` : 'Boring UI', description: c.meta.purpose, depth, cards: nav, current: c.name, body: frameBody(c.scenario, depth ? '' : `${c.name}/`) });
   for (const c of cards) {
