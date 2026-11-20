@@ -61,10 +61,12 @@ async function render(t, sceneId) {
   const act = async run => { await reactAct(async () => { await run(); }); };
   let notices = [];
   let dock = null;
+  // A scene with `handoff` is a circle whose Open in full goes to the app's own page: the page is a div that shows once the hand-off ran, and the circle is suspended while it shows.
+  let page = null;
   const draw = () => {
     const props = scene.props ?? {};
     const element = scene.kind === 'shell' ? h(kit.AppShell, { layout: 'screen', title: 'Orders app', nav, route: { id: 'Orders', onChange() {} }, agent, notices, ...props })
-      : scene.kind === 'standalone' ? h(kit.FloatingComposer, { agent, ...props })
+      : scene.kind === 'standalone' ? h('div', null, h(kit.FloatingComposer, { agent, ...props, ...(scene.handoff ? { composer: { ...props.composer, handoff: { openFull: id => { page = id; rootNode.render(draw()); } }, suspended: page !== null } } : {}) }), page !== null && h('div', { 'data-atlas-page': '' }, `Full page of conversation ${page}`))
       : scene.kind === 'card' ? h('div', null, h(kit.AgentCard, { controller: link.controller, agent: { name: 'Reader', color: 'chart-2' }, title: 'Read the supplier invoices', dock, chatProps: { actions: demo.actions }, ...props }), h('div', { 'data-testid': 'atlas-dock', ref: node => { if (node && node !== dock) { dock = node; setTimeout(() => { void act(async () => rootNode.render(draw())); }, 0); } } }))
       : h('div', { style: { height: 400 } }, h(kit.AgentChat, { controller: link.controller, agent: { name: 'Reader', color: 'chart-2' }, title: 'Read the supplier invoices', chatProps: { actions: demo.actions }, ...props }));
     return element;

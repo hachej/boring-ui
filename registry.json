@@ -2856,6 +2856,21 @@
           "target": "components/app-shell/composer-config.ts"
         },
         {
+          "path": "registry/app-shell/composer-input.ts",
+          "type": "registry:hook",
+          "target": "components/app-shell/composer-input.ts"
+        },
+        {
+          "path": "registry/app-shell/composer-stack.ts",
+          "type": "registry:hook",
+          "target": "components/app-shell/composer-stack.ts"
+        },
+        {
+          "path": "registry/app-shell/composer-circle.tsx",
+          "type": "registry:component",
+          "target": "components/app-shell/composer-circle.tsx"
+        },
+        {
           "path": "registry/app-shell/sidebar-resize.tsx",
           "type": "registry:component",
           "target": "components/app-shell/sidebar-resize.tsx"

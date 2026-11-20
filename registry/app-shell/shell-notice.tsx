@@ -53,7 +53,7 @@ const TONES = {
 } as const;
 
 /** Notices as the shell shows them: the host's, then the update's. `notices` is newest first. Renders at most one. */
-export function NoticeHost({ notices, text, compact, fadeMs, max }: { readonly notices: readonly AppShellNotice[]; readonly text: AppShellText; readonly compact: boolean; readonly fadeMs?: number | undefined; readonly max?: number | undefined }): ReactNode {
+export function NoticeHost({ notices, text, compact, fadeMs, max, reserve = false }: { readonly notices: readonly AppShellNotice[]; readonly text: AppShellText; readonly compact: boolean; readonly fadeMs?: number | undefined; readonly max?: number | undefined; /** The shell's row at the foot of the screen: a circle launcher's footprint (`--composer-reserve-inline`) is kept free at its end, so the row never runs under the circle. */ readonly reserve?: boolean }): ReactNode {
   // Read here, not in the shell: only a shell with notices follows the layer's snaps (a shell that reads the layer re-renders its screens with it).
   const layer = useInternal();
   const [gone, setGone] = useState<readonly string[]>([]);
@@ -81,7 +81,7 @@ export function NoticeHost({ notices, text, compact, fadeMs, max }: { readonly n
   const lift = compact && layer.snap === 'peek' ? `calc(${layer.peekPoint} - ${layer.tabbar}px)` : undefined;
   const mentions = layer.agent?.chatProps?.mentions !== undefined;
   const touch = 'max-md:min-h-11 pointer-coarse:min-h-11';
-  return <div data-testid={ids.root} data-notice-kind={shown.kind} data-version={shown.own?.version} data-feedback-ignore="" style={lift ? { marginBottom: lift } : undefined} className="shrink-0 touch-pan-y px-[var(--screen-gutter,1rem)] py-2"
+  return <div data-testid={ids.root} data-notice-kind={shown.kind} data-version={shown.own?.version} data-feedback-ignore="" style={lift || (reserve && layer.circle) ? { ...(lift ? { marginBottom: lift } : {}), ...(reserve && layer.circle ? { paddingInlineEnd: 'max(var(--screen-gutter, 1rem), calc(var(--composer-reserve-inline, 0px) + 0.5rem))' } : {}) } : undefined} className="shrink-0 touch-pan-y px-[var(--screen-gutter,1rem)] py-2"
     onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)} onFocus={() => setHeld(true)} onBlur={() => setHeld(false)}
     onPointerDown={event => { if (event.pointerType !== 'mouse') setPress({ x: event.clientX, y: event.clientY }); }}
     onPointerUp={event => { const start = press; setPress(undefined); if (start && event.clientX - start.x <= -SWIPE && Math.abs(event.clientY - start.y) < SWIPE / 2) dismiss(); }} onPointerCancel={() => setPress(undefined)}>

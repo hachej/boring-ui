@@ -14,9 +14,11 @@ import { Button } from '@/components/ui/button';
 import { AccountAvatar, AccountChoices } from './account';
 import type { AccountSpec } from './account';
 import { AgentDockLayout, AgentLayer, AgentLayerProvider } from './agent-layer';
-import type { AgentComposer, ExploreContext } from './agent-layer';
+import type { ExploreContext } from './agent-layer';
 import type { AgentSpec } from './agent-layer';
 import { resolveComposer } from './composer-config';
+import type { ComposerInput } from './composer-config';
+import { useComposerInput } from './composer-input';
 import { NoPanelLayout } from './shell-panel';
 import type { ShellPanel } from './shell-panel';
 import { ScreenActiveContext, useAgentContext } from './agent-context';
@@ -53,8 +55,9 @@ export interface AppShellProps {
    */
   readonly sidebar?: false;
   readonly agent?: AgentSpec;
-  /** Where the assistant's field sits on a wide screen: `dock` (default) in the dock under the thread; `content` pinned under the page content, at the content's width, with the dock holding only the thread (a send, or `talkAbout`, opens it); `bar`, the one composer (D-2198): as `content`, one row (chevron, attach, field, Dicter/Envoyer/Arrêter), the work or reply as a card on the folded field, the field going with the thread when docked, and `useAgentLayer().preview`. A phone keeps the peek drawer either way. `explore`: closed on every visit, with only a small « Ask » toggle at the bottom right (the unread dot and the needs-you ring as the icon has them; Ctrl or Cmd + J toggles); open, a right panel that pushes the page from 1100 px, overlays it below that and is a bottom sheet on a phone, its width resizable and remembered, Esc closing it. It replaces the icon of `floatingComposer` (they are not combined). */
-  readonly composer?: AgentComposer;
+  /** Where the assistant's field sits on a wide screen: `dock` (default) in the dock under the thread; `content` pinned under the page content, at the content's width, with the dock holding only the thread (a send, or `talkAbout`, opens it); `bar`, the one composer (D-2198): as `content`, one row (chevron, attach, field, Dicter/Envoyer/Arrêter), the work or reply as a card on the folded field, the field going with the thread when docked, and `useAgentLayer().preview`. A phone keeps the peek drawer either way. `explore`: closed on every visit, with only a small « Ask » toggle at the bottom right (the unread dot and the needs-you ring as the icon has them; Ctrl or Cmd + J toggles); open, a right panel that pushes the page from 1100 px, overlays it below that and is a bottom sheet on a phone, its width resizable and remembered, Esc closing it. It replaces the icon of `floatingComposer` (they are not combined).
+   * Or the config object (`ComposerConfig`, e.g. `{ launcher: 'circle', handoff: { openFull } }`: a round launcher that opens one panel, stacks with others, steps around `avoid` rectangles and hands the conversation to the app's full page), or a function of `{ phone, width, route }` that gives one. The strings are presets of it and stay. */
+  readonly composer?: ComposerInput;
   /**
    * `composer="explore"`: what the person is looking at (`{ title, detail? }`), shown at the top of the panel as « You are looking at » and sent to the agent with each turn (`readAgentContext().params.lookingAt`).
    * Absent: nothing is shown and nothing is sent.
@@ -183,7 +186,7 @@ function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title,
         <ShellContext name={active.label} />
         <ScreenHeader fallbackTitle={single ? title : active.label} compact={compact} leadingAvatar={single} trigger={!(single && bar)} avatar={avatar} menu={sheet} screenSidebar={compact && !sheet && active.sidebar ? <ScreenSidebarSheet key={active.id} item={active} text={text} /> : undefined} text={text} slotRef={setSlot} mcp={mcp} />
         <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} centred={single} bar={bar} />
-        <NoticeHost notices={own ? [...notices, own] : notices} text={text} compact={compact} />
+        <NoticeHost notices={own ? [...notices, own] : notices} text={text} compact={compact} reserve />
       </Layout>
       </div>
     </AgentDockLayout>
@@ -201,9 +204,11 @@ export function AppShell(props: AppShellProps) {
   const text = { ...appShellText(locale), ...agent?.words };
   const mcp = props.mcp && { ...props.mcp, locale: props.mcp.locale ?? (locale === 'fr' ? 'fr' : 'en') };
   useOverlayBlur(props.overlayBlur ?? false);
+  // `composer` is a preset string, a config object (`launcher: 'circle'`...) or a function of `{ phone, width, route }` that gives one; the layer and the shell read it resolved.
+  const composer = useComposerInput(props.composer, route.id);
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;
-  return <AgentLayerProvider agent={agent} composer={props.composer} context={props.context} floating={props.floatingComposer === true} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title} modeIdentity={{ app: props.appId || title, person: account?.email, screen: layout === 'screen' }}>
-    <HeaderProvider><Shell single={props.sidebar === false} bar={resolveComposer({ composer: props.composer, floatingComposer: props.floatingComposer === true }).flags.bar} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} update={props.update} notices={props.notices ?? NONE} mcp={mcp} /></HeaderProvider>
+  return <AgentLayerProvider agent={agent} composer={composer} context={props.context} floating={props.floatingComposer === true} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title} modeIdentity={{ app: props.appId || title, person: account?.email, screen: layout === 'screen' }}>
+    <HeaderProvider><Shell single={props.sidebar === false} bar={resolveComposer({ composer, floatingComposer: props.floatingComposer === true }).flags.bar} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} update={props.update} notices={props.notices ?? NONE} mcp={mcp} /></HeaderProvider>
   </AgentLayerProvider>;
 }

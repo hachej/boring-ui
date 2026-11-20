@@ -17,15 +17,23 @@ test('every atlas state has a strip decided: in the table or with a reason', () 
 });
 
 test('the bar with floatingComposer resolves to today\'s strip in every state of the atlas', () => {
-  for (const [id, { state, actions }] of Object.entries(STRIPS)) {
+  for (const [id, { state, actions, composer }] of Object.entries(STRIPS)) {
+    if (composer) continue; // another composer: the next test
     const got = resolveComposer({ composer: 'bar', floatingComposer: true, state }).actions;
     assert.deepEqual(ids(got), actions, `${id}: the strip's actions and order`);
   }
 });
 
+test('a state with its own composer resolves to its strip from that config', () => {
+  for (const [id, { state, actions, composer, standalone }] of Object.entries(STRIPS)) {
+    if (!composer) continue;
+    assert.deepEqual(ids(resolveComposer({ composer, state, standalone }).actions), actions, `${id}: the strip's actions and order`);
+  }
+});
+
 test('the strip without floating offers no float or minimise; the config of the preset resolves to the same strip as the string', () => {
-  for (const [id, { state }] of Object.entries(STRIPS)) {
-    if (state.place === 'float') continue; // a plain bar never floats: those states are unreachable
+  for (const [id, { state, composer }] of Object.entries(STRIPS)) {
+    if (composer || state.place === 'float') continue; // a plain bar never floats: those states are unreachable
     const plain = resolveComposer({ composer: 'bar', state }).actions.map(action => action.key);
     assert.ok(!plain.includes('float') && !plain.includes('minimise'), `${id}: ${plain}`);
     for (const [name, config, floating] of [['bar', COMPOSER_PRESETS.bar, false], ['bar+floating', BAR_FLOATING_PRESET, true]]) {

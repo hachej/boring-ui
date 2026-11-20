@@ -117,7 +117,7 @@ export type FloatCorner = 'tl' | 'tr' | 'bl' | 'br';
 /** The floating bar's place: a corner (it stays there when the window resizes) or free, in px from the window's top left. */
 export type FloatPos = { readonly corner: FloatCorner } | { readonly left: number; readonly top: number };
 /** What the icon shows of the conversation: what is unread, and whether a decision waits for the person. */
-export interface ComposerSignals { readonly unread: { readonly label: string; readonly count?: number | undefined } | undefined; readonly needsYou: boolean; /** A run is under way: the folded icon pulses a ring round itself. */ readonly working?: boolean }
+export interface ComposerSignals { readonly unread: { readonly label: string; readonly count?: number | undefined } | undefined; readonly needsYou: boolean; /** A run is under way: the folded icon pulses a ring round itself. */ readonly working?: boolean; /** Notes taken while annotating (the pointing tool): the circle and the tab show the count. */ readonly notes?: number }
 export interface AgentLayerApi {
   readonly agent: NativeChatController | undefined;
   /** `floatingComposer`: where the one composer sits now. A phone never floats: `float` reads as `bottom` there. Always `bottom` without the prop. */
@@ -137,6 +137,8 @@ export interface AgentLayerApi {
   readonly status: (text: string) => void;
   /** The status on show, if any. */
   readonly fieldStatus: string | undefined;
+  /** What the folded launcher carries: what is unread, a decision that waits, a run under way and the notes taken. A host can badge its own nav with it. */
+  readonly signals: ComposerSignals;
   readonly expanded: boolean;
   /**
    * `composer: 'bar'` (D-2198): shows the app's preview of a file (dropped, attached or cited) in the right column, or full screen on a phone. The column holds one
@@ -236,6 +238,10 @@ export interface ResolvedComposer {
   readonly bar: boolean;
   /** A tab at the edge opening a side panel (`explore`). */
   readonly explore: boolean;
+  /** A round launcher in a corner that opens one panel (`launcher: 'circle'`). */
+  readonly circle: boolean;
+  /** The config's `id` (storage keys, `data-composer`); absent for the presets. */
+  readonly id: string | undefined;
 }
 
 export interface Internal extends Omit<AgentLayerApi, 'agent'> {
@@ -243,6 +249,10 @@ export interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly floatable: boolean;
   /** The `composer` string resolved to flags (composer-config): what the layer used to learn by comparing strings. */
   readonly composerFlags: ResolvedComposer;
+  /** The composer config object the layer was given (`undefined` for a string preset), read through `current` so a new object each render changes nothing. Typed by `configOf` in composer-config.ts (this file imports nothing from it). */
+  readonly composerConfig: { readonly current: unknown };
+  /** `circle`: the full page is on show (`suspended`): the launcher is hidden and the conversation is read. */
+  readonly suspended: boolean;
   /** False for the standalone entry: no dock column beside the page, so no action docks the conversation to a side. */
   readonly docks: boolean;
   readonly floatPos: FloatPos;
@@ -326,6 +336,8 @@ export interface Internal extends Omit<AgentLayerApi, 'agent'> {
   readonly bar: boolean;
   /** `composer: 'explore'`: closed by default, an « Ask » toggle at the bottom right, the panel on demand. */
   readonly explore: boolean;
+  /** `launcher: 'circle'`: a round launcher that opens one panel (the phone's panel is the bottom sheet). */
+  readonly circle: boolean;
   /** `composer: 'explore'` with the app's `context`: shown in the panel and sent with the turn; undefined when the app gives none. */
   readonly lookingAt: ExploreContext | undefined;
   /** The panel's width in px when the person dragged it (`undefined`: the default); stored per app and person. */

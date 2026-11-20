@@ -50,6 +50,8 @@ const Section = ({ id, title, children }) => <section data-testid={`ds-${id}`} c
 const lang = new URLSearchParams(location.search).get('lang') === 'fr' ? 'fr' : 'en';
 // `?composer=explore`: the same page in the explore mode (closed, an Ask toggle at the bottom right, the panel on demand) instead of the bar.
 const explore = new URLSearchParams(location.search).get('composer') === 'explore';
+// `?composer=circle`: the same page with the circle launcher (a round button that opens one panel; Open in full goes to the app's own page): the Atlas's circle thumbnails.
+const circle = new URLSearchParams(location.search).get('composer') === 'circle';
 const Row = ({ children }) => <div className="flex flex-wrap items-center gap-2">{children}</div>;
 
 // The « Agent cards » section: the kit's AgentCard for three agents in their colours (Reader, Mailer, Ledger) and a task card, folded by default;
@@ -158,6 +160,7 @@ const attachments = { upload: async files => files.map(file => ({ name: file.nam
 const nav = [
   { id: 'design', label: 'Design system', icon: FileTextIcon, render: () => <ScreenBody><Page /></ScreenBody> },
   { id: 'empty', label: 'Empty app view', icon: FolderIcon, render: () => <ScreenBody><Placeholder /></ScreenBody> },
+  ...(circle ? [{ id: 'support', label: 'Support page', icon: FolderIcon, render: () => <ScreenBody><p data-atlas-page="" className="m-0 p-4">The whole conversation, on the app's own page.</p></ScreenBody> }] : []),
 ];
 const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the change', icon: <Undo2Icon />, onSelect() { window.__undone = (window.__undone ?? 0) + 1; } }, voice: { transcribe: async () => 'Dictated text (fictional)' }, files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: lang, actions, attachments, mentions, slash, labels: { placeholder: 'Ask, or type /' } } };
 // `?atlas=<state id>`: the page opens in that state of the Composer atlas (a thumbnail of the Atlas page): the state's own steps, run on the real controls.
@@ -172,7 +175,7 @@ function App() {
     return () => clearTimeout(timer);
   }, []);
   notify = kind => { const id = `${kind}-${Date.now()}`; setNotices([{ ...NOTICES[kind], id, onDismiss: () => setNotices(list => list.filter(n => n.id !== id)) }]); };
-  return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} {...(explore ? { composer: 'explore', context: { title: 'Design system', detail: 'The components of the kit, in both themes' } } : { composer: 'bar', floatingComposer: true })} agent={agent} notices={notices}
+  return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} {...(circle ? { composer: { launcher: 'circle', handoff: { openFull: () => setRoute('support') }, suspended: route === 'support' } } : explore ? { composer: 'explore', context: { title: 'Design system', detail: 'The components of the kit, in both themes' } } : { composer: 'bar', floatingComposer: true })} agent={agent} notices={notices}
     account={{ name: 'Visitor', menu: [], theme: { value: theme, onChange: value => { applyTheme(value); setTheme(value); } } }} />;
 }
 createRoot(document.getElementById('root')).render(<App />);

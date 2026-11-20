@@ -105,6 +105,11 @@ function lastTurn(entries: readonly Entry[]): { readonly calls: readonly Call[];
 const ASK = 'ask_user';
 const base = (hint: string) => hint.split('/').filter(Boolean).at(-1) ?? hint;
 
+const readerSets = new WeakMap<object, Set<() => void>>();
+const readersOf = (controller: object): Set<() => void> => { let set = readerSets.get(controller); if (!set) { set = new Set(); readerSets.set(controller, set); } return set; };
+/** The person has seen this conversation elsewhere (its full page): every mounted `useAgentBarChat` on the controller marks its reply read, so no unread dot is left counting it. */
+export function clearUnread(controller: object): void { for (const reader of [...readersOf(controller)]) reader(); }
+
 export function useAgentBarChat(controller: ChatController, options: AgentBarChatOptions = {}): AgentBarChat {
   const { actions, labels, toolLabels, plainTools, workingWords } = options;
   const text = { ...words, ...labels };
@@ -205,6 +210,15 @@ export function useAgentBarChat(controller: ChatController, options: AgentBarCha
   const [unseen, setUnseen] = useState<readonly string[]>([]);
   if (replyKey !== undefined && !unseen.includes(replyKey)) setUnseen([...unseen, replyKey]);
   const markRead = useCallback(() => { if (replyKey !== undefined) setRead(replyKey); setUnseen(keys => keys.length ? [] : keys); }, [replyKey]);
+  // The same conversation may be mounted twice (a circle over a page and a card or a full page): reading it in one clears the count in every one (`clearUnread`).
+  const latestRead = useRef(markRead);
+  useLayoutEffect(() => { latestRead.current = markRead; });
+  useLayoutEffect(() => {
+    const readers = readersOf(controller);
+    const reader = () => latestRead.current();
+    readers.add(reader);
+    return () => { readers.delete(reader); };
+  }, [controller]);
 
   const onCancel = useCallback(() => { void latest.current.controller.stop().catch(() => {}); }, []);
   const onSend = useCallback(({ text: value }: { readonly text: string }) => {

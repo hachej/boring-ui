@@ -21,19 +21,27 @@ import { ChatTextProvider, useChatText } from '../pi-chat/labels';
 import { NoteBubble, useComposerFeedback } from '../feedback/feedback-session';
 import { feedbackLabelsFr } from '../feedback/feedback-labels';
 import { sentFeedbackContent } from '../feedback/sent-content';
-import { usePointing } from '../feedback/point-mode';
+import { useCommenting, usePointing } from '../feedback/point-mode';
 import { cn } from '../utils/utils';
 import { ROW_MENTION, rowMentionKind } from '../viewer-code/row-reference';
 import { CITE_MENTION, citeMentionKind } from './cite-reference';
-import { useAgentBarChat } from '../agent-bar/use-agent-bar-chat';
+import { clearUnread, useAgentBarChat } from '../agent-bar/use-agent-bar-chat';
 import type { ArtifactsConfig, PresentedArtifact } from '../pi-artifacts/artifact';
 import { basename, FileChip, isCitedFile, ReplyActionButton } from './file-chip';
 import type { AppShellLocale, AppShellText } from './text';
 import { HeaderActions } from './header-actions';
+import { configOf } from './composer-config';
 import { chatWordLabels, composerLabels, shellWords, useInternal } from './layer-context';
 import type { AgentSpec, Snap, Which } from './layer-context';
 import { useAutoOpenTasks } from './task-present';
 import { BarMicButton, BarMicCancel, BarMicStatus, ConversationChevron, FoldedCard, SendProblem, TalkButton, useBarMic } from './agent-bar-parts';
+
+/** Whether a circle's panel steps aside for an annotating session: the pointing tool is on and the config's level while annotating (`feedback.while`) is `folded`, the default. */
+export function useCircleCollapsed(): boolean {
+  const layer = useInternal();
+  const annotating = useCommenting(layer.agent?.feedback);
+  return layer.circle && annotating && (configOf(layer)?.feedback?.while ?? 'folded') === 'folded';
+}
 
 /** The bar's icon controls expose the same words on hover and keyboard focus. */
 export function HeaderHint({ label, children }: { readonly label: string; readonly children: ReactElement }) {
@@ -152,9 +160,17 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const readRun = () => Boolean(spec.controller.getSnapshot().view?.docs['pi.live']?.['run']);
   const running = useSyncExternalStore(spec.controller.subscribe, readRun, readRun);
   const working = (running && stop !== 'confirmed') || barChat.status?.state === 'working';
-  useEffect(() => { if (barred || exploring) setSignals({ unread: unreadLabel === undefined ? undefined : { label: unreadLabel, count: unreadCount }, needsYou, working }); }, [barred, exploring, setSignals, unreadLabel, unreadCount, needsYou, working]);
-  const unfolded = (barred && !layer.folded) || (exploring && layer.showing === 'agent');
+  // A circle shows the same signals, and the notes taken while annotating (`useComposerFeedback`'s count).
+  const circling = role === 'agent' && layer.circle;
+  const feedback = useComposerFeedback(spec.feedback);
+  const notes = circling ? feedback?.count ?? 0 : 0;
+  useEffect(() => { if (barred || exploring || circling) setSignals({ unread: unreadLabel === undefined ? undefined : { label: unreadLabel, count: unreadCount }, needsYou, working, ...(circling ? { notes } : {}) }); }, [barred, exploring, circling, setSignals, unreadLabel, unreadCount, needsYou, working, notes]);
+  const collapsed = useCircleCollapsed();
+  const unfolded = (barred && !layer.folded) || (exploring && layer.showing === 'agent') || (circling && layer.snap !== 'closed' && layer.showing === 'agent' && !collapsed);
   useEffect(() => { if (unfolded) markRead(); }, [unfolded, markRead]);
+  // The full page is on show (`suspended`): what arrives meanwhile is read there.
+  const suspended = circling && layer.suspended;
+  useEffect(() => { if (suspended) clearUnread(spec.controller); }, [suspended, unreadCount, spec.controller]);
   // Docked, the bar's field goes with the thread: nothing stays at the bottom.
   const hosted = role === 'agent' && layer.contentComposer && !(barred && layer.dockOpen);
   // A file chip opens in the app's own way when it gives one (`onOpenFile`), else in the pane's viewer when the kit can read files (`agent.files`).
@@ -210,15 +226,14 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   // The app's words for the chat (`agent.words`) under the labels it passes itself; the question's placeholder above keeps its own.
   const wordLabels = role === 'agent' && !oneRow ? chatWordLabels(spec.words) : {};
   // One annotate toggle: pins on desktop, point mode (which hides the layer while the person taps the app) on touch and compact screens.
-  const feedback = useComposerFeedback(spec.feedback);
-  const pointing = usePointing(spec.feedback);
+  const pointing = usePointing(spec.feedback) || collapsed;
   // The pin's mic uses the shell's transcription: this agent's own, else the coach's.
   const transcribe = (spec.voice ?? layer.agent?.voice)?.transcribe;
   const replyAction = barred ? spec.replyAction : undefined;
   const fr = locale === 'fr';
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
     <ReplyActionContext.Provider value={replyAction ? <ReplyActionButton action={replyAction} testid="agent-reply-action" /> : null}>
-    <PiChat {...withChatPlugins(chatProps ?? {})} {...barProps} {...(Object.keys(wordLabels).length > 0 ? { labels: { ...wordLabels, ...spec.chatProps?.labels } } : {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
+    <PiChat {...withChatPlugins(chatProps ?? {})} {...barProps} {...(Object.keys(wordLabels).length > 0 ? { labels: { ...wordLabels, ...spec.chatProps?.labels } } : {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating && !layer.circle ? 'docked' : 'floating'} {...(feedback ? { feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
       {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: oneRow ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: capturing && !oneRow ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} />
     </ReplyActionContext.Provider>
     {barred && !readOnly && layer.folded && layer.cardSlot && createPortal(<><SendProblem controller={spec.controller} /><FoldedCard bar={barChat} onOpenFile={openFile} /></>, layer.cardSlot)}
@@ -276,8 +291,8 @@ export function Header({ text, title, compactSnap, closeRef, controls, className
     <HistoryButton />
     <LibraryButton open={library} text={text} testId="agent-layer-library" />
     <HeaderExtras text={text} compact={compactSnap !== undefined} />
-    {!layer.bar && compactSnap === 'half' && <HeaderHint label={text.expand}><Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
-    {!layer.bar && compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
+    {!layer.bar && !layer.circle && compactSnap === 'half' && <HeaderHint label={text.expand}><Button variant="ghost" size="icon" data-testid="agent-layer-expand" aria-label={text.expand} title={text.expand} onClick={() => layer.setSnap('full')}><ChevronUpIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
+    {!layer.bar && !layer.circle && compactSnap === 'full' && <HeaderHint label={text.collapse}><Button variant="ghost" size="icon" data-testid="agent-layer-collapse" aria-label={text.collapse} title={text.collapse} onClick={() => layer.setSnap('half')}><ChevronDownIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>}
     {controls}
     {(!layer.bar || compactSnap !== undefined) && <Button variant="ghost" size="icon" ref={closeRef} data-testid="agent-layer-close" aria-label={text.close} title={text.close} onClick={layer.close}><XIcon data-icon="inline-start" aria-hidden="true" /></Button>}
   </div>;
