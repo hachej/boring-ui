@@ -441,6 +441,8 @@ export function AgentWorkspace({ layout = 'default', barPanels, barOptions, pane
   const options: ViewerOptions | undefined = useMemo(() => hasResources ? ({ client: client!, identity: identity!, history, viewers, kinds, interactive, share, onShown, onFailed, onUnsavedChange: noteUnsaved, onBeforeLeaveChange: registerBeforeLeave, blobBase }) : undefined, [hasResources, client, identityKey, history, viewers, kinds, interactive, share, onShown, onFailed, noteUnsaved, registerBeforeLeave, blobBase]); // eslint-disable-line react-hooks/exhaustive-deps
   const locate = revisionProvider?.locate ?? remote?.locate ?? defaultLocate;
   const readOnlyLibrary = !revisionProvider;
+  // A Library without a revision provider is read-only: the discovered client could write, but this view offers no Rename, Move or Delete.
+  const readOnlyCapabilities = { effective: ['read'] } as const;
   const [fileBinding, setFileBinding] = useState<{ readonly provider: RevisionProvider; readonly tree: FileTreeController }>();
   useEffect(() => {
     if (!libraryProvider) return;
@@ -572,7 +574,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, barOptions, pane
   // The Library tree, one view for the side column, the center and the pane; `onOpen` is what choosing a file does there.
   const libraryTree = (onOpen: (path: string) => void, onClose?: () => void) => libraryController
     ? <FileTreeView variant="list" refresh={libraryPlacement !== 'panel'} title={text.labels.library} {...(onClose ? { onClose } : {})} key={JSON.stringify([libraryProvider?.workspace, libraryProvider?.identity])} {...(locale ? { locale } : {})} {...viewOptions}
-      {...(readOnlyLibrary ? { upload: false, history: history !== undefined } : {})} {...(maxBytes !== undefined ? { maxBytes, ...(tooLarge ? { tooLarge } : {}) } : {})} {...(uploadBlob ? { uploadBlob } : {})} controller={libraryController} historyKey={feed.seq} onOpen={onOpen} onRenamed={(from, to) => followFile(from, to)} onDeleted={path => followFile(path, null)} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
+      {...(readOnlyLibrary ? { upload: false, history: history !== undefined, capabilities: readOnlyCapabilities } : {})} {...(maxBytes !== undefined ? { maxBytes, ...(tooLarge ? { tooLarge } : {}) } : {})} {...(uploadBlob ? { uploadBlob } : {})} controller={libraryController} historyKey={feed.seq} onOpen={onOpen} onRenamed={(from, to) => followFile(from, to)} onDeleted={path => followFile(path, null)} {...(isFile(opened) ? { selectedPath: opened.path } : {})} />
     : <p role="status" className="m-0 p-3 text-sm text-muted-foreground">{treeOptions?.labels?.loading ?? text.labels.loading}</p>;
   // `history="popover"` keeps the conversations out of the pane. With an open panel the column steps aside unless column, panel and chat fit.
   const paneConversations = historyPlacement === 'column' ? conversations : undefined;
