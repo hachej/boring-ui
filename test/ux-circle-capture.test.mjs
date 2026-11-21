@@ -3,17 +3,20 @@
 // Before the fix layout:bar-reserve waited for composer-input, which a circle never shows, and open() threw after 15 s (the showcase workflow failed on release).
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { root } from '../ux/runner/build.mjs';
 import { capture } from '../ux/runner/capture.mjs';
 import { loadAll } from '../ux/runner/scenario.mjs';
 
-const skip = !process.env.CHROMIUM && !process.env.CI;
+// Like the other ux browser tests: it needs a Chromium and playwright-core (not a dependency; the main test job has none), and skips without them.
+let playwright; try { playwright = createRequire(join(root, 'package.json'))('playwright-core'); } catch { /* not installed */ }
+const skip = !process.env.CHROMIUM || !playwright;
 
 for (const target of ['layout:bar-reserve', 'layout:update-notice']) {
   test(`${target}: every state with a folded circle opens (the ready selector accepts the circle)`, { skip, timeout: 240000 }, async () => {
-    assert.ok(process.env.CHROMIUM, 'CHROMIUM must be set when CI is set');
     const s = loadAll().find(x => x.target === target);
     const folded = s.states.filter(st => /(^|&)circle=1(&|$)/.test(st.query ?? ''));
     assert.ok(folded.length >= 2, 'the scenario has circle states');
