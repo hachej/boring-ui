@@ -22,7 +22,7 @@
   "queryBy": {
    "1280": "tabs=0"
   },
-  "ready": "[data-testid=composer-input]",
+  "ready": "[data-testid=composer-input], [data-testid=composer-circle]",
   "install": "npx shadcn@4.23.0 add app-shell pi-chat agent-bar",
   "usage": "<AppShell layout=\"screen\" composer=\"bar\" nav={nav} agent={{ controller }} />  // a screen: <ScreenBody>…</ScreenBody>; its own bottom bar: style={{ position: 'sticky', bottom: 'var(--agent-bar-reserve)' }}"
  },
