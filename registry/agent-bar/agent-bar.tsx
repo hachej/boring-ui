@@ -264,7 +264,7 @@ export function AgentBar({ onSend, transcribe, stream, quoted, question, onHisto
   const pasteFiles = (event: ClipboardEvent) => { if (droppable && event.clipboardData.files.length) { event.preventDefault(); pick(Array.from(event.clipboardData.files)); } };
   const AttachIcon = icons?.attach ?? PaperclipIcon, CommandsIcon = icons?.commands ?? SlashIcon;
   const chipList = files.pending.length > 0 || files.chips.length > 0
-    ? <div data-testid="agent-bar-chips" className="flex flex-wrap gap-2 px-1"><UploadChips items={files.pending} words={words} onDismiss={files.dismiss} /><AttachmentChips items={files.chips} words={words} onRemove={files.remove} /></div> : null;
+    ? <div data-testid="agent-bar-chips" className="flex max-h-32 flex-wrap gap-2 overflow-y-auto px-1"><UploadChips items={files.pending} words={words} onDismiss={files.dismiss} /><AttachmentChips items={files.chips} words={words} onRemove={files.remove} /></div> : null;
 
   return <div ref={root} data-slot="agent-bar" data-dragging={dragging || undefined} className={cn('mx-auto flex w-full max-w-xl flex-col gap-2', (slash && Slash) && 'relative', className)}
     {...(attachments ? { onDragOver: drag, onDragLeave: drag, onDrop: dropFiles } : {})}>
