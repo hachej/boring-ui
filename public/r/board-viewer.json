@@ -4,17 +4,17 @@
   "title": "Board viewer",
   "description": "A board@1 artifact kind for *.board.json. Lazy native tldraw projection of maquette screens, sandboxed HTML mock-ups, goto arrows and notes. Conditional board-file autosave; phone viewing without accidental frame edits. Hosts supply their resource client, asset URLs and license key.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.5.21",
-    "@hachej/boring-files@^0.5.21",
+    "@hachej/boring-ui-kit@^0.5.22",
+    "@hachej/boring-files@^0.5.22",
     "react@^19.0.0",
     "tldraw@5.6.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/maquette-viewer.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/mockup-viewer.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/pi-artifacts.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/_shared.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.22/r/maquette-viewer.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.22/r/mockup-viewer.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.22/r/pi-artifacts.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.22/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.22/r/_shared.json"
   ],
   "files": [
     {

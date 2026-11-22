@@ -1,5 +1,7 @@
 # Unreleased
 
+# Migrating to 0.5.22
+
 - **`pi-chat`, `agent-bar`: the chips above the text stop at three rows and scroll (fix; nothing to change).** Many attached files (90 PDFs) pushed the input off the screen. The chip list is now `max-h-32` with a vertical scroll; the composer's chip row carries `data-testid="composer-chips"`. `boring-ui-blocks update` brings it.
 
 # Migrating to 0.5.21
