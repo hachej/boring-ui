@@ -66,6 +66,13 @@ const tap = 'min-h-11 md:min-h-8';
 const row = 'h-auto min-h-11 w-full min-w-0 justify-start gap-3 whitespace-normal text-left';
 const flat = 'flex min-w-0 items-start gap-3 px-2.5';
 const quiet = 'text-sm text-muted-foreground';
+// One calm colour per step, from the theme's info, success and warning tokens and their mixes (never red); both themes flip with the tokens. The word uses the soft-foreground tokens, which keep 4.5:1 text contrast.
+const STEP_TONES = [
+  { bar: 'bg-info', word: 'text-info-soft-foreground' },
+  { bar: 'bg-[color-mix(in_oklab,var(--info),var(--success))]', word: 'text-[color-mix(in_oklab,var(--info-soft-foreground),var(--success-soft-foreground))]' },
+  { bar: 'bg-success', word: 'text-success-soft-foreground' },
+  { bar: 'bg-[color-mix(in_oklab,var(--success),var(--warning))]', word: 'text-[color-mix(in_oklab,var(--success-soft-foreground),var(--warning-soft-foreground))]' },
+] as const;
 const list = '-mx-2.5 flex flex-col divide-y divide-border';
 
 function Dot() {
@@ -176,7 +183,7 @@ function Track({ feature, labels }: { feature: ExpertFeature; labels: ExpertOver
       </div>
       <div aria-hidden className="grid grid-cols-4 gap-1">
         {Array.from({ length: STEP_COUNT }, (_, index) => (
-          <span key={index} data-segment={index} className={cn('h-1.5 rounded-(--radius)', index < reached ? 'bg-foreground' : index === reached && turn === 'person' ? 'bg-warning-soft' : index === reached && turn === 'agents' ? 'bg-muted-foreground' : 'bg-border')} />
+          <span key={index} data-segment={index} className={cn('h-1.5 rounded-(--radius)', index < reached ? STEP_TONES[index]?.bar : index === reached && turn === 'person' ? 'bg-warning-soft' : index === reached && turn === 'agents' ? 'bg-muted-foreground' : 'bg-border')} />
         ))}
       </div>
       {line ? <span className={quiet}>{line}</span> : null}
@@ -201,7 +208,7 @@ export function ExpertTrack({ title, subtitle, steps, note, features, done, extr
         {subtitle ? <p className={quiet}>{subtitle}</p> : null}
       </header>
       <div className="flex flex-col gap-2">
-        <ol className="grid grid-cols-4 gap-1 text-center text-xs font-semibold text-muted-foreground">{steps.map(step => <li key={step.id}>{step.label}</li>)}</ol>
+        <ol className="grid grid-cols-4 gap-1 text-center text-xs font-semibold">{steps.map((step, index) => <li key={step.id} data-step={index} className={STEP_TONES[index]?.word}>{step.label}</li>)}</ol>
         {note ? <p className="text-center text-xs text-muted-foreground">{note}</p> : null}
       </div>
       <div className="flex flex-col gap-2.5">{features.map(feature => <Track key={feature.id} feature={feature} labels={t} />)}</div>

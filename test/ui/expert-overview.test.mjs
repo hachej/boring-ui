@@ -157,9 +157,13 @@ test('track: segment tokens by turn, status tones, said progress, back, extra', 
   await draw(track());
   const rows = [...host.querySelectorAll('[data-testid=expert-feature]')];
   const segments = row => [...row.querySelectorAll('[data-segment]')].map(segment => tokens(segment).find(name => /^bg-/.test(name)));
-  assert.deepEqual(segments(rows[0]), ['bg-foreground', 'bg-foreground', 'bg-foreground', 'bg-warning-soft']);
-  assert.deepEqual(segments(rows[1]), ['bg-foreground', 'bg-muted-foreground', 'bg-border', 'bg-border']);
-  assert.deepEqual(segments(rows[2]), ['bg-foreground', 'bg-border', 'bg-border', 'bg-border']);
+  const [one, two, three] = ['bg-info', 'bg-[color-mix(in_oklab,var(--info),var(--success))]', 'bg-success'];
+  assert.deepEqual(segments(rows[0]), [one, two, three, 'bg-warning-soft']);
+  assert.deepEqual(segments(rows[1]), [one, 'bg-muted-foreground', 'bg-border', 'bg-border']);
+  assert.deepEqual(segments(rows[2]), [one, 'bg-border', 'bg-border', 'bg-border']);
+  const words = [...host.querySelectorAll('ol li')].map(li => tokens(li).find(name => /^text-/.test(name)));
+  assert.equal(new Set(words).size, 4, 'each step word has its own colour');
+  assert.ok(words.every(name => !/destructive|red/.test(name)), 'no red');
   assert.equal(rows[0].getAttribute('aria-label'), 'Quote letters: Ready for you to try, 3 of 4 steps done');
   assert.equal(rows[2].getAttribute('aria-label'), 'Search past letters: Framed, 1 of 4 steps done');
   const status = row => tokens([...row.querySelectorAll('span')].find(span => span.textContent === row.getAttribute('aria-label').split(': ')[1].split(',')[0]));
@@ -172,7 +176,7 @@ test('track: segment tokens by turn, status tones, said progress, back, extra', 
   await press(buttons()[0]); await press(named('Something else is wrong')[0]); await press(named('Open')[0]);
   assert.deepEqual(calls, ['back', 'extra', 'feature-f1']);
   await draw(track({ features: [{ ...features[0], reached: 4 }] }));
-  assert.deepEqual([...host.querySelectorAll('[data-segment]')].map(segment => tokens(segment).find(name => /^bg-/.test(name))), Array(4).fill('bg-foreground'));
+  assert.deepEqual([...host.querySelectorAll('[data-segment]')].map(segment => tokens(segment).find(name => /^bg-/.test(name))), ['bg-info', 'bg-[color-mix(in_oklab,var(--info),var(--success))]', 'bg-success', 'bg-[color-mix(in_oklab,var(--success),var(--warning))]']);
   await draw(track({ extra: undefined, onBack: undefined, done: undefined }));
   assert.equal(named('Something else is wrong').length, 0); assert.doesNotMatch(text(), /Back|Done ·/);
 });

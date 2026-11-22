@@ -32,7 +32,7 @@
    { "do": "wait", "ms": 100, "say": "Open « For you »", "expect": "Three calm sentences, not five, then one line per app and Done folded.", "until": { "390": "eval:document.querySelectorAll('[data-testid=expert-item]').length === 3 & count:expert-app>=2 & fit:surface & height:main button>=44", "default": "eval:document.querySelectorAll('[data-testid=expert-item]').length === 3 & count:expert-app>=2 & fit:surface" } }
   ] },
   { "id": "F02", "name": "Put a question off", "query": "s=for-you", "steps": [
-   { "do": "tap", "target": "[data-testid=expert-item] button:last-child", "say": "Tap « Later » on the question", "expect": "The question leaves and the fourth item takes its place; there are still three.", "until": "eval:document.querySelectorAll('[data-testid=expert-item]').length === 3 & text:[data-testid=surface]~Devis needs a word & eval:!document.querySelector('[data-testid=surface]').textContent.includes('should the letter still name one')" }
+   { "do": "tap", "target": "[data-testid=expert-item] button:last-child", "say": "Tap « Later » on the question", "expect": "The question leaves and the fourth item takes its place; there are still three.", "until": "eval:document.querySelectorAll('[data-testid=expert-item]').length === 3 & text:[data-testid=surface]~Devis asks about the VAT line & eval:!document.querySelector('[data-testid=surface]').textContent.includes('name a client with no address')" }
   ] },
   { "id": "F03", "name": "Look at what is done", "query": "s=for-you", "steps": [
    { "do": "tap", "target": "main button[aria-expanded]", "say": "Tap « Show » on Done", "expect": "The two finished items appear under Done.", "until": "text:[data-testid=surface]~Price list & text:[data-testid=surface]~Quote page & fit:surface" },
@@ -43,7 +43,7 @@
   ] },
   { "id": "F05", "name": "Read one app's track", "query": "s=track", "steps": [
    { "do": "wait", "ms": 100, "say": "Open Atelier's track", "expect": "Four words in a row, three features, each with its status and four segments; nothing scrolls sideways.", "until": { "390": "count:expert-feature>=3 & eval:document.querySelectorAll('main ol li').length === 4 & fit:surface & height:main button>=44", "default": "count:expert-feature>=3 & fit:surface" } },
-   { "do": "tap", "target": "[data-testid=expert-feature] button", "say": "Tap « Pick up where you left off »", "expect": "The app is told which feature to open.", "until": "eval:window.__ux.calls().includes('feature:f1')" }
+   { "do": "tap", "target": "[data-testid=expert-feature] button", "say": "Tap « Continue »", "expect": "The app is told which feature to open.", "until": "eval:window.__ux.calls().includes('feature:f1')" }
   ] },
   { "id": "F06", "name": "Nothing needs me", "query": "s=calm", "steps": [
    { "do": "wait", "ms": 100, "say": "Open the page when nothing waits", "expect": "« Nothing needs you » and one sentence, then the apps.", "until": "text:[data-testid=surface] h1~Nothing needs you & count:expert-app>=2 & gone:expert-item & fit:surface" }
