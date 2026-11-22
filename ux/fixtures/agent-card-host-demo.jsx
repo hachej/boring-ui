@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AgentCard } from '../../registry/agent-card/agent-card.tsx';
 import { Button } from '@/components/ui/button';
 import { AGENTS, TASKS, makeRun } from './agent-card-demo.jsx';
@@ -32,6 +32,20 @@ export function HostCard({ id, title, unread, start, dock, bodyOpen = false }) {
       <div ref={setSlot} data-testid="host-slot" />
     </div>}
   </AgentCard></div>;
+}
+
+/** A folded card whose agent answers twice while nobody looks (`window.__ux.twice()` counts the replies both cards played): two unread replies, so the controller's mark is a number pill unless `unreadCount={false}`. */
+export function TwiceCard({ id, title, quiet }) {
+  const run = useMemo(() => makeRun(SOURCE), []);
+  const [level, setLevel] = useState(0);
+  window.__twice ??= 0;
+  useEffect(() => {
+    const wait = ms => new Promise(done => setTimeout(done, ms));
+    // `send` adds the person's message first, so the two replies are two rows (two keys), and the controller counts both.
+    void (async () => { for (const text of ['approve', 'retry']) { await run.controller.send('message', { text }); await wait(1500); window.__twice += 1; } })();
+  }, [run]);
+  return <div data-task={id}><AgentCard agent={AGENTS.reader} title={title} controller={run.controller} {...(quiet ? { unreadCount: false } : {})} level={level} onLevelChange={setLevel}
+    chatProps={{ locale: 'en', actions: run.actions, title }} /></div>;
 }
 
 /** Thirty folded cards with no controller: a board opens no conversation until a tap. */

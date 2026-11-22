@@ -3,7 +3,7 @@
 // One unit of agent work as a card: an agent run, a task, a job. It works in the background and folds: collapsed it is a header (the agent's colour dot, the title,
 // a status chip, one line of what the agent does) and nothing else; a decision the agent waits for shows on the folded card. The same levels as the bottom
 // composer, driven by the same strip on the card's lower border: 0 folded, 1 a small tray (the conversation and its field), 2 the whole chat, or docked
-// into a place the host provides. It has no input of its own: the chat is the kit's. The controller is the host's and keeps running while the card is folded.
+// into a place the host provides. Sending from the folded composer opens the tray, so the message and its reply are seen. It has no input of its own: the chat is the kit's. The controller is the host's and keeps running while the card is folded.
 // A host that draws its own card passes `header` and `children`, a `slot` for the tray, and may leave the controller out until the first tap (`onChatRequest`).
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
@@ -42,6 +42,8 @@ export interface AgentCardProps extends Pick<AgentChatProps, 'agent' | 'status' 
   readonly slot?: HTMLElement | null | undefined;
   /** A reply came while the person was away: a quiet dot on the folded card, even before any controller exists. The host clears it once the person has looked. */
   readonly unread?: boolean | undefined;
+  /** `false`: the unread mark is always a dot, never the number pill the controller draws from two unread replies. Default: the pill from two. */
+  readonly unreadCount?: false | undefined;
   /** One line of what the agent does now. Default: what the running tool says, while it works. */
   readonly activity?: string | undefined;
   /** The task's own fields (assignee, due date, …), under the header: a task card is this card with a `meta`. */
@@ -68,7 +70,7 @@ const BarProbe = memo(function BarProbe({ controller, actions, locale, unread, o
   return null;
 });
 
-export function AgentCard({ controller, onChatRequest, agent, title, header, children, slot, unread: hostUnread, status, activity, meta, level: controlled, defaultLevel = 0, onLevelChange, dock, docked: dockedControlled, onDockedChange, labels, heights, chatProps, className }: AgentCardProps) {
+export function AgentCard({ controller, onChatRequest, agent, title, header, children, slot, unread: hostUnread, unreadCount, status, activity, meta, level: controlled, defaultLevel = 0, onLevelChange, dock, docked: dockedControlled, onDockedChange, labels, heights, chatProps, className }: AgentCardProps) {
   const words = { ...WORDS, ...labels };
   const [own, setOwn] = useState<AgentCardLevel>(defaultLevel);
   const [ownDocked, setOwnDocked] = useState(false);
@@ -93,6 +95,9 @@ export function AgentCard({ controller, onChatRequest, agent, title, header, chi
     if (next > 0) bar?.markRead();
     if (focus) requestAnimationFrame(focusAnchor);
   }, [onLevelChange, bar, setComposer]);
+  // Sending from the folded composer opens the tray: its conversation is hidden at level 0, so the message and the reply would not be seen. The host's own `onSent` runs first.
+  const hostSent = chatProps?.onSent;
+  const openOnSent = useCallback(() => { hostSent?.(); setOwn(1); onLevelChange?.(1); setComposer(false); bar?.markRead(); }, [hostSent, onLevelChange, bar, setComposer]);
   const setDocked = (next: boolean) => { setOwnDocked(next); onDockedChange?.(next); if (next) bar?.markRead(); };
   useEffect(() => { if (level > 0 && bar?.reply) bar.markRead(); }, [level, bar]);
 
@@ -125,7 +130,8 @@ export function AgentCard({ controller, onChatRequest, agent, title, header, chi
   const waiting = !docked && level === 0 && (bar?.approval || bar?.question);
   const chat = (props: Partial<AgentChatProps>) => controller ? <AgentChat controller={controller} agent={agent} title={title} status={status} chatProps={chatProps} {...props} /> : null;
   const approval = bar?.approval;
-  const dot = bar?.historyBadge ?? (hostUnread && level === 0 && !docked ? { label: words.unread } : undefined);
+  const badge = bar?.historyBadge && unreadCount === false ? { label: bar.historyBadge.label } : bar?.historyBadge;
+  const dot = level > 0 || docked ? undefined : badge ?? (hostUnread ? { label: words.unread } : undefined);
   const open = level === 2 && !docked;
 
   return <div ref={root} data-testid="agent-card" data-level={docked ? 'docked' : level} data-needs-you={waiting ? '' : undefined} onKeyDown={onKeyDown} role={hosted ? 'group' : undefined} aria-label={hosted ? title : undefined}
@@ -160,7 +166,7 @@ export function AgentCard({ controller, onChatRequest, agent, title, header, chi
     </>}
     <div ref={inline} />
     {tray && createPortal(<>
-      {live && level === 0 && composer && !docked && <Fragment key="composer"><Separator className="mt-1" /><div data-testid="agent-card-composer" style={{ height: heights?.composer ?? '10.5rem' }} className="min-h-0 [&_[data-testid=conversation-content]]:invisible">{chat({ header: false, chatProps: { ...chatProps, hideLine: () => true, emptyState: <span /> } })}</div></Fragment>}
+      {live && level === 0 && composer && !docked && <Fragment key="composer"><Separator className="mt-1" /><div data-testid="agent-card-composer" style={{ height: heights?.composer ?? '10.5rem' }} className="min-h-0 [&_[data-testid=conversation-content]]:invisible">{chat({ header: false, chatProps: { ...chatProps, hideLine: () => true, emptyState: <span />, onSent: openOnSent } })}</div></Fragment>}
       {live && level === 1 && !docked && <Fragment key="tray"><Separator className="mt-1" /><div style={{ height: heights?.tray ?? '16rem' }} className="min-h-0">{chat({ header: false })}</div></Fragment>}
     </>, tray)}
     <ControllerStrip edge="bottom" actions={actions} unread={dot} />

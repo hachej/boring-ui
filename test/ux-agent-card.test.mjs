@@ -145,6 +145,57 @@ test('the agent card: levels, background work, a decision on the folded card, do
   }
 });
 
+test('a message sent from the folded composer opens the tray (the host\'s onSent still runs); `unreadCount: false` keeps the unread mark a dot', { skip, timeout: 300000 }, async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'ux-agent-card-send-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, 'page.html');
+  await buildPage('ux/fixtures/component-agent-card.jsx', file);
+  const browser = await playwright.chromium.launch({ executablePath: process.env.CHROMIUM, args: ['--no-sandbox'] });
+  t.after(() => browser.close());
+  for (const { name, ...viewport } of VIEWPORTS) {
+    const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, hasTouch: viewport.hasTouch, isMobile: viewport.isMobile });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    page.on('pageerror', error => errors.push(String(error)));
+    await page.goto(`file://${file}?twice=1&pace=instant`);
+    await page.locator(task('done', 'agent-card')).waitFor();
+    const label = text => `${text} at ${name}`;
+
+    // Sending from the folded composer opens the tray: the message and its reply are on screen, no « Expand more » needed.
+    const level = () => page.locator(task('done', 'agent-card')).getAttribute('data-level');
+    await page.locator(task('done', 'agent-card-chat')).click();
+    await page.locator(task('done', 'agent-card-composer')).waitFor();
+    assert.equal(await level(), '0', label('the composer alone is level 0'));
+    await page.locator(task('done', 'composer-input')).fill('Is the March statement in?');
+    await page.locator(task('done', 'composer-submit')).click();
+    await page.locator(`${task('done', 'agent-card')}[data-level="1"]`).waitFor();
+    assert.equal(await page.locator(task('done', 'agent-card-composer')).count(), 0, label('the folded composer gave way to the tray'));
+    await page.locator(`${task('done', 'agent-chat')} :text("Is the March statement in?")`).first().waitFor({ state: 'visible' });
+    assert.equal(await page.evaluate(() => window.__ux.sent()), 1, label('the host\'s own onSent ran once'));
+
+    // Two replies came while the card was folded: a number pill by default, a dot only with `unreadCount: false`.
+    await page.waitForFunction(() => window.__ux.twice() === 4, null, { timeout: 20000 });
+    const pill = page.locator(task('twice', 'agent-bar-unread'));
+    await pill.waitFor();
+    assert.equal(await pill.getAttribute('data-count'), '2', label('by default the mark counts'));
+    assert.equal((await pill.textContent()).trim(), '2');
+    const quiet = page.locator(task('twice-quiet', 'agent-bar-unread'));
+    await quiet.waitFor();
+    assert.equal(await quiet.getAttribute('data-count'), null, label('a dot carries no count'));
+    assert.equal(await quiet.textContent(), '', label('a dot draws no number'));
+    assert.match(await quiet.getAttribute('aria-label'), /^New reply$/, label('the dot keeps its name'));
+
+    // No dot while the card's own chat is open.
+    await page.locator(task('twice-quiet', 'agent-card-header')).click();
+    await page.locator(`${task('twice-quiet', 'agent-card')}[data-level="1"]`).waitFor();
+    assert.equal(await page.locator(task('twice-quiet', 'agent-bar-unread')).count(), 0, label('no unread mark while the tray is open'));
+
+    assert.deepEqual(errors, [], label('no console error'));
+    await context.close();
+  }
+});
+
 test('the showcase site lists Agent cards and plays the page', { skip, timeout: 240000 }, async t => {
   const dir = mkdtempSync(join(tmpdir(), 'ux-agent-card-site-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));

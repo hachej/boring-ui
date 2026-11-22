@@ -452,6 +452,23 @@
      "expect": "Only that card asks for its chat."
     }
    ]
+  },
+  {
+   "id": "F11",
+   "name": "Sending from the folded composer opens the tray",
+   "steps": [
+    { "do": "tap", "target": "[data-task=done] [data-testid=agent-card-chat]", "say": "Tap the chat bubble", "until": "visible:[data-task=done] [data-testid=agent-card-composer]" },
+    { "do": "type", "target": "[data-task=done] [data-testid=composer-input]", "text": "Is the March statement in?", "say": "Write a question", "until": "value:[data-task=done] [data-testid=composer-input]~March statement" },
+    { "do": "tap", "target": "[data-task=done] [data-testid=composer-submit]", "say": "Send it", "until": "visible:[data-task=done] [data-testid=agent-chat] & gone:[data-task=done] [data-testid=agent-card-composer] & eval:window.__ux.sent() === 1", "expect": "The tray opens by itself: the message and the reply are on screen, with no Expand more." }
+   ]
+  },
+  {
+   "id": "F12",
+   "name": "Two unread replies stay a dot when the host asks for a dot",
+   "query": "twice=1",
+   "steps": [
+    { "do": "wait", "ms": 3500, "say": "Look at the two cards after two replies came unseen", "until": "eval:window.__ux.twice() === 4 & eval:document.querySelector('[data-task=twice] [data-testid=agent-bar-unread]').dataset.count === '2' & eval:document.querySelector('[data-task=twice-quiet] [data-testid=agent-bar-unread]').textContent === ''", "expect": "The first card shows the number 2 (the default); the second shows one small dot, with no number." }
+   ]
   }
  ]
 }

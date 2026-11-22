@@ -181,6 +181,27 @@ test('track: segment tokens by turn, status tones, said progress, back, extra', 
   assert.equal(named('Something else is wrong').length, 0); assert.doesNotMatch(text(), /Back|Done ·/);
 });
 
+test('track: `onOpen` makes the row a real button (native Enter and Space, focus ring, 44 px); without it the row is not pressable', async () => {
+  calls.length = 0;
+  await draw(track({ features: [{ ...features[0], onOpen: act1('row-f1') }, { ...features[1], onOpen: act1('row-f2') }, features[2]] }));
+  const rows = [...host.querySelectorAll('[data-testid=expert-feature]')];
+  const open = row => row.querySelector('[data-testid=expert-feature-open]');
+  assert.equal(open(rows[0]).tagName, 'BUTTON');
+  assert.equal(open(rows[0]).getAttribute('type'), 'button');
+  assert.equal(open(rows[0]).hasAttribute('role'), false, 'a native button, not a div given a role');
+  assert.ok(tokens(open(rows[0])).includes('min-h-11'), 'at least 44 px');
+  assert.ok(tokens(open(rows[0])).includes('w-full'), 'the whole row is the target');
+  assert.match(open(rows[0]).textContent, /Quote letters/); assert.match(open(rows[0]).textContent, /Ready for you to try/); assert.match(open(rows[0]).textContent, /Pick up where you left off/);
+  assert.equal(open(rows[0]).querySelector('div, button'), null, 'valid HTML: nothing a button cannot hold');
+  assert.equal(open(rows[1]).textContent.includes('Open'), false);
+  assert.equal(rows[0].getAttribute('aria-label'), 'Quote letters: Ready for you to try, 3 of 4 steps done');
+  assert.equal(buttons(rows[0]).length, 2, 'the row and its action are two sibling buttons');
+  assert.equal(open(rows[0]).parentElement, rows[0]);
+  assert.equal(open(rows[2]), null); assert.equal(buttons(rows[2]).length, 0, 'no onOpen: no button, as before');
+  await press(open(rows[0])); await press(open(rows[1])); await press(named('Open')[0]);
+  assert.deepEqual(calls, ['row-f1', 'row-f2', 'feature-f1'], 'the row opens, and the action still runs on its own');
+});
+
 test('track: three or five steps throw naming `steps`', async () => {
   const failing = console.error; console.error = () => {};
   try {
