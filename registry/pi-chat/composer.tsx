@@ -438,7 +438,7 @@ export function Composer(props: ComposerProps) {
     {fileEl}
     {slashOpen && Slash && <Slash query={query!} items={items} onSelect={pickSlash} onDismiss={dismiss} {...(props.barActions === 'attach' || props.slashList ? { bare: true } : {})} />}
     {mentionOpen && mentions && Mention && <Mention query={trigger!.query} listLabel={mentions.listLabel} renderOption={mentions.renderOption} header={typeof mentions.pickerHeader === 'function' ? mentions.pickerHeader(trigger!.query) : mentions.pickerHeader} search={mentions.search} generation={mentions.generation} onSelect={pickMention} onDismiss={dismiss} />}
-    {pill && !props.recording && chipList && <div className="flex flex-wrap gap-2 px-2 empty:hidden">{chipList}</div>}
+    {pill && !props.recording && chipList && <div data-testid="composer-chips" className="flex max-h-32 flex-wrap gap-2 overflow-y-auto px-2 empty:hidden">{chipList}</div>}
     {slots ? pill ? <InputGroup className="h-auto">
       <InputGroupAddon>{startAndPlus}</InputGroupAddon>
       <div data-slot="composer-recording" data-testid="composer-recording" className="flex min-w-0 flex-1 items-center gap-2 self-stretch">{props.recordingStatus}
@@ -446,11 +446,11 @@ export function Composer(props: ComposerProps) {
         {props.keepFieldWhileRecording && <div hidden inert aria-hidden="true">{input}</div>}</div>
       <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>
     </InputGroup> : <InputGroup>
-      {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
+      {chipList && <InputGroupAddon align="block-start" data-testid="composer-chips" className="max-h-32 flex-wrap overflow-y-auto">{chipList}</InputGroupAddon>}
       <div data-slot="composer-recording" data-testid="composer-recording" className={cn('flex w-full min-w-0 items-center gap-2 px-2', props.placeholderContent ? 'min-h-16' : 'min-h-11')}>{props.recordingStatus}</div>
       <InputGroupAddon align="block-end" data-testid="composer-controls">{startAndPlus}{end}</InputGroupAddon>
     </InputGroup> : props.recording ? <InputGroup className={pill ? 'h-auto' : undefined}>
-      {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
+      {chipList && <InputGroupAddon align="block-start" data-testid="composer-chips" className="max-h-32 flex-wrap overflow-y-auto">{chipList}</InputGroupAddon>}
       {!pill && <div data-slot="composer-recording" aria-hidden="true" className="min-h-11 w-0 shrink-0" />}
       <InputGroupAddon align={pill ? 'inline-start' : 'block-end'} data-testid="composer-controls" className="w-full">{props.recording}</InputGroupAddon>
     </InputGroup> : pill ? <InputGroup>
@@ -458,7 +458,7 @@ export function Composer(props: ComposerProps) {
       {input}
       <InputGroupAddon align="inline-end" data-testid="composer-controls">{end}</InputGroupAddon>
     </InputGroup> : <InputGroup>
-      {chipList && <InputGroupAddon align="block-start" className="flex-wrap">{chipList}</InputGroupAddon>}
+      {chipList && <InputGroupAddon align="block-start" data-testid="composer-chips" className="max-h-32 flex-wrap overflow-y-auto">{chipList}</InputGroupAddon>}
       {input}
       <InputGroupAddon align="block-end" data-testid="composer-controls">
         {startAndPlus}
