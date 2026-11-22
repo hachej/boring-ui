@@ -1,5 +1,9 @@
 # Unreleased
 
+# Migrating to 0.5.21
+
+- **`agent-card` and `expert-overview`: a sent message opens the tray, an unread dot without the number, a feature row that opens (additive, one behaviour change in `agent-card`).** Update with `npx boring-ui-blocks update agent-card expert-overview`. (1) `agent-card`: a message sent from the folded card's composer now opens the tray (level 1), so the message and the reply are seen without « Expand more ». The card calls `onLevelChange(1)` (a controlled `level` follows it) and your own `chatProps.onSent` still runs first. An app that wanted the composer to stay folded after a send cannot ask for that; say so on boring-ui. (2) `agent-card`: new optional `unreadCount?: false`; with `false` the unread mark is always a dot, never the number pill the controller draws from two unread replies. Without it the pill from two stays as before. The mark is also never drawn while the card's own chat is open (level 1 or 2, or docked). (3) `expert-overview`: `ExpertFeature` takes an optional `onOpen`; `ExpertTrack` then draws the feature's row as a real button (Enter and Space, focus ring, at least 44 px high), with the feature's `action` as a second button under it. Without `onOpen` the row is unchanged, so an app that patched the DOM to open a row can pass `onOpen` and delete the patch.
+
 # Migrating to 0.5.20
 
 - **`expert-overview`: a new block for a person with little time (additive).** `npx boring-ui-blocks add expert-overview` installs `ExpertOverview` (at most three plain sentences that need the person, one line per app, done folded, and a calm state when nothing needs them) and `ExpertTrack` (one app's four-step track). Props only: the app passes every sentence, label and callback, and the four step words; the block fetches nothing and shows no count of agent work. Nothing changes for an app that does not install it.

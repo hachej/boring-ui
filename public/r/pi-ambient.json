@@ -4,22 +4,22 @@
   "title": "Pi ambient agent",
   "description": "AmbientChat (deprecated: the floating bar is the one composer, FloatingComposer of app-shell), now a wrapper that delegates to it and keeps the old window for the props the composer does not take yet (renderComposer, composerLayout, toast timing, className, system-notification bell); the window content (embedded, artifactPanel, artifacts, headerTools, headerActions, onDock, onOpenFull, onFeedback) is on the composer; and AgentNotifications, toasts over the kit's shared chat-react run notifications (they feed the composer's notices), with the one guarded browser Notification helper. A block over the pi-chat and app-shell items; its in-window artifact panel uses the pi-workspace layout.",
   "dependencies": [
-    "@hachej/boring-ui-kit@^0.5.20",
+    "@hachej/boring-ui-kit@^0.5.21",
     "react@^19.0.0",
     "react-dom@^19.0.0",
     "@earendil-works/pi-durable@~1.5.2",
     "@earendil-works/pi-ai@~1.5.2"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.20/r/pi-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.20/r/pi-chat-plugins.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.20/r/pi-chat-question.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.20/r/app-shell.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.20/r/pi-artifacts.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.20/r/pi-workspace.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.20/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.20/r/button.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.20/r/_shared.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/pi-chat-plugins.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/pi-chat-question.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/app-shell.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/pi-artifacts.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/pi-workspace.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/button.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.21/r/_shared.json"
   ],
   "files": [
     {
