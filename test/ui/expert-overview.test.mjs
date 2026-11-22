@@ -20,30 +20,29 @@ const alias = {
   },
 };
 
-const window = new Window({ url: 'https://fictional.invalid/' });
-const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia', 'IS_REACT_ACT_ENVIRONMENT'];
-const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
-for (const name of names) {
-  const given = name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name];
-  Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: typeof given === 'function' && /^[a-z]/.test(name) ? given.bind(window) : given });
-}
-const { createElement: h, act } = await import('react');
-const { createRoot } = await import('react-dom/client');
+// The DOM globals are installed by the first test and removed by the last, never at import: the tests of a shard may share one process.
 const out = new URL('../../.cache/expert-overview/', import.meta.url);
 mkdirSync(out, { recursive: true });
 const bundle = new URL('block.mjs', out);
 await build({ entryPoints: [join(root, 'registry/expert-overview/expert-overview.tsx')], bundle: true, packages: 'external', format: 'esm', platform: 'node', outfile: bundle.pathname, logLevel: 'silent', jsx: 'automatic', plugins: [alias], absWorkingDir: root });
-const { ExpertOverview, ExpertTrack, expertOverviewLabels } = await import(bundle.href);
-
-const host = document.createElement('div');
-document.body.append(host);
-const mounted = createRoot(host);
-test.after(async () => {
-  await act(async () => mounted.unmount());
-  await window.happyDOM.close();
-  for (const [name, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
-});
-const draw = async view => { await act(async () => mounted.render(view)); };
+const names = ['window', 'document', 'navigator', 'HTMLElement', 'Element', 'Node', 'Text', 'MutationObserver', 'ResizeObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'matchMedia', 'IS_REACT_ACT_ENVIRONMENT'];
+const { createElement: h, act } = await import('react');
+let window, saved, mounted, host, ExpertOverview, ExpertTrack, expertOverviewLabels;
+const boot = async () => {
+  if (window) return;
+  window = new Window({ url: 'https://fictional.invalid/' });
+  saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  for (const name of names) {
+    const given = name === 'window' ? window : name === 'IS_REACT_ACT_ENVIRONMENT' ? true : window[name];
+    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: typeof given === 'function' && /^[a-z]/.test(name) ? given.bind(window) : given });
+  }
+  const { createRoot } = await import('react-dom/client');
+  ({ ExpertOverview, ExpertTrack, expertOverviewLabels } = await import(bundle.href));
+  host = document.createElement('div');
+  document.body.append(host);
+  mounted = createRoot(host);
+};
+const draw = async view => { await boot(); await act(async () => mounted.render(view)); };
 const press = async element => { await act(async () => { element.click(); }); };
 const tokens = element => String(element.getAttribute('class') ?? '').split(/\s+/).filter(Boolean);
 const text = () => host.textContent;
@@ -65,7 +64,8 @@ const features = [
 ];
 const track = (props = {}) => h(ExpertTrack, { title: 'Atelier', subtitle: 'Release R0 · 3 features', steps: four, note: 'You act first and last.', features, onBack: act1('back'), done, extra: { label: 'Something else is wrong', onAction: act1('extra') }, ...props });
 
-test('the block reads no clock, fetches nothing, stores nothing and sends nothing by itself', () => {
+test('the block reads no clock, fetches nothing, stores nothing and sends nothing by itself', async () => {
+  await boot();
   assert.doesNotMatch(source, /\bfetch\s*\(|XMLHttpRequest|useEffect|localStorage|sessionStorage|indexedDB|document\.cookie|Date\.now|new Date\b/);
 });
 
@@ -199,4 +199,12 @@ test('French labels for every key leave no English word of the block in the mark
   await draw(track({ labels: fr }));
   assert.match(buttons()[0].textContent, /Retour/);
   assert.equal(host.querySelector('[data-testid=expert-feature]').getAttribute('aria-label'), 'Quote letters: Ready for you to try, 3 étapes sur 4');
+});
+
+test('the DOM globals are given back as they were found', async () => {
+  await act(async () => mounted.unmount());
+  await window.happyDOM.close();
+  for (const [name, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
+  assert.equal(typeof globalThis.matchMedia, saved.get('matchMedia') ? 'function' : 'undefined');
+  assert.equal(globalThis.IS_REACT_ACT_ENVIRONMENT, saved.get('IS_REACT_ACT_ENVIRONMENT')?.value);
 });
