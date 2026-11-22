@@ -434,19 +434,6 @@
   },
   {
    "id": "F10",
-   "name": "A host gesture opens the composer",
-   "steps": [
-    {
-     "do": "tap",
-     "target": "[data-task=host] [data-testid=host-not-right]",
-     "say": "Tap the host's own « Not right »",
-     "until": "visible:[data-task=host] [data-testid=agent-card-composer] & eval:window.__ux.log().includes('not right')",
-     "expect": "The folded card's composer opens."
-    }
-   ]
-  },
-  {
-   "id": "F11",
    "name": "A board of thirty cards opens no conversation",
    "query": "many=30",
    "steps": [

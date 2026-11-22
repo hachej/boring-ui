@@ -14,7 +14,6 @@ export function HostCard({ id, title, unread, start, dock, bodyOpen = false }) {
   const [open, setOpen] = useState(bodyOpen);
   const [slot, setSlot] = useState(null);
   const [run, setRun] = useState(() => { if (start === undefined) return null; window.__created += 1; return makeRun(SOURCE); });
-  const [composer, setComposer] = useState(false);
   const [level, setLevel] = useState(start === 'd' || start === undefined ? 0 : Number(start));
   const [docked, setDocked] = useState(start === 'd');
   const request = () => { log('chat requested'); window.__created += 1; setRun(makeRun(SOURCE)); };
@@ -22,11 +21,10 @@ export function HostCard({ id, title, unread, start, dock, bodyOpen = false }) {
     <Button type="button" variant="ghost" data-testid="host-header-toggle" aria-expanded={open} onClick={() => { log('header tapped'); setOpen(now => !now); }} className="min-w-0 flex-1 justify-start px-0 text-sm font-medium">
       <span className="truncate">{title}</span>
     </Button>
-    <Button type="button" variant="outline" size="sm" data-testid="host-not-right" onClick={() => { log('not right'); setComposer(true); if (!run) request(); }}>Not right</Button>
   </div>;
   return <div data-task={id}><AgentCard agent={AGENTS.ledger} title={title} header={header} unread={unread}
     controller={run?.controller} onChatRequest={request} slot={open ? slot : null}
-    level={level} onLevelChange={next => { setLevel(next); log(`level ${next}`); }} composer={composer} onComposerChange={next => { setComposer(next); log(`composer ${next ? 'open' : 'closed'}`); }}
+    level={level} onLevelChange={next => { setLevel(next); log(`level ${next}`); }}
     dock={dock} docked={docked} onDockedChange={setDocked}
     chatProps={{ locale: 'en', actions: run?.actions, title, artifacts: { open: artifact => window.__opened.push(artifact.title) } }}>
     {open && <div data-testid="host-body" className="px-3 pt-1 pb-2">

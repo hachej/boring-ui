@@ -251,18 +251,6 @@ test('the agent card on a host card: header, body, slot, a chat made on the firs
     assert.equal(await level(), '0');
     assert.equal(await page.evaluate(() => document.activeElement?.closest('[data-testid=composer-controller]') !== null), true, label('Esc: focus is on the strip'));
 
-    // A host gesture opens the folded card's composer (controlled), before and after the chat exists.
-    await open('');
-    await host('host-not-right').click();
-    await host('agent-card-composer').waitFor();
-    assert.deepEqual((await log()).filter(item => item === 'chat requested'), ['chat requested'], label('Not right: the chat is asked for and the composer opens'));
-    await host('agent-card-collapse').click();
-    await host('agent-card-composer').waitFor({ state: 'detached' });
-    assert.ok((await log()).includes('composer closed'), label('the card reports the composer closing'));
-    await open('at=host:0');
-    await host('host-not-right').click();
-    await host('agent-card-composer').waitFor();
-
     // Docked: the card says so under the host header.
     await open('at=host:d');
     assert.equal(await level(), 'docked');

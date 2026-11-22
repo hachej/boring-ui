@@ -50,9 +50,6 @@ export interface AgentCardProps extends Pick<AgentChatProps, 'agent' | 'status' 
   readonly level?: AgentCardLevel | undefined;
   readonly defaultLevel?: AgentCardLevel | undefined;
   readonly onLevelChange?: ((level: AgentCardLevel) => void) | undefined;
-  /** Controlled composer of the folded card (level 0); a host gesture can open it. Without it the card keeps its own. */
-  readonly composer?: boolean | undefined;
-  readonly onComposerChange?: ((open: boolean) => void) | undefined;
   /** The place a docked chat goes (a side column the host provides). Without it the card has no Dock. */
   readonly dock?: HTMLElement | null | undefined;
   readonly docked?: boolean | undefined;
@@ -71,7 +68,7 @@ const BarProbe = memo(function BarProbe({ controller, actions, locale, unread, o
   return null;
 });
 
-export function AgentCard({ controller, onChatRequest, agent, title, header, children, slot, unread: hostUnread, status, activity, meta, level: controlled, defaultLevel = 0, onLevelChange, composer: composerControlled, onComposerChange, dock, docked: dockedControlled, onDockedChange, labels, heights, chatProps, className }: AgentCardProps) {
+export function AgentCard({ controller, onChatRequest, agent, title, header, children, slot, unread: hostUnread, status, activity, meta, level: controlled, defaultLevel = 0, onLevelChange, dock, docked: dockedControlled, onDockedChange, labels, heights, chatProps, className }: AgentCardProps) {
   const words = { ...WORDS, ...labels };
   const [own, setOwn] = useState<AgentCardLevel>(defaultLevel);
   const [ownDocked, setOwnDocked] = useState(false);
@@ -83,10 +80,10 @@ export function AgentCard({ controller, onChatRequest, agent, title, header, chi
   const live = Boolean(controller);
   const bar = live ? probed : undefined;
   const level = live ? controlled ?? own : 0, docked = live && Boolean(dockedControlled ?? ownDocked) && Boolean(dock);
-  const composer = live && (composerControlled ?? ownComposer);
+  const composer = live && ownComposer;
   const locale = chatProps?.locale;
   const hosted = header !== undefined && header !== null && header !== false;
-  const setComposer = useCallback((next: boolean) => { setOwnComposer(next); onComposerChange?.(next); }, [onComposerChange]);
+  const setComposer = setOwnComposer;
   const header$ = useRef<HTMLButtonElement>(null);
   // Focus goes back to the card's header, or, when the host drew the header, to the first cell of the strip.
   const focusAnchor = () => (header$.current ?? root.current?.querySelector<HTMLElement>('[data-testid=composer-controller] [data-action]'))?.focus({ preventScroll: true });

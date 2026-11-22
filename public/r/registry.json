@@ -1160,7 +1160,7 @@
       "name": "agent-card",
       "type": "registry:block",
       "title": "Agent card",
-      "description": "One unit of agent work (a run, a task, a job) as a collapsible card that keeps working in the background: a header with the agent's colour dot, a title, a status chip and one line of activity, an optional `meta` for a task's fields, a decision the agent waits for on the folded card, and the composer's levels (folded, a small tray, the whole chat, docked) on a controller strip on its lower border. A host that draws its own card passes `header` and `children`, a `slot` for the tray, an optional `controller` (with `onChatRequest`, so the conversation is made on the first tap), a controlled `composer` and a quiet `unread` dot.",
+      "description": "One unit of agent work (a run, a task, a job) as a collapsible card that keeps working in the background: a header with the agent's colour dot, a title, a status chip and one line of activity, an optional `meta` for a task's fields, a decision the agent waits for on the folded card, and the composer's levels (folded, a small tray, the whole chat, docked) on a controller strip on its lower border. A host that draws its own card passes `header` and `children`, a `slot` for the tray, an optional `controller` (with `onChatRequest`, so the conversation is made on the first tap) and a quiet `unread` dot.",
       "dependencies": [
         "react@^19.0.0",
         "react-dom@^19.0.0"
