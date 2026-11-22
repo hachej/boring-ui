@@ -172,3 +172,127 @@ test('the showcase site lists Agent cards and plays the page', { skip, timeout: 
   await demo.locator(task('done', 'agent-card-chat')).click();
   await demo.locator(task('done', 'agent-card-composer')).waitFor();
 });
+
+// A host that draws its own card: its header and body, the tray inside its body (slot), a chat made on the first tap, an unread dot with no controller.
+test('the agent card on a host card: header, body, slot, a chat made on the first tap, a quiet unread dot', { skip, timeout: 300000 }, async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'ux-agent-card-host-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = join(dir, 'page.html');
+  await buildPage('ux/fixtures/component-agent-card.jsx', file);
+  const browser = await playwright.chromium.launch({ executablePath: process.env.CHROMIUM, args: ['--no-sandbox'] });
+  t.after(() => browser.close());
+  for (const { name, ...viewport } of VIEWPORTS) {
+    const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height }, hasTouch: viewport.hasTouch, isMobile: viewport.isMobile });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    page.on('pageerror', error => errors.push(String(error)));
+    const label = text => `${text} at ${name}`;
+    const open = async query => { await page.goto(`file://${file}?${query}`); await page.locator(task('host', 'agent-card')).or(page.locator('[data-testid=board]')).first().waitFor(); };
+    const host = testid => page.locator(task('host', testid));
+    const log = () => page.evaluate(() => window.__ux.log());
+    const created = () => page.evaluate(() => window.__ux.created());
+    const strip = () => page.locator(`${task('host', 'agent-card')} [data-action]`).evaluateAll(nodes => nodes.map(node => node.getAttribute('data-testid')));
+    const level = () => host('agent-card').getAttribute('data-level');
+    const reveal = async testid => { if (name === '1440') { await page.keyboard.press('Shift'); await host(testid).focus(); } };
+
+    // The host's header replaces the built-in one and is not a tap target of the card.
+    await open('');
+    assert.equal(await host('agent-card-title').count(), 0, label('no built-in title'));
+    assert.equal(await host('agent-card-header').count(), 0, label('no built-in header'));
+    assert.equal(await host('agent-card-host-header').count(), 1, label('the host header is drawn'));
+    assert.equal(await host('agent-card').getAttribute('aria-label'), 'Match the January payments', label('the card is named by its title'));
+    assert.equal(await host('host-body').count(), 0, label('the host body starts closed'));
+    await host('host-header-toggle').click();
+    await host('host-body').waitFor();
+    assert.deepEqual(await log(), ['header tapped'], label('the host header keeps its own gesture'));
+    assert.equal(await level(), '0', label('a tap on the host header leaves the card at level 0'));
+    assert.equal(await host('agent-chat').count(), 0, label('the tray did not open from the header'));
+    assert.deepEqual(await strip(), ['agent-card-chat'], label('no controller: only Open the chat'));
+    assert.equal(await created(), 0, label('no conversation yet'));
+
+    // The first tap asks for the chat once; the composer opens inside the host's body, under its lines.
+    await host('agent-card-chat').click();
+    await host('agent-card-composer').waitFor();
+    assert.deepEqual((await log()).filter(item => item === 'chat requested'), ['chat requested'], label('one request'));
+    assert.equal(await created(), 1, label('one conversation made'));
+    assert.equal(await host('host-slot').locator('[data-testid=agent-card-composer]').count(), 1, label('the composer is inside the slot'));
+    assert.equal(await page.evaluate(() => { const lines = document.querySelector('[data-testid=host-lines]'), composer = document.querySelector('[data-task=host] [data-testid=agent-card-composer]'); return Boolean(lines.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING); }), true, label('the composer is under the lines'));
+    assert.deepEqual(await strip(), ['agent-card-collapse', 'agent-card-expand', 'agent-card-dock'], label('the ladder, once the controller is there'));
+
+    // A draft survives the body closing: the composer goes back under the header.
+    await host('composer-input').fill('The date is the 3rd');
+    await host('host-header-toggle').click();
+    await host('host-body').waitFor({ state: 'detached' });
+    assert.equal(await host('agent-card-composer').count(), 1, label('the composer returned under the header'));
+    assert.equal(await host('composer-input').inputValue(), 'The date is the 3rd', label('the draft is kept'));
+    await host('host-header-toggle').click();
+    await host('host-slot').locator('[data-testid=agent-card-composer]').waitFor();
+    assert.equal(await host('composer-input').inputValue(), 'The date is the 3rd', label('the draft is kept going back into the slot'));
+
+    // The tray (level 1) is in the slot; the whole chat (level 2) keeps the host header and takes the body's place; Collapse gives it back.
+    await reveal('agent-card-collapse');
+    await host('agent-card-expand').click();
+    await host('host-slot').locator('[data-testid=agent-chat]').waitFor();
+    assert.equal(await level(), '1');
+    await reveal('agent-card-collapse');
+    await host('agent-card-expand-more').click();
+    await host('agent-chat-header').waitFor();
+    assert.equal(await level(), '2');
+    assert.equal(await host('host-header-toggle').count(), 1, label('level 2: the host header stays on top'));
+    assert.equal(await host('host-lines').count(), 0, label('level 2: the body is not drawn'));
+    assert.equal(await host('agent-card-title').count(), 0, label('level 2: still no built-in header'));
+    await host('agent-card-collapse').click();
+    await host('host-slot').locator('[data-testid=agent-chat]').waitFor();
+    assert.equal(await host('host-lines').count(), 1, label('Collapse gives the body back'));
+    // Esc folds; with no kit header, focus goes to the strip's first cell.
+    await host('composer-input').press('Escape');
+    await host('agent-chat').waitFor({ state: 'detached' });
+    assert.equal(await level(), '0');
+    assert.equal(await page.evaluate(() => document.activeElement?.closest('[data-testid=composer-controller]') !== null), true, label('Esc: focus is on the strip'));
+
+    // A host gesture opens the folded card's composer (controlled), before and after the chat exists.
+    await open('');
+    await host('host-not-right').click();
+    await host('agent-card-composer').waitFor();
+    assert.deepEqual((await log()).filter(item => item === 'chat requested'), ['chat requested'], label('Not right: the chat is asked for and the composer opens'));
+    await host('agent-card-collapse').click();
+    await host('agent-card-composer').waitFor({ state: 'detached' });
+    assert.ok((await log()).includes('composer closed'), label('the card reports the composer closing'));
+    await open('at=host:0');
+    await host('host-not-right').click();
+    await host('agent-card-composer').waitFor();
+
+    // Docked: the card says so under the host header.
+    await open('at=host:d');
+    assert.equal(await level(), 'docked');
+    assert.equal(await host('agent-card-docked').count(), 1, label('Docked marker under the host header'));
+    assert.deepEqual(await strip(), ['agent-card-undock']);
+
+    // The unread dot: quiet, one dot, no count, before any chat exists.
+    await open('');
+    const dot = page.locator(task('unread', 'agent-bar-unread'));
+    assert.equal(await dot.count(), 1, label('an unread dot with no controller'));
+    assert.equal(await dot.getAttribute('aria-label'), 'New reply');
+    assert.equal(await dot.textContent(), '', label('no count'));
+    assert.equal(await dot.getAttribute('data-count'), null);
+    assert.match(await dot.getAttribute('class'), /bg-primary/, label('the primary colour, not red'));
+    assert.equal(await page.locator(task('host', 'agent-bar-unread')).count(), 0, label('a card without the flag has no dot'));
+    assert.equal(await page.locator(task('unread', 'agent-chat')).count(), 0, label('the dot cost no chat'));
+
+    // A board of thirty cards makes no conversation; taps before a controller arrives ask once.
+    await open('many=30');
+    assert.equal(await page.locator('[data-task^=board-]').count(), 30);
+    assert.equal(await page.locator('[data-testid=agent-chat], [data-testid=composer-input]').count(), 0, label('no chat mounted'));
+    assert.equal(await created(), 0);
+    const first = page.locator('[data-task=board-0] [data-testid=agent-card-chat]');
+    for (let i = 0; i < 3; i++) await first.click();
+    assert.deepEqual(await log(), ['chat requested 0'], label('three taps, one request'));
+    assert.equal(await page.locator('[data-testid=agent-chat]').count(), 0, label('and still no chat before the controller'));
+
+    await open('at=host:1');
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), label('no sideways scroll'));
+    assert.deepEqual(errors, [], label('no console error'));
+    await context.close();
+  }
+});

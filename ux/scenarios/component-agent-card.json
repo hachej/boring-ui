@@ -31,6 +31,10 @@
   {
    "label": "Dock the chat",
    "flow": "F4"
+  },
+  {
+   "label": "Open the chat of a host's own card",
+   "flow": "F6"
   }
  ],
  "fixture": {
@@ -64,7 +68,7 @@
   "settledMs": 1500,
   "touchTarget": 44
  },
- "notes": "The cards stay mounted while folded: the running card keeps updating its line, and the needs-you card shows the kit's approval card on the folded card, with a warning ring and no auto-expand. The colour of an agent is one of the theme's chart tokens; the header is tinted from it. The strip is the composer's own.",
+ "notes": "Below the five states, two cards show a host that draws its own card: it passes `header` and `children` (a card opened in place), a `slot` for the tray inside its body, and no controller until the first tap (`onChatRequest`); the second shows the quiet unread dot with no chat yet. The cards stay mounted while folded: the running card keeps updating its line, and the needs-you card shows the kit's approval card on the folded card, with a warning ring and no auto-expand. The colour of an agent is one of the theme's chart tokens; the header is tinted from it. The strip is the composer's own.",
  "states": [
   {
    "id": "01",
@@ -100,6 +104,24 @@
    "name": "docked",
    "query": "at=done:d",
    "only": "1440",
+   "steps": []
+  },
+  {
+   "id": "07",
+   "name": "host-body",
+   "query": "body=1",
+   "steps": []
+  },
+  {
+   "id": "08",
+   "name": "host-tray",
+   "query": "at=host:1&body=1",
+   "steps": []
+  },
+  {
+   "id": "09",
+   "name": "host-open",
+   "query": "at=host:2&body=1",
    "steps": []
   }
  ],
@@ -292,6 +314,155 @@
      "say": "Undock",
      "until": "gone:[data-testid=dock] [data-testid=agent-chat]",
      "expect": "The chat goes back to the card."
+    }
+   ]
+  },
+  {
+   "id": "F5",
+   "name": "A host's own header and body",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "[data-task=host] [data-testid=host-header-toggle]",
+     "say": "Tap the host's own header",
+     "until": "visible:[data-task=host] [data-testid=host-body] & gone:[data-task=host] [data-testid=agent-card-title] & gone:[data-task=host] [data-testid=agent-chat] & eval:window.__ux.log().join() === 'header tapped' & eval:document.querySelector('[data-task=host] [data-testid=agent-card]').dataset.level === '0'",
+     "expect": "The header keeps its own gesture (the body opens); the card stays folded and draws no second title."
+    }
+   ]
+  },
+  {
+   "id": "F6",
+   "name": "A chat made on the first tap",
+   "query": "body=1",
+   "steps": [
+    {
+     "do": "wait",
+     "ms": 300,
+     "say": "Look at a card with no conversation",
+     "until": "visible:[data-task=host] [data-testid=agent-card-chat] & gone:[data-task=host] [data-testid=agent-card-dock] & eval:window.__ux.created() === 0",
+     "expect": "The strip offers only Open the chat; nothing is running."
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=host] [data-testid=agent-card-chat]",
+     "say": "Tap Open the chat",
+     "until": "visible:[data-task=host] [data-testid=host-slot] [data-testid=agent-card-composer] & visible:[data-task=host] [data-testid=agent-card-dock] & eval:window.__ux.created() === 1 & eval:window.__ux.log().filter(item => item === 'chat requested').length === 1",
+     "expect": "The host is asked once; when its conversation arrives the composer opens inside its body, under its lines."
+    }
+   ]
+  },
+  {
+   "id": "F7",
+   "name": "The tray goes where the host puts it, and comes back",
+   "query": "body=1",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "[data-task=host] [data-testid=agent-card-chat]",
+     "say": "Open the chat",
+     "until": "visible:[data-task=host] [data-testid=host-slot] [data-testid=agent-card-composer]",
+     "expect": "The composer is in the host's body."
+    },
+    {
+     "do": "type",
+     "target": "[data-task=host] [data-testid=composer-input]",
+     "text": "The date is the 3rd",
+     "say": "Write a few words",
+     "until": "value:[data-task=host] [data-testid=composer-input]~The date is the 3rd"
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=host] [data-testid=host-header-toggle]",
+     "say": "Close the host's body",
+     "until": "gone:[data-task=host] [data-testid=host-body] & visible:[data-task=host] [data-testid=agent-card-composer] & value:[data-task=host] [data-testid=composer-input]~The date is the 3rd",
+     "expect": "The composer goes back under the header with the words kept."
+    }
+   ]
+  },
+  {
+   "id": "F8",
+   "name": "The whole chat keeps the host's header",
+   "query": "at=host:1&body=1",
+   "steps": [
+    {
+     "do": "press",
+     "key": "Shift",
+     "say": "Press a key (focus then shows as a keyboard focus)",
+     "only": "1440"
+    },
+    {
+     "do": "focus",
+     "target": "[data-task=host] [data-testid=agent-card-collapse]",
+     "say": "Focus the chevron (it reveals the controller)",
+     "only": "1440"
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=host] [data-testid=agent-card-expand-more]",
+     "say": "Expand more",
+     "until": "visible:[data-task=host] [data-testid=agent-chat-header] & visible:[data-task=host] [data-testid=host-header-toggle] & gone:[data-task=host] [data-testid=host-lines]",
+     "expect": "The whole chat takes the body's place; the host's header stays on top."
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=host] [data-testid=agent-card-collapse]",
+     "say": "Collapse",
+     "until": "visible:[data-task=host] [data-testid=host-lines] & visible:[data-task=host] [data-testid=host-slot] [data-testid=agent-chat] & gone:[data-task=host] [data-testid=agent-chat-header]",
+     "expect": "The body is back, with the tray in it."
+    },
+    {
+     "do": "press",
+     "key": "Escape",
+     "say": "Press Esc",
+     "until": "gone:[data-task=host] [data-testid=agent-chat] & eval:document.activeElement.closest('[data-testid=composer-controller]') !== null",
+     "expect": "Esc folds the card; focus is on the strip."
+    }
+   ]
+  },
+  {
+   "id": "F9",
+   "name": "A quiet dot on a folded card",
+   "steps": [
+    {
+     "do": "wait",
+     "ms": 300,
+     "say": "Look at the card with a reply that came while you were away",
+     "until": "visible:[data-task=unread] [data-testid=agent-bar-unread] & gone:[data-task=unread] [data-testid=agent-chat] & eval:window.__ux.created() === 0 & eval:document.querySelector('[data-task=unread] [data-testid=agent-bar-unread]').textContent === ''",
+     "expect": "One small dot beside the chat bubble, with no number, before any chat exists."
+    }
+   ]
+  },
+  {
+   "id": "F10",
+   "name": "A host gesture opens the composer",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "[data-task=host] [data-testid=host-not-right]",
+     "say": "Tap the host's own « Not right »",
+     "until": "visible:[data-task=host] [data-testid=agent-card-composer] & eval:window.__ux.log().includes('not right')",
+     "expect": "The folded card's composer opens."
+    }
+   ]
+  },
+  {
+   "id": "F11",
+   "name": "A board of thirty cards opens no conversation",
+   "query": "many=30",
+   "steps": [
+    {
+     "do": "wait",
+     "ms": 300,
+     "say": "Look at the board",
+     "until": "gone:[data-testid=agent-chat] & eval:document.querySelectorAll('[data-task^=board-]').length === 30 & eval:window.__ux.created() === 0",
+     "expect": "Thirty cards, no chat running."
+    },
+    {
+     "do": "tap",
+     "target": "[data-task=board-0] [data-testid=agent-card-chat]",
+     "say": "Tap Open the chat on the first",
+     "until": "eval:window.__ux.log().join() === 'chat requested 0'",
+     "expect": "Only that card asks for its chat."
     }
    ]
   }
