@@ -43,7 +43,12 @@
   ] },
   { "id": "F05", "name": "Read one app's track", "query": "s=track", "steps": [
    { "do": "wait", "ms": 100, "say": "Open Atelier's track", "expect": "Four words in a row, three features, each with its status and four segments; nothing scrolls sideways.", "until": { "390": "count:expert-feature>=3 & eval:document.querySelectorAll('main ol li').length === 4 & fit:surface & height:main button>=44", "default": "count:expert-feature>=3 & fit:surface" } },
-   { "do": "tap", "target": "[data-testid=expert-feature] button", "say": "Tap « Continue »", "expect": "The app is told which feature to open.", "until": "eval:window.__ux.calls().includes('feature:f1')" }
+   { "do": "tap", "target": "[data-testid=expert-feature] button:last-child", "say": "Tap « Continue »", "expect": "The app is told which feature to open.", "until": "eval:window.__ux.calls().includes('feature:f1')" }
+  ] },
+  { "id": "F07", "name": "Open a feature by its row", "query": "s=track", "steps": [
+   { "do": "tap", "target": "[data-testid=expert-feature-open]", "say": "Tap the « Quote letters » row", "expect": "The whole row opens: the app is told which feature, and the row is at least 44 px high.", "until": { "390": "eval:window.__ux.calls().includes('row:f1') & height:[data-testid=expert-feature-open]>=44", "default": "eval:window.__ux.calls().includes('row:f1')" } },
+   { "do": "focus", "target": "[data-testid=expert-feature]:nth-of-type(2) [data-testid=expert-feature-open]", "say": "Focus the « Client summary » row, then press Enter", "until": "focus:[data-testid=expert-feature]:nth-of-type(2) [data-testid=expert-feature-open]" },
+   { "do": "press", "key": "Enter", "say": "Press Enter", "expect": "The keyboard opens it as a tap does.", "until": "eval:window.__ux.calls().includes('row:f2')" }
   ] },
   { "id": "F06", "name": "Nothing needs me", "query": "s=calm", "steps": [
    { "do": "wait", "ms": 100, "say": "Open the page when nothing waits", "expect": "« Nothing needs you » and one sentence, then the apps.", "until": "text:[data-testid=surface] h1~Nothing needs you & count:expert-app>=2 & gone:expert-item & fit:surface" }

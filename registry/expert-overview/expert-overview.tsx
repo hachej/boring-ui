@@ -19,7 +19,9 @@ export type ExpertApp = { id: string; name: string; line?: string; unreadable?: 
 export type ExpertDone = { label: string; items: readonly { id: string; title: string; meta?: string }[]; onOpenItem?: (id: string) => void };
 
 /** `reached` steps are done. `turn` says who acts at the step `reached`: the person, the agents, or nobody (the feature waits). */
-export type ExpertFeature = { id: string; title: string; status: string; reached: 0 | 1 | 2 | 3 | 4; turn: 'person' | 'agents' | 'nobody'; line?: string; action?: { label: string; onAction: () => void } };
+export type ExpertFeature = { id: string; title: string; status: string; reached: 0 | 1 | 2 | 3 | 4; turn: 'person' | 'agents' | 'nobody'; line?: string; action?: { label: string; onAction: () => void };
+  /** The row itself opens (tap, Enter, Space): it is drawn as a button, 44 px high at least, with a focus ring. Without it the row is plain text and only `action` is pressable. */
+  onOpen?: () => void };
 
 export type ExpertOverviewLabels = {
   inProgress: string; later: string; show: string; hide: string; unreadable: string; calmHeading: string; back: string;
@@ -174,24 +176,34 @@ export function ExpertOverview({ heading, intro, needsYou, apps, done, calm, lab
 }
 
 function Track({ feature, labels }: { feature: ExpertFeature; labels: ExpertOverviewLabels }) {
-  const { title, status, reached, turn, line, action } = feature;
-  return (
-    <div role="group" aria-label={`${title}: ${status}, ${labels.progress(reached, STEP_COUNT)}`} className="flex flex-col gap-2 rounded-(--radius) bg-card px-4 py-3 text-card-foreground" data-testid="expert-feature">
-      <div className="flex items-baseline justify-between gap-3">
+  const { title, status, reached, turn, line, action, onOpen } = feature;
+  // Spans only, so the same body can sit inside the row's Button when `onOpen` is given (a Button may not hold a div).
+  const body = (
+    <>
+      <span className="flex items-baseline justify-between gap-3">
         <span className="min-w-0 text-base font-semibold [overflow-wrap:anywhere]">{title}</span>
         <span className={cn('shrink-0 text-sm', turn === 'person' ? 'text-warning-soft-foreground' : 'text-muted-foreground')}>{status}</span>
-      </div>
-      <div aria-hidden className="grid grid-cols-4 gap-1">
+      </span>
+      <span aria-hidden className="grid grid-cols-4 gap-1">
         {Array.from({ length: STEP_COUNT }, (_, index) => (
           <span key={index} data-segment={index} className={cn('h-1.5 rounded-(--radius)', index < reached ? STEP_TONES[index]?.bar : index === reached && turn === 'person' ? 'bg-warning-soft' : index === reached && turn === 'agents' ? 'bg-muted-foreground' : 'bg-border')} />
         ))}
-      </div>
+      </span>
       {line ? <span className={quiet}>{line}</span> : null}
-      {action ? (
-        <Button variant="ghost" className={cn(tap, '-ml-2.5 self-start')} onClick={action.onAction}>
-          <span className="font-semibold">{action.label}</span><ChevronRightIcon aria-hidden className="size-4 shrink-0" />
-        </Button>
-      ) : null}
+    </>
+  );
+  const button = action ? (
+    <Button variant="ghost" className={cn(tap, !onOpen && '-ml-2.5', 'self-start')} onClick={action.onAction}>
+      <span className="font-semibold">{action.label}</span><ChevronRightIcon aria-hidden className="size-4 shrink-0" />
+    </Button>
+  ) : null;
+  // With `onOpen` the card's padding moves into the row's Button, so its whole face is the tap target; the action stays a sibling (a button never holds a button).
+  return (
+    <div role="group" aria-label={`${title}: ${status}, ${labels.progress(reached, STEP_COUNT)}`} className={cn('flex flex-col rounded-(--radius) bg-card text-card-foreground', onOpen ? 'gap-1 p-1.25' : 'gap-2 px-4 py-3')} data-testid="expert-feature">
+      {onOpen ? (
+        <Button variant="ghost" className="h-auto min-h-11 w-full min-w-0 justify-start whitespace-normal text-left" data-testid="expert-feature-open" onClick={onOpen}><span className="flex min-w-0 flex-1 flex-col gap-2 py-1.5 font-normal">{body}</span></Button>
+      ) : body}
+      {button}
     </div>
   );
 }

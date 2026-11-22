@@ -19,8 +19,8 @@ const APPS = [
   { id: 'devis', name: 'Devis', unreadable: true },
 ];
 const FEATURES = [
-  { id: 'f1', title: 'Quote letters', status: 'Ready to try', reached: 3, turn: 'person', line: '1 of 4 points seen', action: { label: 'Continue', onAction: call('feature:f1') } },
-  { id: 'f2', title: 'Client summary', status: 'In progress', reached: 1, turn: 'agents', line: 'Ready around Thursday' },
+  { id: 'f1', title: 'Quote letters', status: 'Ready to try', reached: 3, turn: 'person', line: '1 of 4 points seen', action: { label: 'Continue', onAction: call('feature:f1') }, onOpen: call('row:f1') },
+  { id: 'f2', title: 'Client summary', status: 'In progress', reached: 1, turn: 'agents', line: 'Ready around Thursday', onOpen: call('row:f2') },
   { id: 'f3', title: 'Search past letters', status: 'Waiting', reached: 1, turn: 'nobody', line: 'After Quote letters' },
 ];
 
