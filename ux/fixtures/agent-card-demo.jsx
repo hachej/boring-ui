@@ -39,15 +39,14 @@ export const TASKS = [
       reply('The contract renews on March 1 for twelve months. Nothing unusual.')], docs: {} }) },
 ];
 
-function useRun(task) {
-  return useMemo(() => {
-    const demo = createDemoController({ script, pace: PACE, seed: task.seed() });
-    const actions = { answer: async (_id, text) => { window.__answered.push(text); void demo.play(text); return { kind: 'answered' }; } };
-    const stop = demo.controller.stop;
-    demo.controller.stop = async () => { window.__stopped += 1; return stop(); };
-    return { ...demo, actions };
-  }, [task]);
+export function makeRun(task) {
+  const demo = createDemoController({ script, pace: PACE, seed: task.seed() });
+  const actions = { answer: async (_id, text) => { window.__answered.push(text); void demo.play(text); return { kind: 'answered' }; } };
+  const stop = demo.controller.stop;
+  demo.controller.stop = async () => { window.__stopped += 1; return stop(); };
+  return { ...demo, actions };
 }
+function useRun(task) { return useMemo(() => makeRun(task), [task]); }
 
 function statusOf(snapshot) {
   const docs = snapshot.view.docs['pi.live'], entries = snapshot.view.entries;
