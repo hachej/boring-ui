@@ -1,6 +1,6 @@
 {
   "name": "boring-ui",
-  "version": "0.5.19",
+  "version": "0.5.20",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -120,7 +120,7 @@
     "canvas:journey:remote": "node scripts/test-canvas-remote-browser.mjs",
     "test:task-list-registry-consumer": "npm run registry:build && node scripts/test-registry-consumer.mjs --task-list",
     "test:expert-overview-registry-consumer": "npm run registry:build && npm run build && node scripts/test-registry-consumer.mjs --expert-overview",
-    "task-list:journey":"node scripts/test-task-list-browser.mjs",
+    "task-list:journey": "node scripts/test-task-list-browser.mjs",
     "morning": "node examples/morning/server.mjs",
     "morning:journey": "node scripts/test-morning-browser.mjs",
     "test:morning-consumer": "node scripts/test-experience-consumer.mjs --morning",

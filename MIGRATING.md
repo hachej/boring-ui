@@ -1,5 +1,11 @@
 # Unreleased
 
+# Migrating to 0.5.20
+
+- **`expert-overview`: a new block for a person with little time (additive).** `npx boring-ui-blocks add expert-overview` installs `ExpertOverview` (at most three plain sentences that need the person, one line per app, done folded, and a calm state when nothing needs them) and `ExpertTrack` (one app's four-step track). Props only: the app passes every sentence, label and callback, and the four step words; the block fetches nothing and shows no count of agent work. Nothing changes for an app that does not install it.
+
+- **`agent-card`: a host can draw its own header and body, put the tray inside it, and make the chat on the first tap (additive).** New optional props: `header` (drawn in place of the built-in header, not a tap target of the card), `children` (the host's body, under the header and `meta`), `slot` (an element inside that body: the folded card's composer and the tray are drawn there, and return under the header, state kept, when it goes), `controller` is now optional with `onChatRequest` (no controller: the strip shows only « Open the chat », no chat is mounted, and a tap calls `onChatRequest` once; the composer opens when the controller arrives) and `unread` (a quiet dot on the folded card, with no count, even before any controller exists). Without these props the card is unchanged. Update the block with `npx boring-ui-blocks add agent-card`; nothing else to do.
+
 # Migrating to 0.5.19
 
 - **`AgentWorkspace` with `resources` and no `revisionProvider`: its read-only Library no longer offers Rename, Move or Delete (fix).** The discovered client could write, so the menu showed them although the Library has no Upload and is documented as read-only. To rename, move and delete in the Library, pass a `revisionProvider` (`connectRevisionProvider(...)`); `fileTree.capabilities` (`{ effective: ['read', 'rename', 'delete'] }`) still narrows that Library. Delete itself already existed there and in `Documents`: a host that never saw it has a provider without `delete` or `capabilities` without `'delete'`.
