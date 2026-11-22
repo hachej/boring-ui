@@ -2,7 +2,7 @@ import { addAppComponents, appComponents, appComponentsJson, workspaceDirectory,
 import semver from 'semver';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, copyFileSync, existsSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,11 +10,33 @@ import { runCaptured } from './run-captured.mjs';
 import { prepareConsumerIsolation, assertConsumerTypeFiles, npmInstallFlags } from './consumer-isolation.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-assert.ok(process.argv.length === 2 || process.argv.length === 3 && ['--html', '--task-list'].includes(process.argv[2]), 'Expected no option, --html or --task-list');
+assert.ok(process.argv.length === 2 || process.argv.length === 3 && ['--html', '--task-list', '--expert-overview'].includes(process.argv[2]), 'Expected no option, --html, --task-list or --expert-overview');
 const html = process.argv[2] === '--html';
 const taskList = process.argv[2] === '--task-list';
-const recipe = taskList ? { name: 'task-list-viewer', exportName: 'TaskListViewer', className: 'boring-task-list-recipe', hostClass: 'host-installed-task-list', fixture: 'registry-task-list.mjs' } : html ? { name: 'html-viewer', exportName: 'HtmlViewer', className: 'boring-html-recipe', hostClass: 'host-installed-html', radius: '--boring-html-radius', fixture: 'registry-html.mjs' }
+// A props-only pattern block: no kit controller, no CSS recipe, no wrapper over a kit entry; its own types and its render are the proof.
+const expert = process.argv[2] === '--expert-overview';
+const markdown = !html && !taskList && !expert;
+const recipe = expert ? { name: 'expert-overview', exportName: 'ExpertOverview', fixture: 'registry-expert-overview.mjs' } : taskList ? { name: 'task-list-viewer', exportName: 'TaskListViewer', className: 'boring-task-list-recipe', hostClass: 'host-installed-task-list', fixture: 'registry-task-list.mjs' } : html ? { name: 'html-viewer', exportName: 'HtmlViewer', className: 'boring-html-recipe', hostClass: 'host-installed-html', radius: '--boring-html-radius', fixture: 'registry-html.mjs' }
   : { name: 'markdown-editor', exportName: 'MarkdownEditor', className: 'boring-markdown-recipe', hostClass: 'host-installed-editor', radius: '--boring-editor-radius', fixture: 'registry-markdown.mjs' };
+// The consumer page of --expert-overview: the exported types, strict, with exactOptionalPropertyTypes; the fixtures of the render test are the same shapes.
+const EXPERT_CONSUMER = `import { ExpertOverview, ExpertTrack, expertOverviewLabels, type ExpertApp, type ExpertDone, type ExpertFeature, type ExpertItem, type ExpertOverviewProps, type ExpertStep, type ExpertTrackProps } from './src/components/expert-overview/expert-overview';
+import { createElement } from 'react';
+const steps: ExpertStep[] = ['Framed', 'Proven', 'Rehearsed', 'Accepted'].map(label => ({ id: label.toLowerCase(), label }));
+const open: ExpertItem = { id: 'a', text: 'The quote letters are ready for you to try.', action: { label: 'Try it', onAction: () => {} } };
+const asked: ExpertItem = { id: 'b', text: 'Should the letter still name one?', action: { label: 'Reply', onAction: () => {} }, later: { onLater: () => {} } };
+const apps: ExpertApp[] = [{ id: 'atelier', name: 'Atelier', line: '3 features', onOpen: () => {} }, { id: 'devis', name: 'Devis', unreadable: true }];
+const done: ExpertDone = { label: 'Done · 2 live', items: [{ id: 'x', title: 'Price list', meta: 'Live' }, { id: 'y', title: 'Quote page' }], onOpenItem: () => {} };
+const features: ExpertFeature[] = [{ id: 'f1', title: 'Quote letters', status: 'Ready for you', reached: 3, turn: 'person', action: { label: 'Open', onAction: () => {} } }, { id: 'f2', title: 'Search', status: 'Framed', reached: 1, turn: 'nobody', line: 'Waits' }];
+const forYou: ExpertOverviewProps = { heading: 'Good evening', intro: 'Two things.', needsYou: [open, asked], apps, done };
+const calm: ExpertOverviewProps = { heading: 'Good evening', needsYou: [], calm: { heading: 'Nothing needs you', text: 'It will show here.' }, apps };
+const track: ExpertTrackProps = { title: 'Atelier', subtitle: 'Release R0', steps, note: 'You act first and last.', features, done, extra: { label: 'Something else is wrong', onAction: () => {} }, onBack: () => {}, labels: { back: 'For you', progress: (reached, total) => reached + '/' + total } };
+// @ts-expect-error a feature's turn is person, agents or nobody
+const wrongTurn: ExpertFeature = { id: 'z', title: 'Z', status: 'Z', reached: 1, turn: 'someone' };
+// @ts-expect-error reached is 0 to 4
+const wrongReach: ExpertFeature = { id: 'z', title: 'Z', status: 'Z', reached: 5, turn: 'person' };
+void wrongTurn; void wrongReach; void expertOverviewLabels.progress(1, 4);
+createElement(ExpertOverview, forYou); createElement(ExpertOverview, calm); createElement(ExpertTrack, track);
+`;
 const closure = new Map();
 const visit = name => {
   if (closure.has(name)) return;
@@ -25,7 +47,9 @@ const visit = name => {
 visit(recipe.name);
 const item = closure.get(recipe.name);
 const pins = [...new Set([...closure.values()].flatMap(item => item.dependencies ?? []))];
-const excludedPackages = ['@hachej/boring-agent', 'tldraw', '@tldraw/editor', ...((html || taskList) ? ['@tiptap/core', 'marked', '@hachej/boring-execution'] : [])];
+// A props-only block needs no kit package, but an app that installs it has one: `boring-ui-blocks check` reads the kit version from it.
+if (expert) pins.push('@hachej/boring-ui-kit@' + JSON.parse(readFileSync(join(workspaceDirectory(root, '@hachej/boring-ui-kit'), 'package.json'), 'utf8')).version);
+const excludedPackages = ['@hachej/boring-agent', 'tldraw', '@tldraw/editor', ...((html || taskList || expert) ? ['@tiptap/core', 'marked', '@hachej/boring-execution'] : [])];
 const temporary = mkdtempSync(join(tmpdir(), 'boring-registry-consumer-'));
 // The pinned native SDK probes ten ancestor node_modules paths even when local types exist.
 const directory = temporary;
@@ -54,7 +78,7 @@ try {
   const dependencies = Object.fromEntries(pins.filter(pin => !pin.startsWith('@hachej/boring-')).map(pin => {
     const split = pin.lastIndexOf('@'); return [pin.slice(0, split), pin.slice(split + 1)];
   }));
-  for (const name of ['typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild', 'shadcn', 'tailwindcss', '@base-ui/react', 'class-variance-authority', 'cn', ...(taskList ? ['clsx', 'tailwind-merge', 'lucide-react'] : [])]) dependencies[name] = rootManifest.devDependencies[name];
+  for (const name of ['typescript', '@types/react', '@types/react-dom', 'happy-dom', 'esbuild', 'shadcn', 'tailwindcss', '@base-ui/react', 'class-variance-authority', 'cn', ...(taskList ? ['clsx', 'tailwind-merge', 'lucide-react'] : []), ...(expert ? ['react-dom'] : [])]) dependencies[name] = rootManifest.devDependencies[name];
   // The SQLite workspace host loads Pi's portable env entry at runtime (the optional files peer); nothing else of Pi.
   dependencies['@earendil-works/pi-durable'] = JSON.parse(readFileSync(join(root, 'packages/files/package.json'), 'utf8')).peerDependencies['@earendil-works/pi-durable'];
   const manifest = { name: 'isolated-registry-consumer', version: '1.0.0', private: true, type: 'module', dependencies };
@@ -135,9 +159,14 @@ try {
   }
   const component = 'src/components/' + recipe.name + '/' + recipe.name + '.tsx';
   assert.ok(existsSync(join(directory, component)), 'Real CLI must create the wrapper');
-  assert.ok(readFileSync(join(directory, component), 'utf8').includes(taskList ? './task-list-controller' : '@hachej/boring-ui-kit/' + recipe.name));
-  assert.ok(readFileSync(join(directory, 'src/index.css'), 'utf8').includes(recipe.className));
-  writeFileSync(join(directory, 'consumer.ts'), taskList ? `import { TaskListViewer } from './src/components/task-list-viewer/task-list-viewer';
+  if (expert) {
+    const allowed = new Set(['ui', ...[...closure.values()].flatMap(entry => (entry.files ?? []).map(file => String(file.target).split('/')[1]))]);
+    for (const name of readdirSync(join(directory, 'src/components'))) assert.ok(allowed.has(name), `the item alone installs only its own folder and its registryDependencies, not ${name}`);
+  } else {
+    assert.ok(readFileSync(join(directory, component), 'utf8').includes(taskList ? './task-list-controller' : '@hachej/boring-ui-kit/' + recipe.name));
+    assert.ok(readFileSync(join(directory, 'src/index.css'), 'utf8').includes(recipe.className));
+  }
+  writeFileSync(join(directory, 'consumer.ts'), expert ? EXPERT_CONSUMER : taskList ? `import { TaskListViewer } from './src/components/task-list-viewer/task-list-viewer';
 import { createTaskListFeature, type TaskListOptions } from './src/components/task-list-viewer/task-list-controller';
 import { createElement } from 'react';
 declare const options: TaskListOptions;
@@ -185,7 +214,7 @@ controller.flush(controller.actions.selection());
   // The tests' host: one SQLite workspace per scope over the installed @hachej/boring-files (public entry points only).
   mkdirSync(join(directory, 'shared'), { recursive: true });
   copyFileSync(join(root, 'shared/sqlite-workspaces.mjs'), join(directory, 'shared/sqlite-workspaces.mjs'));
-  if (!html && !taskList) {
+  if (markdown) {
     const proposals = readFileSync(join(root, 'test/packages/ui-markdown-proposals.test.mjs'), 'utf8');
     assert.equal(proposals.split("'@hachej/boring-ui-kit/markdown-editor'").length, 2);
     writeFileSync(join(directory, 'test/fixtures/registry-markdown-proposals-dom.mjs'), proposals.replace("'@hachej/boring-ui-kit/markdown-editor'", "'../../dist/markdown-editor.js'"));
@@ -199,23 +228,24 @@ controller.flush(controller.actions.selection());
     writeFileSync(join(directory, 'test/fixtures/registry-html-dom.mjs'), tests.replace("'@hachej/boring-ui-kit/html-viewer'", "'../../dist/html-viewer.js'"));
   }
   compile();
-  run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/fixtures/' + recipe.fixture, ...(!html && !taskList ? ['test/fixtures/registry-markdown-mounted-dom.mjs', 'test/fixtures/registry-markdown-proposals-dom.mjs'] : [])], isolated);
+  run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/fixtures/' + recipe.fixture, ...(markdown ? ['test/fixtures/registry-markdown-mounted-dom.mjs', 'test/fixtures/registry-markdown-proposals-dom.mjs'] : [])], isolated);
   const copied = readFileSync(join(directory, component), 'utf8');
-  assert.ok(copied.includes(recipe.className));
+  if (!expert) assert.ok(copied.includes(recipe.className));
   if (taskList) writeFileSync(join(directory, component), copied.replace(recipe.className, recipe.className + ' ' + recipe.hostClass));
   writeFileSync(join(directory, 'src/index.css'), readFileSync(join(directory, 'src/index.css'), 'utf8') + '\n:root { --radius: 1.25rem; }\n');
   compile();
-  run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/fixtures/' + recipe.fixture, ...(!html && !taskList ? ['test/fixtures/registry-markdown-mounted-dom.mjs', 'test/fixtures/registry-markdown-proposals-dom.mjs'] : [])], { ...isolated, BORING_REGISTRY_RESTYLED: 'true' });
+  run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/fixtures/' + recipe.fixture, ...(markdown ? ['test/fixtures/registry-markdown-mounted-dom.mjs', 'test/fixtures/registry-markdown-proposals-dom.mjs'] : [])], { ...isolated, BORING_REGISTRY_RESTYLED: 'true' });
   const controllerExport = taskList ? 'createTaskListController' : html ? 'createHtmlController' : 'createMarkdownController';
   const controllerEntry = taskList ? 'text-buffer' : html ? 'html' : 'markdown';
-  writeFileSync(join(directory, 'browser-entry.js'), `export { ${recipe.exportName} } from './${component}';\nexport { ${controllerExport} } from '${taskList ? './src/components/task-list-viewer/task-list-controller' : '@hachej/boring-ui-kit/' + controllerEntry}';\nimport './src/index.css';\n`);
+  writeFileSync(join(directory, 'browser-entry.js'), expert ? `export { ExpertOverview, ExpertTrack } from './${component}';\nimport './src/index.css';\n` : `export { ${recipe.exportName} } from './${component}';\nexport { ${controllerExport} } from '${taskList ? './src/components/task-list-viewer/task-list-controller' : '@hachej/boring-ui-kit/' + controllerEntry}';\nimport './src/index.css';\n`);
   run(process.execPath, ['node_modules/esbuild/bin/esbuild', 'browser-entry.js', '--bundle', '--platform=browser', '--format=esm', '--outfile=browser.js', '--metafile=browser-meta.json'], isolated);
   const inputs = Object.keys(JSON.parse(readFileSync(join(directory, 'browser-meta.json'), 'utf8')).inputs);
   assertConsumerTypeFiles(inputs.map(path => resolve(directory, path)).join('\n'), directory);
   assert.ok(inputs.some(path => path.endsWith(component)), 'Bundle must use CLI-installed copied source');
-  assert.ok(inputs.some(path => path.endsWith('@hachej/boring-ui-kit/dist/' + (taskList ? 'public-text-buffer' : controllerEntry) + '.js')), 'Bundle must include the selected public controller');
+  if (expert) assert.ok(inputs.every(path => !/@hachej\/boring-ui-kit/.test(path)), 'a props-only block pulls no kit package into the app');
+  else assert.ok(inputs.some(path => path.endsWith('@hachej/boring-ui-kit/dist/' + (taskList ? 'public-text-buffer' : controllerEntry) + '.js')), 'Bundle must include the selected public controller');
   assert.ok(inputs.every(path => !/pi-durable|@earendil-works|@hachej\/boring-agent|sqlite|node:|tldraw/.test(path)), 'browser bundle must exclude kernel/server/canvas');
-  if (html || taskList) assert.ok(inputs.every(path => !/@tiptap|marked|entities|@hachej\/boring-execution/.test(path)), 'HTML bundle must exclude unrelated viewers and execution');
+  if (html || taskList || expert) assert.ok(inputs.every(path => !/@tiptap|marked|entities|@hachej\/boring-execution/.test(path)), 'HTML bundle must exclude unrelated viewers and execution');
   if (taskList) {
     const installedManifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'));
     const installedLock = JSON.parse(readFileSync(join(directory, 'package-lock.json'), 'utf8'));
@@ -236,6 +266,12 @@ controller.flush(controller.actions.selection());
       copyFileSync(join(root, path), join(directory, path));
     }
     run(process.execPath, ['--test', '--experimental-test-isolation=none', 'test/compatibility/task-list.test.mjs'], isolated);
+  }
+  if (expert) {
+    // The kit's own bin over the installed copy: the manifest names the block, and `check` finds no edited or missing kit file.
+    const blocks = join(root, 'packages/ui/bin/boring-ui-blocks.mjs');
+    run(process.execPath, [blocks, 'manifest']);
+    run(process.execPath, [blocks, 'check']);
   }
   console.log('PASS: real pinned shadcn local installation of ' + recipe.name + ', strict declarations, host theme tokens and real controller operations; DOM and bundle evidence only');
   completed = true;

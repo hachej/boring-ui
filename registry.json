@@ -4127,6 +4127,27 @@
       }
     },
     {
+      "name": "expert-overview",
+      "type": "registry:component",
+      "title": "Expert overview",
+      "description": "What needs a busy person and what the agents are doing, on one quiet page: at most three plain sentences that need them (one gesture each, a quiet Later on a question), one line per app, finished work folded, and a four-step track per app. A calm state when nothing needs them, and no counts of agent work, badges or red. Props only: the app writes every sentence, count and day; the block fetches nothing and reads no clock.",
+      "dependencies": [
+        "react@^19.0.0"
+      ],
+      "registryDependencies": [
+        "@boring-ui/utils",
+        "@boring-ui/_shared",
+        "@boring-ui/touch-floor"
+      ],
+      "files": [
+        {
+          "path": "registry/expert-overview/expert-overview.tsx",
+          "type": "registry:component",
+          "target": "components/expert-overview/expert-overview.tsx"
+        }
+      ]
+    },
+    {
       "name": "wiring-chips",
       "type": "registry:component",
       "title": "Wiring chips",

@@ -1,0 +1,52 @@
+{
+ "target": "component:expert-overview",
+ "title": "Expert overview",
+ "group": "Reference",
+ "hint": "what needs you",
+ "summary": "What needs a busy person on one quiet page: at most three plain sentences, one line per app, done folded, and one app's four-step track.",
+ "purpose": "The registry block's ExpertOverview and ExpertTrack as an app mounts them, over plain data and no network. « For you » passes five items and the block shows the first three, each a quiet sentence with one gesture (a question has a gesture and a « Later »), then one line per app and « Done » folded. « Track » shows one app's four steps and one row per feature, each said in words and drawn in four segments. « Calm » is the page when nothing needs the person. No box, badge, count or red anywhere; every sentence, count and day is the app's.",
+ "fixture": {
+  "entry": "ux/fixtures/component-expert-overview.jsx",
+  "query": "",
+  "ready": "[data-testid=surface] h1",
+  "install": "npx shadcn@4.23.0 add button",
+  "usage": "<ExpertOverview heading=\"Good evening\" intro=\"Two small things.\" needsYou={items} apps={apps} done={done} />"
+ },
+ "viewports": [
+  { "name": "390", "width": 390, "height": 844, "touch": true },
+  { "name": "1440", "width": 1440, "height": 900 }
+ ],
+ "watch": [["page", "[data-testid=surface]"]],
+ "thresholds": { "cls": 0.08, "settledMs": 1200, "touchTarget": 44, "offscreen": 0 },
+ "notes": "Nothing scrolls sideways at 390 px; every gesture is at least 44 px high on a phone; text reads at 4.5:1 or better in light and dark (the tokens do it: no dark: class in the block). The block shows three items at most, whatever it is given; « Later » on a question hands its place to the next item, which the app decides, not the block.",
+ "states": [
+  { "id": "01", "name": "for-you", "query": "s=for-you", "steps": [{ "do": "wait", "ms": 100, "until": { "390": "count:expert-item>=3 & fit:surface & height:main button>=44 & contrast:main h1>=4.5 & contrast:main p>=4.5 & contrast:main [data-testid=expert-item] span:not([aria-hidden])>=4.5 & contrast:main [data-testid=expert-app] span>=4.5 & contrast:main button>=4.5", "default": "count:expert-item>=3 & fit:surface & contrast:main h1>=4.5 & contrast:main button>=4.5" } }] },
+  { "id": "02", "name": "for-you-dark", "query": "s=for-you&dark=1", "steps": [{ "do": "wait", "ms": 100, "until": { "390": "count:expert-item>=3 & fit:surface & height:main button>=44 & contrast:main h1>=4.5 & contrast:main p>=4.5 & contrast:main [data-testid=expert-item] span:not([aria-hidden])>=4.5 & contrast:main [data-testid=expert-app] span>=4.5 & contrast:main button>=4.5", "default": "count:expert-item>=3 & fit:surface & contrast:main h1>=4.5 & contrast:main button>=4.5" } }] },
+  { "id": "03", "name": "track", "query": "s=track", "steps": [{ "do": "wait", "ms": 100, "until": { "390": "count:expert-feature>=3 & fit:surface & height:main button>=44 & contrast:main h1>=4.5 & contrast:main p>=4.5 & contrast:main ol li>=4.5 & contrast:main [data-testid=expert-feature] span[class*=text-]>=4.5 & contrast:main button>=4.5", "default": "count:expert-feature>=3 & fit:surface & contrast:main h1>=4.5 & contrast:main button>=4.5" } }] },
+  { "id": "04", "name": "track-dark", "query": "s=track&dark=1", "steps": [{ "do": "wait", "ms": 100, "until": { "390": "count:expert-feature>=3 & fit:surface & height:main button>=44 & contrast:main h1>=4.5 & contrast:main p>=4.5 & contrast:main ol li>=4.5 & contrast:main [data-testid=expert-feature] span[class*=text-]>=4.5 & contrast:main button>=4.5", "default": "count:expert-feature>=3 & fit:surface & contrast:main h1>=4.5 & contrast:main button>=4.5" } }] },
+  { "id": "05", "name": "calm", "query": "s=calm", "steps": [{ "do": "wait", "ms": 100, "until": { "390": "text:[data-testid=surface] h1~Nothing needs you & gone:expert-item & fit:surface & height:main button>=44 & contrast:main h1>=4.5 & contrast:main p>=4.5 & contrast:main button>=4.5", "default": "text:[data-testid=surface] h1~Nothing needs you & gone:expert-item & fit:surface & contrast:main p>=4.5" } }] },
+  { "id": "06", "name": "calm-dark", "query": "s=calm&dark=1", "steps": [{ "do": "wait", "ms": 100, "until": { "390": "text:[data-testid=surface] h1~Nothing needs you & gone:expert-item & fit:surface & height:main button>=44 & contrast:main h1>=4.5 & contrast:main p>=4.5 & contrast:main button>=4.5", "default": "text:[data-testid=surface] h1~Nothing needs you & gone:expert-item & fit:surface & contrast:main p>=4.5" } }] }
+ ],
+ "flows": [
+  { "id": "F01", "name": "Read what needs me", "query": "s=for-you", "steps": [
+   { "do": "wait", "ms": 100, "say": "Open « For you »", "expect": "Three calm sentences, not five, then one line per app and Done folded.", "until": { "390": "eval:document.querySelectorAll('[data-testid=expert-item]').length === 3 & count:expert-app>=2 & fit:surface & height:main button>=44", "default": "eval:document.querySelectorAll('[data-testid=expert-item]').length === 3 & count:expert-app>=2 & fit:surface" } }
+  ] },
+  { "id": "F02", "name": "Put a question off", "query": "s=for-you", "steps": [
+   { "do": "tap", "target": "[data-testid=expert-item] button:last-child", "say": "Tap « Later » on the question", "expect": "The question leaves and the fourth item takes its place; there are still three.", "until": "eval:document.querySelectorAll('[data-testid=expert-item]').length === 3 & text:[data-testid=surface]~Devis needs a word & eval:!document.querySelector('[data-testid=surface]').textContent.includes('should the letter still name one')" }
+  ] },
+  { "id": "F03", "name": "Look at what is done", "query": "s=for-you", "steps": [
+   { "do": "tap", "target": "main button[aria-expanded]", "say": "Tap « Show » on Done", "expect": "The two finished items appear under Done.", "until": "text:[data-testid=surface]~Price list & text:[data-testid=surface]~Quote page & fit:surface" },
+   { "do": "tap", "target": "main button[aria-expanded]", "say": "Tap « Hide »", "expect": "Done folds again.", "until": "eval:!document.querySelector('[data-testid=surface]').textContent.includes('Price list')" }
+  ] },
+  { "id": "F04", "name": "Open an item", "query": "s=for-you", "steps": [
+   { "do": "tap", "target": "[data-testid=expert-item]", "say": "Tap the first sentence", "expect": "The whole row opens: the app is told.", "until": "eval:window.__ux.calls().includes('open:i1')" }
+  ] },
+  { "id": "F05", "name": "Read one app's track", "query": "s=track", "steps": [
+   { "do": "wait", "ms": 100, "say": "Open Atelier's track", "expect": "Four words in a row, three features, each with its status and four segments; nothing scrolls sideways.", "until": { "390": "count:expert-feature>=3 & eval:document.querySelectorAll('main ol li').length === 4 & fit:surface & height:main button>=44", "default": "count:expert-feature>=3 & fit:surface" } },
+   { "do": "tap", "target": "[data-testid=expert-feature] button", "say": "Tap « Pick up where you left off »", "expect": "The app is told which feature to open.", "until": "eval:window.__ux.calls().includes('feature:f1')" }
+  ] },
+  { "id": "F06", "name": "Nothing needs me", "query": "s=calm", "steps": [
+   { "do": "wait", "ms": 100, "say": "Open the page when nothing waits", "expect": "« Nothing needs you » and one sentence, then the apps.", "until": "text:[data-testid=surface] h1~Nothing needs you & count:expert-app>=2 & gone:expert-item & fit:surface" }
+  ] }
+ ]
+}

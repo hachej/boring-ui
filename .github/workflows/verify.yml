@@ -170,7 +170,7 @@ jobs:
           - kind: canvas
             consumers: canvas canvas-editor canvas-remote
           - kind: composition
-            consumers: experience task-list-registry morning pi-chat shared-chat
+            consumers: experience task-list-registry expert-overview-registry morning pi-chat shared-chat
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
