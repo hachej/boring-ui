@@ -26,7 +26,7 @@ const journeys = [
   'canvas:journey:proposals', 'canvas:journey:remote', 'board:journey', 'drawing:journey', 'task-list:journey', 'morning:journey',
   'studio:journey:correctness', 'studio:journey:scripted', 'workspace-demo:journey', 'ambient:journey:scripted',
 ];
-const consumers = 'document editor html virtual remote-shell remote-files question presentation experience canvas canvas-editor canvas-remote task-list-registry morning pi-chat shared-chat'.split(' ');
+const consumers = 'document editor html virtual remote-shell remote-files question presentation experience canvas canvas-editor canvas-remote task-list-registry expert-overview-registry morning pi-chat shared-chat'.split(' ');
 
 test('browser matrix preserves every journey command and scopes every evidence artifact to its shard', () => {
   const source = workflow('studio-scripted');
