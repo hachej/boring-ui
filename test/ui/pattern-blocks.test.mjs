@@ -32,8 +32,6 @@ export const html = {
   row: () => renderToStaticMarkup(h(KpiRow, null, h(KpiStat, { label: 'A', value: '1' }))),
   listSelect: () => renderToStaticMarkup(h(ListRow, { title: 'Invoice 12', subtitle: 'Paid', trailing: '€40', onSelect: () => {} })),
   listStatic: () => renderToStaticMarkup(h(ListRow, { title: 'Invoice 12' })),
-  listActive: (props) => renderToStaticMarkup(h(ListRow, { title: 'Invoice 12', ...props })),
-  listAction: (props) => renderToStaticMarkup(h(ListRow, { title: 'Invoice 12', onSelect: () => {}, action: h('button', { 'aria-label': 'Cite' }, 'c'), ...props })),
   statTrend: (props) => renderToStaticMarkup(h(KpiStat, { label: 'Quotes', value: '17', ...props })),
   question: (props) => renderToStaticMarkup(h(InlineQuestion, { id: 'q', kind: 'question', text: 'Quel format ?', onAnswer: () => {}, ...props })),
   segments: (props) => renderToStaticMarkup(h(SegmentBar, { segments: [{ label: 'Shape', detail: 'criteria agreed' }, {}, {}, {}], current: 1, ...props })),
@@ -112,32 +110,6 @@ test('ListRow with onSelect is a button, a static row is not', () => {
   assert.match(html.listSelect(), /truncate/);
   assert.doesNotMatch(html.listStatic(), /<button/);
   assert.match(html.listStatic(), /hover:bg-accent/);
-});
-
-test('ListRow active marks the current row with aria-current and the selected wash, and is off by default', () => {
-  for (const props of [{}, { onSelect: () => {} }]) {
-    const on = html.listActive({ ...props, active: true });
-    assert.match(on, /aria-current="true"/);
-    assert.match(on, /(?<![:\w-])bg-accent/);
-    assert.doesNotMatch(html.listActive(props), /aria-current/);
-  }
-  assert.match(html.listSelect(), /Invoice 12/);
-});
-
-test('ListRow action sits beside the row button, never inside it, and shows on hover, focus and touch', () => {
-  const markup = html.listAction();
-  const row = markup.match(/<button[^>]*data-slot="button"[^>]*>[\s\S]*?<\/button>/)[0];
-  assert.doesNotMatch(row, /aria-label="Cite"/, 'the action is not inside the row button');
-  assert.match(markup, /data-testid="list-row-action"[^>]*>.*aria-label="Cite"/);
-  assert.match(markup, /opacity-0/);
-  assert.match(markup, /group-hover\/list-row:opacity-100/);
-  assert.match(markup, /pointer-coarse:opacity-100/);
-  assert.match(html.listAction({ onSelect: undefined }), /Invoice 12/);
-  assert.doesNotMatch(html.listAction({ onSelect: undefined }), /<button[^>]*data-slot="button"/, 'a static row with an action stays static');
-  const active = html.listAction({ active: true });
-  assert.match(active, /aria-current="true"/);
-  assert.match(active, /(?<![:\w-])bg-accent/);
-  assert.doesNotMatch(html.listSelect(), /list-row-action/, 'no action, no wrapper');
 });
 
 test('InlineQuestion detail is one muted line under the question', () => {

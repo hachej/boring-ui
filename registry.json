@@ -3978,7 +3978,6 @@
       "name": "list-row",
       "type": "registry:component",
       "title": "List row",
-      "docs": "Example: <ListRow title=\"Customer quote as a PDF\" subtitle=\"To try\" active={selected === id} onSelect={() => open(id)} action={<CiteButton reference={ref} />} />. `active` sets aria-current and the selected wash; `action` sits beside the row button, never inside it.",
       "description": "A row with a leading slot, a title, a muted subtitle and a trailing slot. Hover wash, no separator lines, 44px touch target on phones, truncation instead of wrapping.",
       "dependencies": [
         "react@^19.0.0"
