@@ -10,8 +10,10 @@
     { "id": "state-dot-shape", "reason": "A nav state dot is a circle by meaning (D-2028): a round 8px mark that is told apart from a count or a button. The shape is not skin; the colour stays on the tone tokens (info, success, warning, destructive). Only the app-shell nav dot and the agent-bar history dot may do this." },
     { "id": "inline-text-link", "reason": "A link inside a sentence is text, not a control box: a plain anchor without padding or height breaks across lines like the text around it (D-1715, D-1696). Only StatusNarrative's link parts may do this, and only for the focus ring radius (rounded-sm)." },
     { "id": "controller-notch", "reason": "The composer controller's cells are 16 px high and 28 to 32 px wide, smaller than any kit Button size, so they are plain buttons with a hover fill (no chip or circle), a hidden 44 px hit area and the notch's pill shape. Only the controller's ControllerCell may do this." },
-    { "id": "local-stacking", "reason": "A z-index of 1 to 5 orders two siblings inside one block's own box (the agent card slot over the sheet's content, the file tree's drop strip over its rows). It cannot outrank another layer, so it is not a stacking layer and has no --z-* name." },
-    { "id": "explore-tab", "reason": "The explore composer's toggle is the approved mockup's slim vertical tab, 30 by 76 px, narrower than any kit Button size and with a vertical label, so it is a plain button with the theme colours, like the controller notch." }
+    { "id": "local-stacking", "reason": "The window stack orders its windows by 1 + their position inside the isolated window layer (z-composer): a dynamic order of siblings in one box, not a layer, so it has no --z-* name. A fixed local index is a token (--z-above, --z-drop)." },
+    { "id": "explore-tab", "reason": "The explore composer's toggle is the approved mockup's slim vertical tab, 30 by 76 px, narrower than any kit Button size and with a vertical label, so it is a plain button with the theme colours, like the controller notch." },
+    { "id": "input-16px", "reason": "A text field is 16px on a touch screen: below that iOS Safari zooms the page when the field takes focus. The size is behaviour, not skin, so it stays text-base. Only the composer textarea and the inline question input may do this." },
+    { "id": "scale-step-needs-look", "reason": "text-base, text-xl and text-2xl (16, 20 and 24px) on titles and sentences of the sign-in, expert-overview, agent-question and account blocks. The default theme declares no such step in --text-body/--text-title/--text-chat (13, 14, 15px), so a rename to a declared token would change the size. Listed under needs a look in the pull request that added the scan; each goes when its block gets a declared step." }
   ],
   "allow": [
     { "file": "registry/agent-bar/agent-bar.tsx", "rules": ["radius"], "pattern": "^rounded-full$", "exception": "state-dot-shape" },
@@ -34,7 +36,15 @@
     { "file": "registry/app-shell/agent-bar-parts.tsx", "rules": ["radius"], "pattern": "^rounded-(?:full|l-full|r-full)$", "exception": "controller-notch" },
     { "file": "registry/_shared/controller-strip.tsx", "rules": ["primitive"], "pattern": "^<button", "exception": "controller-notch" },
     { "file": "registry/_shared/controller-strip.tsx", "rules": ["radius"], "pattern": "^rounded-(?:full|l-full|r-full)$", "exception": "controller-notch" },
-    { "file": "registry/app-shell/@css", "rules": ["design-z-index"], "pattern": "^z-index:1$", "exception": "local-stacking" },
-    { "file": "packages/ui/styles/file-tree.css", "rules": ["design-z-index"], "pattern": "^z-index: 5$", "exception": "local-stacking" }
+    { "file": "registry/windows/windows.tsx", "rules": ["design-z-index"], "pattern": "^zIndex: 1 \\+ state\\.order\\.indexOf\\(id\\)$", "exception": "local-stacking" },
+    { "file": "registry/pi-chat/composer.tsx", "rules": ["design-type-scale"], "pattern": "^text-base$", "exception": "input-16px" },
+    { "file": "registry/inline-question/inline-question.tsx", "rules": ["design-type-scale"], "pattern": "^text-base$", "exception": "input-16px" },
+    { "file": "registry/agent-bar/agent-question.tsx", "rules": ["design-type-scale"], "pattern": "^text-(?:base|xl|2xl)$", "exception": "scale-step-needs-look" },
+    { "file": "registry/app-shell/account.tsx", "rules": ["design-type-scale"], "pattern": "^text-(?:base|xl|2xl)$", "exception": "scale-step-needs-look" },
+    { "file": "registry/app-shell/agent-bar-parts.tsx", "rules": ["design-type-scale"], "pattern": "^text-(?:base|xl|2xl)$", "exception": "scale-step-needs-look" },
+    { "file": "registry/expert-overview/expert-overview.tsx", "rules": ["design-type-scale"], "pattern": "^text-(?:base|xl|2xl)$", "exception": "scale-step-needs-look" },
+    { "file": "registry/sign-in/consent.tsx", "rules": ["design-type-scale"], "pattern": "^text-(?:base|xl|2xl)$", "exception": "scale-step-needs-look" },
+    { "file": "registry/sign-in/people.tsx", "rules": ["design-type-scale"], "pattern": "^text-(?:base|xl|2xl)$", "exception": "scale-step-needs-look" },
+    { "file": "registry/sign-in/sign-in.tsx", "rules": ["design-type-scale"], "pattern": "^text-(?:base|xl|2xl)$", "exception": "scale-step-needs-look" }
   ]
 }

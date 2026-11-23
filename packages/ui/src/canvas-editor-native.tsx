@@ -146,7 +146,7 @@ function CanvasTools({ controller, components }: Pick<CanvasEditorProps, 'contro
     if (!editor.isDisposed && controller.getSnapshot().lifecycle === 'active'
       && (!changesDocument || (!controller.getSnapshot().readOnly && !editor.getIsReadonly()))) action();
   };
-  return <div role="toolbar" aria-label="Canvas tools" style={{ position: 'absolute', top: 8, left: 8, zIndex: 300, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+  return <div role="toolbar" aria-label="Canvas tools" style={{ position: 'absolute', top: 8, left: 8, zIndex: 'var(--z-tools, 300)', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
     {choices.map(([id, label]) => <Control key={id} type="button" aria-pressed={state.tool === id} disabled={state.readOnly && id !== 'hand' && id !== 'select'}
       onClick={() => act(() => { if (id === 'geo') editor.setStyleForNextShapes(GeoShapeGeoStyle, 'rectangle'); editor.setCurrentTool(id); }, id !== 'hand' && id !== 'select')}>{label}</Control>)}
     <Control type="button" disabled={state.readOnly || !state.undo} onClick={() => act(() => { editor.undo(); })}>Undo</Control>

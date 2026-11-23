@@ -633,7 +633,7 @@ export function AgentWorkspace({ layout = 'default', barPanels, barOptions, pane
       {chatProps ? <PiChat key={conversationId} {...chatProps} headerStart={<>{toggleSpace}{chat.headerStart}</>} className={cn('min-h-0 flex-1', chat.className)} />
         // Same geometry as the PiChat header, so nothing moves when the chat arrives.
         : <>{toggle && <><div className="flex shrink-0 items-center gap-2 px-3 py-2 md:gap-3 md:px-4 md:py-2.5">{toggleSpace}</div><Separator /></>}{connecting}</>}
-      {toggle && <div ref={toggleRow} className="pointer-events-none absolute top-0 left-0 z-10 flex items-center px-3 md:px-4 [&>*]:pointer-events-auto">{toggle}</div>}
+      {toggle && <div ref={toggleRow} className="pointer-events-none absolute top-0 left-0 z-raised flex items-center px-3 md:px-4 [&>*]:pointer-events-auto">{toggle}</div>}
     </div>
   </div>;
 

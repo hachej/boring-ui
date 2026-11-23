@@ -134,7 +134,7 @@ export function FloatFrame({ children }: { readonly children: ReactNode }) {
   const style = { ...where, ...(trayOpen ? { '--app-shell-bar-tray-size': tall, '--app-shell-bar-tray-expanded': tall } : {}) } as CSSProperties;
   return <GripContext.Provider value={handlers}>
     <div ref={box} data-testid="composer-floating" data-corner={'corner' in pos ? pos.corner : undefined} role="group" aria-label={text.assistant} style={style}
-      className={cn('fixed z-(--app-shell-z-layer) w-[min(22rem,calc(100vw-2rem))]', className)} data-composer={around.style ? layer.composerFlags.id : undefined}>{children}<NoticeSlot below={cornerOf(pos, 0, 0).startsWith('t')} />{note && !trayOpen && <LauncherNote note={note} placement="above" className={corner?.startsWith('top') ? 'top-full bottom-auto mt-2 mb-0' : undefined} />}</div>
+      className={cn('fixed z-(--z-app-shell-layer) w-[min(22rem,calc(100vw-2rem))]', className)} data-composer={around.style ? layer.composerFlags.id : undefined}>{children}<NoticeSlot below={cornerOf(pos, 0, 0).startsWith('t')} />{note && !trayOpen && <LauncherNote note={note} placement="above" className={corner?.startsWith('top') ? 'top-full bottom-auto mt-2 mb-0' : undefined} />}</div>
   </GripContext.Provider>;
 }
 
@@ -158,7 +158,7 @@ export function ComposerFab() {
   const label = signals.unread ? `${text.restore} (${signals.unread.label}${signals.unread.count && signals.unread.count > 1 ? `, ${signals.unread.count}` : ''})` : text.restore;
   // The agent at work: a thin ring pulses round the icon (still when the person prefers less motion). A decision that waits shows its own ring, which wins.
   const working = signals.working === true && !signals.needsYou;
-  return <span ref={box} style={style} data-composer={placed.style ? layer.composerFlags.id : undefined} className={cn('fixed z-(--app-shell-z-layer) size-13 rounded-pm-round shadow-pm-popover', signals.needsYou && 'ring-2 ring-warning outline-3 outline-warning/25', className)}>
+  return <span ref={box} style={style} data-composer={placed.style ? layer.composerFlags.id : undefined} className={cn('fixed z-(--z-app-shell-layer) size-13 rounded-pm-round shadow-pm-popover', signals.needsYou && 'ring-2 ring-warning outline-3 outline-warning/25', className)}>
     <Button ref={button} type="button" size="icon" data-testid="composer-icon" data-needs-you={signals.needsYou || undefined} data-working={working || undefined} aria-busy={working || undefined} aria-label={label} title={text.restore} onClick={restore}>
       <Icon aria-hidden="true" />
       {signals.unread && <UnreadMark unread={signals.unread} dot="top-0 right-0" pill="-top-1 -right-2" />}

@@ -88,7 +88,7 @@ export function CameraSheet({ onCapture, onClose, getUserMedia }: CameraSheetPro
 
   return createPortal(
     <div role="dialog" aria-modal="true" aria-label={labels.takePhoto} data-boring-overlay="" data-testid="camera-sheet"
-      style={{ zIndex: 'calc(var(--app-shell-z-point, 60) + 10)' }}
+      style={{ zIndex: 'calc(var(--z-app-shell-point, 60) + 10)' }}
       className="pi-chat fixed inset-0 flex flex-col bg-background text-foreground">
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
         {failed

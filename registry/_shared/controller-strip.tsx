@@ -52,7 +52,7 @@ export function ControllerStrip({ actions, unread, edge = 'top', style }: { read
     <TooltipTrigger render={<ControllerCell action={action} extra={extra} round={extra ? last : rest.length === 0} dot={undefined} />} />
     <TooltipContent side={edge === 'top' ? 'top' : 'bottom'}>{action.label}</TooltipContent></Tooltip>;
   return <span data-testid="composer-controller" style={style}
-    className={cn('group/ctl absolute left-1/2 z-30 -translate-x-4 max-md:-translate-x-5.5 pointer-coarse:-translate-x-5.5', edge === 'top' ? 'top-0 -translate-y-1/2' : 'bottom-0 translate-y-1/2')}>
+    className={cn('group/ctl absolute left-1/2 z-dropdown -translate-x-4 max-md:-translate-x-5.5 pointer-coarse:-translate-x-5.5', edge === 'top' ? 'top-0 -translate-y-1/2' : 'bottom-0 translate-y-1/2')}>
     {/* The notch is drawn 16 px high behind the cells; on touch the cells themselves are 44 px boxes (no overlap), so the hit areas are real. */}
     <span className="relative flex items-center">
       <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-4 -translate-y-1/2 rounded-full bg-card ring-4 ring-card outline-1 outline-offset-4 outline-border/70" />

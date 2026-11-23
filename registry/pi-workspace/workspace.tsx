@@ -182,7 +182,7 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
     <div data-testid="workspace-chat" data-floating={floating ? 'true' : undefined} {...(covering ? { inert: true, 'aria-hidden': true } : {})}
       className={cn('relative flex min-h-0 min-w-0 flex-col', floating ? 'w-0 flex-none' : 'flex-1', covering && 'invisible')}>
       {typeof chat === 'function' ? chat({ floating, dock: () => setFloating(false) }) : chat}
-      {floatHint && <div role="status" data-testid="workspace-float-hint" className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/75 p-4">
+      {floatHint && <div role="status" data-testid="workspace-float-hint" className="pointer-events-none absolute inset-0 z-lifted flex items-center justify-center bg-background/75 p-4">
         <Badge variant="secondary">{labels?.floatHint ?? 'Release to float the chat'}</Badge>
       </div>}
     </div>
@@ -192,15 +192,15 @@ export function ArtifactWorkspace({ chat, open, panel, onClose, fullscreen: cont
         onPointerDown={event => { event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); }} onPointerMove={drag}
         onPointerUp={release} onPointerCancel={() => { setDragging(false); setFloatHint(false); }}
         onKeyDown={keys} onDoubleClick={() => resize(initial)}
-        className="group relative z-10 -mx-1.5 w-3 shrink-0 cursor-col-resize touch-none select-none outline-none">
+        className="group relative z-raised -mx-1.5 w-3 shrink-0 cursor-col-resize touch-none select-none outline-none">
         <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2', 'bg-border/65', 'transition-colors group-hover:w-0.5 group-hover:bg-ring group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
       </div>}
       <aside onTouchStart={event => { const point = event.touches[0]; swipe.current = sheet && point && point.clientX < 32 ? { x: point.clientX, y: point.clientY } : null; }} onTouchEnd={event => { const point = event.changedTouches[0], start = swipe.current; swipe.current = null; if (point && start && point.clientX - start.x > 80 && Math.abs(point.clientY - start.y) < 60) onClose(); }} data-testid="workspace-panel" aria-label={panelLabel} data-state={entered ? 'open' : 'entering'} data-floating={floating ? 'true' : undefined} data-fullscreen={fullscreen ? 'true' : 'false'} data-sheet={sheet ? 'true' : 'false'}
         style={sheet || fullscreen || floating ? undefined : { width, minWidth: minPanel }}
         className={cn('flex min-h-0 min-w-0 flex-col overflow-hidden transition-opacity motion-reduce:transition-none', !inset && 'bg-background text-foreground',
-          sheet ? (!contained && size >= window.innerWidth - 1 ? 'fixed inset-0 z-50' : 'absolute inset-0 z-50') : fullscreen ? 'fixed inset-0 z-50' : floating ? 'flex-1' : inset ? 'relative isolate my-3 me-3 ms-0 shrink-0' : 'shrink-0',
+          sheet ? (!contained && size >= window.innerWidth - 1 ? 'fixed inset-0 z-sheet' : 'absolute inset-0 z-sheet') : fullscreen ? 'fixed inset-0 z-sheet' : floating ? 'flex-1' : inset ? 'relative isolate my-3 me-3 ms-0 shrink-0' : 'shrink-0',
           entered ? 'opacity-100' : 'opacity-0', dragging && 'pointer-events-none select-none')}>
-        {inset && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
+        {inset && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 z-behind" />}
         {typeof panel === 'function' ? panel(api) : panel}
       </aside>
     </>}

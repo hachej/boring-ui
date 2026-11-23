@@ -25,5 +25,5 @@ export function Grip({ rail = false }: { readonly rail?: boolean }) {
   const label = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent).dragHandle;
   return <span role="button" tabIndex={0} data-testid={rail ? 'composer-grip' : 'composer-grip-tray'} aria-label={label} title={label} {...handlers}
     className={cn('flex touch-none cursor-grab items-center justify-center rounded-(--radius-3xl) text-muted-foreground outline-ring select-none hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground focus-visible:outline-2 active:cursor-grabbing [&_svg]:size-4',
-      rail ? 'absolute inset-y-0 left-0 z-10 w-7 pointer-coarse:w-11' : 'size-8 shrink-0 pointer-coarse:size-11')}><GripVerticalIcon aria-hidden="true" /></span>;
+      rail ? 'absolute inset-y-0 left-0 z-raised w-7 pointer-coarse:w-11' : 'size-8 shrink-0 pointer-coarse:size-11')}><GripVerticalIcon aria-hidden="true" /></span>;
 }

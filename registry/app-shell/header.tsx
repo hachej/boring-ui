@@ -113,7 +113,7 @@ export function ScreenHeader({ fallbackTitle, compact, leadingAvatar = false, tr
   // `leadingAvatar` (AppShell `sidebar={false}`): the account menu leads the bar at every width, as on a phone.
   const lead = compact || leadingAvatar;
   const precedes = Boolean(spec?.leading != null || back || (lead && (menu || avatar || screenSidebar)));
-  return <header data-testid="screen-header" className={`sticky top-0 z-10 flex ${spec?.dense ? 'min-h-12' : 'min-h-14'} shrink-0 items-center gap-1 bg-card px-[var(--screen-gutter,1rem)] pt-(--app-shell-safe-top)`}>
+  return <header data-testid="screen-header" className={`sticky top-0 z-raised flex ${spec?.dense ? 'min-h-12' : 'min-h-14'} shrink-0 items-center gap-1 bg-card px-[var(--screen-gutter,1rem)] pt-(--app-shell-safe-top)`}>
     {lead ? (back ?? (menu ? <SidebarTrigger /> : avatar)) : back}
     {compact && screenSidebar}
     {spec?.leading != null && <div data-testid="header-leading" className="flex min-w-0 shrink items-center gap-1">{spec.leading}</div>}

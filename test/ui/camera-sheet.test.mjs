@@ -70,7 +70,7 @@ test('the sheet is a modal dialog portalled to the body, above the shell, and op
   assert.equal(sheet.getAttribute('role'), 'dialog');
   assert.equal(sheet.getAttribute('aria-modal'), 'true');
   assert.ok(sheet.hasAttribute('data-boring-overlay'));
-  assert.match(sheet.getAttribute('style'), /calc\(var\(--app-shell-z-point, 60\) \+ 10\)/);
+  assert.match(sheet.getAttribute('style'), /calc\(var\(--z-app-shell-point, 60\) \+ 10\)/);
   assert.deepEqual(ui.calls, [{ video: { facingMode: 'environment' } }]);
   const video = ui.q('video');
   assert.ok(video.hasAttribute('playsinline') && video.hasAttribute('autoplay') && video.muted !== false);

@@ -82,7 +82,7 @@ function Panel({ lift }: { readonly lift: number }): ReactElement {
     maxBlockSize: `calc(100dvh - ${css(block)} - ${lift}px - ${DEFAULT_OFFSET}px)` };
   return <div ref={box} data-testid="composer-circle-panel" data-composer={config?.id} data-state="open" role="dialog" aria-label={title} style={style}
     className="app-shell fixed isolate flex h-[36rem] w-[min(24rem,calc(100vw-2rem))] flex-col text-card-foreground [&_[data-boring=pi-chat]>header]:hidden [&_[data-testid=composer-annotate]]:hidden">
-    <div aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10 rounded-(--radius-3xl) bg-card shadow-pm-popover ring-1 ring-border" />
+    <div aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 z-behind rounded-(--radius-3xl) bg-card shadow-pm-popover ring-1 ring-border" />
     <div data-testid="agent-layer-header" className="flex h-13 shrink-0 items-center gap-1.5 px-2 md:px-3">
       <h2 data-testid="agent-layer-title" className="m-0 min-w-0 flex-1 truncate text-sm leading-5 font-semibold tracking-tight">{title}</h2>
       <HistoryButton />

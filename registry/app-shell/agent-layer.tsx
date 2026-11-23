@@ -547,7 +547,7 @@ export function AgentLayerProvider({ storage: stored = 'local', legacyPosition, 
 
   // The shell's z-scale (tabs 20, peek 30, drawer and panel 40, other sheets 50, point bar 60) as custom properties; `display: contents` keeps the box tree unchanged.
   // `--agent-bar-reserve`: what the bar takes from the bottom of a screen (the phone's peek and its card; see `barReserve`). The shell pads the bottom of each screen with it (a sticky bar inside a screen already sticks above that padding); a host element placed against the screen's box uses it as `bottom`.
-  const scale = { '--app-shell-z-tabs': Z.tabs, '--app-shell-z-peek': Z.peek, '--app-shell-z-layer': Z.layer, '--app-shell-z-sheet': Z.sheet, '--app-shell-z-point': Z.point,
+  const scale = { '--z-app-shell-tabs': Z.tabs, '--z-app-shell-peek': Z.peek, '--z-app-shell-layer': Z.layer, '--z-app-shell-sheet': Z.sheet, '--z-app-shell-point': Z.point,
     '--agent-bar-reserve': circleReserve(barReserve({ phoneBar: bar && compact && place !== 'icon', snap, peekPx: parseFloat(peekPoint), tabbarPx: tabbar }), config !== undefined) } as CSSProperties;
   const page = <div data-app-shell="" className="contents" style={scale}>
     <div ref={probe} aria-hidden="true" className="pointer-events-none invisible fixed top-0 left-0 w-0" style={{ height: 'var(--app-shell-tabbar, 0px)' }} />

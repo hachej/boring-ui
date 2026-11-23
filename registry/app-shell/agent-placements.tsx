@@ -106,15 +106,15 @@ function DockPanel({ api, side }: { readonly api: DockApi; readonly side: DockSi
   return <div ref={box} data-testid="agent-layer" data-composer={layer.composerFlags.id} data-state={open ? 'open' : 'closed'} data-placement={api.placement} data-side={side} role={floating ? 'dialog' : 'complementary'} aria-label={title}
     style={floating ? { ...layerStyle(layer), ...(pos ?? first) } : undefined}
     className={cn('app-shell relative flex min-h-0 flex-col',
-      floating ? 'fixed isolate z-(--app-shell-z-layer) h-[min(36rem,calc(100dvh-2rem))] w-[min(24rem,calc(100vw-2rem))]'
+      floating ? 'fixed isolate z-(--z-app-shell-layer) h-[min(36rem,calc(100dvh-2rem))] w-[min(24rem,calc(100vw-2rem))]'
         : 'h-full min-w-0 flex-1 bg-card text-foreground')}>
-    {floating && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
+    {floating && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 z-behind" />}
     {!floating && <Separator orientation="vertical" className={cn('absolute inset-y-0', side === 'right' ? 'left-0' : 'right-0')} />}
     {/* The pane over the docked conversation brings its own bar (« ← Assistant », the title, Fermer): the layer's title row steps aside. */}
     {/* The pane over the docked conversation lies on top of it, down to the field: nothing under it moves, so back finds the thread as it was.
         Its own bar (« ← Assistant », the title, Fermer) is the column's title row then; the layer's keeps its place, unseen. */}
     <Header text={text} title={title} controls={controls} className={cn(floating && 'cursor-move touch-none select-none', layer.paneStacked && 'invisible')} {...(layer.paneStacked ? { inert: true } : {})} {...drag} />
-    {layer.paneStacked && <div className="absolute inset-x-0 top-0 z-10 flex flex-col bg-card" style={{ bottom: fieldHeight }}><PaneStack placement="stacked" assistant={title} /></div>}
+    {layer.paneStacked && <div className="absolute inset-x-0 top-0 z-raised flex flex-col bg-card" style={{ bottom: fieldHeight }}><PaneStack placement="stacked" assistant={title} /></div>}
     {/* `bar`: the docked field is the bottom one, frame and all (`.app-shell [data-one-dock]`): one composer wherever it sits (Julien). */}
     <div {...(layer.bar ? { 'data-one-dock': '' } : {})} className={cn('flex min-h-0 flex-col overflow-hidden', 'flex-1', layer.paneStacked && cn('[&_[data-testid=conversation-content]]:invisible', FOLDED_FIELD))}><VoiceProblem /><ChatSlot live={open} /></div>
   </div>;
@@ -152,8 +152,8 @@ export function BarBox({ standalone = false }: { readonly standalone?: boolean }
   const { setComposerSlot, setCardSlot, trayOpen, anchored, folded, place, placeFocus: focusRef, composerSlot } = useInternal();
   const slots = <>
     {trayOpen && !anchored && <ContentTray />}
-    <div ref={setCardSlot} data-testid="agent-card-slot" className={cn('shrink-0 empty:hidden', !anchored && 'relative z-10 bg-card')} />
-    <div ref={setComposerSlot} data-testid="agent-content-composer" className={cn('shrink-0', !anchored && 'relative z-10 rounded-b-(--radius-3xl) bg-card', folded && FOLDED_FIELD)} />
+    <div ref={setCardSlot} data-testid="agent-card-slot" className={cn('shrink-0 empty:hidden', !anchored && 'relative z-raised bg-card')} />
+    <div ref={setComposerSlot} data-testid="agent-content-composer" className={cn('shrink-0', !anchored && 'relative z-raised rounded-b-(--radius-3xl) bg-card', folded && FOLDED_FIELD)} />
   </>;
   // Moved by a person (Minimise, the icon's tap, Dock to the bottom): the field takes focus once it is drawn in its new place.
   useEffect(() => {
@@ -171,7 +171,7 @@ export function BarBox({ standalone = false }: { readonly standalone?: boolean }
   }, [place, focusRef, composerSlot]);
   if (place === 'float') return <FloatFrame><OneBox floating>{slots}</OneBox></FloatFrame>;
   if (place === 'icon') return <><div hidden><OneBox>{slots}</OneBox></div><ComposerFab /></>;
-  return standalone ? <div className={cn('@container fixed inset-x-0 bottom-0 z-(--app-shell-z-layer)', hostClass)}><NoticeSlot /><OneBox>{slots}</OneBox></div> : <OneBox>{slots}</OneBox>;
+  return standalone ? <div className={cn('@container fixed inset-x-0 bottom-0 z-(--z-app-shell-layer)', hostClass)}><NoticeSlot /><OneBox>{slots}</OneBox></div> : <OneBox>{slots}</OneBox>;
 }
 
 /**
@@ -351,7 +351,7 @@ function FullScreen() {
     };
   }, []);
   return createPortal(
-    <div ref={root} data-testid="agent-full" role="dialog" aria-modal="true" aria-label={title} style={frame} className="app-shell fixed z-[45] flex flex-col bg-card text-card-foreground">
+    <div ref={root} data-testid="agent-full" role="dialog" aria-modal="true" aria-label={title} style={frame} className="app-shell fixed z-fullscreen flex flex-col bg-card text-card-foreground">
       <div className="mx-auto flex min-h-0 w-full max-w-[720px] flex-1 flex-col">
         <Header text={text} title={title} controls={<HeaderHint label={text.close}><Button variant="ghost" size="icon" data-testid="agent-full-close" aria-label={text.close} onClick={closeAll}><XIcon data-icon="inline-start" aria-hidden="true" /></Button></HeaderHint>} />
         <VoiceProblem />
@@ -389,7 +389,7 @@ export function AgentLayer(): ReactElement | null {
     {!layer.expanded && layer.place !== 'icon' && !layer.suspended && <CompactSheet pointing={session !== undefined} />}
     {!layer.expanded && layer.place === 'icon' && !layer.suspended && <ComposerFab />}
     {layer.bar && !layer.expanded && layer.stack.length > 0 && <PaneStack placement="screen" assistant={title} />}
-    {commenting && <CommentBanner session={commenting} bottomOffset={`${layer.tabbar}px`} className="z-[60]" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
+    {commenting && <CommentBanner session={commenting} bottomOffset={`${layer.tabbar}px`} className="z-toast" {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
     {session && <NoteBubble session={session} {...(transcribe ? { transcribe } : {})} {...(locale === 'fr' ? { labels: feedbackLabelsFr } : {})} />}
   </>;
 }

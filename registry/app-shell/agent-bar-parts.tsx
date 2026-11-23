@@ -185,11 +185,11 @@ export function ConversationChevron({ unread }: { readonly unread: Unread | unde
   // The unread mark sits beside the grabber's pill: portalled into the drawer's swipe handle, which is that pill.
   if (!layer.expanded) return <>
     <button ref={node => { const sheet = node?.closest<HTMLElement>('[data-slot=drawer-popup]') ?? null; setPopup(sheet); setHandle(sheet?.querySelector<HTMLElement>('[data-slot=drawer-swipe-handle]') ?? null); }} type="button" data-testid={first.testId} data-action="chevron" aria-label={first.label} aria-expanded={first.expanded} onClick={first.onSelect}
-      className="pointer-events-none absolute top-0 left-1/2 z-30 size-11 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 outline-ring focus-visible:opacity-100 focus-visible:outline-2" />
+      className="pointer-events-none absolute top-0 left-1/2 z-dropdown size-11 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 outline-ring focus-visible:opacity-100 focus-visible:outline-2" />
     {handle && unread && createPortal(<UnreadMark unread={unread} dot="top-1/2 left-1/2 ml-8 -translate-y-1/2" pill="top-1/2 left-1/2 ml-9 -translate-y-1/2" />, handle)}
     {/* The phone's Minimise: at the right end of the grabber's row, in the sheet (not in the grabber, which the drawer takes for its swipe); the grabber's tap logic skips it (`data-no-grabber`). */}
     {popup && layer.floatable && createPortal(<button type="button" data-testid="composer-minimise" data-action="minimise" data-no-grabber="" aria-label={text.minimise} title={text.minimise} onClick={() => layer.setPlace('icon')}
-      className="absolute top-0 right-2 z-30 flex size-11 -translate-y-2 items-center justify-center rounded-full text-muted-foreground outline-ring focus-visible:outline-2 [&_svg]:size-5"><MinusIcon aria-hidden="true" /></button>, popup)}
+      className="absolute top-0 right-2 z-dropdown flex size-11 -translate-y-2 items-center justify-center rounded-full text-muted-foreground outline-ring focus-visible:outline-2 [&_svg]:size-5"><MinusIcon aria-hidden="true" /></button>, popup)}
   </>;
   const strip = <ControllerStrip actions={actions} unread={unread} style={box && overlay ? { top: 'calc(0px - var(--app-shell-bar-tray-size))' } : undefined} />;
   return <>
@@ -374,10 +374,10 @@ export function OneBox({ children, floating = false }: { readonly children: Reac
       {floating && <Grip rail />}
       <div className={cn('flex min-w-0 flex-col rounded-(--radius-3xl)', !overlay && 'overflow-hidden')}>{children}</div>
       {overlay && <>
-        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-1/2 z-20 overflow-hidden" style={{ top: 'calc(0px - var(--app-shell-bar-tray-expanded))' }}>
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-1/2 z-lifted overflow-hidden" style={{ top: 'calc(0px - var(--app-shell-bar-tray-expanded))' }}>
           <div className="absolute inset-x-0 top-0 -bottom-(--radius-3xl) rounded-(--radius-3xl) ring-1 ring-inset ring-border group-has-focus-visible/one-box:ring-2 group-has-focus-visible/one-box:ring-ring transition-transform duration-(--duration-fast) ease-(--ease-standard) motion-reduce:transition-none" style={{ transform: 'translateY(calc(var(--app-shell-bar-tray-expanded) - var(--app-shell-bar-tray-size)))' }} />
         </div>
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 rounded-(--radius-3xl) ring-1 ring-inset ring-border group-has-focus-visible/one-box:ring-2 group-has-focus-visible/one-box:ring-ring" style={{ clipPath: 'inset(50% 0 0)' }} />
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-lifted rounded-(--radius-3xl) ring-1 ring-inset ring-border group-has-focus-visible/one-box:ring-2 group-has-focus-visible/one-box:ring-ring" style={{ clipPath: 'inset(50% 0 0)' }} />
         <ResizeHandle />
       </>}
     </div>;

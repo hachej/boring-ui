@@ -18,7 +18,7 @@ Values below are the shipped default theme (`packages/ui/styles/app.css`, the re
 | Control height | `--control-h` | 36px pointer, 44px touch | every control; never set a height by hand |
 | Screen margin | `--screen-gutter` | 1rem, 0.75rem compact | drawn once by `ScreenBody` |
 | Motion | `--duration-fast`, `-normal`, `-slow` | 100, 150, 300ms | every transition |
-| Stacking | `--z-dropdown` 30, `--z-composer` 40, `--z-sheet` 50, `--z-overlay` 55, `--z-toast` 60, `--z-feedback` 2147483000 | see left | `z-dropdown`, `z-sheet`... or `z-[var(--z-*)]` |
+| Stacking | `--z-behind` -10, `--z-above` 1, `--z-drop` 5, `--z-raised` 10, `--z-lifted` 20, `--z-dropdown` 30, `--z-composer` 40, `--z-fullscreen` 45, `--z-sheet` 50, `--z-overlay` 55, `--z-toast` 60, `--z-tools` 300, `--z-feedback` 2147483000 | see left | `z-dropdown`, `z-sheet`... or `z-[var(--z-*)]` |
 
 **One scale per app.** Consistency inside an app is the rule, not one size for all apps. An app declares its scale in `theme.core.css` (a `--text-<step>` for each step it uses beyond `text-xs` and `text-sm`) and its screens use only those steps. Chase is the reference: body 12px, title 14px, chat 13px (`--text-body`, `--text-title`, `--text-chat`), plus its own `text-md`, `text-2xs`, `text-3xs`. The kit default is not there yet (body 13px, chat 15px); converging it is a separate change.
 

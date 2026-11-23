@@ -67,7 +67,7 @@ function Surface({ notices: given = NONE, autoDismissMs, maxToasts }: { readonly
     <div className="app-shell contents">
       {layer.contentComposer && <BarBox standalone />}
       {/* A phone has no floating frame: the notice stands on the foot of the screen (`NoticeHost` lifts itself over the peek). */}
-      {phone && host && <div data-testid="composer-notices" className="fixed inset-x-0 bottom-0 z-(--app-shell-z-layer)">{host}</div>}
+      {phone && host && <div data-testid="composer-notices" className="fixed inset-x-0 bottom-0 z-(--z-app-shell-layer)">{host}</div>}
       <AgentLayer />
       {/* Wide: the pane's entries (an artifact, a file, an app view) open in a window beside the bar; a phone shows them full screen (`AgentLayer`). */}
       {!phone && <FloatPane />}

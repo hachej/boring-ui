@@ -34,7 +34,7 @@ export function FloatPane(): ReactElement | null {
   if (!open) return null;
   return <PaneFullscreenContext.Provider value={{ fullscreen, set: setFullscreen }}>
     <div data-testid="composer-pane" data-fullscreen={fullscreen || undefined} style={fullscreen ? undefined : placeOf(layer)}
-      className={cn('fixed z-(--app-shell-z-layer) flex min-h-0 min-w-0 flex-col overflow-hidden bg-card text-card-foreground ring-1 ring-border', fullscreen ? 'inset-0' : 'rounded-(--radius-3xl) shadow-pm-popover')}>
+      className={cn('fixed z-(--z-app-shell-layer) flex min-h-0 min-w-0 flex-col overflow-hidden bg-card text-card-foreground ring-1 ring-border', fullscreen ? 'inset-0' : 'rounded-(--radius-3xl) shadow-pm-popover')}>
       <PaneStack placement="column" assistant={title} />
     </div>
   </PaneFullscreenContext.Provider>;

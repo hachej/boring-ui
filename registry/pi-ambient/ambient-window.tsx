@@ -425,7 +425,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
   const surface = embedded ? 'relative flex min-h-0 flex-1 flex-col overflow-clip bg-transparent text-foreground' : cn('relative flex flex-col', card ? 'isolate' : 'h-dvh bg-background pt-[env(safe-area-inset-top)] text-foreground',
     !phone && expanded && (panelOpen ? 'h-full overflow-hidden' : 'max-h-[70dvh]'));
   // With an artifact open the window widens (most of the viewport, at most 72rem) and takes a fixed height so the panel fills it.
-  const rootClass = embedded ? cn('pi-chat relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', className) : cn('pi-chat pi-ambient fixed z-50', variant === 'contrast' && 'dark scheme-dark', phone ? (expanded ? 'inset-0' : 'inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))]')
+  const rootClass = embedded ? cn('pi-chat relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', className) : cn('pi-chat pi-ambient fixed z-sheet', variant === 'contrast' && 'dark scheme-dark', phone ? (expanded ? 'inset-0' : 'inset-x-2 bottom-[max(0.5rem,env(safe-area-inset-bottom))]')
     : cn('transition-[width] motion-reduce:transition-none', minimized ? 'w-auto' : panelOpen ? 'h-[min(46rem,calc(100dvh-1rem))] w-[min(72rem,calc(100vw-1rem))]' : expanded ? 'w-[min(35rem,calc(100vw-1rem))]' : 'w-[min(26rem,calc(100vw-1rem))]'), className);
   const rootStyle = phone || embedded ? undefined : { right: placed.right, bottom: placed.bottom };
 
@@ -510,10 +510,10 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
       {...(autoDismissMs !== undefined ? { autoDismissMs } : {})} {...(maxToasts !== undefined ? { max: maxToasts } : {})} className="absolute right-0 bottom-full mb-3 w-full" />}
     {picking && conversations && <ConversationHistory conversations={conversations} placement={expanded ? 'below' : 'above'} onClose={() => setPicking(false)} />}
     <div data-testid="ambient-surface" className={surface}>
-      {card && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 -z-10" />}
+      {card && <Card aria-hidden="true" data-boring="chrome" className="pointer-events-none absolute inset-0 z-behind" />}
       {/* A phone has no strip and no drag: the grabber on the top edge is the size control, as the app shell's sheet has it. A tap opens the full window; its header's minimize (a 44px target) goes back to the bar. The grabber is only there in the bar, straddling its top edge, so it never covers a header control of the full window. */}
       {phone && !embedded && !expanded && <Button variant="ghost" data-testid="ambient-grabber" aria-label={labels.openChat(shownTitle)} aria-expanded={false}
-        onClick={() => { setPicking(false); expand(); }} className="absolute top-0 left-1/2 z-10 h-11 w-24 -translate-x-1/2 -translate-y-1/2 px-0 hover:bg-transparent">
+        onClick={() => { setPicking(false); expand(); }} className="absolute top-0 left-1/2 z-raised h-11 w-24 -translate-x-1/2 -translate-y-1/2 px-0 hover:bg-transparent">
         <span aria-hidden="true" className="h-1 w-10 rounded-(--pm-radius-round) bg-muted-foreground/40" /></Button>}
       {artifactPanel ? <ArtifactWorkspace open={panelOpen} onClose={closeArtifact} fullscreen={fullscreen} onFullscreenChange={setFullscreen} storageKey="boring.ambient.panel-width" panelLabel={labels.artifactPanel}
         defaultWidth={600} minPanel={320} minChat={300}

@@ -235,7 +235,7 @@ export function Dock({ id, side, children, defaultWidth = 400, minWidth = 280, f
     onPointerDown={event => { event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture?.(event.pointerId); setDragging(true); }} onPointerMove={drag}
     onDragStart={event => event.preventDefault()}
     onPointerUp={release} onPointerCancel={() => { setDragging(false); setHint(false); }} onKeyDown={keys} onDoubleClick={() => resize(defaultWidth)}
-    className="group relative z-10 -mx-1.5 w-3 shrink-0 cursor-col-resize touch-none select-none outline-none">
+    className="group relative z-raised -mx-1.5 w-3 shrink-0 cursor-col-resize touch-none select-none outline-none">
     <span aria-hidden="true" className={cn('absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border/65 transition-[width,background-color] group-hover:w-0.5 group-hover:bg-ring group-focus-visible:w-0.5 group-focus-visible:bg-ring motion-reduce:transition-none', dragging && 'w-0.5 bg-ring')} />
   </div>;
   const hidden = placement === 'closed';
@@ -243,10 +243,10 @@ export function Dock({ id, side, children, defaultWidth = 400, minWidth = 280, f
     {...(hidden ? { hidden: true, inert: true } : {})}
     style={docked ? { width } : undefined}
     className={cn('relative flex min-h-0 min-w-0 flex-col', docked && 'shrink-0 overflow-hidden bg-background text-foreground', (docked || placement === 'page') && contained && '[contain:layout]', placement === 'page' && 'flex-1 overflow-hidden bg-background text-foreground',
-      placement === 'floating' && 'w-0 flex-none overflow-visible', placement === 'sheet' && 'fixed inset-0 z-50 bg-background text-foreground', hidden && 'hidden',
+      placement === 'floating' && 'w-0 flex-none overflow-visible', placement === 'sheet' && 'fixed inset-0 z-sheet bg-background text-foreground', hidden && 'hidden',
       dragging && '[&_iframe]:pointer-events-none select-none', className)}>
     {typeof children === 'function' ? children(api) : children}
-    {hint && <div role="status" data-testid={`dock-hint-${id}`} className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/75 p-4">
+    {hint && <div role="status" data-testid={`dock-hint-${id}`} className="pointer-events-none absolute inset-0 z-lifted flex items-center justify-center bg-background/75 p-4">
       <span className="text-sm font-medium text-foreground">
         {floatable ? labels?.floatHint ?? 'Release to float' : labels?.closeHint ?? 'Release to close'}</span>
     </div>}

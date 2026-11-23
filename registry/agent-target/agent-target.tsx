@@ -245,7 +245,7 @@ export function AgentTargetMode({ enabled, transcribe, onSettled, labels, attrib
   if (!enabled || !active || !shown || typeof document === 'undefined') return null;
   const phase = shown.stage === 'dictating' ? dictation.phase : shown.stage;
   return createPortal(<Card ref={box} size="sm" data-feedback-ignore="" data-boring="agent-target" data-testid="agent-target-bar" data-phase={phase}
-    role="region" aria-label={words.title} className="app-shell fixed z-50" style={place}>
+    role="region" aria-label={words.title} className="app-shell fixed z-sheet" style={place}>
     <CardHeader><CardTitle>{words.title}</CardTitle></CardHeader>
     <CardContent>
       {shown.problem ? <p role="alert" data-testid="agent-target-problem">{shown.problem}</p>
