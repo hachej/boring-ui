@@ -45,7 +45,7 @@ function Orders() {
     <Button type="button" data-testid="last-control" className="mt-4 w-full" onClick={() => { window.__tapped += 1; setSent(true); }}>{sent ? 'Orders sent' : 'Send the week’s orders'}</Button>
     {params.get('sticky') === '1' && <div data-testid="sticky-bar" className="sticky bottom-0 mt-4 flex items-center justify-between gap-3 rounded-md border bg-card p-3 text-sm">
       <span>Unsaved changes</span><Button type="button" size="sm" data-testid="sticky-save" onClick={() => { window.__saved += 1; }}>Save</Button></div>}
-    {params.get('fab') === '1' && <Button type="button" size="icon" data-testid="corner-button" aria-label="Help" style={{ bottom: 'calc(var(--agent-bar-reserve, 0px) + 1rem)' }} className="absolute right-4 z-10 rounded-full shadow-md" onClick={() => { window.__helped += 1; }}>?</Button>}
+    {params.get('fab') === '1' && <Button type="button" size="icon" data-testid="corner-button" aria-label="Help" style={{ bottom: 'calc(var(--agent-bar-reserve, 0px) + 1rem)' }} className="absolute right-4 z-[var(--z-dropdown)] rounded-full shadow-md" onClick={() => { window.__helped += 1; }}>?</Button>}
   </ScreenBody>;
 }
 const Other = () => <ScreenBody><h1 className="m-0 text-lg font-semibold">Documents (fictional)</h1></ScreenBody>;

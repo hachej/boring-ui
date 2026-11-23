@@ -38,9 +38,13 @@ const EXPECTED = {
   'design-dark-variant': ['dark-variant.tsx', 'error'],
   'design-no-x-scroll': ['x-scroll.tsx', 'error'],
   'design-overlay-has-title': ['overlay.tsx', 'error'],
+  'design-z-index': ['z-index.tsx', 'error'],
+  'design-type-scale': ['type-scale.tsx', 'error'],
+  'design-gap-not-space': ['gap-not-space.tsx', 'error'],
+  'design-screen-padding': ['screen-padding.tsx', 'error'],
 };
 // The rules with no file of their own in the fixture app: the length limits (a temp app below) and the theme rules (test/fixtures/design-theme).
-const ELSEWHERE = ['line-length', 'component-length', 'file-length', 'design-theme-core-only', 'design-theme-roles-both-modes', 'design-theme-local-derived', 'design-exceptions-shrink', 'kit-part-edited'];
+const ELSEWHERE = ['line-length', 'component-length', 'file-length', 'design-theme-core-only', 'design-theme-roles-both-modes', 'design-theme-local-derived', 'design-exceptions-shrink', 'kit-part-edited', 'design-has-design-md'];
 
 const report = json(fixture);
 

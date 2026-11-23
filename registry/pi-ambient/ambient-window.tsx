@@ -470,7 +470,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
 
       {expanded && <div className="flex min-h-0 flex-1 flex-col">
         {(connectionKind === 'error' || connectionKind === 'closed') && <div className="px-4 pb-2"><ChatConnectionNotice state={state} renderConnectionError={renderConnectionError} onReconnect={() => act(controller.connect)} /></div>}
-        {derived.pinned.length > 0 && <aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 pb-2">{derived.pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside>}
+        {derived.pinned.length > 0 && <aside aria-label={labels.requiredActions} className="shrink-0 flex flex-col gap-2 px-4 pb-2">{derived.pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside>}
         <div className="relative flex min-h-0 flex-1 flex-col">
           <MessageScroller>
             <MessageScrollerViewport ref={scrollRef} data-testid="transcript-scroll" aria-label={labels.messages} className="scrollbar-thumb-border scrollbar-track-transparent">
@@ -491,7 +491,7 @@ function AmbientSession({ controller, embedded = false, labels, icons, avatar, h
 
       {(expanded || !embedded) && <Separator />}
       <div className={cn('shrink-0', phone && 'pb-[env(safe-area-inset-bottom)]')}>
-        <div className="space-y-2 px-3 empty:hidden [&:has(*)]:pt-2">
+        <div className="flex flex-col gap-2 px-3 empty:hidden [&:has(*)]:pt-2">
           <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} sending={session.sending} />
           <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} conversations={conversations} />
           {!expanded && <ChatConnectionNotice compact fallback={{ error: labels.loadFailedShort, closed: labels.disconnectedShort }} state={state} renderConnectionError={renderConnectionError} onReconnect={() => act(controller.connect)} />}

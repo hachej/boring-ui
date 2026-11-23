@@ -162,7 +162,7 @@ const attachments = { upload: async files => files.map(file => ({ name: file.nam
 const nav = [
   { id: 'design', label: 'Design system', icon: FileTextIcon, render: () => <ScreenBody><Page /></ScreenBody> },
   { id: 'empty', label: 'Empty app view', icon: FolderIcon, render: () => <ScreenBody><Placeholder /></ScreenBody> },
-  ...(circle ? [{ id: 'support', label: 'Support page', icon: FolderIcon, render: () => <ScreenBody><p data-atlas-page="" className="m-0 p-4">The whole conversation, on the app's own page.</p></ScreenBody> }] : []),
+  ...(circle ? [{ id: 'support', label: 'Support page', icon: FolderIcon, render: () => <ScreenBody><p data-atlas-page="" className="m-0">The whole conversation, on the app's own page.</p></ScreenBody> }] : []),
 ];
 const agent = { controller, label: 'Assistant', replyAction: { label: 'Undo the change', icon: <Undo2Icon />, onSelect() { window.__undone = (window.__undone ?? 0) + 1; } }, voice: { transcribe: async () => 'Dictated text (fictional)' }, files: demoFiles, fileKinds: DEMO_KINDS, library: () => <Placeholder />, chatProps: { title: 'Assistant', locale: lang, actions, attachments, mentions, slash, labels: { placeholder: 'Ask, or type /' } } };
 // `?atlas=<state id>`: the page opens in that state of the Composer atlas (a thumbnail of the Atlas page): the state's own steps, run on the real controls.

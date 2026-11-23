@@ -99,7 +99,15 @@ npx boring-ui-blocks design web/src            # every rule is an error
 npx boring-ui-blocks design web/src --baseline # print the current hits as a frozen list
 ```
 
-The verifier runs it. A hit not in `design.exceptions.json` fails. A hit you
+**After each UI file you edit**, run the fast form, on what git reports changed:
+
+```sh
+npx boring-ui-blocks design web/src --changed --jsonl   # or: npm run design -- --changed --jsonl
+```
+
+One `{file,line,rule,level,fix}` line per hit, nothing when clean, exit 1 on an error. Fix every line before you say done. The kit's own [DESIGN.md](../../DESIGN.md) lists the tokens and the ten rules.
+
+The verifier runs the full command. A hit not in `design.exceptions.json` fails. A hit you
 fix must leave the file (`design-exceptions-shrink` fires on a stale count).
 Fix the code, never the list.
 
@@ -129,6 +137,11 @@ the file. Put the change in a prop or a theme token, or restore the file with
 | `design-button-raw-height` | No `h-*` on a Button: the kit sets it, `size` picks it |
 | `design-link-token` | A link is `text-link underline underline-offset-4` (the `--link` role), never `text-primary` |
 | `design-mono-for-code` | Mono only in `code`, `kbd`, `pre`, `samp` or `data-mono-id`; numbers get `tabular-nums`; a paste box is `Textarea variant="code"` |
+| `design-z-index` | No `z-10`, `z-[45]`, `zIndex: 5` or `z-index: 40`: a named layer (`z-dropdown`, `z-composer`, `z-sheet`, `z-overlay`, `z-toast`, `z-feedback`) or `z-[var(--z-*)]` |
+| `design-type-scale` | No `text-base` or larger unless your `theme.core.css` declares that `--text-<step>`: the app's scale is `text-xs` (`--text-body`), `text-sm` (`--text-title`) and what it declares |
+| `design-gap-not-space` | No `space-x-*` / `space-y-*`: `flex flex-col gap-2` |
+| `design-screen-padding` | No `p-*` / `px-*` on `ScreenBody`, its direct child or a screen root: `ScreenBody` draws the gutter once |
+| `design-has-design-md` | An app root has a `DESIGN.md` (tokens by role, the declared scale, how to run the check) |
 | `design-no-x-scroll` | No horizontal scroll in a file with a table: cells truncate and the table stacks below its width |
 | `design-no-kit-restyle` | No CSS aimed at a kit part (`[data-slot=...]`, `[data-boring...]`, kit class names): a token or a knob |
 | `design-no-important` | No `!important`: fix the selector or set a token |

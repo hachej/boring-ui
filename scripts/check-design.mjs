@@ -106,6 +106,7 @@ export function formatDesignReport(result) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const result = checkDesign(realpathSync(designRoot));
+  if (!existsSync(resolve(designRoot, 'DESIGN.md'))) result.errors.push('design-has-design-md: the kit has no DESIGN.md at its root (tokens by role, the rules, how to run the check)');
   if (process.argv.includes('--json')) console.log(JSON.stringify(result, null, 2));
   else {
     console.log(formatDesignReport(result));

@@ -2026,7 +2026,7 @@
           "padding-inline": "var(--card-spacing)"
         },
         "[data-boring=\"feedback\"].boring-feedback-sheet": {
-          "z-index": "2147483000",
+          "z-index": "var(--z-feedback, 2147483000)",
           "max-height": "calc(100dvh - 24px)",
           "overflow": "auto"
         },
@@ -2159,7 +2159,7 @@
           "top": "12px",
           "left": "0",
           "right": "0",
-          "z-index": "2147483000",
+          "z-index": "var(--z-feedback, 2147483000)",
           "flex-direction": "row",
           "flex-wrap": "nowrap",
           "align-items": "center",
@@ -2237,7 +2237,7 @@
           "line-height": "var(--leading-snug, 1.375)"
         },
         "[data-boring=\"feedback\"].boring-feedback-bubble": {
-          "z-index": "2147483001",
+          "z-index": "calc(var(--z-feedback, 2147483000) + 1)",
           "display": "flex",
           "flex-direction": "column",
           "gap": "0.5rem",
@@ -2249,7 +2249,7 @@
           "padding-block": "0.75rem"
         },
         "[data-boring=\"feedback\"].boring-feedback-banner:has(~ * .boring-feedback-bubble-sheet)": {
-          "z-index": "40"
+          "z-index": "var(--z-composer, 40)"
         },
         "[data-boring=\"feedback\"].boring-feedback-bubble-sheet": {
           "border-inline-width": "0",
@@ -2293,7 +2293,7 @@
           "font-weight": "var(--font-weight-medium, 500)"
         },
         "[data-boring=\"feedback\"].boring-feedback-review": {
-          "z-index": "2147483000",
+          "z-index": "var(--z-feedback, 2147483000)",
           "max-height": "min(28rem, calc(100dvh - 24px))",
           "overflow": "auto",
           "text-align": "left"
@@ -2314,7 +2314,7 @@
           "position": "fixed",
           "left": "8px",
           "right": "8px",
-          "z-index": "2147483000",
+          "z-index": "var(--z-feedback, 2147483000)",
           "max-width": "32rem",
           "margin": "0 auto",
           "flex-direction": "row",
@@ -2340,7 +2340,7 @@
           "top": "12px",
           "left": "0",
           "right": "0",
-          "z-index": "2147483001",
+          "z-index": "calc(var(--z-feedback, 2147483000) + 1)",
           "width": "min(40rem, calc(100vw - 24px))",
           "margin": "0 auto"
         },
@@ -3322,7 +3322,7 @@
               "scrollbar-width": "none",
               "position": "fixed",
               "inset-inline": "0",
-              "z-index": "50",
+              "z-index": "var(--z-sheet, 50)",
               "padding": "0.25rem 1.5rem 0.25rem 0.5rem",
               "padding-bottom": "calc(0.25rem + env(safe-area-inset-bottom, 0px))",
               "background": "var(--background)",

@@ -123,7 +123,7 @@
       scrollbar-width: none;
       position: fixed;
       inset-inline: 0;
-      z-index: 50;
+      z-index: var(--z-sheet, 50);
       padding: 0.25rem 1.5rem 0.25rem 0.5rem;
       padding-bottom: calc(0.25rem + env(safe-area-inset-bottom, 0px));
       background: var(--background);
