@@ -1,13 +1,13 @@
 // The acknowledgement that a `present` call's file is on screen (the opt-in `ack` of `createPresentTool`, ./artifacts.ts). It is the
-// same durable wait as `ask_user` and browser tasks (./durable-wait.ts): a conversation document keyed by the call's
+// same park as `ask_user` and browser tasks (./call-binding.ts): a conversation document keyed by the call's
 // `[assistantEntryId, callId]` holds the pending view, the page answers after its panel has mounted the revision, and a stored
-// deadline ends the wait. It is a sibling of ./browser-task.ts, not a second channel: the page answers through the chat transport's
+// deadline (the park's `until`) ends the wait. It is a sibling of ./browser-task.ts, not a second channel: the page answers through the chat transport's
 // `?op=answer`. Presentation outcomes (`createPresentationTool`, ./presentation.ts) are a different contract and stay separate.
 import { defineDocFamily } from '@earendil-works/pi-durable';
-import type { Conversation, TaskId, ToolExecutionApi, Tx } from '@earendil-works/pi-durable';
+import type { Conversation, TaskId, ToolExecutionApi, ToolPark } from '@earendil-works/pi-durable';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { Context } from '@earendil-works/chord/context';
-import { AmbiguousCall, UnknownCall, callBinding, ownBindingKey, waitForDocument } from './durable-wait.js';
+import { AmbiguousCall, CallSettled, UnknownCall, callBinding, ownBindingKey } from './call-binding.js';
 import type { AskUserAnswer } from './ask-user.js';
 import { parseTaskSubject, taskSubjectKey } from './task-artifacts.js';
 import type { TaskSubject } from './task-artifacts.js';
@@ -76,52 +76,56 @@ export function parseViewOpenAnswer(value: unknown): ViewOpenAnswer | undefined 
 }
 
 /**
- * Records the pending view of a `present` call, then waits for the page's acknowledgement or the deadline. The deadline is stored
- * with the record, so a re-attached call (after a restart) keeps the time it started with. Abort cancels the record.
- * Returns the revision the record holds: on a replay after the file changed, that is the revision that was acknowledged, not the
- * current one, so the result never pairs a new file revision with an old acknowledgement.
+ * Records the pending view of a `present` call. While the page has not answered, the tool returns the park this gives back
+ * (`{ sleep: { until, signals } }`); the answer, or the stored deadline, wakes the call and it runs again. The deadline is stored with
+ * the record, so a call re-attached after a restart keeps the time it started with. Returns the revision the record holds: on a replay
+ * after the file changed, that is the revision that was acknowledged, not the current one, so the result never pairs a new file
+ * revision with an old acknowledgement. Pair it with `cancel: cancelViewOpen` on the tool.
  */
 export async function awaitViewOpen(api: ToolExecutionApi, context: Context, view: { readonly tool: string; readonly path: string; readonly revision: string },
-  options: ViewOpenOptions = {}): Promise<{ readonly outcome: ViewOpenOutcome; readonly revision: string }> {
+  options: ViewOpenOptions = {}): Promise<{ readonly outcome: ViewOpenOutcome; readonly revision: string } | ToolPark> {
   const result = await awaitPresentation(api, context, view, options);
+  if (!('binding' in result)) return result;
   if (!('revision' in result.binding)) throw new Error('The presentation belongs to a task reference');
   return { outcome: result.outcome, revision: result.binding.revision };
 }
 
 /** A record viewer confirms the exact task or filter, never a fabricated file revision. */
 export async function awaitTaskViewOpen(api: ToolExecutionApi, context: Context, view: { readonly tool: string; readonly subject: TaskSubject },
-  options: ViewOpenOptions = {}): Promise<{ readonly outcome: ViewOpenOutcome; readonly subject: TaskSubject }> {
+  options: ViewOpenOptions = {}): Promise<{ readonly outcome: ViewOpenOutcome; readonly subject: TaskSubject } | ToolPark> {
   const result = await awaitPresentation(api, context, view, options);
+  if (!('binding' in result)) return result;
   if (!('subject' in result.binding)) throw new Error('The presentation belongs to a file');
   return { outcome: result.outcome, subject: result.binding.subject };
 }
 
+/** The `cancel` of a tool that waits through `awaitViewOpen`: stopping the conversation cancels the pending view. */
+export async function cancelViewOpen(api: ToolExecutionApi, context: Context): Promise<void> {
+  await api.commit(async tx => {
+    const { view } = await tx.doc(documents, api.conversationId, await ownBindingKey(tx, api), null);
+    if (view?.state.kind === 'pending') view.state = { kind: 'cancelled' };
+  }, context);
+}
+
 async function awaitPresentation(api: ToolExecutionApi, context: Context, view: ViewBinding & { readonly tool: string },
-  options: ViewOpenOptions): Promise<{ readonly outcome: ViewOpenOutcome; readonly binding: ViewBinding }> {
+  options: ViewOpenOptions): Promise<{ readonly outcome: ViewOpenOutcome; readonly binding: ViewBinding } | ToolPark> {
   const timeoutMs = options.timeoutMs ?? VIEW_OPEN_TIMEOUT_MS;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new TypeError('The view-open timeout must be a positive integer of milliseconds');
   if (options.viewers && !(await options.viewers(api, context))) return { outcome: { kind: 'none' }, binding: view };
-  const { key, startedAt, duration } = await api.commit(async tx => {
+  const { key, record } = await api.commit(async tx => {
     const key = await ownBindingKey(tx, api);
     const document = await tx.doc(documents, api.conversationId, key, null);
     if (!document.view) document.view = { ...view, taskId: api.taskId, startedAt: Date.now(), timeoutMs, state: { kind: 'pending' } };
     if (document.view.taskId !== api.taskId) throw new Error('View-open identity belongs to another task');
-    return { key, startedAt: document.view.startedAt, duration: document.view.timeoutMs };
+    // A wake with the page still silent is the deadline: the park's `until` came first.
+    if (document.view.state.kind === 'pending' && (api.wake !== undefined || Date.now() >= document.view.startedAt + document.view.timeoutMs)) document.view.state = { kind: 'unconfirmed' };
+    return { key, record: JSON.parse(JSON.stringify(document.view)) as ViewRecord };
   }, context);
-  const expire = async (tx: Tx): Promise<ViewDocument> => {
-    const document = await tx.doc(documents, api.conversationId, key, null);
-    if (document.view?.state.kind === 'pending') document.view.state = { kind: 'unconfirmed' };
-    return { view: document.view ? { ...document.view, state: { ...document.view.state } } : null };
-  };
-  const final = await waitForDocument(api, documents, key, context, value => value?.view?.state.kind !== 'pending', async tx => {
-    const document = await tx.doc(documents, api.conversationId, key, null);
-    if (document.view?.state.kind === 'pending') document.view.state = { kind: 'cancelled' };
-  }, 'View open', { at: startedAt + duration, expire });
-  const state = final?.view?.state;
-  const binding = final?.view ?? view;
-  if (state?.kind === 'opened') return { outcome: { kind: 'opened', viewer: state.viewer }, binding };
-  if (state?.kind === 'refused') return { outcome: { kind: 'refused', reason: state.reason }, binding };
-  if (state?.kind === 'unconfirmed') return { outcome: { kind: 'unconfirmed', timeoutMs: duration }, binding };
+  const { state } = record;
+  if (state.kind === 'pending') return { sleep: { until: record.startedAt + record.timeoutMs, signals: [CallSettled.key(key)] } };
+  if (state.kind === 'opened') return { outcome: { kind: 'opened', viewer: state.viewer }, binding: record };
+  if (state.kind === 'refused') return { outcome: { kind: 'refused', reason: state.reason }, binding: record };
+  if (state.kind === 'unconfirmed') return { outcome: { kind: 'unconfirmed', timeoutMs: record.timeoutMs }, binding: record };
   throw new Error('View open cancelled');
 }
 
@@ -160,6 +164,7 @@ export async function answerViewOpen(conversation: Conversation, id: string, ans
       if (record.state.kind !== 'pending') return same(record.state, next) ? { kind: 'answered' } : { kind: 'conflict', reason: 'The view was already decided' };
       if (task.abortRequested || task.state.status === 'terminal') { record.state = { kind: 'cancelled' }; return { kind: 'conflict', reason: 'The view was cancelled' }; }
       if (Date.now() >= record.startedAt + record.timeoutMs) { record.state = { kind: 'unconfirmed' }; return { kind: 'conflict', reason: 'The view was not confirmed in time' }; }
+      if (await tx.signal(task.id, CallSettled, binding.key, {}) === 'closed') return { kind: 'conflict', reason: 'The view was cancelled' };
       record.state = next;
       return { kind: 'answered' };
     }, options.context ?? BACKGROUND_CONTEXT) as AskUserAnswer;

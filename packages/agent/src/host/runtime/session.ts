@@ -6,7 +6,7 @@ import type { Harness, Wake } from '@earendil-works/pi-durable';
 import { createEditTool, createReadTool, createWriteTool } from '@earendil-works/pi-durable/tools';
 import { answerUserQuestion, createAskUserTool } from '../../ask-user.js';
 import { createChatTransportHandler } from '../../chat-transport.js';
-import { ownBindingKey } from '../../durable-wait.js';
+import { ownBindingKey } from '../../call-binding.js';
 import { createMeter } from '../../metering.js';
 import type { AgentKit } from '../define-app.js';
 import { checkAgents } from '../define-app.js';

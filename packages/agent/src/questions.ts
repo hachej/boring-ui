@@ -1,8 +1,11 @@
-import { ReadAfterWrite, defineDocFamily, defineExtension, defineTask } from '@earendil-works/pi-durable';
+import { ReadAfterWrite, defineDocFamily, defineExtension, defineSignal, defineTask } from '@earendil-works/pi-durable';
 import type { TaskOptions, Tx } from '@earendil-works/pi-durable';
 import type { Context } from '@earendil-works/chord/context';
 import type { RuntimeQuestionRef } from './contracts.js';
-import { waitUntil } from './wait-until.js';
+import { obj } from '@earendil-works/pi-schema';
+
+/** Delivered to a question's task under its document key when the question is resolved, so Pi wakes the sleeping task at once. */
+const QuestionSettled = defineSignal({ name: 'boring.questions.settled', version: 1, schema: obj({}) });
 
 type QuestionRef = { [Key in keyof RuntimeQuestionRef]: RuntimeQuestionRef[Key] };
 export type ChoiceQuestion = Omit<QuestionRef, 'runtimeId' | 'taskId'> & {
@@ -59,33 +62,19 @@ export function createQuestions(options: QuestionOptions) {
           await runtime.commit(() => ({ status: 'terminal', outcome: { status: 'completed', result: { kind: 'unavailable' } } }), context);
           return;
         }
-        const watch = await runtime.watchDoc(documents, running.input.key, context);
-        if (!watch?.value?.question || watch.value.question.ref.taskId !== runtime.taskId) throw new Error('Native question record is missing or misbound');
-        try {
-          if (watch.value.question.state.kind === 'pending') {
-            const changed = new Promise<void>(resolve => {
-              watch.start(async call => { if (call.kind === 'value' && (call.retired || call.value.question?.state.kind !== 'pending')) resolve(); });
-            });
-            const expiry = waitUntil(runtime, Date.parse(watch.value.question.ref.expiresAt), context);
-            try {
-              await Promise.race([
-                changed,
-                expiry.done,
-                watch.closed.then(() => { throw new Error('Question observation closed'); }),
-              ]);
-            } finally { expiry.disarm(); }
-          }
-          await runtime.commit(async tx => {
-            const doc = await tx.doc(documents, running.input.key, null);
-            const question = doc.question;
-            if (!question) throw new Error('Question retired while waiting');
-            if (question.state.kind === 'pending') question.state = { kind: 'expired' };
-            const result: QuestionOutcome = question.state.kind === 'resolved'
-              ? { kind: 'resolved', answer: question.state.resolution.answer, resolutionId: question.state.resolution.resolutionId }
-              : { kind: question.state.kind };
-            return { status: 'terminal', outcome: { status: 'completed', result } };
-          }, context);
-        } finally { await watch.stop(); }
+        await runtime.commit(async tx => {
+          const doc = await tx.doc(documents, running.input.key, null);
+          const question = doc.question;
+          if (!question) throw new Error('Question retired while waiting');
+          if (question.ref.taskId !== runtime.taskId) throw new Error('Native question record is missing or misbound');
+          const deadline = Date.parse(question.ref.expiresAt);
+          if (question.state.kind === 'pending' && runtime.now() < deadline) return { status: 'sleeping', until: deadline, signals: [QuestionSettled.key(running.input.key)], checkpoint: { phase: 'wait' } };
+          if (question.state.kind === 'pending') question.state = { kind: 'expired' };
+          const result: QuestionOutcome = question.state.kind === 'resolved'
+            ? { kind: 'resolved', answer: question.state.resolution.answer, resolutionId: question.state.resolution.resolutionId }
+            : { kind: question.state.kind };
+          return { status: 'terminal', outcome: { status: 'completed', result } };
+        }, context);
       },
     },
     abort: async (running, runtime, context) => {
@@ -158,6 +147,7 @@ export function createQuestions(options: QuestionOptions) {
     }
     if (question.state.kind !== 'pending') return { kind: question.state.kind };
     if (expired(ref)) { question.state = { kind: 'expired' }; return { kind: 'expired' }; }
+    await tx.signal(ref.taskId, QuestionSettled, key(ref), {});
     question.state = { kind: 'resolved', resolution: { resolutionId, answer, responderId: actor.principalId, consumedBy: null } };
     return { kind: 'resolved', answer, resolutionId };
   }

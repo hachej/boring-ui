@@ -1,8 +1,6 @@
-import { defineDoc, defineExtension, defineTask, defineTool } from '@earendil-works/pi-durable';
-import type { ConversationId, DocumentReader, Extension, TaskId, TaskInspection, TaskRuntime, Tx } from '@earendil-works/pi-durable';
-import { withAbortSignal } from '@earendil-works/chord/context';
+import { defineDoc, defineExtension, defineSignal, defineTask, defineTool } from '@earendil-works/pi-durable';
+import type { ConversationId, DocumentReader, Extension, TaskId, TaskInspection, Tx } from '@earendil-works/pi-durable';
 import type { Context } from '@earendil-works/chord/context';
-import { waitUntil } from './wait-until.js';
 import { int, obj, opt, str } from '@earendil-works/pi-schema';
 
 export const SCHEDULE_TOOL = 'schedule';
@@ -36,26 +34,11 @@ export const ConversationSchedules = defineDoc<{ items: ScheduleRecord[]; next: 
 
 const remove = (items: ScheduleRecord[], id: string): void => { const index = items.findIndex(item => item.id === id); if (index !== -1) items.splice(index, 1); };
 
-/** Sleep on the Harness clock until `runAt`; true when the schedule was cancelled first. */
-async function sleepUnlessCancelled(runtime: TaskRuntime<DeliveryInput, DeliveryState, { delivered: boolean }, object>, input: DeliveryInput, context: Context): Promise<boolean> {
-  const cancelledIn = (value: Readonly<{ items: readonly ScheduleRecord[] }> | null) => value?.items.find(item => item.id === input.id)?.cancelled === true;
-  const watch = await runtime.watchDoc(ConversationSchedules, input.conversationId, context);
-  if (watch === undefined) return false;
-  const cancel = new AbortController();
-  try {
-    if (cancelledIn(watch.value)) return true;
-    watch.start(async call => { if (call.kind === 'value' && cancelledIn(call.retired ? null : call.value)) cancel.abort(); });
-    const wait = waitUntil(runtime, input.runAt, withAbortSignal(cancel.signal, context));
-    try { await wait.done; } finally { wait.disarm(); }
-    return false;
-  } catch (error) {
-    if (cancel.signal.aborted) return true;
-    throw error;
-  } finally { await watch.stop(); }
-}
+/** Delivered to a schedule's task under its schedule id when the schedule is cancelled, so Pi wakes the sleeping task at once. */
+const ScheduleCancelled = defineSignal({ name: 'boring.schedule.cancelled', version: 1, schema: obj({}) });
 
 /**
- * The native durable task behind one schedule: it waits on the Harness clock (`runtime.setTimer`), then delivers the instruction to
+ * The native durable task behind one schedule: it sleeps on the Harness clock (a native sleep with `until`, woken early by the cancel signal), then delivers the instruction to
  * its conversation as a follow-up input whose request id is the schedule id, so a replayed delivery never submits twice. Owned by
  * the conversation as background work: a person stopping the current turn does not cancel it. No second scheduler: Pi's own
  * scheduler runs it, and a restart resumes it.
@@ -66,14 +49,15 @@ export const ScheduledDelivery = defineTask<DeliveryInput, DeliveryState, { deli
   initial: () => ({ phase: 'wait' }),
   phases: {
     wait: async (task, runtime, context) => {
-      if (await sleepUnlessCancelled(runtime, task.input, context)) {
-        await runtime.commit(async tx => {
-          remove((await tx.doc(ConversationSchedules, task.input.conversationId)).items, task.input.id);
+      await runtime.commit(async tx => {
+        const { items } = await tx.doc(ConversationSchedules, task.input.conversationId);
+        if (items.find(item => item.id === task.input.id)?.cancelled === true) {
+          remove(items, task.input.id);
           return { status: 'terminal', outcome: { status: 'completed', result: { delivered: false } } };
-        }, context);
-        return;
-      }
-      await runtime.commit(() => ({ status: 'running', checkpoint: { phase: 'deliver' } }), context);
+        }
+        if (runtime.now() >= task.input.runAt) return { status: 'running', checkpoint: { phase: 'deliver' } };
+        return { status: 'sleeping', until: task.input.runAt, signals: [ScheduleCancelled.key(task.input.id)], checkpoint: { phase: 'wait' } };
+      }, context);
     },
     deliver: async (task, runtime, context) => {
       const conversation = await runtime.conversation(task.input.conversationId, context);
@@ -117,6 +101,7 @@ export async function addSchedule(tx: Tx, conversationId: ConversationId, reques
 export async function cancelSchedule(tx: Tx, conversationId: ConversationId, id: string): Promise<boolean> {
   const item = (await tx.doc(ConversationSchedules, conversationId)).items.find(candidate => candidate.id === id);
   if (item === undefined || item.cancelled) return false;
+  await tx.signal(item.taskId, ScheduleCancelled, id, {});
   item.cancelled = true;
   return true;
 }

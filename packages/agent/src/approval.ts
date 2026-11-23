@@ -1,5 +1,5 @@
 import { ToolTask, defineExtension, hook } from '@earendil-works/pi-durable';
-import type { ConversationId, Extension, ToolExecutionApi, ToolExecutionResult, ToolRegistration, Wrap } from '@earendil-works/pi-durable';
+import type { ConversationId, Extension, ToolExecutionApi, ToolExecutionResult, ToolPark, ToolRegistration, Wrap } from '@earendil-works/pi-durable';
 import type { Context } from '@earendil-works/chord/context';
 import type { JsonValue } from '@earendil-works/chord/json';
 import type { Static } from '@earendil-works/pi-schema';
@@ -64,8 +64,8 @@ export function requireApproval<TParameters extends object, TDetails extends Jso
   const gated: ToolRegistration<TParameters, JsonValue> = {
     ...(tool as unknown as ToolRegistration<TParameters, JsonValue>),
     replay: 'safe',
-    callers: ['model'], // the question binds to the calling model entry; a nested executeTool caller has none (durable-wait.ts)
-    execute: async (args, outerApi, context): Promise<ToolExecutionResult<JsonValue>> => {
+    callers: ['model'], // the question binds to the calling model entry; a nested executeTool caller has none (call-binding.ts)
+    execute: async (args, outerApi, context): Promise<ToolExecutionResult<JsonValue> | ToolPark> => {
       let record: { summary: string; decision?: 'approved' | 'denied' | 'cancelled' } | undefined;
       const withRecord = (value: JsonValue | undefined): JsonValue | undefined => !record ? value
         : value === undefined || (value !== null && typeof value === 'object' && !Array.isArray(value)) ? { ...(value ?? {}), [APPROVAL_DETAILS]: record } : value;
@@ -95,8 +95,11 @@ export function requireApproval<TParameters extends object, TDetails extends Jso
       // The decision joins the summary in the call's details, so a view tells approved, denied and never-answered apart.
       const decided = (decision: 'approved' | 'denied' | 'cancelled') => publish({ summary, decision });
       let answer: string;
-      try { answer = await askPerson(outerApi, context, { prompt, options: [APPROVE, DENY] }); }
-      catch (error) {
+      try {
+        const asked = await askPerson(outerApi, context, { prompt, options: [APPROVE, DENY] }, { hold: true });
+        if (!('answer' in asked)) return asked;
+        answer = asked.answer;
+      } catch (error) {
         if (context.abortSignal?.aborted) throw error; // the call itself is being stopped: Pi records that, and no decision was made
         await decided('cancelled');
         return text(`${CANCELLED_PREFIX} ${tool.name} was not run and nothing was changed.`, true);

@@ -12,7 +12,7 @@ import { createArtifactDescriptor } from './artifact-descriptor.js';
 import type { ArtifactType } from './artifact-descriptor.js';
 export { ARTIFACT_TYPES, createArtifactDescriptor, parseArtifact, parsePresentedArtifact } from './artifact-descriptor.js';
 export type { ArtifactDescriptor, ArtifactDescriptorInput, ArtifactType, PresentedArtifact } from './artifact-descriptor.js';
-import { PRESENT_TOOL, awaitTaskViewOpen, awaitViewOpen } from './view-open.js';
+import { PRESENT_TOOL, awaitTaskViewOpen, awaitViewOpen, cancelViewOpen } from './view-open.js';
 import type { ViewOpenOptions, ViewOpenOutcome } from './view-open.js';
 import { lit, obj, opt, str, union } from '@earendil-works/pi-schema';
 
@@ -85,6 +85,7 @@ export function createPresentTool(options: PresentToolOptions = {}) {
     ].join(' '),
     parameters: obj({ path: opt(str({ minLength: 1, maxLength: 512, description: 'A workspace file path. Supply exactly one of path, task or tasks.' })), task: opt(str({ minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]*$', description: 'A host task id or number, such as D-201.' })), tasks: opt(obj({ filter: union([lit('all'), lit('mine'), lit('waiting-on-me')]) })) }),
     replay: 'safe',
+    cancel: (_args, api, context) => cancelViewOpen(api, context),
     execute: async (args, api, context) => {
       if (Object.keys(args).length !== 1) return reply({ kind: 'denied', reason: 'Supply exactly one of path, task or tasks' });
       if (args.path === undefined) {
@@ -92,6 +93,7 @@ export function createPresentTool(options: PresentToolOptions = {}) {
         if (!subject) return reply({ kind: 'denied', reason: 'Invalid task reference' });
         if (!options.ack) return reply({ kind: 'presented', artifact: createTaskArtifact(subject) });
         const shown = await awaitTaskViewOpen(api, context, { tool: PRESENT_TOOL, subject }, options.ack);
+        if (!('outcome' in shown)) return shown;
         return reply({ kind: 'presented', artifact: createTaskArtifact(shown.subject), ...viewFields(shown.outcome) });
       }
       // An absolute path is refused, not normalised: `/workspace/a.md` must never be read as `workspace/a.md` under the root.
@@ -119,7 +121,9 @@ export function createPresentTool(options: PresentToolOptions = {}) {
         ...(kind.language ? { language: kind.language } : {}), target, revision });
       if (!options.ack) return reply({ kind: 'presented', artifact: describe(kept.snapshot.ref.revision) });
       // A replay reports the revision the call recorded (and the page acknowledged), even if the file has changed since.
-      const { outcome, revision } = await awaitViewOpen(api, context, { tool: PRESENT_TOOL, path, revision: kept.snapshot.ref.revision }, options.ack);
+      const shown = await awaitViewOpen(api, context, { tool: PRESENT_TOOL, path, revision: kept.snapshot.ref.revision }, options.ack);
+      if (!('outcome' in shown)) return shown;
+      const { outcome, revision } = shown;
       return reply({ kind: 'presented', artifact: describe(revision), ...viewFields(outcome) });
     },
   });
