@@ -24,10 +24,13 @@ Pi 1.6.0 parks a tool call or a task (`{ sleep: { until?, signals? } }`, `define
 
 | Wait | Before | Now |
 |---|---|---|
-| `ask_user`, `requireApproval`, browser tasks, `present` with `ack` | the call watched its document inside `execute` | `execute` returns a park on `CallSettled`; the answer functions settle the document and deliver the signal in the same commit; `cancel` marks the document cancelled |
+| `ask_user`, browser tasks, `present` with `ack` | the call watched its document inside `execute` | `execute` returns a park on `CallSettled`; the answer functions settle the document and deliver the signal in the same commit; `cancel` marks the document cancelled |
 | `present` deadline | a timer next to the watch | the park's `until` |
+| Approvals (`requireApproval`, `createApprovalExtension`) | the call watched its document inside `execute` | unchanged: a held wait (`askPerson(..., { hold: true })`), until Pi offers a parking wrapper |
 | Schedules | a phase with its own timer and a document watch | a native `sleeping` state with `until` and a cancel signal |
 | Native questions (`createQuestions`) | a phase watching the question document and racing an expiry timer | a native `sleeping` state with `until` its expiry and a settle signal |
+
+Approvals keep a held wait because Pi 1.6.0 lets a tool wrapper return only the park its base returned (a park of its own ends the call `invalid_park`), and `createApprovalExtension` gates tools with `Wrap`. The native gate seam, a `beforeTool` hook that returns a sleep, has no `commit` in `HookApi`, so it cannot create the question document or publish the details the approval card reads. The held wait is `holdForAnswer` in `packages/agent/src/ask-user.ts`; delete it, and the `hold` option, once Pi offers a wrapper that may park (to request upstream).
 
 What stays, and why: the per-call conversation documents (`boring.ask-user.question`, `boring.browser-task`, `boring.view-open`, `boring.questions.record`, `boring.schedules`) hold the question, its options and the person's answer, which a signal value is not meant to carry past the wake and which stores written before 1.6.0 already hold. `call-binding.ts` keeps the answer id (`[assistantEntryId, callId]`): Pi has no such binding. A store written by the previous code with these waits pending opens and settles (`test/packages/agent-pending-waits-legacy.test.mjs`, fixture `test/fixtures/store-pending-waits.json`): the first run of the reopened call or task reads the same document and parks it.
 

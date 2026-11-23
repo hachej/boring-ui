@@ -3,7 +3,7 @@ import type { ConversationId, Extension, ToolExecutionApi, ToolExecutionResult, 
 import type { Context } from '@earendil-works/chord/context';
 import type { JsonValue } from '@earendil-works/chord/json';
 import type { Static } from '@earendil-works/pi-schema';
-import { askPerson, cancelQuestion } from './ask-user.js';
+import { askPerson } from './ask-user.js';
 
 /** The two answers an approval question accepts. A chat answers with exactly these strings through `answerUserQuestion`. */
 export const APPROVE = 'Approve';
@@ -64,7 +64,6 @@ export function requireApproval<TParameters extends object, TDetails extends Jso
   const gated: ToolRegistration<TParameters, JsonValue> = {
     ...(tool as unknown as ToolRegistration<TParameters, JsonValue>),
     replay: 'safe',
-    cancel: (_args, api, context) => cancelQuestion(api, context),
     callers: ['model'], // the question binds to the calling model entry; a nested executeTool caller has none (call-binding.ts)
     execute: async (args, outerApi, context): Promise<ToolExecutionResult<JsonValue> | ToolPark> => {
       let record: { summary: string; decision?: 'approved' | 'denied' | 'cancelled' } | undefined;
@@ -97,7 +96,7 @@ export function requireApproval<TParameters extends object, TDetails extends Jso
       const decided = (decision: 'approved' | 'denied' | 'cancelled') => publish({ summary, decision });
       let answer: string;
       try {
-        const asked = await askPerson(outerApi, context, { prompt, options: [APPROVE, DENY] });
+        const asked = await askPerson(outerApi, context, { prompt, options: [APPROVE, DENY] }, { hold: true });
         if (!('answer' in asked)) return asked;
         answer = asked.answer;
       } catch (error) {

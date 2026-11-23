@@ -64,10 +64,13 @@ export type Asked = { readonly answer: string } | ToolPark;
  * tool call (`askUserQuestionId`). While it is pending the tool returns the park this gives back (`{ sleep: { signals } }`): Pi holds
  * no invocation and no model request, a restart keeps the call asleep, and `answerUserQuestion(conversation, questionId, answer)`
  * (one of `options`, or any text when `allowFreeText`) settles the document and wakes the call, which runs again and gets the answer.
- * Throws when the question is cancelled. Pair it with `cancel: cancelQuestion` on the tool. `createAskUserTool` and `requireApproval`
- * (`@hachej/boring-agent/approval`) both ask through this.
+ * Throws when the question is cancelled. Pair it with `cancel: cancelQuestion` on the tool. `createAskUserTool` asks this way.
+ * With `hold`, the call stays running and watches the document until it is settled, then resolves with the answer, never a park:
+ * `requireApproval` asks this way because Pi lets a tool wrapper (`createApprovalExtension`) return only its base's park, never its own.
+ * Remove `hold` once Pi offers a parking wrapper.
  */
-export async function askPerson(api: ToolExecutionApi, context: Context, question: { readonly prompt: string; readonly options?: readonly string[]; readonly allowFreeText?: boolean }): Promise<Asked> {
+export async function askPerson(api: ToolExecutionApi, context: Context, question: { readonly prompt: string; readonly options?: readonly string[]; readonly allowFreeText?: boolean },
+  options: { readonly hold?: boolean } = {}): Promise<Asked> {
   const { key, state } = await api.commit(async tx => {
     const key = await ownBindingKey(tx, api);
     const document = await tx.doc(documents, api.conversationId, key, null);
@@ -79,9 +82,31 @@ export async function askPerson(api: ToolExecutionApi, context: Context, questio
     if (document.question.taskId !== api.taskId) throw new Error('Question identity belongs to another task');
     return { key, state: { ...document.question.state } };
   }, context);
-  if (state.kind === 'answered') return { answer: state.answer };
-  if (state.kind === 'cancelled') throw new Error('Question cancelled');
+  const settled = state.kind === 'pending' && options.hold ? await holdForAnswer(api, key, context) : state;
+  if (settled.kind === 'answered') return { answer: settled.answer };
+  if (settled.kind === 'cancelled') throw new Error('Question cancelled');
   return { sleep: { signals: [CallSettled.key(key)] } };
+}
+
+/** Watches the question document inside the running call until it is settled; stopping the call cancels the question. */
+async function holdForAnswer(api: ToolExecutionApi, key: string, context: Context): Promise<AskState> {
+  const watch = await api.watchDoc(documents, api.conversationId, key, context);
+  if (!watch) throw new Error('Question record is missing');
+  const signal = context.abortSignal;
+  const settledState = (value: Readonly<AskDocument> | null | undefined): AskState | undefined => value?.question && value.question.state.kind !== 'pending' ? value.question.state : undefined;
+  try {
+    return await new Promise<AskState>((resolve, reject) => {
+      const already = settledState(watch.value);
+      if (already) return resolve(already);
+      if (signal?.aborted) return reject(signal.reason ?? new Error('Question cancelled'));
+      signal?.addEventListener('abort', () => reject(signal.reason ?? new Error('Question cancelled')), { once: true });
+      void watch.closed.then(() => reject(new Error('Question observation closed')));
+      watch.start(async call => { const next = call.kind === 'value' ? settledState(call.retired ? null : call.value) : undefined; if (next) resolve(next); });
+    });
+  } catch (error) {
+    if (signal?.aborted) await cancelQuestion(api, BACKGROUND_CONTEXT).catch(() => undefined);
+    throw error;
+  } finally { await watch.stop(); }
 }
 
 /** The `cancel` of a tool that asks through `askPerson`: stopping the conversation cancels the pending question. */

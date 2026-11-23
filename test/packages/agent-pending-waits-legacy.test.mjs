@@ -8,7 +8,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { Harness, createRegistry } from '@earendil-works/pi-durable';
+import { Harness, createRegistry, defineTool } from '@earendil-works/pi-durable';
+import { obj, str } from '@earendil-works/pi-schema';
 import { openNodeSqliteStorage } from '@earendil-works/pi-durable/storage/sqlite/node';
 import { createModels, createProvider } from '@earendil-works/pi-ai/models';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream';
@@ -19,6 +20,7 @@ import { answerBrowserTask, createBrowserTaskTool } from '@hachej/boring-agent/b
 import { answerViewOpen, createPresentTool } from '@hachej/boring-agent/artifacts';
 import { SCHEDULED_INPUT_KIND, cancelSchedule, createScheduleExtension, listSchedules } from '@hachej/boring-agent/schedule';
 import { createQuestions } from '@hachej/boring-agent/questions';
+import { APPROVE, requireApproval } from '@hachej/boring-agent/approval';
 
 const dump = JSON.parse(readFileSync(new URL('../fixtures/store-pending-waits.json', import.meta.url), 'utf8'));
 const decode = value => value !== null && typeof value === 'object' && '$blob' in value ? Buffer.from(value.$blob, 'hex') : value;
@@ -49,6 +51,9 @@ function reportingModels(requests) {
   return models;
 }
 
+const gatedNote = () => requireApproval(defineTool({ name: 'change_note', description: 'Fictional change.', parameters: obj({ note: str() }), replay: 'safe',
+  execute: async args => ({ output: [{ type: 'text', text: `changed ${args.note}` }] }) }), { summarize: args => `Add "${args.note}"` });
+
 function writeStore(path) {
   const db = new DatabaseSync(path);
   for (const statement of dump.schema) db.exec(statement);
@@ -63,11 +68,11 @@ async function reopen(t) {
   const directory = mkdtempSync(join(tmpdir(), 'boring-pending-waits-'));
   const path = join(directory, 'store.sqlite');
   writeStore(path);
-  const clock = { at: Date.now(), now: () => clock.at };
+  const clock = { offset: 0, now: () => Date.now() + clock.offset };
   const requests = [];
   const questions = createQuestions({ runtimeId: 'runtime-one', now: clock.now, authorize: () => ({ principalId: 'fictional-reviewer', scopeId: 'cabinet' }), isCurrent: () => true });
   const agent = defineAgent({ id: 'legacy', model: { provider: model.provider, modelId: model.id }, instructions: 'Call, then report.',
-    tools: [createAskUserTool(), createBrowserTaskTool(MEASURE), createPresentTool({ ack: { timeoutMs: 3_600_000 } })], extensions: [createScheduleExtension({ now: clock.now }), questions.extension] });
+    tools: [gatedNote(), createAskUserTool(), createBrowserTaskTool(MEASURE), createPresentTool({ ack: { timeoutMs: 3_600_000 } })], extensions: [createScheduleExtension({ now: clock.now }), questions.extension] });
   const registry = createRegistry();
   agent.install(registry);
   const harness = await Harness.open(await openNodeSqliteStorage(path), { registry, models: reportingModels(requests), now: clock.now }, context);
@@ -92,21 +97,24 @@ test('a store with pending waits written before Pi parked tools opens, parks eac
   await until('every waiting call and task is parked by Pi', async () => {
     const all = await records(harness);
     const waiting = all.filter(record => ['pi.tool', 'boring.schedule.deliver', 'boring.questions.wait'].includes(record.kind));
-    return waiting.length === 6 && waiting.every(record => record.state.status === 'sleeping');
+    return waiting.length === 7 && waiting.filter(record => record.state.status === 'sleeping').length === 6;
   });
   const sleeping = (await records(harness)).filter(record => record.state.status === 'sleeping');
   assert.deepEqual(sleeping.filter(record => record.kind === 'pi.tool').map(record => Object.keys(record.state).includes('until')).sort(), [false, false, true], 'ask_user and the browser task wait for a signal only; the view also has its deadline');
   assert.equal(sleeping.filter(record => record.kind !== 'pi.tool').every(record => typeof record.state.until === 'number'), true, 'schedules and the question sleep until their deadline');
+  assert.equal((await records(harness)).filter(record => record.kind === 'pi.tool' && record.state.status === 'running').length, 1, 'a pending approval keeps a held wait: Pi lets a wrapper return only its base\'s park');
   assert.deepEqual(requests, [], 'no model request while the person has not answered');
 
   const entry = await assistantEntry(conversation);
   assert.deepEqual(await answerUserQuestion(conversation, askUserQuestionId(entry.id, 'ask-1'), 'lake'), { kind: 'answered' });
   assert.deepEqual(await answerBrowserTask(conversation, MEASURE, 'measure-1', JSON.stringify({ kind: 'measured', width: 640 })), { kind: 'answered' });
   assert.deepEqual(await answerViewOpen(conversation, 'present-1', JSON.stringify({ kind: 'opened', instanceId: 'tab-1', subject: { task: 'D-201' } })), { kind: 'answered' });
-  await until('the model continues with all three answers', async () => (await finalText(conversation))?.includes('present='));
+  assert.deepEqual(await answerUserQuestion(conversation, 'gate-1', APPROVE), { kind: 'answered' });
+  await until('the model continues with all four answers', async () => (await finalText(conversation))?.includes('present='));
   const text = await finalText(conversation);
   assert.match(text, /ask_user=\{"kind":"answered","answer":"lake"\}/);
   assert.match(text, /measure_page=\{"kind":"measured","width":640\}/);
+  assert.match(text, /change_note=changed fictional/);
   assert.match(text, /present=.*"opened":true.*"viewer":"tab-1"/);
   assert.deepEqual(requests, ['toolResult'], 'one request, after the answers');
   assert.deepEqual(await answerUserQuestion(conversation, askUserQuestionId(entry.id, 'ask-1'), 'lake'), { kind: 'answered' }, 'repeating the answer is idempotent');
@@ -124,7 +132,7 @@ test('a store with pending waits written before Pi parked tools opens, parks eac
   assert.equal((await harness.waitForTask(prune.taskId, context)).state.outcome.result.delivered, false, 'a cancelled schedule wakes at once and delivers nothing');
   const deliveries = () => conversation.commit(async tx => (await tx.scanEntries({ conversationId: conversation.id }, 100)).items.filter(item => item.kind === SCHEDULED_INPUT_KIND), context);
   assert.equal((await deliveries()).length, 0, 'not before its deadline');
-  clock.at = water.runAt + 1;
+  clock.offset = water.runAt - Date.now() + 1;
   harness.resume();
   await until('the schedule is delivered at its deadline', async () => (await deliveries()).length === 1);
   assert.equal((await harness.waitForTask(water.taskId, context)).state.outcome.result.delivered, true);
