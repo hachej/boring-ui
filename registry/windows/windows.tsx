@@ -116,7 +116,7 @@ export function WindowLayer({ children, storageKey = 'boring.windows', persist =
   }, [resize]);
   useLayoutEffect(() => { if (state.request && state.focus === null) launcher.current?.focus({ preventScroll: true }); }, [state.focus, state.request]);
   const value = useMemo(() => ({ state, phone, host, launcher, register, change, raise, resize }), [state, phone, host, register, change, raise, resize]);
-  return <Windows.Provider value={value}>{children}<div ref={setHost} data-boring="window-layer" className="pointer-events-none fixed inset-0 z-40 isolate" /></Windows.Provider>;
+  return <Windows.Provider value={value}>{children}<div ref={setHost} data-boring="window-layer" className="pointer-events-none fixed inset-0 z-composer isolate" /></Windows.Provider>;
 }
 
 /** Reach a window from controls anywhere inside its layer (undefined until the FloatingWindow registers). */

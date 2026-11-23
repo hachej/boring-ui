@@ -216,7 +216,7 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
   const fullInset = keyboardOpen ? 'var(--app-shell-safe-bottom, 0px)' : 'max(var(--app-shell-tabbar, 0px), var(--app-shell-safe-bottom, 0px))';
   const bottomInset = layer.bar && snap === 'full' ? fullInset : 'var(--app-shell-tabbar, 0px)';
   const keyboardPeek = layer.bar && peek && !recording && keyboardOpen;
-  const style = { '--app-shell-trigger-clear': `${triggerClear}px`, '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-peek-height': layer.bar ? `calc(${PEEK_BAR_REM}rem + ${layer.cardPx}px)` : `${PEEK_REM}rem`, '--app-shell-z-layer': Z.layer,
+  const style = { '--app-shell-trigger-clear': `${triggerClear}px`, '--app-shell-vv-height': vv ? `${vv.height}px` : '100dvh', '--app-shell-tabbar': `${layer.tabbar}px`, '--app-shell-peek-height': layer.bar ? `calc(${PEEK_BAR_REM}rem + ${layer.cardPx}px)` : `${PEEK_REM}rem`, '--z-app-shell-layer': Z.layer,
     ...(layer.bar ? { '--app-shell-sheet-offset': 'var(--drawer-snap-point-offset, 0px)' } : {}),
     paddingBottom: layer.bar ? bottomInset : peek ? `calc(var(--drawer-snap-point-offset, 0px) + ${bottomInset})` : 'var(--drawer-snap-point-offset, 0px)',
     // `bar`, folded, with the keyboard up (K-1): the field is not moved to a full screen; the folded sheet rests on the keyboard at its own height (the field and the card),
@@ -281,7 +281,7 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
       if (next && (next !== 'peek' || hasPeek)) layer.setSnap(next);
     }}>
     <DrawerContent data-testid="agent-layer" aria-label={title} data-state={snap} data-peek={peek} data-bar-sheet={layer.bar && !keyboardPeek || undefined} data-keep-tabs={keepTabs || undefined} initialFocus={() => closeRef.current ?? false} style={style}
-      className={cn('app-shell box-border z-(--app-shell-z-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)_-_max(1.5rem,var(--app-shell-trigger-clear,0px)))]',
+      className={cn('app-shell box-border z-(--z-app-shell-layer) data-[swipe-direction=down]:bottom-(--drawer-keyboard-inset,0px) data-[swipe-axis=y]:[--drawer-content-max-height:calc(var(--app-shell-vv-height,100dvh)_-_max(1.5rem,var(--app-shell-trigger-clear,0px)))]',
         // `bar`: full is the whole viewport, no strip of the page above it (the same `full` size as the wide screen's full-screen conversation).
         layer.bar && 'data-[state=full]:data-[swipe-axis=y]:[--drawer-content-max-height:var(--app-shell-vv-height,100dvh)] data-[state=full]:[padding-top:env(safe-area-inset-top)]',
         // The field counter-translates the snap offset; tap changes need no layout animation.
@@ -310,7 +310,7 @@ export function CompactSheet({ pointing }: { readonly pointing: boolean }) {
               '[&_[data-testid=composer-plus]]:hidden [&_[data-testid=composer-annotate]]:hidden'],
             layer.bar && '[&_[data-testid=composer-dock]]:px-2 [&_[data-testid=composer-dock]]:pt-2 [&_[data-testid=composer-dock]]:pb-4',
             peek && layer.bar && ['[&_[data-boring=pi-chat]>.relative]:hidden [&_[data-testid=conversation-content]]:hidden', FOLDED_FIELD])}>
-          {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} {...(layer.circle ? { controls: <CircleControls withClose={false} /> } : {})} className={layer.bar ? 'absolute inset-x-0 top-0 z-10 bg-popover' : undefined} />}
+          {!peek && <Header text={text} title={title} compactSnap={snap} closeRef={closeRef} {...(layer.circle ? { controls: <CircleControls withClose={false} /> } : {})} className={layer.bar ? 'absolute inset-x-0 top-0 z-raised bg-popover' : undefined} />}
           {!peek && <ExploreContextLine />}
           {!peek && <VoiceProblem />}
           {peek && recording && <div aria-hidden="true" data-testid="agent-listening" data-phase={voice.phase} className="sr-only">

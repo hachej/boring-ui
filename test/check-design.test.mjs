@@ -219,3 +219,31 @@ test('Button size="inline" passes the host-control rule and the h-auto p-0 min-h
   assert.equal(restyled(f, `${button} const a = <Button variant="link" size="inline" className="whitespace-nowrap">Compte 706</Button>;`).length, 0, 'layout stays allowed');
   assert.equal(restyled(f, `${button} const a = <Button variant="link" className="h-auto p-0 min-h-0">Compte 706</Button>;`).length, 1);
 });
+
+const items = (...extra) => JSON.stringify({ items: [...extra, { name: 'button', files: [{ path: 'registry/button/button.tsx' }] }] });
+
+test('the kit scan reads the scale rules in block TSX: z-10, a stacking style, text-base and space-y fail, tokens pass', t => {
+  const f = fixture(t, 'export const A = () => <div className="z-10 -z-20 text-base space-y-2" style={{ zIndex: 5 }} />;\n');
+  f.write('registry.json', items({ name: 'theme', cssVars: { theme: { 'text-xs': 'var(--text-body)' } } }));
+  assert.deepEqual(checkDesign(f.root, f).findings.map(finding => finding.rule).sort(), ['design-gap-not-space', 'design-type-scale', 'design-z-index', 'design-z-index', 'design-z-index']);
+  f.write('registry/button/button.tsx', 'export const A = () => <div className="z-raised z-sheet z-(--z-app-shell-layer) text-xs flex flex-col gap-2" style={{ zIndex: "var(--z-drop)" }} />;\n');
+  assert.deepEqual(checkDesign(f.root, f).findings, []);
+});
+
+test('a type step the shipped theme declares passes the kit scan, and the allowlist reaches it by file and value', t => {
+  const f = fixture(t, 'export const A = () => <div className="text-lg" />;\n');
+  f.write('registry.json', items({ name: 'theme', cssVars: { theme: { 'text-lg': '1.125rem' } } }));
+  assert.deepEqual(checkDesign(f.root, f).findings, []);
+  f.write('registry.json', items({ name: 'theme', cssVars: {} }));
+  assert.equal(checkDesign(f.root, f).findings.length, 1);
+  f.allowlist.exceptions.push({ id: 'why', reason: 'a reason' });
+  f.allowlist.allow.push({ file: 'registry/button/button.tsx', rules: ['design-type-scale'], pattern: '^text-lg$', exception: 'why' });
+  const result = checkDesign(f.root, f);
+  assert.deepEqual([result.findings.length, result.allowed.length], [0, 1]);
+});
+
+test('the kit itself has no scale hit outside its allowlist', () => {
+  const result = checkDesign(designRoot);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.findings.map(finding => `${finding.rule} ${finding.file}:${finding.line} ${finding.value}`), []);
+});

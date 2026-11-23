@@ -137,7 +137,7 @@ the file. Put the change in a prop or a theme token, or restore the file with
 | `design-button-raw-height` | No `h-*` on a Button: the kit sets it, `size` picks it |
 | `design-link-token` | A link is `text-link underline underline-offset-4` (the `--link` role), never `text-primary` |
 | `design-mono-for-code` | Mono only in `code`, `kbd`, `pre`, `samp` or `data-mono-id`; numbers get `tabular-nums`; a paste box is `Textarea variant="code"` |
-| `design-z-index` | No `z-10`, `z-[45]`, `zIndex: 5` or `z-index: 40`: a named layer (`z-dropdown`, `z-composer`, `z-sheet`, `z-overlay`, `z-toast`, `z-feedback`) or `z-[var(--z-*)]` |
+| `design-z-index` | No `z-10`, `z-[45]`, `zIndex: 5` or `z-index: 40`: a named layer (`z-behind`, `z-raised`, `z-lifted`, `z-dropdown`, `z-composer`, `z-fullscreen`, `z-sheet`, `z-overlay`, `z-toast`, `z-tools`, `z-feedback`) or `z-[var(--z-*)]` |
 | `design-type-scale` | No `text-base` or larger unless your `theme.core.css` declares that `--text-<step>`: the app's scale is `text-xs` (`--text-body`), `text-sm` (`--text-title`) and what it declares |
 | `design-gap-not-space` | No `space-x-*` / `space-y-*`: `flex flex-col gap-2` |
 | `design-screen-padding` | No `p-*` / `px-*` on `ScreenBody`, its direct child or a screen root: `ScreenBody` draws the gutter once |

@@ -185,7 +185,7 @@ function BoardTools({ editor, blocked, comments }: { readonly editor: Editor; re
     { label: 'Fit board', icon: MaximizeIcon, action: () => editor.zoomToFit() },
     ...(comments ? [{ label: 'Comment on board', icon: MessageSquarePlusIcon, action: comments.point }] : []),
   ];
-  return <nav aria-label="Board tools" data-feedback-ignore="" className="absolute top-2 left-2 z-[300] flex flex-wrap gap-1">
+  return <nav aria-label="Board tools" data-feedback-ignore="" className="absolute top-2 left-2 z-tools flex flex-wrap gap-1">
     {tools.map(tool => <Tooltip key={tool.label}><TooltipTrigger render={<Button size="icon" aria-label={tool.label} disabled={'disabled' in tool && tool.disabled} onClick={tool.action} />}><tool.icon aria-hidden="true" /></TooltipTrigger><TooltipContent>{tool.label}</TooltipContent></Tooltip>)}
   </nav>;
 }

@@ -66,7 +66,7 @@ export function ExploreToggle() {
   const style: CSSProperties = placed.style ?? { right: 'env(safe-area-inset-right, 0px)', bottom: expanded ? 'max(1rem, env(safe-area-inset-bottom))' : `calc(${tabbar}px + max(1rem, env(safe-area-inset-bottom)))` };
   if (layer.suspended) return null;
   // The approved tab: slim (30 px by 76 px), flush with the right edge, with its inner corners curved, the label set vertically; the unread mark sits on its top corner.
-  return <span ref={box} hidden={open} style={style} data-composer={layer.composerFlags.id} data-testid="explore-place" className={cn('fixed z-(--app-shell-z-layer) h-19 w-7.5 rounded-l-(--radius-lg) shadow-pm-popover', signals.needsYou && 'ring-2 ring-warning outline-3 outline-warning/25')}>
+  return <span ref={box} hidden={open} style={style} data-composer={layer.composerFlags.id} data-testid="explore-place" className={cn('fixed z-(--z-app-shell-layer) h-19 w-7.5 rounded-l-(--radius-lg) shadow-pm-popover', signals.needsYou && 'ring-2 ring-warning outline-3 outline-warning/25')}>
     <button type="button" data-testid="explore-toggle" data-needs-you={signals.needsYou || undefined} aria-label={label} aria-expanded={open} aria-keyshortcuts="Control+J Meta+J" title={`${text.ask} (Ctrl+J)`} onClick={() => layer.open('agent')}
       style={{ writingMode: 'vertical-rl' }}
       className="relative flex size-full items-center justify-center rounded-l-(--radius-lg) bg-primary text-xs font-medium tracking-wider text-primary-foreground outline-ring select-none before:absolute before:-inset-2 before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2">{text.ask}</button>
@@ -167,7 +167,7 @@ function ResizeEdge({ mode, width, live, commit }: { readonly mode: 'push' | 'ov
   };
   return <div ref={ref} role="separator" tabIndex={0} aria-orientation="vertical" data-testid="explore-resize" aria-label={text.resizeExplore} title={text.resizeExplore} aria-valuenow={width} aria-valuemin={EXPLORE_MIN} aria-valuemax={EXPLORE_MAX}
     onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel} onLostPointerCapture={cancel} onKeyDown={keys} onDoubleClick={() => commit(undefined)}
-    className="group/resize absolute inset-y-0 -left-1.5 z-20 w-3 cursor-col-resize touch-none select-none outline-none">
+    className="group/resize absolute inset-y-0 -left-1.5 z-lifted w-3 cursor-col-resize touch-none select-none outline-none">
     <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-[width,background-color] duration-(--duration-fast) group-hover/resize:w-0.5 group-hover/resize:bg-ring group-focus-visible/resize:w-0.5 group-focus-visible/resize:bg-ring group-active/resize:w-0.5 group-active/resize:bg-ring motion-reduce:transition-none" />
   </div>;
 }
@@ -182,7 +182,7 @@ export function ExplorePanel({ mode }: { readonly mode: 'push' | 'overlay' }) {
   const push = mode === 'push';
   return <aside data-testid="explore-panel" data-mode={mode} data-composer={layer.composerFlags.id} role={push ? 'complementary' : 'dialog'} aria-label={title}
     style={{ ...layerStyle(layer, 1), width, maxWidth: push ? `calc(100% - ${MIN_PAGE / 16 + 0.5}rem)` : `calc(100vw - ${EDGE / 16}rem)` }}
-    className={cn('app-shell flex min-h-0 flex-col bg-card text-card-foreground', push ? 'relative h-full shrink-0' : 'fixed inset-y-0 right-0 z-(--app-shell-z-layer) shadow-pm-popover')}>
+    className={cn('app-shell flex min-h-0 flex-col bg-card text-card-foreground', push ? 'relative h-full shrink-0' : 'fixed inset-y-0 right-0 z-(--z-app-shell-layer) shadow-pm-popover')}>
     <Separator orientation="vertical" className="absolute inset-y-0 left-0" />
     <ResizeEdge mode={mode} width={width} live={setDragged} commit={commit} />
     <Header text={text} title={title} controls={<OpenFullButton />} />

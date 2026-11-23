@@ -107,7 +107,7 @@ export function TabBar({ items, activeId, onChange, text }: { readonly items: re
   // « Plus » always keeps its own icon and word (a dot belongs to the label it sits next to); the header names the screen on show.
   const Plus = overflow.length ? EllipsisIcon : undefined;
   return <nav ref={bar} role="tablist" aria-label={text.tabs} data-testid="tabbar" data-feedback-ignore="" onKeyDown={arrows}
-    className="relative z-(--app-shell-z-tabs) box-border flex min-h-(--app-shell-tabbar-min) shrink-0 bg-sidebar px-2 pb-(--app-shell-safe-bottom)">
+    className="relative z-(--z-app-shell-tabs) box-border flex min-h-(--app-shell-tabbar-min) shrink-0 bg-sidebar px-2 pb-(--app-shell-safe-bottom)">
     {tabs.map(tab)}
     {Plus && <>
       <Button variant={inOverflow ? 'secondary' : 'ghost'} role="tab" data-testid="tab-plus" aria-selected={Boolean(inOverflow)} aria-haspopup="dialog" tabIndex={inOverflow ? 0 : -1} onClick={() => setPlusOpen(true)}
@@ -306,7 +306,7 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
   </Sidebar>;
   if (rail !== 'hover') return sidebar;
   // Reserve the native inset icon gap even while the fixed sidebar reveals its labels over the page.
-  return <div ref={wrapper} data-rail="hover" data-pinned={pinned} className={pinned ? 'relative z-20 shrink-0' : 'relative z-20 w-[calc(var(--sidebar-w-icon)+(--spacing(4)))] shrink-0'}
+  return <div ref={wrapper} data-rail="hover" data-pinned={pinned} className={pinned ? 'relative z-lifted shrink-0' : 'relative z-lifted w-[calc(var(--sidebar-w-icon)+(--spacing(4)))] shrink-0'}
     onPointerEnter={event => { if (event.pointerType === 'mouse' || event.pointerType === 'pen') { clearTimeout(intent.current); intent.current = setTimeout(() => setOpen(true), HOVER_REVEAL_MS); } }}
     onPointerLeave={foldLater}
     onFocusCapture={event => { if (event.target.matches(':focus-visible')) { clearTimeout(intent.current); setOpen(true); } }}

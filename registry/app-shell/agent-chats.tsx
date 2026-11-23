@@ -138,7 +138,7 @@ function PinnedBarComposer(props: ComposerProps) {
   };
   return <div ref={root} data-pinned-composer="" className="relative">
     <Composer {...props} onPickFiles={pickFiles} />
-    <div data-bar-drop-overlay="" aria-hidden="true" className="pointer-events-none absolute inset-1 z-10 hidden items-center justify-center rounded-(--radius-3xl) border-[length:var(--border-width)] border-dashed border-primary bg-card text-sm font-medium text-card-foreground">{labels.attachFiles}</div>
+    <div data-bar-drop-overlay="" aria-hidden="true" className="pointer-events-none absolute inset-1 z-raised hidden items-center justify-center rounded-(--radius-3xl) border-[length:var(--border-width)] border-dashed border-primary bg-card text-sm font-medium text-card-foreground">{labels.attachFiles}</div>
   </div>;
 }
 

@@ -79,9 +79,6 @@ export const DESIGN_RULES = [
   ['style', /\bradix(?:-[\w-]+)?\b/gi],
   ['primitive', /\b(?:function|const|class)\s+(?:Button|IconButton|ActionMenu|\w*Popover|\w*Tooltip|\w*Dialog|\w*Menu)\b|<(?:button|input|textarea|select)\b/g],
   ['design-no-x-scroll', noXScroll],
-  // A block stacks on a named layer (--z-*, with a fallback to the layer's value) and spaces with gap. Local stacking utilities in TSX (z-10) are the app profile's rule (design-z-index in `design`).
-  ['design-z-index', /(?<![\w-])z-index\s*:\s*(?!\s*(?:(?:calc\(\s*)?var\(--z-|auto\b|0\b|inherit\b|initial\b|unset\b))[^;}\n]+/g],
-  ['design-gap-not-space', /(?<![\w-])-?space-[xy]-(?:reverse|\[[^\]\s]+\]|[\w.]+)(?![\w-])/g],
 ];
 
 /**
@@ -1616,7 +1613,7 @@ function handTouchSize(file, source, code) {
 
 // ---- Scale rules: one app, one scale (stacking layers, type steps, gap, the screen gutter) ----------------------------------------------
 /** The named stacking layers the kit theme declares (`--z-<name>` and a `z-<name>` utility in app.css). */
-export const Z_LAYERS = Object.freeze(['dropdown', 'overlay', 'sheet', 'toast', 'composer', 'feedback']);
+export const Z_LAYERS = Object.freeze(['behind', 'raised', 'lifted', 'dropdown', 'composer', 'fullscreen', 'sheet', 'overlay', 'toast', 'tools', 'feedback']);
 const Z_FIX = `stack with a named layer (${Z_LAYERS.map((name) => `z-${name}`).join(', ')}) or z-[var(--z-<layer>)]; add a layer to the theme instead of a number`;
 const TYPE_STEP = /^(?:base|lg|xl|[2-9]xl)$/;
 
@@ -1629,29 +1626,32 @@ function classPredicate(file, source) {
 /** The `--text-<step>` names a stylesheet declares (not the `--line-height` companions). */
 export const declaredTextSteps = (css) => new Set([...css.matchAll(/--text-([a-z0-9]+)\s*:/g)].map((m) => m[1]));
 
-/** design-z-index, design-type-scale and design-gap-not-space: utilities in classes, plus raw z-index declarations in css and style objects. */
-function scaleRules(file, source, sizes) {
+/** design-z-index, design-type-scale and design-gap-not-space matches `{ index, rule, value, message }`: utilities in classes, plus raw z-index declarations in css and style objects. */
+export function scaleMatches(file, source, sizes) {
+  const add = (index, rule, value, message) => found.push({ index, rule, value, message });
   const found = [], bare = mask(source, { strings: false }), inClass = classPredicate(file, source);
   for (const m of bare.matchAll(/(?<![\w-])-?z-(\[[^\]\s]+\]|\([^)\s]+\)|[\w-]+)(?![\w-])/g)) {
     const value = m[1];
     if (!inClass(m.index) || value === '0' || value === 'auto' || Z_LAYERS.includes(value) || /var\(--z-|^\(--z-/.test(value)) continue;
-    found.push(hit(file, source, m.index, 'design-z-index', `${m[0]} is a raw stacking number: ${Z_FIX}`));
+    add(m.index, 'design-z-index', m[0].trim(), `${m[0]} is a raw stacking number: ${Z_FIX}`);
   }
   for (const m of bare.matchAll(/(?<![\w-])z-index\s*:\s*([^;}\n]+)|\bzIndex\s*:\s*(['"`]?(?:-?\d|calc\()[^,}\n]*)/g)) {
     const value = (m[1] ?? m[2]).trim();
     if (/^['"`]?(?:0|auto|inherit|initial|unset)\b/.test(value) || value.includes('var(--z-')) continue;
-    found.push(hit(file, source, m.index, 'design-z-index', `${m[0].trim()} is a raw stacking number: ${Z_FIX}`));
+    add(m.index, 'design-z-index', m[0].trim(), `${m[0].trim()} is a raw stacking number: ${Z_FIX}`);
   }
   for (const m of bare.matchAll(/(?<![\w-])text-(base|lg|xl|[2-9]xl)(?![\w-])/g)) {
     if (!inClass(m.index) || !TYPE_STEP.test(m[1]) || sizes.has(m[1])) continue;
-    found.push(hit(file, source, m.index, 'design-type-scale', `${m[0]} is not in this app's type scale: use text-xs (--text-body) or text-sm (--text-title), or declare --text-${m[1]} in theme.core.css if the app's scale has that step`));
+    add(m.index, 'design-type-scale', m[0].trim(), `${m[0]} is not in this app's type scale: use text-xs (--text-body) or text-sm (--text-title), or declare --text-${m[1]} in theme.core.css if the app's scale has that step`);
   }
   for (const m of bare.matchAll(/(?<![\w-])-?space-[xy]-(?:reverse|\[[^\]\s]+\]|[\w.]+)(?![\w-])/g)) {
     if (!inClass(m.index)) continue;
-    found.push(hit(file, source, m.index, 'design-gap-not-space', `${m[0]} spaces by sibling margins and breaks on hidden children: make the parent flex or grid and use gap-* (flex flex-col gap-2)`));
+    add(m.index, 'design-gap-not-space', m[0].trim(), `${m[0]} spaces by sibling margins and breaks on hidden children: make the parent flex or grid and use gap-* (flex flex-col gap-2)`);
   }
   return found;
 }
+
+const scaleRules = (file, source, sizes) => scaleMatches(file, source, sizes).map(({ index, rule, message }) => hit(file, source, index, rule, message));
 
 const PADDED = /^(?:[\w-]+:)*(?:p|px|pl|pr|ps|pe)-(?!0$)/;
 /** design-screen-padding: the gutter is ScreenBody's; ScreenBody itself, its direct child and a *Screen component's root add no p-, px-, pl-, pr-, ps- or pe-. */

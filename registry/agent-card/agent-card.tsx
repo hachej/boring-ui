@@ -140,7 +140,7 @@ export function AgentCard({ controller, onChatRequest, agent, title, header, chi
 
   return <div ref={root} data-testid="agent-card" data-level={docked ? 'docked' : level} data-needs-you={waiting ? '' : undefined} onKeyDown={onKeyDown} role={hosted ? 'group' : undefined} aria-label={hosted ? title : undefined}
     style={waiting ? { ['--tw-ring-color' as string]: 'var(--warning)' } : agentTint(agent, 0)} className={cn('group/agent-card relative mb-3 flex min-w-0 flex-col rounded-(--radius-3xl) bg-card pb-3 text-card-foreground ring-1', waiting && 'ring-2', className)}>
-    {cite && <div data-testid="agent-card-cite" className="absolute top-2 right-2 z-10 opacity-0 transition-opacity duration-(--duration-fast) group-hover/agent-card:opacity-100 group-focus-within/agent-card:opacity-100 has-[[data-cited]]:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none">{cite}</div>}
+    {cite && <div data-testid="agent-card-cite" className="absolute top-2 right-2 z-raised opacity-0 transition-opacity duration-(--duration-fast) group-hover/agent-card:opacity-100 group-focus-within/agent-card:opacity-100 has-[[data-cited]]:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none">{cite}</div>}
     {controller && <BarProbe controller={controller} actions={chatProps?.actions} locale={locale} unread={words.unread} onBar={setBar} />}
     {hosted && <div data-testid="agent-card-host-header">{header}</div>}
     {open && <div style={{ height: heights?.open ?? '32rem' }} className={cn('min-h-0 overflow-hidden', !hosted && 'rounded-t-(--radius-3xl)')}>{chat({})}</div>}

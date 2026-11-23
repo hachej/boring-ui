@@ -202,7 +202,7 @@ export function SegmentBar({ segments, current, label, turn = 'nobody', classNam
         return (
           <span key={index} className="group/segment relative">
             <span data-segment={index} className={cn('block h-1.5 rounded-(--radius)', index < current ? tone : index === current && turn === 'person' ? 'bg-warning-soft' : index === current && turn === 'agents' ? 'bg-muted-foreground' : 'bg-border')} />
-            {note ? <span data-segment-detail aria-hidden className="pointer-events-none absolute bottom-full left-0 z-10 mb-1 w-max max-w-48 rounded-(--radius) bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 transition-opacity duration-(--duration-fast) group-hover/segment:opacity-100 motion-reduce:transition-none">{note}</span> : null}
+            {note ? <span data-segment-detail aria-hidden className="pointer-events-none absolute bottom-full left-0 z-raised mb-1 w-max max-w-48 rounded-(--radius) bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 transition-opacity duration-(--duration-fast) group-hover/segment:opacity-100 motion-reduce:transition-none">{note}</span> : null}
           </span>
         );
       })}

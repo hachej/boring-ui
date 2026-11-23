@@ -4,10 +4,17 @@ import { fileURLToPath } from 'node:url';
 import { gitIgnored, walkProject } from './project-files.mjs';
 import { SHADCN_BUILTINS } from './check-registry-blocks.mjs';
 import { registryCss } from '../lab/studio/tailwind.mjs';
-import { scanDesign } from '../packages/ui/bin/boring-ui-blocks.mjs';
+import { declaredTextSteps, scaleMatches, scanDesign } from '../packages/ui/bin/boring-ui-blocks.mjs';
 
 // The rule engine ships in the kit's bin (`boring-ui-blocks check --design`); this script applies it to the registry and the kit.
 export { scanDesign };
+
+const TEST_FILE = /\.(?:test|spec|fixtures?)\.[cm]?[jt]sx?$/;
+// The scale rules (z-index, type step, gap) on a source; the type steps are those the shipped theme declares (--text-<step>), the scale an app inherits.
+export const scanScale = (file, text, sizes) => TEST_FILE.test(file) ? [] : scaleMatches(file, text, sizes).map(({ index, rule, value }) => {
+  const before = text.slice(0, index);
+  return { file, line: before.split('\n').length, column: index - before.lastIndexOf('\n'), rule, value };
+});
 
 export const designRoot = fileURLToPath(new URL('../', import.meta.url));
 export const readDesignConfig = (root = designRoot) => JSON.parse(readFileSync(resolve(root, 'scripts/design-groups.json'), 'utf8'));
@@ -32,6 +39,8 @@ export function checkDesign(root = designRoot, { config = readDesignConfig(root)
   };
   const manifest = JSON.parse(readFileSync(resolve(root, 'registry.json'), 'utf8'));
   const ignored = gitIgnored(root);
+  const theme = manifest.items.find(item => item.name === 'theme') ?? {};
+  const sizes = declaredTextSteps(Object.values(theme.cssVars ?? {}).flatMap(vars => Object.entries(vars).map(([name, value]) => `--${name}: ${value};`)).join('\n'));
   let files = 0;
   for (const folder of ['registry', 'packages/ui/src', 'packages/ui/styles']) if (existsSync(resolve(root, folder))) walkProject(root, folder, (entry, file) => {
     if (entry.isSymbolicLink()) { errors.push(`Design source symlink: ${file}`); return false; }
@@ -42,6 +51,7 @@ export function checkDesign(root = designRoot, { config = readDesignConfig(root)
     const text = readFileSync(resolve(root, file), 'utf8');
     // Documentation contains syntax examples, not shipped classes. Still report obsolete style support.
     for (const finding of scanDesign(file, text)) if (!file.endsWith('.md') || finding.rule === 'style') add(finding);
+    if (!/\.(?:md|json)$/.test(file)) for (const finding of scanScale(file, text, sizes)) add(finding);
     const hostComponents = new Map();
     for (const match of text.matchAll(/\b(?:import|export)\s+([^;]*?)\s+from\s+['"]([^'"]+)['"]/g)) {
       const [, bindings, specifier] = match;
@@ -94,7 +104,7 @@ export function checkDesign(root = designRoot, { config = readDesignConfig(root)
     const file = item.name === 'theme' ? 'registry.json#theme' : `registry/${item.name}/@css`;
     // An item may carry both (the theme: token values and the control-size token's css); scan each.
     const text = [item.cssVars, item.css].filter(Boolean).map(css => registryCss({ css })).join('\n');
-    for (const finding of scanDesign(file, text)) add(finding);
+    for (const finding of [...scanDesign(file, text), ...scanScale(file, text, sizes)]) add(finding);
   }
   findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column || a.rule.localeCompare(b.rule));
   return { errors, findings, allowed, files, groups: config.groups.map(group => ({ ...group, count: findings.filter(finding => finding.group === group.id).length })) };
