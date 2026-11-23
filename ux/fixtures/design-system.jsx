@@ -177,7 +177,8 @@ function App() {
     return () => clearTimeout(timer);
   }, []);
   notify = kind => { const id = `${kind}-${Date.now()}`; setNotices([{ ...NOTICES[kind], id, onDismiss: () => setNotices(list => list.filter(n => n.id !== id)) }]); };
-  return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} {...(circle ? { composer: { launcher: 'circle', handoff: { openFull: () => setRoute('support') }, suspended: route === 'support' } } : explore ? { composer: 'explore', context: { title: 'Design system', detail: 'The components of the kit, in both themes' } } : { composer: 'bar', floatingComposer: true })} agent={agent} notices={notices}
+  const options = new URLSearchParams(location.search);
+  return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} {...(options.get('headerAgent') === '0' ? { headerAgent: false } : {})} {...(options.get('agentNav') === 'above-bottom' ? { agentNav: 'above-bottom' } : {})} route={{ id: route, onChange: setRoute }} {...(circle ? { composer: { launcher: 'circle', handoff: { openFull: () => setRoute('support') }, suspended: route === 'support' } } : explore ? { composer: 'explore', context: { title: 'Design system', detail: 'The components of the kit, in both themes' } } : { composer: 'bar', floatingComposer: true })} agent={agent} notices={notices}
     account={{ name: 'Visitor', menu: [], theme: { value: theme, onChange: value => { applyTheme(value); setTheme(value); } } }} />;
 }
 createRoot(document.getElementById('root')).render(<App />);
