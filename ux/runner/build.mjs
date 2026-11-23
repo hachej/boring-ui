@@ -32,7 +32,7 @@ export async function buildPage(entry, outFile, { css: extraCss = [], title = 'b
   const sources = Object.keys(bundle.metafile.inputs).filter(p => /\.(tsx?|jsx)$/.test(p) && !p.includes('node_modules')).map(p => readFileSync(join(root, p), 'utf8'));
   const vars = item('theme').cssVars;
   const names = [...new Set([...BASE_CSS, ...extraCss])];
-  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${names.map(n => registryCss(item(n))).join('\n')}\n${readFileSync(join(root, 'packages/ui/styles/file-tree.css'), 'utf8')}`;
+  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${names.map(n => registryCss(item(n))).join('\n')}\n${readFileSync(join(root, 'packages/ui/styles/file-tree.css'), 'utf8')}\n${(await import(pathToFileURL(join(root, 'lab/studio/tailwind.mjs')).href)).zLayersCss()}`;
   const compiler = await compile(cssSource, { base: root, loadStylesheet: async id => {
     const path = require.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id);
     return { path, base: dirname(path), content: readFileSync(path, 'utf8') };

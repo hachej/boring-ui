@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { compile } from 'tailwindcss';
-import { registryCss } from '../../lab/studio/tailwind.mjs';
+import { registryCss, zLayersCss } from '../../lab/studio/tailwind.mjs';
 
 // The open conversation's top edge is a handle (`shell-composer-resize`): a drag or the keys set the window's height, it is clamped, remembered per app and person, and dropped by Full and Dock;
 // the floating window resizes too and stays in the viewport; a phone has no handle. Real Chromium, the real AppShell, real pointer and key input at 1440 and 1280 (and 390), light and dark.
@@ -42,7 +42,7 @@ before(async () => {
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
   const vars = item('theme').cssVars;
-  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${['theme', 'app-shell', 'pi-chat', 'pi-chat-mentions', 'pi-chat-attachments', 'pi-chat-slash', 'agent-bar'].map(name => registryCss(item(name))).join('\n')}`;
+  const cssSource = `@import "tailwindcss";\n@custom-variant dark (&:is(.dark *));\n:root {${block(vars.light)}}\n.dark {${block(vars.dark)}}\n@theme inline {${block(vars.theme)}}\n@layer base { * { @apply border-border; } body { @apply bg-background text-foreground font-sans text-xs; } }\n${['theme', 'app-shell', 'pi-chat', 'pi-chat-mentions', 'pi-chat-attachments', 'pi-chat-slash', 'agent-bar'].map(name => registryCss(item(name))).join('\n')}\n${zLayersCss()}`;
   const compiler = await compile(cssSource, { base: root, loadStylesheet: async id => {
     const path = require.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id);
     return { path, base: dirname(path), content: readFileSync(path, 'utf8') };
