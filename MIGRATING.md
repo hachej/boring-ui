@@ -1,5 +1,9 @@
 # Unreleased
 
+# Migrating to 0.5.24
+
+- **`inline-question`, `kpi-stat`, `expert-overview`: Studio tasks parts (additive).** `InlineQuestion` takes `detail` (one muted line of why under the question) and `tone="info"` (the blue tint, beside `attention`). `KpiStat` takes `trend` (readings, drawn as a sparkline; fewer than two draw nothing) and `trendLabel`. `expert-overview` now exports `SegmentBar` (`segments`, `current`, `label`, `turn`), the bar `ExpertTrack` draws, with a segment's `detail` shown on hover only. Every prop is optional and today's markup is unchanged without them. Re-run `npx boring-ui-blocks add inline-question kpi-stat expert-overview` to pick them up; nothing else to change.
+
 # Migrating to 0.5.23
 
 - **`agent-card`: `notch` and `cite` (additive).** `notch={false}` draws no controller strip under the card (default `true`, unchanged). `cite` takes a node, usually `<CiteButton reference={…} />` from `app-shell`: a small @ at the card's top right, on hover (always on touch), that references the card in the page's composer. Existing cards are unchanged; re-run `boring-ui-blocks update agent-card` to take it.
