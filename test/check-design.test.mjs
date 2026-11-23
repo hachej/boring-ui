@@ -247,13 +247,3 @@ test('the kit itself has no scale hit outside its allowlist', () => {
   assert.deepEqual(result.errors, []);
   assert.deepEqual(result.findings.map(finding => `${finding.rule} ${finding.file}:${finding.line} ${finding.value}`), []);
 });
-
-test('every stacking layer of app.css is also a z-* utility in the registry theme item, with its number as the fallback, so a page that compiles the theme (a test harness, the ux runner) has the utilities blocks use', () => {
-  const css = readFileSync(join(designRoot, 'packages/ui/styles/app.css'), 'utf8');
-  const theme = JSON.parse(readFileSync(join(designRoot, 'registry.json'), 'utf8')).items.find(item => item.name === 'theme');
-  const tokens = Object.fromEntries([...css.matchAll(/^\s*--(z-[\w-]+):\s*([^;]+);/gm)].map(match => [match[1], match[2].trim()]));
-  const utilities = Object.fromEntries(Object.entries(tokens).filter(([name]) => !/^z-(?:above|drop)$/.test(name)).map(([name, value]) => [`@utility ${name}`, { 'z-index': `var(--${name}, ${value})` }]));
-  assert.ok(Object.keys(utilities).length >= 11);
-  assert.deepEqual(Object.fromEntries(Object.entries(theme.css).filter(([name]) => name.startsWith('@utility z-'))), utilities);
-  assert.deepEqual(Object.keys(theme.cssVars.light).filter(name => name.startsWith('z-')), []);
-});

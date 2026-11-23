@@ -289,39 +289,6 @@
             "--control-min": "0rem",
             "--screen-gutter": "0.75rem"
           }
-        },
-        "@utility z-behind": {
-          "z-index": "var(--z-behind, -10)"
-        },
-        "@utility z-raised": {
-          "z-index": "var(--z-raised, 10)"
-        },
-        "@utility z-lifted": {
-          "z-index": "var(--z-lifted, 20)"
-        },
-        "@utility z-dropdown": {
-          "z-index": "var(--z-dropdown, 30)"
-        },
-        "@utility z-composer": {
-          "z-index": "var(--z-composer, 40)"
-        },
-        "@utility z-fullscreen": {
-          "z-index": "var(--z-fullscreen, 45)"
-        },
-        "@utility z-sheet": {
-          "z-index": "var(--z-sheet, 50)"
-        },
-        "@utility z-overlay": {
-          "z-index": "var(--z-overlay, 55)"
-        },
-        "@utility z-toast": {
-          "z-index": "var(--z-toast, 60)"
-        },
-        "@utility z-tools": {
-          "z-index": "var(--z-tools, 300)"
-        },
-        "@utility z-feedback": {
-          "z-index": "var(--z-feedback, 2147483000)"
         }
       },
       "registryDependencies": [
