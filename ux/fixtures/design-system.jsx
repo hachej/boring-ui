@@ -57,10 +57,12 @@ const Row = ({ children }) => <div className="flex flex-wrap items-center gap-2"
 // The « Agent cards » section: the kit's AgentCard for three agents in their colours (Reader, Mailer, Ledger) and a task card, folded by default;
 // the strip on a card's lower border opens its chat. Each card has its own scripted agent (`agent-card-demo.jsx`, shared with the Agent cards page).
 const SHOWN = ['running', 'needs', 'done', 'task'];
+const CITED_TASK = { ...TASKS.find(task => task.id === 'done'), id: 'cited', title: 'Chase the late payers (cite, no notch)' };
 function AgentCards() {
   const [levels, setLevels] = useState({});
   return <div data-testid="ds-agent-card-list" className="flex flex-col">
     {TASKS.filter(task => SHOWN.includes(task.id)).map(task => <Task key={task.id} task={task} level={levels[task.id] ?? 0} onLevel={level => setLevels(now => ({ ...now, [task.id]: level }))} dock={null} docked={false} onDocked={() => {}} />)}
+    <Task task={CITED_TASK} level={0} onLevel={() => {}} dock={null} docked={false} onDocked={() => {}} notch={false} cite={<CiteButton reference={{ kind: 'card', id: 'agent-card', title: CITED_TASK.title, subtitle: '#3' }} />} />
   </div>;
 }
 
