@@ -27,6 +27,12 @@ export function registryCss(item) {
   return render(item.css ?? {});
 }
 
+/** The stacking layers of the kit's app.css (`--z-*` tokens and their `z-<name>` utilities), which an app gets by importing it. */
+export function zLayersCss() {
+  const css = readFileSync(join(root, 'packages/ui/styles/app.css'), 'utf8');
+  return `:root {\n${[...css.matchAll(/^\s*--z-[\w-]+:\s*[^;]+;/gm)].map(match => match[0]).join('\n')}\n}\n${[...css.matchAll(/^@utility z-[\w-]+ \{[^}]*\}/gm)].map(match => match[0]).join('\n')}`;
+}
+
 /** Every item written in Tailwind: their source is scanned for classes and their `css` is compiled in. */
 const TAILWIND_ITEMS = ['button', 'utils', 'file-tree', 'version-history', 'pi-chat', 'inline-question', 'file-pick', 'mcp-setup', 'space-card', 'pi-chat-markdown', 'pi-chat-slash', 'pi-chat-mentions', 'pi-chat-pickers', 'pi-chat-voice', 'pi-chat-attachments', 'pi-chat-question', 'pi-chat-approval', 'pi-chat-subagent', 'pi-artifacts', 'pi-chat-plugins', 'shared-chat', 'pi-ambient', 'pi-workspace', 'pi-app', 'viewer-frame', 'viewer-markdown', 'viewer-html', 'viewer-image', 'viewer-pdf', 'viewer-code', 'markdown-editor', 'html-viewer', 'app-shell', 'maquette-viewer', 'diagram-viewer', 'record-viewer', 'touch-floor'];
 
@@ -67,6 +73,7 @@ export async function buildTailwind({ extraDirectories = [], extraFiles = [], ex
   }
 }
 ${themeCss()}
+${zLayersCss()}
 ${items.map(registryCss).join('\n')}
 ${extraCss}`;
   const compiler = await compile(input, {
