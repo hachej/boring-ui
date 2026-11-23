@@ -79,6 +79,9 @@ export const DESIGN_RULES = [
   ['style', /\bradix(?:-[\w-]+)?\b/gi],
   ['primitive', /\b(?:function|const|class)\s+(?:Button|IconButton|ActionMenu|\w*Popover|\w*Tooltip|\w*Dialog|\w*Menu)\b|<(?:button|input|textarea|select)\b/g],
   ['design-no-x-scroll', noXScroll],
+  // A block stacks on a named layer (--z-*, with a fallback to the layer's value) and spaces with gap. Local stacking utilities in TSX (z-10) are the app profile's rule (design-z-index in `design`).
+  ['design-z-index', /(?<![\w-])z-index\s*:\s*(?!\s*(?:(?:calc\(\s*)?var\(--z-|auto\b|0\b|inherit\b|initial\b|unset\b))[^;}\n]+/g],
+  ['design-gap-not-space', /(?<![\w-])-?space-[xy]-(?:reverse|\[[^\]\s]+\]|[\w.]+)(?![\w-])/g],
 ];
 
 /**
@@ -323,7 +326,7 @@ export function check(app, design = [], manifest = MANIFEST) {
   return { version, blocks: blocks.map(block => block.name), violations };
 }
 
-const USAGE = `usage: boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--manifest <path>] [--baseline] | atlas <dir> (--check | --url <base url> --out <dir>) [--fixtures <dir>] [--since <index.json>] [--chromium <path>] [--commit <sha>] [--json] | check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--css <file>] [--cwd <dir>] | add <shadcn add args...> [--overwrite] [--manifest <path>] [--css <file>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
+const USAGE = `usage: boring-ui-blocks design <dir> [--changed [<file>...]] [--json | --jsonl] [--exceptions <file>] [--manifest <path>] [--baseline] | atlas <dir> (--check | --url <base url> --out <dir>) [--fixtures <dir>] [--since <index.json>] [--chromium <path>] [--commit <sha>] [--json] | check [--design <dir>...] [--manifest <path>] [--cwd <dir>] [--json] | update [--version <v>] [--registry <url>] [--dry-run] [--manifest <path>] [--css <file>] [--cwd <dir>] | add <shadcn add args...> [--overwrite] [--manifest <path>] [--css <file>] [--cwd <dir>] | manifest [--manifest <path>] [--cwd <dir>] | help\n\n` +
   'Blocks: pi-app is the whole agent app with every chat feature and viewer. pi-chat is the core chat only: add pi-chat-plugins for every ' +
   'feature, or one of pi-chat-markdown, pi-chat-slash, pi-chat-mentions, pi-chat-pickers, pi-chat-voice, pi-chat-attachments, ' +
   'pi-chat-question, pi-chat-approval, pi-chat-subagent and pi-artifacts. Viewers are viewer-frame plus viewer-markdown, viewer-html, ' +
@@ -1136,7 +1139,7 @@ export function main(argv, cwd = process.cwd(), log = console.log, error = conso
 // design-touch-target, design-button-raw-height, design-no-dark-overrides, design-link-token, design-mono-for-code (the Factory
 // template's) | design-color, design-border-width, design-font-tokens, design-literal-value, design-dark-variant, design-no-x-scroll (the
 // kit's BORING-UI-1 app profile, `check --design`) | design-tokens-only, design-no-kit-restyle, design-no-important,
-// design-hand-touch-size, design-no-script-tokens (new).
+// design-hand-touch-size, design-no-script-tokens (new) | design-z-index, design-type-scale, design-gap-not-space, design-screen-padding, design-has-design-md (scale rules; type steps are read from the app's theme.core.css).
 //
 // Tokens only: a hex, rgb, hsl or oklch literal and a Tailwind palette colour (`bg-red-500`) are design-color, except in theme.core.css
 // and theme.derived.css (and the token blocks of any css). An arbitrary value `utility-[...]` (colour, size, spacing, radius, text) is
@@ -1177,6 +1180,11 @@ export const LEVELS = Object.freeze({
   'design-no-important': 'error',
   'design-no-script-tokens': 'error',
   'design-hand-touch-size': 'error',
+  'design-z-index': 'error',
+  'design-type-scale': 'error',
+  'design-gap-not-space': 'error',
+  'design-screen-padding': 'error',
+  'design-has-design-md': 'error',
   'design-theme-core-only': 'error',
   'design-theme-roles-both-modes': 'error',
   'design-overlay-has-title': 'error',
@@ -1606,6 +1614,68 @@ function handTouchSize(file, source, code) {
   return found;
 }
 
+// ---- Scale rules: one app, one scale (stacking layers, type steps, gap, the screen gutter) ----------------------------------------------
+/** The named stacking layers the kit theme declares (`--z-<name>` and a `z-<name>` utility in app.css). */
+export const Z_LAYERS = Object.freeze(['dropdown', 'overlay', 'sheet', 'toast', 'composer', 'feedback']);
+const Z_FIX = `stack with a named layer (${Z_LAYERS.map((name) => `z-${name}`).join(', ')}) or z-[var(--z-<layer>)]; add a layer to the theme instead of a number`;
+const TYPE_STEP = /^(?:base|lg|xl|[2-9]xl)$/;
+
+/** Whether an index of `source` sits where Tailwind classes are read: a class range of a script, an `@apply` of a stylesheet. */
+function classPredicate(file, source) {
+  const spans = /\.css$/.test(file) ? [...mask(source, { strings: false }).matchAll(/@apply\b[^;}]*/g)].map((m) => [m.index, m.index + m[0].length]) : classRanges(source);
+  return (index) => spans.some(([from, to]) => index >= from && index < to);
+}
+
+/** The `--text-<step>` names a stylesheet declares (not the `--line-height` companions). */
+export const declaredTextSteps = (css) => new Set([...css.matchAll(/--text-([a-z0-9]+)\s*:/g)].map((m) => m[1]));
+
+/** design-z-index, design-type-scale and design-gap-not-space: utilities in classes, plus raw z-index declarations in css and style objects. */
+function scaleRules(file, source, sizes) {
+  const found = [], bare = mask(source, { strings: false }), inClass = classPredicate(file, source);
+  for (const m of bare.matchAll(/(?<![\w-])-?z-(\[[^\]\s]+\]|\([^)\s]+\)|[\w-]+)(?![\w-])/g)) {
+    const value = m[1];
+    if (!inClass(m.index) || value === '0' || value === 'auto' || Z_LAYERS.includes(value) || /var\(--z-|^\(--z-/.test(value)) continue;
+    found.push(hit(file, source, m.index, 'design-z-index', `${m[0]} is a raw stacking number: ${Z_FIX}`));
+  }
+  for (const m of bare.matchAll(/(?<![\w-])z-index\s*:\s*([^;}\n]+)|\bzIndex\s*:\s*(['"`]?(?:-?\d|calc\()[^,}\n]*)/g)) {
+    const value = (m[1] ?? m[2]).trim();
+    if (/^['"`]?(?:0|auto|inherit|initial|unset)\b/.test(value) || value.includes('var(--z-')) continue;
+    found.push(hit(file, source, m.index, 'design-z-index', `${m[0].trim()} is a raw stacking number: ${Z_FIX}`));
+  }
+  for (const m of bare.matchAll(/(?<![\w-])text-(base|lg|xl|[2-9]xl)(?![\w-])/g)) {
+    if (!inClass(m.index) || !TYPE_STEP.test(m[1]) || sizes.has(m[1])) continue;
+    found.push(hit(file, source, m.index, 'design-type-scale', `${m[0]} is not in this app's type scale: use text-xs (--text-body) or text-sm (--text-title), or declare --text-${m[1]} in theme.core.css if the app's scale has that step`));
+  }
+  for (const m of bare.matchAll(/(?<![\w-])-?space-[xy]-(?:reverse|\[[^\]\s]+\]|[\w.]+)(?![\w-])/g)) {
+    if (!inClass(m.index)) continue;
+    found.push(hit(file, source, m.index, 'design-gap-not-space', `${m[0]} spaces by sibling margins and breaks on hidden children: make the parent flex or grid and use gap-* (flex flex-col gap-2)`));
+  }
+  return found;
+}
+
+const PADDED = /^(?:[\w-]+:)*(?:p|px|pl|pr|ps|pe)-(?!0$)/;
+/** design-screen-padding: the gutter is ScreenBody's; ScreenBody itself, its direct child and a *Screen component's root add no p-, px-, pl-, pr-, ps- or pe-. */
+function screenPadding(file, source, code) {
+  const found = [], seen = new Set();
+  const check = (index, name, who) => {
+    if (seen.has(index)) return;
+    seen.add(index);
+    const end = tagEnd(code, index), bad = classTokens(ownClassName(source.slice(index, end), code.slice(index, end))).filter((token) => PADDED.test(token));
+    if (bad.length) found.push(hit(file, source, index, 'design-screen-padding', `<${name}> (${who}) carries ${bad.join(' ')}: the screen margin is --screen-gutter, drawn once by ScreenBody; use gap or py- for space, never pad the screen root`));
+  };
+  for (const m of code.matchAll(/(?<![\w$.)\]])<ScreenBody(?=[\s/>])/g)) {
+    const end = tagEnd(code, m.index);
+    check(m.index, 'ScreenBody', 'the screen body');
+    const child = code[end - 1] === '/' ? null : /^\s*<([A-Za-z][\w.]*)(?=[\s/>])/.exec(code.slice(end + 1));
+    if (child) check(end + 1 + child[0].indexOf('<'), child[1], 'direct child of ScreenBody');
+  }
+  for (const m of code.matchAll(/\b(?:function\s+|const\s+)(\w*Screen)\b/g)) {
+    const root = /(?:\breturn\s*\(?|=>\s*\(?)\s*<([A-Za-z][\w.]*)(?=[\s/>])/.exec(code.slice(m.index, m.index + 800));
+    if (root && root[1] !== 'ScreenBody') check(m.index + root.index + root[0].indexOf('<'), root[1], `root of ${m[1]}`);
+  }
+  return found;
+}
+
 /** The data-slot values of the kit's own parts (shadcn/ui and registry); an app's own data-slot is its own. A test keeps this list equal to the sources. */
 export const KIT_SLOTS = Object.freeze([
   'accordion', 'accordion-content', 'accordion-item', 'accordion-trigger', 'accordion-trigger-icon', 'agent-bar', 'alert',
@@ -1839,7 +1909,7 @@ const SOURCE = /\.(?:[cm]?[jt]sx?|css)$/;
  * The findings of one file: `file` is its path in the report, `source` its text, `scan` the kit's `scanAppDesign`. `ui`: the file is in the app's own
  * components/ui (legacy): only its findings are warnings, the rest of the app is checked as an error.
  */
-export function checkSource(file, source, { ui = false, scan, exceptions } = {}) {
+export function checkSource(file, source, { ui = false, scan, exceptions, sizes = new Set() } = {}) {
   const name = basename(file), tsx = /\.[jt]sx$/.test(file);
   const inUi = ui; // the app's own <root>/components/ui, decided by the caller from the path under the scanned root
   const found = [];
@@ -1849,7 +1919,7 @@ export function checkSource(file, source, { ui = false, scan, exceptions } = {})
     const design = [...cardClasses(file, source, code), ...iconsPhosphor(file, source, code), ...touchTarget(file, source, code), ...buttonRawHeight(file, source, code), ...(inUi ? [] : linkToken(file, source, code)), ...(inUi ? [] : monoForCode(file, source, code))];
     const classes = classRules(file, source);
     classes.darkLines.forEach((line) => darkLines.add(line));
-    design.push(...classes.found, ...handTouchSize(file, source, code), ...overlayHasTitle(file, source, code));
+    design.push(...classes.found, ...handTouchSize(file, source, code), ...overlayHasTitle(file, source, code), ...screenPadding(file, source, code));
     found.push(...design.map((f) => (inUi ? { ...f, soft: true } : f)));
     if (!inUi) {
       found.push(...kitBlocks(file, source, code, tags), ...rawElements(file, source, tags), ...longLines(file, source, code), ...components(file, source, code));
@@ -1860,6 +1930,7 @@ export function checkSource(file, source, { ui = false, scan, exceptions } = {})
   if (THEME_FILES.has(name)) found.push(...themeRules(file, source, exceptions));
   if (SOURCE.test(file) && name !== 'theme.core.css') {
     found.push(...restyle(file, source), ...important(file, source), ...fontFace(file, source), ...scriptTokens(file, source));
+    if (!TEST_FILE.test(file)) found.push(...scaleRules(file, source, sizes).map((f) => (inUi ? { ...f, soft: true } : f)));
     const bare = mask(source, { strings: false });
     const script = /\.[cm]?[jt]sx?$/.test(file), ranges = script ? classRanges(source) : [], starts = lineStarts(source);
     for (const f of scan(file, bare)) {
@@ -2015,18 +2086,43 @@ const kitPartEdited = (file, part) => ({ file, line: 1, rule: 'kit-part-edited',
 /** Every finding under `dir`; paths are relative to `cwd`. `changed`: absolute paths to keep (null: all). `kit`: the dir's kitParts (computed when absent). */
 export function designFindings(dir, { cwd = process.cwd(), changed = null, scan, kit = kitParts(dir) } = {}) {
   const exceptions = designExceptions(dir);
-  const files = designFiles(dir).filter((path) => !changed || changed.has(path));
+  const all = designFiles(dir);
+  const sizes = declaredTextSteps(all.filter((path) => basename(path) === 'theme.core.css').map((path) => readFileSync(path, 'utf8')).join('\n'));
+  const files = all.filter((path) => !changed || changed.has(path));
   const found = files.flatMap((path) => {
     const name = relative(cwd, path).split(sep).join('/'), part = kit.get(path);
     if (part) return part.edited ? [kitPartEdited(name, part)] : [];
-    const source = readFileSync(path, 'utf8'), own = checkSource(name, source, { ui: relative(dir, path).split(sep).join('/').startsWith(`${UI_DIR}/`), scan, exceptions });
+    const source = readFileSync(path, 'utf8'), own = checkSource(name, source, { ui: relative(dir, path).split(sep).join('/').startsWith(`${UI_DIR}/`), scan, exceptions, sizes });
     if (!kit.kitCss?.size || !path.endsWith('.css') || !own.length) return own;
     const written = kitCssLines(source, kit.kitCss); // rules the shadcn CLI wrote for an installed block are kit code, not the app's
     return own.filter((finding) => !(finding.rule === 'design-no-kit-restyle' && written.has(finding.line))); // only the restyle rule: a theme selector such as :root is shared with kit items
   });
   const local = files.find((path) => basename(path) === 'theme.derived.css'); // one hit per app, not per line
   if (local) found.push({ file: relative(cwd, local).split(sep).join('/'), line: 1, rule: 'design-theme-local-derived', level: LEVELS['design-theme-local-derived'], message: 'this app has its own theme.derived.css: delete it and import the kit\'s: app.css, then @hachej/boring-ui-kit/theme.derived.css, then ./theme.core.css' });
+  const missing = missingDesignMd(dir);
+  if (missing) found.push({ file: relative(cwd, missing).split(sep).join('/'), line: 1, rule: 'design-has-design-md', level: LEVELS['design-has-design-md'], message: 'this app has no DESIGN.md: add one at its root (tokens by role, the scale it declares, how to run `boring-ui-blocks design`); the check reads the scale from it and from theme.core.css' });
   return found;
+}
+
+/** The DESIGN.md an app lacks: the app root is the nearest folder at or above `dir` (four levels) with a package.json; null when there is none or a DESIGN.md sits between `dir` and it. */
+export function missingDesignMd(dir) {
+  let root = null;
+  for (let at = dir, depth = 0; depth < 5; depth++, at = dirname(at)) {
+    if (existsSync(join(at, 'DESIGN.md'))) return null;
+    if (!root && existsSync(join(at, 'package.json'))) root = at;
+  }
+  return root && join(root, 'DESIGN.md');
+}
+
+/** The files `git` reports as changed under `cwd` (edited, staged and new, absolute), for `--changed` with no file list. */
+export function changedFiles(cwd) {
+  const git = (...args) => {
+    const run = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    if (run.status !== 0) throw new Error(`--changed with no files needs a git checkout: ${(run.stderr || 'git failed').trim()}`);
+    return run.stdout.split('\n').filter(Boolean);
+  };
+  const top = git('rev-parse', '--show-toplevel')[0];
+  return new Set([...git('diff', '--name-only', '--diff-filter=d', 'HEAD'), ...git('ls-files', '--others', '--exclude-standard', '--full-name')].map((file) => resolve(top, file)));
 }
 
 /**
@@ -2078,15 +2174,16 @@ export function baselineList(findings, dir, cwd) {
 
 export const formatFinding = ({ file, line, rule, message, level, excepted }) => `${excepted ? 'excepted ' : level === 'warn' ? 'warning ' : ''}${file}:${line} ${rule} ${message}`;
 
-export const DESIGN_USAGE = 'usage: boring-ui-blocks design <dir> [--changed <file>...] [--json] [--exceptions <file>] [--manifest <path>] [--baseline]';
+export const DESIGN_USAGE = 'usage: boring-ui-blocks design <dir> [--changed <file>...] [--json | --jsonl] [--exceptions <file>] [--manifest <path>] [--baseline]\n  --changed with no files checks what git reports changed (edited, staged, new); --jsonl prints one {file,line,rule,level,fix} line per hit and nothing when clean';
 const EXCEPTIONS_FILE = 'design.exceptions.json';
 
 /** `boring-ui-blocks design`: exit 0 when no finding is an error, 1 when one is, 2 on bad arguments. `scan` is the kit's scanAppDesign. */
 export function designMain(args, cwd, log, error, scan = scanAppDesign) {
-  let dir, changed = null, json = false, listFile = null, baseline = false, manifest = MANIFEST;
+  let dir, changed = null, json = false, jsonl = false, gitChanged = false, listFile = null, baseline = false, manifest = MANIFEST;
   try {
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '--json') json = true;
+      else if (args[i] === '--jsonl') jsonl = true;
       else if (args[i] === '--baseline') baseline = true;
       else if (args[i] === '--manifest') {
         if (!args[i + 1] || args[i + 1].startsWith('--')) throw new Error('--manifest needs a path');
@@ -2099,12 +2196,14 @@ export function designMain(args, cwd, log, error, scan = scanAppDesign) {
       } else if (args[i] === '--changed') {
         changed ??= new Set();
         while (args[i + 1] && !args[i + 1].startsWith('--')) changed.add(resolve(cwd, args[++i]));
+        gitChanged = changed.size === 0;
       } else if (args[i].startsWith('--')) throw new Error(`unknown argument ${args[i]}`);
       else if (dir === undefined) dir = resolve(cwd, args[i]);
       else throw new Error(`unexpected argument ${args[i]}`);
     }
     if (dir === undefined) throw new Error('design needs a directory (the app\'s web/src)');
     if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new Error(`no such directory: ${dir}`);
+    if (gitChanged) changed = changedFiles(cwd);
   } catch (cause) {
     error(`error: ${cause.message}\n${DESIGN_USAGE}`);
     return 2;
@@ -2125,7 +2224,8 @@ export function designMain(args, cwd, log, error, scan = scanAppDesign) {
   const errors = live.filter((f) => f.level === 'error').length, warnings = live.length - errors;
   const counts = {};
   for (const f of live) counts[f.rule] = (counts[f.rule] ?? 0) + 1;
-  if (json) log(JSON.stringify({ ok: !errors, errors, warnings, excepted, counts, findings }, null, 2));
+  if (jsonl) for (const f of live) log(JSON.stringify({ file: f.file, line: f.line, rule: f.rule, level: f.level, fix: f.message }));
+  else if (json) log(JSON.stringify({ ok: !errors, errors, warnings, excepted, counts, findings }, null, 2));
   else {
     for (const finding of findings) log(formatFinding(finding));
     log(findings.length ? `design: ${errors} error(s), ${warnings} warning(s)${excepted ? `, ${excepted} excepted` : ''}` : 'design: clean');

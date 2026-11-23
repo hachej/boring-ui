@@ -131,7 +131,21 @@
     --shell: var(--background);
     --text-chat: 0.9375rem;
     --text-chat--line-height: 1.6;
+    /* Stacking layers: the only z-indexes an app or a block writes (design-z-index). Composer 40 and its panel 41, app sheets 50 and up. */
+    --z-dropdown: 30;
+    --z-composer: 40;
+    --z-sheet: 50;
+    --z-overlay: 55;
+    --z-toast: 60;
+    --z-feedback: 2147483000;
 }
+
+@utility z-dropdown { z-index: var(--z-dropdown); }
+@utility z-composer { z-index: var(--z-composer); }
+@utility z-sheet { z-index: var(--z-sheet); }
+@utility z-overlay { z-index: var(--z-overlay); }
+@utility z-toast { z-index: var(--z-toast); }
+@utility z-feedback { z-index: var(--z-feedback); }
 
 @layer base {
   * {

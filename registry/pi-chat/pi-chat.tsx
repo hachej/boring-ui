@@ -333,8 +333,8 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
   const dragged = useContentDrop(zone, composer.canAttach ? pickFiles : undefined);
 
   const footer = <footer ref={dock} data-testid="composer-dock" className="shrink-0 px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] md:px-4 md:pt-1.5">
-    <div className="mx-auto w-full max-w-[720px] space-y-2">
-      <div data-slot="composer-notices" {...(session.natural ? {} : { 'aria-live': 'polite' as const })} className="space-y-2 empty:hidden">
+    <div className="mx-auto flex w-full max-w-[720px] flex-col gap-2">
+      <div data-slot="composer-notices" {...(session.natural ? {} : { 'aria-live': 'polite' as const })} className="flex flex-col gap-2 empty:hidden">
         <ChatStatusLine natural={session.natural} working={working} waitingForAnswer={waitingForAnswer} derived={derived} stop={state.stop} sending={session.sending} />
         <ChatNotices natural={session.natural} state={state} error={error} onReconcile={() => act(controller.reconcile)} onRetry={() => act(controller.retrySameRequest)} conversations={conversations} />
       </div>
@@ -373,7 +373,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
 
     {titleError && <p role="alert" className="m-0 shrink-0 px-4 py-2 text-xs text-destructive">{labels.actionFailed}</p>}
     {decisions && <><div data-boring="required-decisions" className="shrink-0 px-4 py-2">{decisions}</div><Separator /></>}
-    {pinned.length > 0 && <><aside aria-label={labels.requiredActions} className="shrink-0 space-y-2 px-4 py-2">{pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside><Separator /></>}
+    {pinned.length > 0 && <><aside aria-label={labels.requiredActions} className="shrink-0 flex flex-col gap-2 px-4 py-2">{pinned.map(card => <div key={card.key}>{card.content}</div>)}</aside><Separator /></>}
     {(connectionKind === 'error' || connectionKind === 'closed') && <div className="shrink-0 px-4 pt-2">
       <ChatConnectionNotice state={state} renderConnectionError={renderConnectionError} onReconnect={() => act(controller.connect)} /></div>}
     {pickingConversation && conversations && historyList && <ConversationHistory conversations={conversations} onClose={() => setPickingConversation(false)} />}
