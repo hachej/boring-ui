@@ -44,6 +44,10 @@ export interface AgentCardProps extends Pick<AgentChatProps, 'agent' | 'status' 
   readonly unread?: boolean | undefined;
   /** `false`: the unread mark is always a dot, never the number pill the controller draws from two unread replies. Default: the pill from two. */
   readonly unreadCount?: false | undefined;
+  /** `false`: the controller strip (the notch under the card: Open the chat, Expand, Dock and the unread mark) is not drawn, for a host whose chat is the page's one composer. Default `true`: the strip, as before. Without it the card's own chat cannot be opened by the person. */
+  readonly notch?: boolean | undefined;
+  /** The host's cite affordance, usually the kit's `<CiteButton reference={…} />` (it reads the AppShell's layer and adds the card to the page's composer through `talkAbout`). Shown as a small control at the card's top right, on hover or focus with a fine pointer, always on touch and while the card is cited. */
+  readonly cite?: ReactNode;
   /** One line of what the agent does now. Default: what the running tool says, while it works. */
   readonly activity?: string | undefined;
   /** The task's own fields (assignee, due date, …), under the header: a task card is this card with a `meta`. */
@@ -70,7 +74,7 @@ const BarProbe = memo(function BarProbe({ controller, actions, locale, unread, o
   return null;
 });
 
-export function AgentCard({ controller, onChatRequest, agent, title, header, children, slot, unread: hostUnread, unreadCount, status, activity, meta, level: controlled, defaultLevel = 0, onLevelChange, dock, docked: dockedControlled, onDockedChange, labels, heights, chatProps, className }: AgentCardProps) {
+export function AgentCard({ controller, onChatRequest, agent, title, header, children, slot, unread: hostUnread, unreadCount, notch = true, cite, status, activity, meta, level: controlled, defaultLevel = 0, onLevelChange, dock, docked: dockedControlled, onDockedChange, labels, heights, chatProps, className }: AgentCardProps) {
   const words = { ...WORDS, ...labels };
   const [own, setOwn] = useState<AgentCardLevel>(defaultLevel);
   const [ownDocked, setOwnDocked] = useState(false);
@@ -135,13 +139,14 @@ export function AgentCard({ controller, onChatRequest, agent, title, header, chi
   const open = level === 2 && !docked;
 
   return <div ref={root} data-testid="agent-card" data-level={docked ? 'docked' : level} data-needs-you={waiting ? '' : undefined} onKeyDown={onKeyDown} role={hosted ? 'group' : undefined} aria-label={hosted ? title : undefined}
-    style={waiting ? { ['--tw-ring-color' as string]: 'var(--warning)' } : agentTint(agent, 0)} className={cn('relative mb-3 flex min-w-0 flex-col rounded-(--radius-3xl) bg-card pb-3 text-card-foreground ring-1', waiting && 'ring-2', className)}>
+    style={waiting ? { ['--tw-ring-color' as string]: 'var(--warning)' } : agentTint(agent, 0)} className={cn('group/agent-card relative mb-3 flex min-w-0 flex-col rounded-(--radius-3xl) bg-card pb-3 text-card-foreground ring-1', waiting && 'ring-2', className)}>
+    {cite && <div data-testid="agent-card-cite" className="absolute top-2 right-2 z-10 opacity-0 transition-opacity duration-(--duration-fast) group-hover/agent-card:opacity-100 group-focus-within/agent-card:opacity-100 has-[[data-cited]]:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none">{cite}</div>}
     {controller && <BarProbe controller={controller} actions={chatProps?.actions} locale={locale} unread={words.unread} onBar={setBar} />}
     {hosted && <div data-testid="agent-card-host-header">{header}</div>}
     {open && <div style={{ height: heights?.open ?? '32rem' }} className={cn('min-h-0 overflow-hidden', !hosted && 'rounded-t-(--radius-3xl)')}>{chat({})}</div>}
     {!open && <>
       {!hosted && <Button ref={header$} type="button" variant="ghost" data-testid="agent-card-header" aria-expanded={level > 0 && !docked} aria-label={`${title}, ${words.expand}`} onClick={() => { if (!docked) setLevel(level === 0 ? 1 : level); }}
-        className="h-auto min-w-0 flex-col items-stretch gap-1 px-3 pt-3 pb-1 text-left whitespace-normal">
+        className={cn('h-auto min-w-0 flex-col items-stretch gap-1 px-3 pt-3 pb-1 text-left whitespace-normal', cite && 'pr-12')}>
         <span className="flex min-w-0 items-center gap-2">
           <span aria-hidden="true" data-testid="agent-card-dot" style={{ backgroundColor: agentColor(agent) }} className="size-2 shrink-0 rounded-(--radius-3xl)" />
           <span data-testid="agent-card-title" className="min-w-0 flex-1 truncate text-sm font-medium">{title}</span>
@@ -169,7 +174,7 @@ export function AgentCard({ controller, onChatRequest, agent, title, header, chi
       {live && level === 0 && composer && !docked && <Fragment key="composer"><Separator className="mt-1" /><div data-testid="agent-card-composer" style={{ height: heights?.composer ?? '10.5rem' }} className="min-h-0 [&_[data-testid=conversation-content]]:invisible">{chat({ header: false, chatProps: { ...chatProps, hideLine: () => true, emptyState: <span />, onSent: openOnSent } })}</div></Fragment>}
       {live && level === 1 && !docked && <Fragment key="tray"><Separator className="mt-1" /><div style={{ height: heights?.tray ?? '16rem' }} className="min-h-0">{chat({ header: false })}</div></Fragment>}
     </>, tray)}
-    <ControllerStrip edge="bottom" actions={actions} unread={dot} />
+    {notch && <ControllerStrip edge="bottom" actions={actions} unread={dot} />}
     {docked && dock && createPortal(<div data-testid="agent-card-docked-chat" className="h-full min-h-0">{chat({})}</div>, dock)}
   </div>;
 }

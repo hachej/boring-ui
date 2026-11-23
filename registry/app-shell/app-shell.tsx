@@ -81,6 +81,10 @@ export interface AppShellProps {
    * before the agent's button, on every screen and width, that opens how to connect a person's own assistant (`mcp-setup`). Words follow `locale`.
    */
   readonly mcp?: McpSetupProps;
+  /** `false`: no assistant icon at the right of the screen header (default `true`). The assistant stays reachable from the left bar entry, the bar composer or the page. */
+  readonly headerAgent?: boolean;
+  /** Where the assistant's entry sits in the left bar: `end` (default) after the nav items, as before; `above-bottom` above the items placed after the screen's own sidebar content (the host's bottom items, such as « Admin »), with the before-items and the screen's content staying above it. */
+  readonly agentNav?: 'end' | 'above-bottom';
   /** The app's router owns the URL; the shell only reports the choice. */
   readonly route: { readonly id: string; readonly onChange: (id: string) => void };
   /**
@@ -153,7 +157,7 @@ function Screens({ items, activeId, scrolls, slot, centred, bar }: { readonly it
   </div>;
 }
 
-function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title, nav, agent, panel, account, route, text, update, notices, mcp }: { readonly mcp: McpSetupProps | undefined; readonly update: AppShellUpdate | undefined; readonly notices: readonly AppShellNotice[]; readonly single: boolean; readonly bar: boolean; readonly resizable: AppShellProps['resizable']; readonly appId: string | undefined; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
+function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title, nav, agent, panel, account, route, text, update, notices, mcp, headerAgent, agentNav }: { readonly headerAgent: boolean; readonly agentNav: NonNullable<AppShellProps['agentNav']>; readonly mcp: McpSetupProps | undefined; readonly update: AppShellUpdate | undefined; readonly notices: readonly AppShellNotice[]; readonly single: boolean; readonly bar: boolean; readonly resizable: AppShellProps['resizable']; readonly appId: string | undefined; readonly compactNav: NonNullable<AppShellProps['compactNav']>; readonly rail: NonNullable<AppShellProps['rail']>; readonly layout: AppShellProps['layout']; readonly title: string; readonly nav: readonly NavItem[]; readonly agent: AgentSpec | undefined; readonly panel: ShellPanel | undefined; readonly account: AccountSpec | undefined; readonly route: AppShellProps['route']; readonly text: AppShellText }) {
   const improve = panel && panel.menu !== false ? panel.label ?? text.improve : undefined;
   const Layout = panel?.Layout ?? NoPanelLayout;
   const compact = useIsCompact();
@@ -179,12 +183,12 @@ function Shell({ resizable, appId, compactNav, single, bar, layout, rail, title,
   </> : null;
   // The structure is the same compact or expanded, so a resize never remounts a screen.
   return <ResizableSidebarProvider data-testid="app-shell" resizable={resizable} app={appId || title} person={account?.email} defaultOpen={today} {...paneOpen} className="app-shell h-dvh min-h-0 overflow-hidden">
-    {!single && (!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} identity={{ app: appId || title, person: account?.email }} title={title} items={nav} activeId={active.id} onChange={choose} agent={agent} account={account} improve={improve} text={text} />}
+    {!single && (!compact || sheet) && <AppSidebar rail={sheet ? 'icon' : rail} identity={{ app: appId || title, person: account?.email }} title={title} items={nav} activeId={active.id} onChange={choose} agent={agent} agentNav={agentNav} account={account} improve={improve} text={text} />}
     <AgentDockLayout>
       <div data-slot="sidebar-inset" className="relative flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden bg-card">
       <Layout screen={active.label} navigation={compact && !sheet && !single ? <TabBar items={nav} activeId={active.id} onChange={choose} text={text} /> : undefined}>
         <ShellContext name={active.label} />
-        <ScreenHeader fallbackTitle={single ? title : active.label} compact={compact} leadingAvatar={single} trigger={!(single && bar)} avatar={avatar} menu={sheet} screenSidebar={compact && !sheet && active.sidebar ? <ScreenSidebarSheet key={active.id} item={active} text={text} /> : undefined} text={text} slotRef={setSlot} mcp={mcp} />
+        <ScreenHeader fallbackTitle={single ? title : active.label} compact={compact} leadingAvatar={single} trigger={headerAgent && !(single && bar)}avatar={avatar} menu={sheet} screenSidebar={compact && !sheet && active.sidebar ? <ScreenSidebarSheet key={active.id} item={active} text={text} /> : undefined} text={text} slotRef={setSlot} mcp={mcp} />
         <Screens items={nav} activeId={active.id} scrolls={layout === 'screen'} slot={slot} centred={single} bar={bar} />
         <NoticeHost notices={own ? [...notices, own] : notices} text={text} compact={compact} reserve />
       </Layout>
@@ -211,6 +215,6 @@ export function AppShell(props: AppShellProps) {
   const alone = useSyncExternalStore(never, () => panel?.page?.matches() ?? false, () => false);
   if (alone && panel?.page) return <panel.page.Page config={panel.config} appName={title} locale={props.locale} />;
   return <AgentLayerProvider agent={agent} composer={composer} context={props.context} floating={floating} panel={panel} locale={props.locale} agentLink={props.agentLink} appName={props.title} modeIdentity={{ app: props.appId || title, person: account?.email, screen: layout === 'screen' }}>
-    <HeaderProvider><Shell single={props.sidebar === false} bar={resolveComposer({ composer, floatingComposer: floating }).flags.bar} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} update={props.update} notices={props.notices ?? NONE} mcp={mcp} /></HeaderProvider>
+    <HeaderProvider><Shell single={props.sidebar === false} bar={resolveComposer({ composer, floatingComposer: floating }).flags.bar} resizable={props.resizable} appId={props.appId} compactNav={compactNav} layout={layout} rail={rail} title={title} nav={nav} agent={agent} account={account} route={route} panel={panel} text={text} update={props.update} notices={props.notices ?? NONE} mcp={mcp} headerAgent={props.headerAgent !== false} agentNav={props.agentNav ?? 'end'} /></HeaderProvider>
   </AgentLayerProvider>;
 }

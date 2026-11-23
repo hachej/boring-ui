@@ -1,0 +1,1 @@
+- **`app-shell`: `headerAgent` and `agentNav` (additive).** `headerAgent={false}` removes the assistant icon from the screen header (default `true`). `agentNav="above-bottom"` puts the left bar's assistant entry above the nav items placed after the screen's content (default `end`, below them). Defaults are unchanged; re-run `boring-ui-blocks update app-shell` to take them.

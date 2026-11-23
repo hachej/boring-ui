@@ -58,12 +58,12 @@ function statusOf(snapshot) {
   return { label: 'Done', tone: 'success' };
 }
 
-export function Task({ task, level, docked, dock, onLevel, onDocked }) {
+export function Task({ task, level, docked, dock, onLevel, onDocked, notch, cite }) {
   const run = useRun(task);
   const snapshot = useSyncExternalStore(run.controller.subscribe, run.controller.getSnapshot);
   useEffect(() => { if (task.autoplay) void run.play(task.autoplay); }, [run, task]);
   const meta = task.task ? <dl className="m-0 flex gap-4"><div><dt className="inline">Assignee </dt><dd className="inline font-medium text-foreground">Maya Collins (fictional)</dd></div><div><dt className="inline">Due </dt><dd className="inline font-medium text-foreground">Mar 3</dd></div></dl> : undefined;
-  return <div data-task={task.id}><AgentCard controller={run.controller} agent={AGENTS[task.agent]} title={task.title} status={statusOf(snapshot)} activity={task.activity} meta={meta}
+  return <div data-task={task.id}><AgentCard controller={run.controller} agent={AGENTS[task.agent]} title={task.title} status={statusOf(snapshot)} activity={task.activity} meta={meta} {...(notch === undefined ? {} : { notch })} {...(cite ? { cite } : {})}
     level={level} onLevelChange={onLevel} dock={dock} docked={docked} onDockedChange={onDocked} chatProps={{ locale: 'en', actions: run.actions, title: task.title, onSent: () => { window.__sent = (window.__sent ?? 0) + 1; }, artifacts: { open: artifact => window.__opened.push(artifact.title) } }} /></div>;
 }
 

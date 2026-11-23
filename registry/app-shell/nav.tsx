@@ -192,7 +192,8 @@ const HOVER_REVEAL_MS = 150;
 const HOVER_FOLD_MS = 300;
 
 /** The expanded sidebar: the app title, the nav items (none with one item) and the account in the footer. */
-export function AppSidebar({ rail = 'icon', identity, title, items, activeId, onChange, agent, account, improve, text }: {
+export function AppSidebar({ rail = 'icon', identity, title, items, activeId, onChange, agent, agentNav = 'end', account, improve, text }: {
+  readonly agentNav?: 'end' | 'above-bottom';
   readonly rail?: 'icon' | 'hover'; readonly identity?: { readonly app?: string | undefined; readonly person?: string | undefined }; readonly title: string; readonly items: readonly NavItem[]; readonly activeId: string; readonly onChange: (id: string) => void;
   readonly agent: AgentSpec | undefined; readonly account: AccountSpec | undefined; readonly improve: string | undefined; readonly text: AppShellText;
 }) {
@@ -271,6 +272,16 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
   const pressed = layer.state !== 'closed' && layer.showing === 'agent';
   const AgentIcon = agent?.icon ?? SparklesIcon;
   const agentLabel = agent?.label ?? agent?.chatProps?.labels?.title ?? text.assistant;
+  // The assistant is a layer, never a destination: no route, it toggles the right panel.
+  const agentEntry = agent && <>
+    {items.length > 1 && <SidebarSeparator />}
+    <SidebarGroup><SidebarGroupContent><SidebarMenu><SidebarMenuItem>
+      <SidebarMenuButton isActive={pressed} aria-pressed={pressed} tooltip={agentLabel} data-testid="nav-agent" className="pointer-coarse:min-h-[var(--control-min,2.75rem)] pointer-coarse:min-w-[var(--control-min,2.75rem)]"
+        onClick={() => { setOpenMobile(false); if (pressed) layer.close(); else layer.open('agent', 'half'); }}>
+        <AgentIcon /><span>{agentLabel}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem></SidebarMenu></SidebarGroupContent></SidebarGroup>
+  </>;
   // Hover-revealed and unpinned, the pane floats over the page: a shadow on its sidebar surface lifts it (pinned, it sits beside the page).
   const sidebar = <Sidebar collapsible="icon" variant="inset" data-testid="app-sidebar" data-float={hover && !pinned && state === 'expanded' ? 'true' : undefined}>
     {/* The phone sheet is portaled out of the shell root, so the `.app-shell` reset would not reach its buttons: this wrapper carries it (`contents`: no box of its own). */}
@@ -282,19 +293,11 @@ export function AppSidebar({ rail = 'icon', identity, title, items, activeId, on
         className="group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:pointer-coarse:pointer-events-auto group-data-[collapsible=icon]:pointer-coarse:opacity-100"><PinIcon aria-hidden="true" data-pinned={pinned ? 'true' : 'false'} weight={pinned ? 'fill' : 'regular'} /></Button>}</SidebarHeader>
     <SidebarContent>
       {/* Without the screen's own content, one group in placed order; with it, the before items above it and the rest below. */}
-      {items.length > 1 && own != null && navGroup(before, 'shrink-0', 'nav-before')}
+      {items.length > 1 && (own != null || agentNav === 'above-bottom') && navGroup(before, 'shrink-0', 'nav-before')}
       {own != null && <div data-testid="sidebar-screen" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{own}</div>}
-      {items.length > 1 && (own != null ? navGroup(after, 'shrink-0') : navGroup([...before, ...after]))}
-      {/* The assistant is a layer, never a destination: no route, it toggles the right panel. */}
-      {agent && <>
-        {items.length > 1 && <SidebarSeparator />}
-        <SidebarGroup><SidebarGroupContent><SidebarMenu><SidebarMenuItem>
-          <SidebarMenuButton isActive={pressed} aria-pressed={pressed} tooltip={agentLabel} data-testid="nav-agent" className="pointer-coarse:min-h-[var(--control-min,2.75rem)] pointer-coarse:min-w-[var(--control-min,2.75rem)]"
-            onClick={() => { setOpenMobile(false); if (pressed) layer.close(); else layer.open('agent', 'half'); }}>
-            <AgentIcon /><span>{agentLabel}</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem></SidebarMenu></SidebarGroupContent></SidebarGroup>
-      </>}
+      {agentNav === 'above-bottom' && agentEntry}
+      {items.length > 1 && (own != null || agentNav === 'above-bottom' ? navGroup(after, 'shrink-0') : navGroup([...before, ...after]))}
+      {agentNav !== 'above-bottom' && agentEntry}
     </SidebarContent>
     <SidebarFooter><NavUser account={account} improve={improve} text={text} /></SidebarFooter>
     <ResizableRail />

@@ -57,10 +57,12 @@ const Row = ({ children }) => <div className="flex flex-wrap items-center gap-2"
 // The « Agent cards » section: the kit's AgentCard for three agents in their colours (Reader, Mailer, Ledger) and a task card, folded by default;
 // the strip on a card's lower border opens its chat. Each card has its own scripted agent (`agent-card-demo.jsx`, shared with the Agent cards page).
 const SHOWN = ['running', 'needs', 'done', 'task'];
+const CITED_TASK = { ...TASKS.find(task => task.id === 'done'), id: 'cited', title: 'Chase the late payers (cite, no notch)' };
 function AgentCards() {
   const [levels, setLevels] = useState({});
   return <div data-testid="ds-agent-card-list" className="flex flex-col">
     {TASKS.filter(task => SHOWN.includes(task.id)).map(task => <Task key={task.id} task={task} level={levels[task.id] ?? 0} onLevel={level => setLevels(now => ({ ...now, [task.id]: level }))} dock={null} docked={false} onDocked={() => {}} />)}
+    <Task task={CITED_TASK} level={0} onLevel={() => {}} dock={null} docked={false} onDocked={() => {}} notch={false} cite={<CiteButton reference={{ kind: 'card', id: 'agent-card', title: CITED_TASK.title, subtitle: '#3' }} />} />
   </div>;
 }
 
@@ -175,7 +177,8 @@ function App() {
     return () => clearTimeout(timer);
   }, []);
   notify = kind => { const id = `${kind}-${Date.now()}`; setNotices([{ ...NOTICES[kind], id, onDismiss: () => setNotices(list => list.filter(n => n.id !== id)) }]); };
-  return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} route={{ id: route, onChange: setRoute }} {...(circle ? { composer: { launcher: 'circle', handoff: { openFull: () => setRoute('support') }, suspended: route === 'support' } } : explore ? { composer: 'explore', context: { title: 'Design system', detail: 'The components of the kit, in both themes' } } : { composer: 'bar', floatingComposer: true })} agent={agent} notices={notices}
+  const options = new URLSearchParams(location.search);
+  return <AppShell layout="screen" locale={lang} title="Boring UI" nav={nav} {...(options.get('headerAgent') === '0' ? { headerAgent: false } : {})} {...(options.get('agentNav') === 'above-bottom' ? { agentNav: 'above-bottom' } : {})} route={{ id: route, onChange: setRoute }} {...(circle ? { composer: { launcher: 'circle', handoff: { openFull: () => setRoute('support') }, suspended: route === 'support' } } : explore ? { composer: 'explore', context: { title: 'Design system', detail: 'The components of the kit, in both themes' } } : { composer: 'bar', floatingComposer: true })} agent={agent} notices={notices}
     account={{ name: 'Visitor', menu: [], theme: { value: theme, onChange: value => { applyTheme(value); setTheme(value); } } }} />;
 }
 createRoot(document.getElementById('root')).render(<App />);
