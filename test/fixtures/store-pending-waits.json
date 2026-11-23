@@ -1,0 +1,453 @@
+{
+ "writtenBy": "the kit before Pi parked tools (documents and watches, no signals)",
+ "schema": [
+  "CREATE TABLE durable_schema (\n\t\t\tsingleton INTEGER PRIMARY KEY CHECK (singleton = 1),\n\t\t\tversion INTEGER NOT NULL CHECK (version >= 0)\n\t\t) STRICT",
+  "CREATE TABLE durable_metadata (\n\t\t\tsingleton INTEGER PRIMARY KEY CHECK (singleton = 1),\n\t\t\tnext_id TEXT NOT NULL,\n\t\t\tnext_seq INTEGER NOT NULL\n\t\t) STRICT",
+  "CREATE TABLE record_ids (\n\t\t\tid INTEGER PRIMARY KEY,\n\t\t\trecord_type TEXT NOT NULL CHECK (record_type IN ('conversation', 'entry', 'task', 'submission', 'document'))\n\t\t) STRICT",
+  "CREATE TABLE conversations (\n\t\t\tid INTEGER PRIMARY KEY,\n\t\t\towner_conversation_id INTEGER,\n\t\t\towner_task_id INTEGER,\n\t\t\trecord TEXT NOT NULL CHECK (json_valid(record))\n\t\t) STRICT",
+  "CREATE TABLE entries (\n\t\t\tid INTEGER PRIMARY KEY,\n\t\t\tconversation_id INTEGER NOT NULL,\n\t\t\thead INTEGER,\n\t\t\tcommit_seq INTEGER NOT NULL,\n\t\t\trecord TEXT NOT NULL CHECK (json_valid(record))\n\t\t) STRICT",
+  "CREATE TABLE submissions (\n\t\t\tid INTEGER PRIMARY KEY,\n\t\t\tconversation_id INTEGER NOT NULL,\n\t\t\trequest_id TEXT,\n\t\t\tstatus TEXT NOT NULL CHECK (status IN ('queued', 'placed', 'done', 'unanswered')),\n\t\t\trecord TEXT NOT NULL CHECK (json_valid(record))\n\t\t) STRICT",
+  "CREATE TABLE documents (\n\t\t\tid INTEGER PRIMARY KEY,\n\t\t\tkind TEXT NOT NULL,\n\t\t\tfamily INTEGER NOT NULL CHECK (family IN (0, 1)),\n\t\t\tkey_value TEXT NOT NULL,\n\t\t\tscope_kind TEXT NOT NULL CHECK (scope_kind IN ('session', 'conversation', 'task')),\n\t\t\towner_id INTEGER NOT NULL,\n\t\t\tcreated_at INTEGER NOT NULL,\n\t\t\tretired_at INTEGER,\n\t\t\trecord TEXT NOT NULL CHECK (json_valid(record))\n\t\t) STRICT",
+  "CREATE TABLE document_revisions (\n\t\t\tdocument_id INTEGER NOT NULL,\n\t\t\tseq INTEGER NOT NULL,\n\t\t\tkind TEXT NOT NULL CHECK (kind IN ('base', 'delta')),\n\t\t\tversion INTEGER NOT NULL,\n\t\t\tcontent TEXT NOT NULL CHECK (json_valid(content)),\n\t\t\tPRIMARY KEY (document_id, seq)\n\t\t) STRICT",
+  "CREATE TABLE \"tasks\" (\n\t\t\tid INTEGER PRIMARY KEY,\n\t\t\tconversation_id INTEGER NOT NULL,\n\t\t\tkind TEXT NOT NULL,\n\t\t\tstatus TEXT NOT NULL CHECK (status IN ('pending', 'running', 'waiting', 'sleeping', 'completing', 'terminal')),\n\t\t\tabort_requested INTEGER NOT NULL CHECK (abort_requested IN (0, 1)),\n\t\t\tbackground INTEGER NOT NULL CHECK (background IN (0, 1)),\n\t\t\trecord TEXT NOT NULL CHECK (json_valid(record))\n\t\t) STRICT",
+  "CREATE INDEX conversations_by_owner_conversation ON conversations (owner_conversation_id, id)",
+  "CREATE INDEX conversations_by_owner_task ON conversations (owner_task_id, id)",
+  "CREATE INDEX entries_by_conversation ON entries (conversation_id, id DESC)",
+  "CREATE INDEX entry_heads_by_conversation ON entries (conversation_id, id DESC) WHERE head IS NOT NULL",
+  "CREATE INDEX submissions_by_request ON submissions (conversation_id, request_id)",
+  "CREATE INDEX submissions_by_conversation ON submissions (conversation_id, id)",
+  "CREATE INDEX submissions_by_status ON submissions (status, id)",
+  "CREATE INDEX documents_by_address\n\t\t\tON documents (kind, scope_kind, owner_id, family, key_value, created_at DESC, retired_at)",
+  "CREATE INDEX documents_by_scope ON documents (scope_kind, owner_id, id)",
+  "CREATE INDEX documents_by_scope_kind ON documents (scope_kind, owner_id, kind, id)",
+  "CREATE INDEX document_revisions_by_kind ON document_revisions (document_id, kind, seq DESC)",
+  "CREATE INDEX tasks_by_status ON tasks (status, id)",
+  "CREATE INDEX tasks_by_conversation ON tasks (conversation_id, id)",
+  "CREATE INDEX tasks_by_kind ON tasks (kind, id)",
+  "CREATE INDEX tasks_by_abort_requested ON tasks (abort_requested, id)",
+  "CREATE INDEX tasks_by_background ON tasks (background, id)"
+ ],
+ "rows": {
+  "durable_schema": [
+   {
+    "singleton": 1,
+    "version": 2
+   }
+  ],
+  "durable_metadata": [
+   {
+    "singleton": 1,
+    "next_id": "25",
+    "next_seq": 18
+   }
+  ],
+  "record_ids": [
+   {
+    "id": 2,
+    "record_type": "conversation"
+   },
+   {
+    "id": 3,
+    "record_type": "document"
+   },
+   {
+    "id": 4,
+    "record_type": "document"
+   },
+   {
+    "id": 5,
+    "record_type": "document"
+   },
+   {
+    "id": 6,
+    "record_type": "document"
+   },
+   {
+    "id": 7,
+    "record_type": "document"
+   },
+   {
+    "id": 8,
+    "record_type": "document"
+   },
+   {
+    "id": 9,
+    "record_type": "task"
+   },
+   {
+    "id": 10,
+    "record_type": "task"
+   },
+   {
+    "id": 11,
+    "record_type": "document"
+   },
+   {
+    "id": 12,
+    "record_type": "task"
+   },
+   {
+    "id": 13,
+    "record_type": "entry"
+   },
+   {
+    "id": 14,
+    "record_type": "submission"
+   },
+   {
+    "id": 15,
+    "record_type": "task"
+   },
+   {
+    "id": 16,
+    "record_type": "entry"
+   },
+   {
+    "id": 17,
+    "record_type": "entry"
+   },
+   {
+    "id": 18,
+    "record_type": "task"
+   },
+   {
+    "id": 19,
+    "record_type": "task"
+   },
+   {
+    "id": 20,
+    "record_type": "task"
+   },
+   {
+    "id": 21,
+    "record_type": "document"
+   },
+   {
+    "id": 22,
+    "record_type": "document"
+   },
+   {
+    "id": 23,
+    "record_type": "document"
+   },
+   {
+    "id": 24,
+    "record_type": "document"
+   }
+  ],
+  "conversations": [
+   {
+    "id": 2,
+    "owner_conversation_id": null,
+    "owner_task_id": null,
+    "record": "{\"id\":2}"
+   }
+  ],
+  "entries": [
+   {
+    "id": 13,
+    "conversation_id": 2,
+    "head": null,
+    "commit_seq": 4,
+    "record": "{\"model\":[{\"role\":\"user\",\"content\":\"Start.\",\"timestamp\":1795463077426}],\"kind\":\"pi.user\",\"id\":13,\"conversationId\":2}"
+   },
+   {
+    "id": 16,
+    "conversation_id": 2,
+    "head": null,
+    "commit_seq": 7,
+    "record": "{\"model\":[{\"role\":\"system\",\"content\":\"\",\"sections\":{\"instructions\":\"<instructions>\\nCall, then report.\\n</instructions>\"},\"toolsAdded\":[{\"name\":\"ask_user\",\"description\":\"Ask the person a question and wait for their answer. Give 2 to 6 short options when the answer is a choice; the person may also answer in their own words unless allowFreeText is false. To ask several related questions at once, give them as `questions` (up to 8, each with its own options): the person answers them in one form, may skip some, and the answer lists each question with its answer.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":1000},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":200},\"minItems\":2,\"maxItems\":6},\"allowFreeText\":{\"type\":\"boolean\"},\"questions\":{\"type\":\"array\",\"items\":{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":1000},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":200},\"minItems\":2,\"maxItems\":6}},\"required\":[\"question\"],\"additionalProperties\":false},\"minItems\":1,\"maxItems\":8}},\"required\":[\"question\"],\"additionalProperties\":false}},{\"name\":\"measure_page\",\"description\":\"Fictional: ask the page for a width.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"instructions\":{\"type\":\"string\"}},\"required\":[\"instructions\"],\"additionalProperties\":false}},{\"name\":\"present\",\"description\":\"Show a host task with { task: \\\"D-201\\\" }, or a task list with { tasks: { filter: \\\"all\\\", \\\"mine\\\" or \\\"waiting-on-me\\\" } }. Tasks are host records, not workspace files; the host checks access when it opens them. Show a file of the workspace to the person in a side panel instead of pasting it in your reply. When the person asks for something substantial and self-contained (a report, document, HTML page, SVG image or program), write it to a file with the write tool, using a short descriptive path with the right extension (.md, .html, .svg with a viewBox, or the language's own), then call present with that path; never put that content in your reply. After present, reply with one or two short sentences and never repeat the content. Short answers stay in the chat, and so does anything the person asks to have in the chat or without tools or artifacts: then call no tool. To change, extend or fix something you presented: read the file again first (the person may have edited it; keep their changes), change it with edit (or write the whole new content) at the same path, never a second file, and call present again. If you do not remember the path, list the files.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":512,\"description\":\"A workspace file path. Supply exactly one of path, task or tasks.\"},\"task\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":128,\"pattern\":\"^[A-Za-z0-9][A-Za-z0-9_-]*$\",\"description\":\"A host task id or number, such as D-201.\"},\"tasks\":{\"type\":\"object\",\"properties\":{\"filter\":{\"anyOf\":[{\"const\":\"all\"},{\"const\":\"mine\"},{\"const\":\"waiting-on-me\"}]}},\"required\":[\"filter\"],\"additionalProperties\":false}},\"additionalProperties\":false}},{\"name\":\"report_bug\",\"description\":\"Tell the app's team that something is broken: a tool failed, something you should be able to do is impossible, or the person says you are wrong.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"category\":{\"type\":\"string\",\"enum\":[\"tool_failed\",\"impossible\",\"person_says_wrong\"]},\"tool\":{\"type\":\"string\",\"description\":\"The name of the tool involved, if any.\"}},\"required\":[\"category\"]}},{\"name\":\"schedule\",\"description\":\"Schedule an instruction for this conversation at a later time. When it is due, the conversation receives the instruction and carries it out. Give exactly one of delaySeconds or at.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"instruction\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":4000,\"description\":\"What to do when it is due, as a self-contained request without timing words.\"},\"delaySeconds\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":31622400},\"at\":{\"type\":\"string\",\"description\":\"ISO 8601 date-time with a timezone offset, for example 2026-11-01T09:00:00+01:00.\"},\"operationId\":{\"type\":\"string\",\"minLength\":1,\"maxLength\":200,\"description\":\"Idempotency key: the same key returns the existing schedule.\"}},\"required\":[\"instruction\"],\"additionalProperties\":false}},{\"name\":\"list_schedules\",\"description\":\"List the pending schedules of this conversation.\",\"parameters\":{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}},{\"name\":\"cancel_schedule\",\"description\":\"Cancel a pending schedule of this conversation by its id.\",\"parameters\":{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\",\"minLength\":1}},\"required\":[\"id\"],\"additionalProperties\":false}}],\"timestamp\":1795463077457}],\"kind\":\"pi.system\",\"id\":16,\"conversationId\":2,\"byTaskId\":15}"
+   },
+   {
+    "id": 17,
+    "conversation_id": 2,
+    "head": null,
+    "commit_seq": 8,
+    "record": "{\"model\":[{\"role\":\"assistant\",\"content\":[{\"type\":\"toolCall\",\"id\":\"ask-1\",\"name\":\"ask_user\",\"arguments\":{\"question\":\"Where do we picnic?\",\"options\":[\"park\",\"lake\"]}},{\"type\":\"toolCall\",\"id\":\"measure-1\",\"name\":\"measure_page\",\"arguments\":{\"instructions\":\"Measure the header.\"}},{\"type\":\"toolCall\",\"id\":\"present-1\",\"name\":\"present\",\"arguments\":{\"task\":\"D-201\"}}],\"api\":\"fictional-caller-api\",\"provider\":\"fictional-caller-provider\",\"model\":\"fictional-caller\",\"timestamp\":1,\"stopReason\":\"toolUse\",\"usage\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}},\"thinkingLevel\":\"off\"}],\"kind\":\"pi.assistant\",\"id\":17,\"conversationId\":2,\"byTaskId\":15}"
+   }
+  ],
+  "submissions": [
+   {
+    "id": 14,
+    "conversation_id": 2,
+    "request_id": "\"r1\"",
+    "status": "placed",
+    "record": "{\"conversationId\":2,\"requestId\":\"r1\",\"type\":\"input\",\"status\":\"placed\",\"entry\":13,\"id\":14}"
+   }
+  ],
+  "documents": [
+   {
+    "id": 3,
+    "kind": "\"pi.live\"",
+    "family": 0,
+    "key_value": "\"\"",
+    "scope_kind": "conversation",
+    "owner_id": 2,
+    "created_at": 1,
+    "retired_at": null,
+    "record": "{\"id\":3,\"kind\":\"pi.live\",\"scope\":{\"kind\":\"conversation\",\"conversationId\":2},\"history\":\"latest\",\"fork\":\"initial\",\"createdAt\":1}"
+   },
+   {
+    "id": 4,
+    "kind": "\"pi.inbox\"",
+    "family": 0,
+    "key_value": "\"\"",
+    "scope_kind": "conversation",
+    "owner_id": 2,
+    "created_at": 1,
+    "retired_at": null,
+    "record": "{\"id\":4,\"kind\":\"pi.inbox\",\"scope\":{\"kind\":\"conversation\",\"conversationId\":2},\"history\":\"latest\",\"fork\":\"initial\",\"createdAt\":1}"
+   },
+   {
+    "id": 5,
+    "kind": "\"pi.usage\"",
+    "family": 0,
+    "key_value": "\"\"",
+    "scope_kind": "conversation",
+    "owner_id": 2,
+    "created_at": 1,
+    "retired_at": null,
+    "record": "{\"id\":5,\"kind\":\"pi.usage\",\"scope\":{\"kind\":\"conversation\",\"conversationId\":2},\"history\":\"latest\",\"fork\":\"initial\",\"createdAt\":1}"
+   },
+   {
+    "id": 6,
+    "kind": "\"pi.provider\"",
+    "family": 0,
+    "key_value": "\"\"",
+    "scope_kind": "conversation",
+    "owner_id": 2,
+    "created_at": 1,
+    "retired_at": null,
+    "record": "{\"id\":6,\"kind\":\"pi.provider\",\"scope\":{\"kind\":\"conversation\",\"conversationId\":2},\"history\":\"latest\",\"fork\":\"initial\",\"createdAt\":1}"
+   },
+   {
+    "id": 7,
+    "kind": "\"pi.agent\"",
+    "family": 0,
+    "key_value": "\"\"",
+    "scope_kind": "conversation",
+    "owner_id": 2,
+    "created_at": 1,
+    "retired_at": null,
+    "record": "{\"id\":7,\"kind\":\"pi.agent\",\"scope\":{\"kind\":\"conversation\",\"conversationId\":2},\"history\":\"rewindable\",\"fork\":\"asOf\",\"createdAt\":1}"
+   },
+   {
+    "id": 8,
+    "kind": "\"boring.schedules\"",
+    "family": 0,
+    "key_value": "\"\"",
+    "scope_kind": "conversation",
+    "owner_id": 2,
+    "created_at": 2,
+    "retired_at": null,
+    "record": "{\"id\":8,\"kind\":\"boring.schedules\",\"scope\":{\"kind\":\"conversation\",\"conversationId\":2},\"history\":\"latest\",\"fork\":\"initial\",\"createdAt\":2}"
+   },
+   {
+    "id": 11,
+    "kind": "\"boring.questions.record\"",
+    "family": 1,
+    "key_value": "\"[\\\"runtime-one\\\",\\\"cabinet\\\",\\\"choose-format\\\"]\"",
+    "scope_kind": "session",
+    "owner_id": 0,
+    "created_at": 3,
+    "retired_at": null,
+    "record": "{\"id\":11,\"kind\":\"boring.questions.record\",\"key\":\"[\\\"runtime-one\\\",\\\"cabinet\\\",\\\"choose-format\\\"]\",\"scope\":{\"kind\":\"session\"},\"createdAt\":3}"
+   },
+   {
+    "id": 21,
+    "kind": "\"boring.ask-user.question\"",
+    "family": 1,
+    "key_value": "\"[17,\\\"ask-1\\\"]\"",
+    "scope_kind": "conversation",
+    "owner_id": 2,
+    "created_at": 13,
+    "retired_at": null,
+    "record": "{\"id\":21,\"kind\":\"boring.ask-user.question\",\"key\":\"[17,\\\"ask-1\\\"]\",\"scope\":{\"kind\":\"conversation\",\"conversationId\":2},\"history\":\"latest\",\"fork\":\"initial\",\"createdAt\":13}"
+   },
+   {
+    "id": 22,
+    "kind": "\"boring.ask-user.question\"",
+    "family": 1,
+    "key_value": "\"ask-1\"",
+    "scope_kind": "conversation",
+    "owner_id": 2,
+    "created_at": 13,
+    "retired_at": null,
+    "record": "{\"id\":22,\"kind\":\"boring.ask-user.question\",\"key\":\"ask-1\",\"scope\":{\"kind\":\"conversation\",\"conversationId\":2},\"history\":\"latest\",\"fork\":\"initial\",\"createdAt\":13}"
+   },
+   {
+    "id": 23,
+    "kind": "\"boring.browser-task\"",
+    "family": 1,
+    "key_value": "\"[17,\\\"measure-1\\\"]\"",
+    "scope_kind": "conversation",
+    "owner_id": 2,
+    "created_at": 14,
+    "retired_at": null,
+    "record": "{\"id\":23,\"kind\":\"boring.browser-task\",\"key\":\"[17,\\\"measure-1\\\"]\",\"scope\":{\"kind\":\"conversation\",\"conversationId\":2},\"history\":\"latest\",\"fork\":\"initial\",\"createdAt\":14}"
+   },
+   {
+    "id": 24,
+    "kind": "\"boring.view-open\"",
+    "family": 1,
+    "key_value": "\"[17,\\\"present-1\\\"]\"",
+    "scope_kind": "conversation",
+    "owner_id": 2,
+    "created_at": 15,
+    "retired_at": null,
+    "record": "{\"id\":24,\"kind\":\"boring.view-open\",\"key\":\"[17,\\\"present-1\\\"]\",\"scope\":{\"kind\":\"conversation\",\"conversationId\":2},\"history\":\"latest\",\"fork\":\"initial\",\"createdAt\":15}"
+   }
+  ],
+  "document_revisions": [
+   {
+    "document_id": 4,
+    "seq": 1,
+    "kind": "base",
+    "version": 1,
+    "content": "{\"items\":[]}"
+   },
+   {
+    "document_id": 6,
+    "seq": 1,
+    "kind": "base",
+    "version": 1,
+    "content": "{\"sessionId\":\"01a209f0-5e12-74e5-b5c3-c7cd9967e71d\"}"
+   },
+   {
+    "document_id": 7,
+    "seq": 1,
+    "kind": "base",
+    "version": 1,
+    "content": "{\"model\":{\"provider\":\"fictional-caller-provider\",\"modelId\":\"fictional-caller\"},\"extensions\":[\"agent.legacy\",\"agent.legacy.struggle\",\"boring.schedule\",\"boring.questions\"],\"instructions\":\"Call, then report.\"}"
+   },
+   {
+    "document_id": 8,
+    "seq": 2,
+    "kind": "base",
+    "version": 1,
+    "content": "{\"items\":[{\"id\":\"schedule-1\",\"operationId\":\"water\",\"instruction\":\"Water the fictional fern\",\"runAt\":1795466677408,\"taskId\":9},{\"id\":\"schedule-2\",\"operationId\":\"prune\",\"instruction\":\"Prune the fictional rose\",\"runAt\":1795470277408,\"taskId\":10}],\"next\":3}"
+   },
+   {
+    "document_id": 11,
+    "seq": 3,
+    "kind": "base",
+    "version": 1,
+    "content": "{\"question\":{\"ref\":{\"runtimeId\":\"runtime-one\",\"taskId\":12,\"conversationId\":2,\"questionId\":\"choose-format\",\"scopeId\":\"cabinet\",\"subjectDigest\":\"draft-v1\",\"policyVersion\":\"policy-v1\",\"expiresAt\":\"2026-11-23T20:44:37.408Z\"},\"prompt\":\"Choose the fictional report format\",\"choices\":[\"brief\",\"detailed\"],\"state\":{\"kind\":\"pending\"}}}"
+   },
+   {
+    "document_id": 3,
+    "seq": 8,
+    "kind": "base",
+    "version": 3,
+    "content": "{\"run\":{\"taskId\":15,\"inputs\":[14],\"turns\":1,\"first\":13},\"tools\":[{\"callId\":\"ask-1\",\"name\":\"ask_user\",\"taskId\":18,\"status\":\"pending\"},{\"callId\":\"measure-1\",\"name\":\"measure_page\",\"taskId\":19,\"status\":\"pending\"},{\"callId\":\"present-1\",\"name\":\"present\",\"taskId\":20,\"status\":\"pending\"}]}"
+   },
+   {
+    "document_id": 5,
+    "seq": 8,
+    "kind": "base",
+    "version": 1,
+    "content": "{\"models\":{\"fictional-caller-provider/fictional-caller\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}}},\"tools\":{}}"
+   },
+   {
+    "document_id": 21,
+    "seq": 13,
+    "kind": "base",
+    "version": 1,
+    "content": "{\"question\":{\"prompt\":\"Where do we picnic?\",\"options\":[\"park\",\"lake\"],\"allowFreeText\":true,\"taskId\":18,\"state\":{\"kind\":\"pending\"}}}"
+   },
+   {
+    "document_id": 22,
+    "seq": 13,
+    "kind": "base",
+    "version": 1,
+    "content": "{\"question\":null}"
+   },
+   {
+    "document_id": 23,
+    "seq": 14,
+    "kind": "base",
+    "version": 1,
+    "content": "{\"task\":{\"tool\":\"measure_page\",\"taskId\":19,\"state\":{\"kind\":\"pending\"}}}"
+   },
+   {
+    "document_id": 24,
+    "seq": 15,
+    "kind": "base",
+    "version": 1,
+    "content": "{\"view\":{\"tool\":\"present\",\"subject\":{\"task\":\"D-201\"},\"taskId\":20,\"startedAt\":1795463077513,\"timeoutMs\":3600000,\"state\":{\"kind\":\"pending\"}}}"
+   },
+   {
+    "document_id": 3,
+    "seq": 17,
+    "kind": "delta",
+    "version": 3,
+    "content": "[[\"s\",[\"tools\",0,\"status\"],\"running\"],[\"s\",[\"tools\",1,\"status\"],\"running\"],[\"s\",[\"tools\",2,\"status\"],\"running\"]]"
+   }
+  ],
+  "tasks": [
+   {
+    "id": 9,
+    "conversation_id": 2,
+    "kind": "\"boring.schedule.deliver\"",
+    "status": "pending",
+    "abort_requested": 0,
+    "background": 1,
+    "record": "{\"id\":9,\"conversationId\":2,\"kind\":\"boring.schedule.deliver\",\"version\":1,\"input\":{\"id\":\"schedule-1\",\"conversationId\":2,\"instruction\":\"Water the fictional fern\",\"runAt\":1795466677408},\"background\":true,\"abortRequested\":false,\"state\":{\"status\":\"pending\",\"checkpoint\":{\"phase\":\"wait\"}},\"startedAt\":1795463077432}"
+   },
+   {
+    "id": 10,
+    "conversation_id": 2,
+    "kind": "\"boring.schedule.deliver\"",
+    "status": "pending",
+    "abort_requested": 0,
+    "background": 1,
+    "record": "{\"id\":10,\"conversationId\":2,\"kind\":\"boring.schedule.deliver\",\"version\":1,\"input\":{\"id\":\"schedule-2\",\"conversationId\":2,\"instruction\":\"Prune the fictional rose\",\"runAt\":1795470277408},\"background\":true,\"abortRequested\":false,\"state\":{\"status\":\"pending\",\"checkpoint\":{\"phase\":\"wait\"}},\"startedAt\":1795463077433}"
+   },
+   {
+    "id": 12,
+    "conversation_id": 2,
+    "kind": "\"boring.questions.wait\"",
+    "status": "pending",
+    "abort_requested": 0,
+    "background": 0,
+    "record": "{\"id\":12,\"conversationId\":2,\"kind\":\"boring.questions.wait\",\"version\":1,\"input\":{\"key\":\"[\\\"runtime-one\\\",\\\"cabinet\\\",\\\"choose-format\\\"]\",\"runtimeId\":\"runtime-one\"},\"background\":false,\"abortRequested\":false,\"state\":{\"status\":\"pending\",\"checkpoint\":{\"phase\":\"wait\"}},\"startedAt\":1795463077433}"
+   },
+   {
+    "id": 15,
+    "conversation_id": 2,
+    "kind": "\"pi.generation\"",
+    "status": "waiting",
+    "abort_requested": 0,
+    "background": 0,
+    "record": "{\"id\":15,\"conversationId\":2,\"kind\":\"pi.generation\",\"version\":3,\"input\":{},\"background\":false,\"abortRequested\":false,\"state\":{\"status\":\"waiting\",\"checkpoint\":{\"phase\":\"tools\",\"assistant\":17,\"tools\":[18,19,20],\"pending\":[]},\"on\":[18,19,20],\"policy\":\"allSettled\"},\"startedAt\":1795463077445}"
+   },
+   {
+    "id": 18,
+    "conversation_id": 2,
+    "kind": "\"pi.tool\"",
+    "status": "pending",
+    "abort_requested": 0,
+    "background": 0,
+    "record": "{\"id\":18,\"conversationId\":2,\"kind\":\"pi.tool\",\"version\":4,\"input\":{\"kind\":\"model\",\"assistant\":17,\"callId\":\"ask-1\"},\"owner\":15,\"background\":false,\"abortRequested\":false,\"state\":{\"status\":\"pending\",\"checkpoint\":{\"phase\":\"execute\",\"arguments\":{\"question\":\"Where do we picnic?\",\"options\":[\"park\",\"lake\"]},\"replay\":\"safe\"}},\"startedAt\":1795463077483}"
+   },
+   {
+    "id": 19,
+    "conversation_id": 2,
+    "kind": "\"pi.tool\"",
+    "status": "pending",
+    "abort_requested": 0,
+    "background": 0,
+    "record": "{\"id\":19,\"conversationId\":2,\"kind\":\"pi.tool\",\"version\":4,\"input\":{\"kind\":\"model\",\"assistant\":17,\"callId\":\"measure-1\"},\"owner\":15,\"background\":false,\"abortRequested\":false,\"state\":{\"status\":\"pending\",\"checkpoint\":{\"phase\":\"execute\",\"arguments\":{\"instructions\":\"Measure the header.\"},\"replay\":\"safe\"}},\"startedAt\":1795463077483}"
+   },
+   {
+    "id": 20,
+    "conversation_id": 2,
+    "kind": "\"pi.tool\"",
+    "status": "pending",
+    "abort_requested": 0,
+    "background": 0,
+    "record": "{\"id\":20,\"conversationId\":2,\"kind\":\"pi.tool\",\"version\":4,\"input\":{\"kind\":\"model\",\"assistant\":17,\"callId\":\"present-1\"},\"owner\":15,\"background\":false,\"abortRequested\":false,\"state\":{\"status\":\"pending\",\"checkpoint\":{\"phase\":\"execute\",\"arguments\":{\"task\":\"D-201\"},\"replay\":\"safe\"}},\"startedAt\":1795463077483}"
+   }
+  ]
+ }
+}

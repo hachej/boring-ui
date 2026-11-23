@@ -685,7 +685,7 @@ green", "preview"), the builder calls one tool:
 
 - **`browser_preview({ instructions, feedback? })`** (`@hachej/boring-feedback/agent`,
   `createBrowserPreviewTool`) is a **browser task**
-  (`@hachej/boring-agent/browser-task`): the `ask_user` durable wait with a JSON
+  (`@hachej/boring-agent/browser-task`): the `ask_user` park with a JSON
   object for an answer. The call parks on a conversation document keyed by its
   assistant entry and call id; no model request is held, a restart re-attaches
   to it, stopping the conversation cancels it. With no page open it stays
