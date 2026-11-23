@@ -26,7 +26,7 @@ test('default theme source and published output expose the original surface, typ
   assert.deepEqual(published.cssVars, source.cssVars, 'published theme is rebuilt from its owner');
   for (const item of [source, published]) {
     const { theme, light, dark } = item.cssVars;
-    assert.deepEqual(JSON.stringify(item.css).match(/--[a-z-]+/g).filter((key, at, all) => all.indexOf(key) === at), ['--control-h', '--control-min', '--screen-gutter']);
+    assert.deepEqual(JSON.stringify(item.css).match(/--[a-z-]+/g).filter((key, at, all) => all.indexOf(key) === at && !key.startsWith('--z-')), ['--control-h', '--control-min', '--screen-gutter'], 'the stacking layers (--z-*) are the only other custom properties');
     assert.equal(light.radius, '0.5rem');
     assert.equal(light['text-body'], '0.8125rem');
     assert.equal(light['text-title'], '0.875rem');
