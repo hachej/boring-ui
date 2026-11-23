@@ -294,7 +294,30 @@ test('delegate calls become sub-agent cards that read DelegateDetails, live and 
   assert.equal(stopped.durationMs, 8_000, 'up to the result');
   assert.match(card(stopped), /data-state="cancelled"/);
   assert.doesNotMatch(card(stopped), /subagent-spinner/);
-  for (const value of [undefined, null, 'x', { ...running, version: 2 }, { ...running, kind: 'other' }, { ...running, toolCalls: -1 }, { ...running, status: 'odd' }, { ...running, tokens: null }]) assert.equal(parseDelegateDetails(value), undefined, JSON.stringify(value));
+  for (const value of [undefined, null, 'x', { ...running, version: 3 }, { ...running, kind: 'other' }, { ...running, toolCalls: -1 }, { ...running, status: 'odd' }, { ...running, tokens: null }]) assert.equal(parseDelegateDetails(value), undefined, JSON.stringify(value));
+  // Details v2: the app's own words (task, now, steps, counts, result), readable on the card without opening anything; older details still read.
+  const v2 = { ...running, version: 2, task: 'Find the fictional Hetzner receipts', now: 'Searching the mailbox for Hetzner, Feb', steps: ['one', 'two', 'three', 'four', 'five', 'six', '  '], counts: [{ label: 'found', value: 12 }, { label: 'bad', value: -1 }, { label: 'missing', value: 40 }], result: 'Found 12 receipts.' };
+  const liveV2 = renderToStaticMarkup(derive({ ...view, docs: { 'pi.live': { tools: [{ callId: '1', name: 'delegate', status: 'running', details: v2 }] } } }, withCard('natural')).rows[1].parts[0].content);
+  assert.match(liveV2, /data-testid="subagent-task"[^>]*>Find the fictional Hetzner receipts</, 'the goal, from the live slot through the chat');
+  assert.match(liveV2, /data-testid="subagent-now"[^>]*>Searching the mailbox for Hetzner, Feb</);
+  assert.match(liveV2, /data-testid="subagent-counts"[^>]*>12 found · 40 missing</, 'a bad pair is dropped');
+  assert.deepEqual([...liveV2.matchAll(/<li[^>]*>([a-z]+)<\/li>/g)].map(match => match[1]), ['two', 'three', 'four', 'five', 'six'], 'the last five steps, blanks dropped');
+  assert.doesNotMatch(liveV2, /subagent-result/, 'no result while it runs');
+  const doneV2 = card(parseDelegateDetails({ ...v2, status: 'done' }));
+  assert.doesNotMatch(doneV2, /subagent-now/, 'now is a live line');
+  assert.match(doneV2, /data-testid="subagent-result"[^]*Found 12 receipts\./);
+  const plain = { ...running, status: 'done' };
+  assert.match(card(settledDetails(plain, 'The fictional answer.')), /data-testid="subagent-result"[^]*The fictional answer\./, 'a v1 call shows the answer it returned');
+  assert.doesNotMatch(card(parseDelegateDetails(plain)), /subagent-task|subagent-now|subagent-steps|subagent-result/);
+  // The activity list: a plain array, running first, one card each, the child conversation opens.
+  const { SubagentActivityList } = await load('subagent-card', 'subagent-card.tsx', 'pi-chat-subagent');
+  const opens = [];
+  const listHtml = renderToStaticMarkup(createElement(SubagentActivityList, { onOpen: id => opens.push(id), now: () => 4_000, runs: [
+    parseDelegateDetails({ ...running, status: 'done', conversationId: 3, startedAt: 9_000 }), parseDelegateDetails({ ...v2, conversationId: 4, startedAt: 1_000 })] }));
+  assert.deepEqual([...listHtml.matchAll(/data-conversation-id="(\d+)"/g)].map(match => match[1]), ['4', '3'], 'running first');
+  assert.match(listHtml, /data-testid="subagent-summary"[^>]*>1 running · 1 finished</);
+  assert.equal([...listHtml.matchAll(/data-testid="subagent-open"/g)].length, 2);
+  assert.match(renderToStaticMarkup(createElement(SubagentActivityList, { runs: [] })), /No sub-agent is working/);
   // The transcript renders the card.
   const html = renderToStaticMarkup(createElement(RowView, { row: { key: 'reply', type: 'assistant', parts: live, text: '', streaming: true, active: true }, context: { developer: false } }));
   assert.match(html, /data-testid="subagent-card"/);

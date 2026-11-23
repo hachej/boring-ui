@@ -1,0 +1,106 @@
+{
+ "target": "component:subagents",
+ "title": "Sub-agents",
+ "group": "Chat and files",
+ "hint": "what each sub-agent does",
+ "summary": "The sub-agents of a scope as one card each, running first, readable without opening any: the goal, what it does now, its last steps, its counts, its result or its error.",
+ "purpose": "SubagentActivityList (pi-chat-subagent) over a plain array of delegate details with the app's own words (task, now, steps, counts, result). Nothing is fetched; a card opens the child conversation. Fictional data, no model, no network.",
+ "try": [
+  {
+   "label": "Read the three sub-agents without opening one",
+   "flow": "F01"
+  },
+  {
+   "label": "Open the child conversation of one",
+   "flow": "F02"
+  }
+ ],
+ "fixture": {
+  "entry": "ux/fixtures/component-subagents.jsx",
+  "query": "",
+  "ready": "[data-testid=subagent-list]",
+  "install": "npx shadcn@4.23.0 add pi-chat-subagent",
+  "usage": "<SubagentActivityList runs={runs} onOpen={id => openConversation(id)} />"
+ },
+ "viewports": [
+  {
+   "name": "390",
+   "width": 390,
+   "height": 844,
+   "touch": true
+  },
+  {
+   "name": "1280",
+   "width": 1280,
+   "height": 800
+  }
+ ],
+ "watch": [
+  [
+   "list",
+   "[data-testid=subagent-list]"
+  ]
+ ],
+ "thresholds": {
+  "cls": 0.08,
+  "settledMs": 1200,
+  "touchTarget": 44
+ },
+ "notes": "The running card comes first and shows its goal, one live line, its last steps and counts; the finished one its result; the failed one its error. Every line is one line (truncated), the result at most three. French by labels (lang=fr); the app's own sentences are not translated by the kit.",
+ "states": [
+  {
+   "id": "01",
+   "name": "english",
+   "query": "",
+   "steps": []
+  },
+  {
+   "id": "02",
+   "name": "french",
+   "query": "lang=fr",
+   "steps": []
+  },
+  {
+   "id": "03",
+   "name": "french-dark",
+   "query": "lang=fr&dark=1",
+   "steps": []
+  },
+  {
+   "id": "04",
+   "name": "empty",
+   "query": "empty=1",
+   "steps": []
+  }
+ ],
+ "flows": [
+  {
+   "id": "F01",
+   "name": "Everything is readable without opening",
+   "query": "lang=fr",
+   "steps": [
+    {
+     "do": "wait",
+     "ms": 300,
+     "say": "Look at the list",
+     "until": "visible:subagent-now & visible:subagent-result & visible:subagent-error & eval:document.querySelectorAll('[data-testid=subagent-card]')[0].dataset.state==='running'",
+     "expect": "The running one is first with its goal and its live line; the result and the error show without a tap."
+    }
+   ]
+  },
+  {
+   "id": "F02",
+   "name": "Open a child conversation",
+   "query": "",
+   "steps": [
+    {
+     "do": "tap",
+     "target": "subagent-open",
+     "say": "Tap the conversation of the first card",
+     "until": "eval:window.__ux.opened().length===1",
+     "expect": "The host is asked to open that child conversation."
+    }
+   ]
+  }
+ ]
+}
