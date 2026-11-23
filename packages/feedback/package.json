@@ -55,12 +55,12 @@
     "@hachej/boring-ui-kit": "^0.5.24",
     "@hachej/boring-files": "^0.5.24",
     "@hachej/boring-agent": "^0.5.24",
-    "@earendil-works/pi-durable": "~1.5.2",
-    "@earendil-works/pi-ai": "~1.5.2",
-    "@earendil-works/chord": "~1.5.2",
+    "@earendil-works/pi-durable": "~1.6.0",
+    "@earendil-works/pi-ai": "~1.6.0",
+    "@earendil-works/chord": "~1.6.0",
     "react": "^19.0.0",
     "esbuild": "^0.28.2",
-    "@earendil-works/pi-schema": "~1.5.2"
+    "@earendil-works/pi-schema": "~1.6.0"
   },
   "peerDependenciesMeta": {
     "@hachej/boring-agent": {

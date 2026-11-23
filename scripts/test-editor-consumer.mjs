@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { withChordOverride } from './consumer-install.mjs';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -34,7 +33,7 @@ try {
   // The SQLite workspace host loads Pi's portable env entry at runtime (the optional files peer); nothing else of Pi.
   dependencies['@earendil-works/pi-durable'] = JSON.parse(readFileSync(join(root, 'packages/files/package.json'), 'utf8')).peerDependencies['@earendil-works/pi-durable'];
   const manifest = { name: 'isolated-editor-consumer', version: '1.0.0', private: true, type: 'module', dependencies };
-  writeFileSync(join(directory, 'package.json'), JSON.stringify(withChordOverride(manifest)));
+  writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest));
   const sourceLock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
   const packages = {};
   const include = (name, parent = '') => {

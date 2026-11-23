@@ -88,25 +88,25 @@ test('unknown package is refused', () => assert.ok(checkManifest({}, 'scheduler'
 test('nested upstream override cannot swap a fork', () => assert.ok(checkManifest({overrides:{'@earendil-works/pi-durable':{'.':'file:../fork'}}}, undefined, policy).some((p) => p.includes('local/forked/patched'))));
 test('wildcard upstream resolution cannot swap a fork', () => assert.ok(checkManifest({resolutions:{'**/@earendil-works/pi-durable':'file:../fork'}}, undefined, policy).some((p) => p.includes('local/forked/patched'))));
 test('experimental upstream version is pinned to reviewed exports', () => {
-  const manifest = { name: '@hachej/boring-agent', dependencies: { '@earendil-works/pi-durable': '1.5.2' } };
+  const manifest = { name: '@hachej/boring-agent', dependencies: { '@earendil-works/pi-durable': '1.6.0' } };
   assert.deepEqual(checkManifest(manifest, 'agent', policy), []);
-  manifest.dependencies['@earendil-works/pi-durable'] = '^1.5.2';
+  manifest.dependencies['@earendil-works/pi-durable'] = '^1.6.0';
   assert.ok(checkManifest(manifest, 'agent', policy).some((p) => p.includes('version must match')));
   // Published peers may carry the reviewed range; runtime dependencies stay exact.
-  manifest.dependencies['@earendil-works/pi-durable'] = '1.5.2';
-  manifest.peerDependencies = { '@earendil-works/pi-durable': '^1.5.2' };
+  manifest.dependencies['@earendil-works/pi-durable'] = '1.6.0';
+  manifest.peerDependencies = { '@earendil-works/pi-durable': '^1.6.0' };
   assert.deepEqual(checkManifest(manifest, 'agent', policy), []);
   // A tilde peer keeps consumers on the reviewed 1.5.x line; the next minor needs its own review.
-  manifest.peerDependencies = { '@earendil-works/pi-durable': '~1.5.2' };
+  manifest.peerDependencies = { '@earendil-works/pi-durable': '~1.6.0' };
   assert.deepEqual(checkManifest(manifest, 'agent', policy), []);
   manifest.peerDependencies = { '@earendil-works/pi-durable': '~1.3.0' };
   assert.ok(checkManifest(manifest, 'agent', policy).some((p) => p.includes('version must match')));
   manifest.peerDependencies = { '@earendil-works/pi-durable': '^1.3.0' };
   assert.ok(checkManifest(manifest, 'agent', policy).some((p) => p.includes('version must match')));
   manifest.peerDependencies = {};
-  manifest.dependencies['@earendil-works/pi-durable'] = '~1.5.2';
+  manifest.dependencies['@earendil-works/pi-durable'] = '~1.6.0';
   assert.ok(checkManifest(manifest, 'agent', policy).some((p) => p.includes('version must match')));
-  manifest.dependencies['@earendil-works/pi-durable'] = '1.5.2';
+  manifest.dependencies['@earendil-works/pi-durable'] = '1.6.0';
 });
 test('npm alias cannot swap a fork for upstream', () => {
   assert.ok(checkManifest({name:'@hachej/boring-agent', dependencies:{'@earendil-works/pi-durable':'npm:replacement@1.0.0'}}, 'agent', policy).some((p) => p.includes('local/forked/patched')));

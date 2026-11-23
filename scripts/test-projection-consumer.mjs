@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { withChordOverride } from './consumer-install.mjs';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -36,7 +35,7 @@ try {
   // Native SDK declarations optionally import these names; keep resolution inside the installed fixture.
   for (const name of ['buffer', 'undici', 'undici-types']) dependencies[name] = sourceLock.packages['node_modules/' + name].version;
   const manifest = { name: 'isolated-projection-consumer', version: '1.0.0', private: true, type: 'module', dependencies };
-  writeFileSync(join(directory, 'package.json'), JSON.stringify(withChordOverride(manifest)));
+  writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest));
   const packages = {};
   const include = (name, parent = '') => {
     let path = `${parent}/node_modules/${name}`.replace(/^\//, '');

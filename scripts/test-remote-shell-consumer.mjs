@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { withChordOverride } from './consumer-install.mjs';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,7 +33,7 @@ try {
   // undici-types imports "buffer"; pin it locally so ancestor node_modules cannot satisfy the isolated consumer.
   dependencies.buffer = sourceLock.packages['node_modules/buffer'].version;
   const manifest = { name: 'isolated-remote-shell-consumer', version: '1.0.0', private: true, type: 'module', dependencies };
-  writeFileSync(join(directory, 'package.json'), JSON.stringify(withChordOverride(manifest)));
+  writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest));
   const packages = {};
   const include = (name, parent = '') => {
     let path = `${parent}/node_modules/${name}`.replace(/^\//, '');
