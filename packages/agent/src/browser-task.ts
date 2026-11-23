@@ -1,5 +1,5 @@
 // @hachej/boring-agent/browser-task: a native Pi tool that hands a task to the person's open page and waits, durably, for the page's
-// structured answer: the same wait as `ask_user` (./durable-wait.ts) with a JSON object for an answer instead of a short text.
+// structured answer: the same park as `ask_user` (./call-binding.ts) with a JSON object for an answer instead of a short text.
 // The page finds the pending call in the conversation it already watches (the tool call with no result yet), does the task with
 // the person (for example a live preview of a change, `browser_preview` in `@hachej/boring-feedback/agent`) and answers through the same
 // authenticated path as a question: the chat transport's `?op=answer`, with the call's `[assistantEntryId, callId]` binding.
@@ -8,7 +8,7 @@ import { defineDocFamily, defineTool } from '@earendil-works/pi-durable';
 import type { Conversation, JsonObject, TaskId, ToolRegistration } from '@earendil-works/pi-durable';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import type { Context } from '@earendil-works/chord/context';
-import { AmbiguousCall, UnknownCall, callBinding, callBindingId, ownBindingKey, waitForDocument } from './durable-wait.js';
+import { AmbiguousCall, CallSettled, UnknownCall, callBinding, callBindingId, ownBindingKey } from './call-binding.js';
 import type { AskUserAnswer } from './ask-user.js';
 
 /** Upper bound on an answer's UTF-8 JSON, by default. */
@@ -52,22 +52,24 @@ export function createBrowserTaskTool<P extends object>(options: BrowserTaskOpti
     description: options.description,
     parameters: options.parameters,
     replay: 'safe',
-    // The wait binds to the calling model entry and call id; a nested `api.executeTool` caller has neither (see durable-wait.ts).
+    // The wait binds to the calling model entry and call id; a nested `api.executeTool` caller has neither (see call-binding.ts).
     callers: ['model'],
+    cancel: async (_args, api, context) => {
+      await api.commit(async tx => {
+        const { task } = await tx.doc(documents, api.conversationId, await ownBindingKey(tx, api), null);
+        if (task?.state.kind === 'pending') task.state = { kind: 'cancelled' };
+      }, context);
+    },
     execute: async (_args, api, context) => {
-      const key = await api.commit(async tx => {
+      const { key, state } = await api.commit(async tx => {
         const key = await ownBindingKey(tx, api);
         const document = await tx.doc(documents, api.conversationId, key, null);
         if (!document.task) document.task = { tool: options.name, taskId: api.taskId, state: { kind: 'pending' } };
         if (document.task.taskId !== api.taskId) throw new Error('Browser task identity belongs to another task');
-        return key;
+        return { key, state: JSON.parse(JSON.stringify(document.task.state)) as typeof document.task.state };
       }, context);
-      const final = await waitForDocument(api, documents, key, context, value => value?.task?.state.kind !== 'pending', async tx => {
-        const { task } = await tx.doc(documents, api.conversationId, key, null);
-        if (task?.state.kind === 'pending') task.state = { kind: 'cancelled' };
-      }, 'Browser task');
-      const state = final?.task?.state;
-      if (state?.kind !== 'answered') throw new Error('Browser task cancelled');
+      if (state.kind === 'pending') return { sleep: { signals: [CallSettled.key(key)] } };
+      if (state.kind !== 'answered') throw new Error('Browser task cancelled');
       return { output: [{ type: 'text', text: JSON.stringify(state.answer) }] };
     },
   });
@@ -105,6 +107,7 @@ export async function answerBrowserTask(conversation: Conversation, tool: Pick<B
       if (task.state.status === 'terminal') { record.state = { kind: 'cancelled' }; return { kind: 'conflict', reason: 'The browser task was cancelled' }; }
       const problem = tool.checkAnswer(parsed);
       if (problem) return { kind: 'denied', reason: problem };
+      if (await tx.signal(task.id, CallSettled, binding.key, {}) === 'closed') return { kind: 'conflict', reason: 'The browser task was cancelled' };
       record.state = { kind: 'answered', answer: parsed };
       return { kind: 'answered' };
     }, context) as AskUserAnswer;
