@@ -1,5 +1,7 @@
 # Unreleased
 
+- **The kit runs on Pi 1.6.0 (`@earendil-works/pi-durable`, `pi-ai`, `pi-schema`, `chord`, `pi-codemode`, `pi-mcp`; no code change in the kit; the chat wire is unchanged).** The peer ranges are `~1.6.0`; upgrade the kit's packages and Pi together (`docs/compatibility/PI-DURABLE.md`). A database a 1.6.0 Harness writes (`pi.tool` version 4, `pi.generation` version 3) is not meant to be opened by an older Harness. chord 1.6.0 widens its `react` peer to `^19.3.0`, so the `overrides` entry for chord's `react` is no longer needed. An app's own code changes only where it uses what 1.6.0 renamed or removed: `RunEndTask`/`runEndTask` are `HookTask`/`hookTask`, a tool's `execute()` may return a park, `until` is optional on sleeping task states, and code-mode `namespaces`/`prefix` give way to `Extension.namespace`.
+
 # Migrating to 0.5.24
 
 - **`inline-question`, `kpi-stat`, `expert-overview`: Studio tasks parts (additive).** `InlineQuestion` takes `detail` (one muted line of why under the question) and `tone="info"` (the blue tint, beside `attention`). `KpiStat` takes `trend` (readings, drawn as a sparkline; fewer than two draw nothing) and `trendLabel`. `expert-overview` now exports `SegmentBar` (`segments`, `current`, `label`, `turn`), the bar `ExpertTrack` draws, with a segment's `detail` shown on hover only. Every prop is optional and today's markup is unchanged without them. Re-run `npx boring-ui-blocks add inline-question kpi-stat expert-overview` to pick them up; nothing else to change.

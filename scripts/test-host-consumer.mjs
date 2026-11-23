@@ -1,4 +1,4 @@
-// What a consumer installs: a plain `npm install` (no flag, no override) of the packed agent and files packages next to pi 1.5.2.
+// What a consumer installs: a plain `npm install` (no flag, no override) of the packed agent and files packages next to pi 1.6.0.
 // One folder also installs Domain, effect and alchemy and uses `@hachej/boring-agent/host` and `/host-runtime`; the other has none of the three and uses `/agents`.
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';

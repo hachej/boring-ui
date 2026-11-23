@@ -24,7 +24,7 @@ The agent runs on Pi (`@earendil-works/pi-durable`). The app's server opens Pi's
 
 ## Packages
 
-Keep all `@hachej/boring-*` packages on the same version. Pi packages are peers pinned to `~1.5.2`.
+Keep all `@hachej/boring-*` packages on the same version. Pi packages are peers pinned to `~1.6.0`.
 
 | Package | Use it for |
 | --- | --- |

@@ -93,8 +93,8 @@
   },
   "peerDependencies": {
     "isomorphic-git": "^1.42.6",
-    "@earendil-works/pi-durable": "~1.5.2",
-    "@earendil-works/chord": "~1.5.2"
+    "@earendil-works/pi-durable": "~1.6.0",
+    "@earendil-works/chord": "~1.6.0"
   },
   "peerDependenciesMeta": {
     "isomorphic-git": {

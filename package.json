@@ -137,12 +137,12 @@
   "devDependencies": {
     "@aws-sdk/client-bedrock-agentcore": "3.1161.0",
     "@base-ui/react": "1.9.0",
-    "@earendil-works/chord": "1.5.2",
-    "@earendil-works/pi-ai": "1.5.2",
-    "@earendil-works/pi-codemode": "1.5.2",
-    "@earendil-works/pi-durable": "1.5.2",
-    "@earendil-works/pi-mcp": "1.5.2",
-    "@earendil-works/pi-schema": "1.5.2",
+    "@earendil-works/chord": "1.6.0",
+    "@earendil-works/pi-ai": "1.6.0",
+    "@earendil-works/pi-codemode": "1.6.0",
+    "@earendil-works/pi-durable": "1.6.0",
+    "@earendil-works/pi-mcp": "1.6.0",
+    "@earendil-works/pi-schema": "1.6.0",
     "@excalidraw/excalidraw": "0.18.1",
     "@json-render/core": "0.21.4",
     "@json-render/react": "0.21.4",
@@ -212,13 +212,10 @@
     "jose": "6.2.12"
   },
   "overrides": {
-    "@earendil-works/pi-durable": "1.5.2",
-    "@earendil-works/pi-ai": "1.5.2",
-    "@earendil-works/chord": {
-      ".": "1.5.2",
-      "react": "$react"
-    },
-    "@earendil-works/pi-schema": "1.5.2",
+    "@earendil-works/pi-durable": "1.6.0",
+    "@earendil-works/pi-ai": "1.6.0",
+    "@earendil-works/chord": "1.6.0",
+    "@earendil-works/pi-schema": "1.6.0",
     "undici": "7.30.1",
     "@sveltejs/kit": "3.2.0",
     "agents": {

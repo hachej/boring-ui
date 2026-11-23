@@ -616,9 +616,9 @@
         "react@^19.0.0",
         "react-dom@^19.0.0",
         "@base-ui/react@1.9.0",
-        "@earendil-works/pi-durable@~1.5.2",
-        "@earendil-works/chord@~1.5.2",
-        "@earendil-works/pi-ai@~1.5.2",
+        "@earendil-works/pi-durable@~1.6.0",
+        "@earendil-works/chord@~1.6.0",
+        "@earendil-works/pi-ai@~1.6.0",
         "@modelcontextprotocol/sdk@^1.32.2",
         "@shadcn/react@0.3.1",
         "zod@^4.6.5"
@@ -1097,7 +1097,7 @@
       "dependencies": [
         "@hachej/boring-ui-kit@^0.5.24",
         "react@^19.0.0",
-        "@earendil-works/pi-ai@~1.5.2"
+        "@earendil-works/pi-ai@~1.6.0"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.24/r/pi-chat.json",
@@ -1120,7 +1120,7 @@
       "dependencies": [
         "@hachej/boring-ui-kit@^0.5.24",
         "react@^19.0.0",
-        "@earendil-works/pi-ai@~1.5.2"
+        "@earendil-works/pi-ai@~1.6.0"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.24/r/pi-chat.json",
@@ -1188,7 +1188,7 @@
       "description": "The card for a tool call that ran a sub-agent (`delegate`, and the run card of a started run). Plug it in with `cards={{ subagent: subagentCard }}`; without it the call is an ordinary tool step.",
       "dependencies": [
         "react@^19.0.0",
-        "@earendil-works/pi-ai@~1.5.2"
+        "@earendil-works/pi-ai@~1.6.0"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.24/r/pi-chat.json",
@@ -1215,8 +1215,8 @@
       "dependencies": [
         "@hachej/boring-ui-kit@^0.5.24",
         "react@^19.0.0",
-        "@earendil-works/pi-ai@~1.5.2",
-        "@earendil-works/pi-durable@~1.5.2"
+        "@earendil-works/pi-ai@~1.6.0",
+        "@earendil-works/pi-durable@~1.6.0"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.24/r/pi-chat.json",
@@ -1280,8 +1280,8 @@
         "@hachej/boring-ui-kit@^0.5.24",
         "react@^19.0.0",
         "react-dom@^19.0.0",
-        "@earendil-works/pi-durable@~1.5.2",
-        "@earendil-works/pi-ai@~1.5.2"
+        "@earendil-works/pi-durable@~1.6.0",
+        "@earendil-works/pi-ai@~1.6.0"
       ],
       "registryDependencies": [
         "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.24/r/pi-chat.json",
@@ -3814,7 +3814,7 @@
       "dependencies": [
         "@hachej/boring-ui-kit@^0.5.24",
         "@hachej/boring-feedback@^0.5.24",
-        "@earendil-works/pi-durable@~1.5.2",
+        "@earendil-works/pi-durable@~1.6.0",
         "react@^19.0.0",
         "react-dom@^19.0.0"
       ],

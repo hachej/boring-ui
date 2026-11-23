@@ -235,12 +235,12 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "peerDependencies": {
-    "@earendil-works/pi-durable": "~1.5.2",
-    "@earendil-works/pi-ai": "~1.5.2",
-    "@earendil-works/chord": "~1.5.2",
+    "@earendil-works/pi-durable": "~1.6.0",
+    "@earendil-works/pi-ai": "~1.6.0",
+    "@earendil-works/chord": "~1.6.0",
     "@hachej/boring-files": "^0.5.24",
     "@hachej/boring-ui-kit": "^0.5.24",
-    "@earendil-works/pi-schema": "~1.5.2",
+    "@earendil-works/pi-schema": "~1.6.0",
     "xlsx": "^0.20.3"
   },
   "peerDependenciesMeta": {

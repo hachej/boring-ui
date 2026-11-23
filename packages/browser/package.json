@@ -47,10 +47,10 @@
     }
   },
   "peerDependencies": {
-    "@earendil-works/pi-durable": "1.5.2",
-    "@earendil-works/pi-ai": "1.5.2",
-    "@earendil-works/chord": "1.5.2",
-    "@earendil-works/pi-codemode": "1.5.2",
+    "@earendil-works/pi-durable": "1.6.0",
+    "@earendil-works/pi-ai": "1.6.0",
+    "@earendil-works/chord": "1.6.0",
+    "@earendil-works/pi-codemode": "1.6.0",
     "@hachej/boring-files": "0.5.24",
     "@sqlite.org/sqlite-wasm": "3.53.4-build2",
     "buffer": "6.0.3"

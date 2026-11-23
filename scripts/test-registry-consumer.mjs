@@ -1,4 +1,4 @@
-import { addAppComponents, appComponents, appComponentsJson, workspaceDirectory, registryPin, registryItemName, serveRegistry, withChordOverride } from './consumer-install.mjs';
+import { addAppComponents, appComponents, appComponentsJson, workspaceDirectory, registryPin, registryItemName, serveRegistry } from './consumer-install.mjs';
 import semver from 'semver';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -82,7 +82,7 @@ try {
   // The SQLite workspace host loads Pi's portable env entry at runtime (the optional files peer); nothing else of Pi.
   dependencies['@earendil-works/pi-durable'] = JSON.parse(readFileSync(join(root, 'packages/files/package.json'), 'utf8')).peerDependencies['@earendil-works/pi-durable'];
   const manifest = { name: 'isolated-registry-consumer', version: '1.0.0', private: true, type: 'module', dependencies };
-  writeFileSync(join(directory, 'package.json'), JSON.stringify(withChordOverride(manifest)));
+  writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest));
   const packages = {};
   const include = (name, parent = '') => {
     let path = `${parent}/node_modules/${name}`.replace(/^\//, '');
@@ -255,7 +255,7 @@ controller.flush(controller.actions.selection());
     }
     for (const [path, entry] of Object.entries(packages)) if (path && !installedLock.packages[path]) installedLock.packages[path] = entry;
     installedLock.packages[''].dependencies = installedManifest.dependencies;
-    writeFileSync(join(directory, 'package.json'), JSON.stringify(withChordOverride(installedManifest)));
+    writeFileSync(join(directory, 'package.json'), JSON.stringify(installedManifest));
     writeFileSync(join(directory, 'package-lock.json'), JSON.stringify(installedLock));
     run('npm', ['install', '--package-lock-only', ...npmInstallFlags(cache)]);
     run('npm', ['ci', ...npmInstallFlags(cache)]);
