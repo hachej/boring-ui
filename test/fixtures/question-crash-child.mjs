@@ -24,7 +24,7 @@ if (phase === 'hold') {
   if (state === 'consumed') await consume(ref, 'report-one');
   if (state === 'pending') {
     harness.resume();
-    while ((await harness.getTask(ref.taskId, context)).state.status !== 'running') await delay(5);
+    while ((await harness.getTask(ref.taskId, context)).state.status !== 'sleeping') await delay(5);
   }
   const task = await harness.getTask(ref.taskId, context);
   writeFileSync(join(directory, 'ready.json'), JSON.stringify({ ref, task }));

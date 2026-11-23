@@ -26,7 +26,7 @@ for (const state of ['pending', 'resolved', 'consumed']) test(`native question s
   ]);
   const marker = JSON.parse(readFileSync(join(directory, 'ready.json'), 'utf8'));
   assert.equal(marker.task.state.checkpoint.phase, 'wait');
-  assert.equal(marker.task.state.status, state === 'pending' ? 'running' : 'pending');
+  assert.equal(marker.task.state.status, state === 'pending' ? 'sleeping' : 'pending');
   assert.equal(existsSync(join(directory, 'recovered.json')), false);
   first.child.kill('SIGKILL');
   assert.deepEqual(await first.terminal, { code: null, signal: 'SIGKILL' });
