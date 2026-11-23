@@ -1,5 +1,11 @@
 # Unreleased
 
+# Migrating to 0.5.23
+
+- **`agent-card`: `notch` and `cite` (additive).** `notch={false}` draws no controller strip under the card (default `true`, unchanged). `cite` takes a node, usually `<CiteButton reference={…} />` from `app-shell`: a small @ at the card's top right, on hover (always on touch), that references the card in the page's composer. Existing cards are unchanged; re-run `boring-ui-blocks update agent-card` to take it.
+
+- **`app-shell`: `headerAgent` and `agentNav` (additive).** `headerAgent={false}` removes the assistant icon from the screen header (default `true`). `agentNav="above-bottom"` puts the left bar's assistant entry above the nav items placed after the screen's content (default `end`, below them). Defaults are unchanged; re-run `boring-ui-blocks update app-shell` to take them.
+
 # Migrating to 0.5.22
 
 - **`pi-chat`, `agent-bar`: the chips above the text stop at three rows and scroll (fix; nothing to change).** Many attached files (90 PDFs) pushed the input off the screen. The chip list is now `max-h-32` with a vertical scroll; the composer's chip row carries `data-testid="composer-chips"`. `boring-ui-blocks update` brings it.

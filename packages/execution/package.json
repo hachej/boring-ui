@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-execution",
-  "version": "0.5.22",
+  "version": "0.5.23",
   "license": "MIT",
   "private": false,
   "type": "module",
@@ -60,7 +60,7 @@
     "@earendil-works/chord": "~1.5.2",
     "just-bash": "^3.6.0",
     "isomorphic-git": "^1.42.6",
-    "@hachej/boring-files": "^0.5.22",
+    "@hachej/boring-files": "^0.5.23",
     "zod": "^4.6.5",
     "@aws-sdk/client-bedrock-agentcore": "^3.1146.0"
   },
