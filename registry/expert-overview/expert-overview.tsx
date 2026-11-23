@@ -175,6 +175,41 @@ export function ExpertOverview({ heading, intro, needsYou, apps, done, calm, lab
   );
 }
 
+export type SegmentBarSegment = {
+  /** Shown with `detail`, on hover or focus only. */
+  label?: string;
+  detail?: string;
+};
+
+export type SegmentBarProps = {
+  segments: readonly SegmentBarSegment[];
+  /** Segments before this index are done; the one at this index is in progress. */
+  current: number;
+  /** Names the bar to a screen reader. Without it the bar is decoration (the host says the progress in words). */
+  label?: string;
+  /** Who acts at `current`: the person (warning tone), the agents (muted), or nobody (the border colour, the default). */
+  turn?: 'person' | 'agents' | 'nobody';
+  className?: string;
+};
+
+/** A thin progress bar in equal segments. Four segments use the four calm step colours; any other count uses the info colour. A segment's `label` and `detail` appear in a small note on hover or keyboard focus, never in the layout. */
+export function SegmentBar({ segments, current, label, turn = 'nobody', className }: SegmentBarProps) {
+  return (
+    <span role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true} className={cn('grid gap-1', className)} style={{ gridTemplateColumns: `repeat(${Math.max(segments.length, 1)}, minmax(0, 1fr))` }}>
+      {segments.map((segment, index) => {
+        const tone = segments.length === STEP_COUNT ? STEP_TONES[index]?.bar : 'bg-info';
+        const note = [segment.label, segment.detail].filter(Boolean).join(': ');
+        return (
+          <span key={index} className="group/segment relative">
+            <span data-segment={index} className={cn('block h-1.5 rounded-(--radius)', index < current ? tone : index === current && turn === 'person' ? 'bg-warning-soft' : index === current && turn === 'agents' ? 'bg-muted-foreground' : 'bg-border')} />
+            {note ? <span data-segment-detail aria-hidden className="pointer-events-none absolute bottom-full left-0 z-10 mb-1 w-max max-w-48 rounded-(--radius) bg-popover px-2 py-1 text-xs text-popover-foreground opacity-0 shadow-md transition-opacity duration-(--duration-fast) group-hover/segment:opacity-100 motion-reduce:transition-none">{note}</span> : null}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 function Track({ feature, labels }: { feature: ExpertFeature; labels: ExpertOverviewLabels }) {
   const { title, status, reached, turn, line, action, onOpen } = feature;
   // Spans only, so the same body can sit inside the row's Button when `onOpen` is given (a Button may not hold a div).
@@ -184,11 +219,7 @@ function Track({ feature, labels }: { feature: ExpertFeature; labels: ExpertOver
         <span className="min-w-0 text-base font-semibold [overflow-wrap:anywhere]">{title}</span>
         <span className={cn('shrink-0 text-sm', turn === 'person' ? 'text-warning-soft-foreground' : 'text-muted-foreground')}>{status}</span>
       </span>
-      <span aria-hidden className="grid grid-cols-4 gap-1">
-        {Array.from({ length: STEP_COUNT }, (_, index) => (
-          <span key={index} data-segment={index} className={cn('h-1.5 rounded-(--radius)', index < reached ? STEP_TONES[index]?.bar : index === reached && turn === 'person' ? 'bg-warning-soft' : index === reached && turn === 'agents' ? 'bg-muted-foreground' : 'bg-border')} />
-        ))}
-      </span>
+      <SegmentBar segments={Array.from({ length: STEP_COUNT }, () => ({}))} current={reached} turn={turn} />
       {line ? <span className={quiet}>{line}</span> : null}
     </>
   );

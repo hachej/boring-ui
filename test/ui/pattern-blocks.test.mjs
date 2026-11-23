@@ -20,6 +20,8 @@ import { kpiChange, KpiStat, KpiRow } from '${join(root, 'registry/kpi-stat/kpi-
 import { SidebarList } from '${join(root, 'registry/sidebar-list/sidebar-list.tsx')}';
 import { SidebarProvider } from '${join(root, 'examples/app-shell/components/ui/sidebar.tsx')}';
 import { ListRow } from '${join(root, 'registry/list-row/list-row.tsx')}';
+import { InlineQuestion } from '${join(root, 'registry/inline-question/inline-question.tsx')}';
+import { SegmentBar } from '${join(root, 'registry/expert-overview/expert-overview.tsx')}';
 import { EmptyState } from '${join(root, 'registry/empty-state/blank-state.tsx')}';
 import { PageHeader } from '${join(root, 'registry/page-header/page-header.tsx')}';
 import { DataTable } from '${join(root, 'registry/data-table/data-table.tsx')}';
@@ -30,6 +32,11 @@ export const html = {
   row: () => renderToStaticMarkup(h(KpiRow, null, h(KpiStat, { label: 'A', value: '1' }))),
   listSelect: () => renderToStaticMarkup(h(ListRow, { title: 'Invoice 12', subtitle: 'Paid', trailing: '€40', onSelect: () => {} })),
   listStatic: () => renderToStaticMarkup(h(ListRow, { title: 'Invoice 12' })),
+  listActive: (props) => renderToStaticMarkup(h(ListRow, { title: 'Invoice 12', ...props })),
+  listAction: (props) => renderToStaticMarkup(h(ListRow, { title: 'Invoice 12', onSelect: () => {}, action: h('button', { 'aria-label': 'Cite' }, 'c'), ...props })),
+  statTrend: (props) => renderToStaticMarkup(h(KpiStat, { label: 'Quotes', value: '17', ...props })),
+  question: (props) => renderToStaticMarkup(h(InlineQuestion, { id: 'q', kind: 'question', text: 'Quel format ?', onAnswer: () => {}, ...props })),
+  segments: (props) => renderToStaticMarkup(h(SegmentBar, { segments: [{ label: 'Shape', detail: 'criteria agreed' }, {}, {}, {}], current: 1, ...props })),
   sidebarList: (expanded) => renderToStaticMarkup(h(SidebarProvider, null, h(SidebarList, {
     label: 'Clients', action: { label: 'New client', icon: () => h('i'), onSelect: () => {} }, expanded,
     items: [
@@ -105,6 +112,74 @@ test('ListRow with onSelect is a button, a static row is not', () => {
   assert.match(html.listSelect(), /truncate/);
   assert.doesNotMatch(html.listStatic(), /<button/);
   assert.match(html.listStatic(), /hover:bg-accent/);
+});
+
+test('ListRow active marks the current row with aria-current and the selected wash, and is off by default', () => {
+  for (const props of [{}, { onSelect: () => {} }]) {
+    const on = html.listActive({ ...props, active: true });
+    assert.match(on, /aria-current="true"/);
+    assert.match(on, /(?<![:\w-])bg-accent/);
+    assert.doesNotMatch(html.listActive(props), /aria-current/);
+  }
+  assert.match(html.listSelect(), /Invoice 12/);
+});
+
+test('ListRow action sits beside the row button, never inside it, and shows on hover, focus and touch', () => {
+  const markup = html.listAction();
+  const row = markup.match(/<button[^>]*data-slot="button"[^>]*>[\s\S]*?<\/button>/)[0];
+  assert.doesNotMatch(row, /aria-label="Cite"/, 'the action is not inside the row button');
+  assert.match(markup, /data-testid="list-row-action"[^>]*>.*aria-label="Cite"/);
+  assert.match(markup, /opacity-0/);
+  assert.match(markup, /group-hover\/list-row:opacity-100/);
+  assert.match(markup, /pointer-coarse:opacity-100/);
+  assert.match(html.listAction({ onSelect: undefined }), /Invoice 12/);
+  assert.doesNotMatch(html.listAction({ onSelect: undefined }), /<button[^>]*data-slot="button"/, 'a static row with an action stays static');
+  const active = html.listAction({ active: true });
+  assert.match(active, /aria-current="true"/);
+  assert.match(active, /(?<![:\w-])bg-accent/);
+  assert.doesNotMatch(html.listSelect(), /list-row-action/, 'no action, no wrapper');
+});
+
+test('InlineQuestion detail is one muted line under the question', () => {
+  assert.doesNotMatch(html.question(), /question-detail/);
+  const markup = html.question({ detail: 'Le client attend ce soir.' });
+  assert.match(markup, /data-testid="question-detail"[^>]*>Le client attend ce soir\./);
+  assert.match(markup, /text-muted-foreground[^"]*"[^>]*>Le client/);
+  assert.ok(markup.indexOf('question-text') < markup.indexOf('question-detail'));
+});
+
+test('InlineQuestion info tone is the blue tint, with the chip; attention and neutral are unchanged', () => {
+  const info = html.question({ tone: 'info' });
+  assert.match(info, /bg-info-soft/);
+  assert.match(info, /text-info-soft-foreground/);
+  assert.doesNotMatch(info, /bg-warning-soft/);
+  assert.match(info, /bg-card px-2/);
+  assert.match(html.question({ tone: 'attention' }), /bg-warning-soft/);
+  assert.doesNotMatch(html.question(), /bg-info-soft|bg-warning-soft/);
+});
+
+test('KpiStat trend draws a sparkline only for two readings or more', () => {
+  assert.doesNotMatch(html.statTrend(), /<svg/);
+  assert.doesNotMatch(html.statTrend({ trend: [3] }), /<svg/);
+  assert.doesNotMatch(html.statTrend({ trend: [Number.NaN, 2] }), /<svg/);
+  const markup = html.statTrend({ trend: [1, 3, 2, 5] });
+  assert.match(markup, /data-testid="kpi-trend"/);
+  assert.match(markup, /aria-hidden="true"/);
+  assert.match(markup, /points="0,22 33.3,12 66.7,17 100,2"/);
+  const said = html.statTrend({ trend: [1, 2], trendLabel: 'Rising over 7 days' });
+  assert.match(said, /role="img"[^>]*aria-label="Rising over 7 days"|aria-label="Rising over 7 days"[^>]*role="img"/);
+  assert.match(html.statTrend({ trend: [4, 4, 4] }), /points="0,12 50,12 100,12"/, 'a flat series sits mid-height');
+});
+
+test('SegmentBar is exported with segments, current and label, and shows detail only on hover', () => {
+  const markup = html.segments({ label: 'Step 2 of 4' });
+  assert.match(markup, /role="img"[^>]*aria-label="Step 2 of 4"|aria-label="Step 2 of 4"[^>]*role="img"/);
+  assert.equal((markup.match(/data-segment="/g) ?? []).length, 4);
+  assert.match(markup, /bg-info[^-]/);
+  assert.match(markup, /data-segment-detail[^>]*>Shape: criteria agreed/);
+  assert.match(markup, /opacity-0[^"]*group-hover\/segment:opacity-100/);
+  assert.match(html.segments(), /aria-hidden="true"/, 'without a label the bar is decoration');
+  assert.equal((html.segments({ segments: [{}, {}, {}], current: 3 }).match(/bg-info/g) ?? []).length, 3, 'three segments use the info colour');
 });
 
 test('EmptyState renders a plain column with its hint and action, no dashed border', () => {

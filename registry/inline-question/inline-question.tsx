@@ -14,8 +14,8 @@ export type DecisionValue = (typeof DECISION_VALUES)[number];
 /** A `decision` is a gate or a review: approve or refuse. A `question` takes a choice or free text. */
 export type InlineQuestionKind = 'decision' | 'question';
 
-/** `neutral` is flat; `attention` is the warning tint. */
-export type InlineQuestionTone = 'neutral' | 'attention';
+/** `neutral` is flat; `attention` is the warning tint; `info` is the calm blue tint for a question that is not urgent. */
+export type InlineQuestionTone = 'neutral' | 'attention' | 'info';
 
 export type InlineQuestionLabels = { decision: string; question: string; approve: string; refuse: string; send: string; placeholder: string; placeholderMore: string; replyInChat: string; approved: string; refused: string; answered: string };
 
@@ -35,6 +35,8 @@ export type InlineQuestionProps = {
   text: string;
   /** Who is asking (an agent or a gate), shown small above the question. */
   source?: string;
+  /** One line of why, in muted small text under the question. Not shown once answered. */
+  detail?: string;
   /** A `question` with options offers up to four one-tap choices plus a free-text field; without options it is free text only. A `decision` ignores them. A choice is its text, or `{ label, recommended }`; the answer is always the text. All choices are outline buttons; only the first one marked `recommended` is the primary button (never by position). */
   options?: readonly (string | InlineQuestionOption)[];
   /** Most one-tap choices shown (default 4). A longer list is a form, not an inline question. */
@@ -52,7 +54,7 @@ export type InlineQuestionProps = {
   /** Opens the full chat for a longer reply. Shown only when given. */
   onReplyInChat?: () => void;
   labels?: Partial<InlineQuestionLabels>;
-  /** Attention is for gates or critical items only. Default `neutral`. */
+  /** `attention` is for gates or critical items only; `info` is the blue tint for a question that waits calmly. Default `neutral`. */
   tone?: InlineQuestionTone;
   className?: string;
 };
@@ -60,11 +62,12 @@ export type InlineQuestionProps = {
 const tap = 'min-h-11 md:min-h-8';
 
 /** A waiting question shown where it is mentioned. No border. `tone="neutral"` (default) is flat: no fill, no padding, foreground text, so a list of routine questions stays quiet. `tone="attention"` is a soft warning tint with padding and a chip on the kind label, for a gate or a critical item. */
-export function InlineQuestion({ id, kind, text, source, options, answered, onAnswer, onReplyInChat, labels, className, tone = 'neutral', maxOptions = 4, freeText = true, disabled = false, notice }: InlineQuestionProps) {
+export function InlineQuestion({ id, kind, text, source, detail, options, answered, onAnswer, onReplyInChat, labels, className, tone = 'neutral', maxOptions = 4, freeText = true, disabled = false, notice }: InlineQuestionProps) {
   const t = { ...inlineQuestionLabels, ...labels };
   const [draft, setDraft] = useState('');
   const decision = kind === 'decision';
   const attention = tone === 'attention';
+  const tinted = attention || tone === 'info';
   const shown = (options ?? []).slice(0, maxOptions).map(option => typeof option === 'string' ? { value: option, label: option, recommended: false } : { value: option.label, label: option.label, recommended: option.recommended === true });
   const choices: readonly { value: string; label: string; primary: boolean }[] = decision
     ? [{ value: DECISION_VALUES[0], label: t.approve, primary: true }, { value: DECISION_VALUES[1], label: t.refuse, primary: false }]
@@ -74,22 +77,23 @@ export function InlineQuestion({ id, kind, text, source, options, answered, onAn
   if (answered !== undefined) {
     const said = decision && answered === 'approve' ? t.approved : decision && answered === 'refuse' ? t.refused : `${t.answered}: ${answered}`;
     return (
-      <div role="group" aria-label={text} className={cn('flex min-w-0 flex-col gap-1 text-muted-foreground', attention && 'p-3', className)}>
+      <div role="group" aria-label={text} className={cn('flex min-w-0 flex-col gap-1 text-muted-foreground', tinted && 'p-3', className)}>
         <div className="flex items-start gap-2 text-sm font-medium"><CheckIcon aria-hidden className="mt-0.5 size-4 shrink-0" /><span>{text}</span></div>
         <span className="text-xs">{said}</span>
       </div>
     );
   }
   return (
-    <div role="group" aria-label={text} className={cn('flex min-w-0 flex-col gap-2', attention ? 'rounded-(--radius) bg-warning-soft p-3 text-warning-soft-foreground' : 'text-foreground', className)}>
+    <div role="group" aria-label={text} className={cn('flex min-w-0 flex-col gap-2', attention ? 'rounded-(--radius) bg-warning-soft p-3 text-warning-soft-foreground' : tone === 'info' ? 'rounded-(--radius) bg-info-soft p-3 text-info-soft-foreground' : 'text-foreground', className)}>
       <div className="flex min-w-0 items-center gap-2 text-xs">
-        <span className={attention ? 'rounded-(--radius) bg-card px-2 text-card-foreground' : 'text-muted-foreground'}>{decision ? t.decision : t.question}</span>
+        <span className={tinted ? 'rounded-(--radius) bg-card px-2 text-card-foreground' : 'text-muted-foreground'}>{decision ? t.decision : t.question}</span>
         {source ? <span className="truncate opacity-80">{source}</span> : null}
       </div>
       <div className="flex min-w-0 items-start gap-2 text-sm font-medium">
         <MessageCircleQuestionIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
         <span data-testid="question-text" className="min-w-0 [overflow-wrap:anywhere]">{text}</span>
       </div>
+      {detail ? <p data-testid="question-detail" className={cn('text-xs [overflow-wrap:anywhere]', tinted ? 'opacity-80' : 'text-muted-foreground')}>{detail}</p> : null}
       {choices.length > 0 || onReplyInChat ? (
         <div className="flex flex-wrap gap-1">
           {choices.map(choice => (

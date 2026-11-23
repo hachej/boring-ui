@@ -3957,6 +3957,7 @@
       "name": "kpi-stat",
       "type": "registry:component",
       "title": "KPI stat and row",
+      "docs": "Example: <KpiStat label=\"Quotes made\" value=\"17\" trend={[14, 12, 15, 11, 13, 10, 9]} trendLabel=\"Steady over 7 days\" />. `trend` draws a small line scaled to its own range; fewer than two readings draw nothing.",
       "description": "A muted label, a title-size value in tabular mono numerals and an optional delta (up in success, down in destructive; an unchanged value shows none). `KpiRow` is the one surface that holds a row of stats.",
       "dependencies": [
         "react@^19.0.0"
@@ -3977,6 +3978,7 @@
       "name": "list-row",
       "type": "registry:component",
       "title": "List row",
+      "docs": "Example: <ListRow title=\"Customer quote as a PDF\" subtitle=\"To try\" active={selected === id} onSelect={() => open(id)} action={<CiteButton reference={ref} />} />. `active` sets aria-current and the selected wash; `action` sits beside the row button, never inside it.",
       "description": "A row with a leading slot, a title, a muted subtitle and a trailing slot. Hover wash, no separator lines, 44px touch target on phones, truncation instead of wrapping.",
       "dependencies": [
         "react@^19.0.0"
@@ -4032,6 +4034,7 @@
       "name": "inline-question",
       "type": "registry:component",
       "title": "Inline question",
+      "docs": "Example: <InlineQuestion id=\"q1\" kind=\"question\" tone=\"info\" text=\"Which format first?\" detail=\"The client is waiting for a quote.\" options={['PDF', 'Word']} freeText={false} onAnswer={answer} />. `detail` is one muted line of why; `tone=\"info\"` is the blue tint.",
       "description": "A waiting question shown where it is mentioned. A decision (gate or review) is approve or refuse; a question takes up to four choices or free text. Props only: the host posts the answer under the signed-in person's own login. Soft info or warning tint while waiting, a muted answered state, 44px targets on phones.",
       "dependencies": [
         "react@^19.0.0"
@@ -4130,6 +4133,7 @@
       "name": "expert-overview",
       "type": "registry:component",
       "title": "Expert overview",
+      "docs": "Also exports SegmentBar, a thin progress bar. Example: <SegmentBar label=\"Step 2 of 4\" current={1} turn=\"agents\" segments={[{ label: 'Shape', detail: 'Criteria agreed' }, { label: 'Build' }, { label: 'Test' }, { label: 'Live' }]} />. A segment's label and detail show on hover only.",
       "description": "What needs a busy person and what the agents are doing, on one quiet page: at most three plain sentences that need them (one gesture each, a quiet Later on a question), one line per app, finished work folded, and a four-step track per app. A calm state when nothing needs them, and no counts of agent work, badges or red. Props only: the app writes every sentence, count and day; the block fetches nothing and reads no clock.",
       "dependencies": [
         "react@^19.0.0"
