@@ -34,23 +34,24 @@ export function ListRow({ title, subtitle, leading, trailing, onSelect, active, 
   // The Button keeps the app's ghost wash on hover; the static row adds the same wash itself.
   const wash = active ? 'bg-accent' : 'hover:bg-accent';
   const current = active ? ('true' as const) : undefined;
-  if (action) {
-    // The wash and `className` move to the wrapper so the action sits on the row; the row's own hover wash is cleared.
+  if (action || (active && onSelect)) {
+    // The wash and `className` live on a wrapper (the Button's own classes stay layout-only), so the action sits on the row.
+    const pad = action ? 'pr-11' : undefined;
     const row = onSelect ? (
-      <Button variant="ghost" className={cn(box, 'h-auto justify-start pr-11 hover:bg-transparent aria-expanded:bg-transparent')} aria-current={current} onClick={onSelect}>{content}</Button>
+      <Button variant="ghost" className={cn(box, 'h-auto justify-start', pad)} aria-current={current} onClick={onSelect}>{content}</Button>
     ) : (
-      <div aria-current={current} className={cn(box, 'pr-11')}>{content}</div>
+      <div aria-current={current} className={cn(box, pad)}>{content}</div>
     );
     return (
       <div data-testid="list-row" className={cn('group/list-row relative min-w-0 rounded-(--radius)', wash, className)}>
         {row}
-        <div data-testid="list-row-action" className="absolute top-1/2 right-1 z-10 -translate-y-1/2 opacity-0 transition-opacity duration-(--duration-fast) group-hover/list-row:opacity-100 group-focus-within/list-row:opacity-100 has-[[data-cited]]:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none">{action}</div>
+        {action ? <div data-testid="list-row-action" className="absolute top-1/2 right-1 z-10 -translate-y-1/2 opacity-0 transition-opacity duration-(--duration-fast) group-hover/list-row:opacity-100 group-focus-within/list-row:opacity-100 has-[[data-cited]]:opacity-100 pointer-coarse:opacity-100 motion-reduce:transition-none">{action}</div> : null}
       </div>
     );
   }
   if (onSelect) {
     return (
-      <Button variant="ghost" className={cn(box, 'h-auto justify-start', active && 'bg-accent', className)} aria-current={current} onClick={onSelect}>
+      <Button variant="ghost" className={cn(box, 'h-auto justify-start', className)} onClick={onSelect}>
         {content}
       </Button>
     );
