@@ -8,8 +8,9 @@ import { Experience } from '@hachej/boring-ui-kit/experience';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { Dock, DockLayout, DockMain, useDock } from '../../registry/dock/dock.tsx';
 import { ArtifactWorkspace } from '../../registry/pi-workspace/workspace.tsx';
-// The demo stays on the old window (`AmbientWindow`, what `AmbientChat` rendered for its props before the one composer took them): its journey drives that window's own controls.
-import { AmbientWindow as AmbientChat } from '../../registry/pi-ambient/ambient-window.tsx';
+import { FloatingComposer } from '../../registry/app-shell/floating-composer.tsx';
+import { FLOATING_COMPOSER_PRESET } from '../../registry/app-shell/composer-config.ts';
+import { useAgentLayer } from '../../registry/app-shell/agent-layer.tsx';
 import { useRemoteChat } from '@hachej/boring-ui-kit/chat-react';
 import { VoiceInput } from '../../registry/pi-chat-voice/voice-input.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
@@ -272,6 +273,24 @@ function Column({ view }) {
 const PANEL = 560; // the file viewer's width beside the chat
 const transcribe = async (audio: Blob, signal: AbortSignal) => (await (await authorized(new Request(at('/api/transcribe'), { method: 'POST', headers: { 'content-type': audio.type || 'audio/webm' }, body: audio, signal }))).json()).text ?? '';
 
+/** The floating chat: the one composer, open on first show, its place kept across visits. */
+const FLOATING_OPEN = { ...FLOATING_COMPOSER_PRESET, defaultLevel: 'open', at: { remember: 'local' } } as const;
+
+/** Inside the composer's layer: the open file's viewer is the pane's one entry; closing the pane (the viewer's own Close, or the pane's) closes the file in the app. */
+function FilePane({ path, view, onClosed }) {
+  const { pane } = useAgentLayer();
+  const shown = useRef<string | undefined>(undefined), seen = useRef(false);
+  useEffect(() => {
+    if (path && shown.current !== path) { shown.current = path; seen.current = false; pane.push({ title: path.split('/').at(-1) ?? path, content: view, frame: false }); requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid=composer-pane] [data-testid=library-document]')?.focus({ preventScroll: true }))); }
+    else if (!path && shown.current) { shown.current = undefined; if (pane.depth > 0) pane.close(); }
+  }, [path, view, pane]);
+  useEffect(() => {
+    if (pane.depth > 0) seen.current = true;
+    else if (seen.current && shown.current) { seen.current = false; shown.current = undefined; void onClosed(); }
+  }, [pane.depth, onClosed]);
+  return null;
+}
+
 function Chat({ api, provider, file, openFile, closeFile, setUnsaved, setBeforeLeave, active, conversations, feed }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const base = useRef(620), widened = useRef(false);
@@ -281,7 +300,7 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, setBeforeL
   // The agent area widens by the viewer's width while a file is open beside the chat, and goes back when it closes.
   if (api.placement === 'docked' && !file && !widened.current) base.current = api.width;
   const side = api.placement === 'docked' && Boolean(file);
-  const replaceChat = Boolean(file) && (api.floating || isMobile);
+  const replaceChat = Boolean(file) && isMobile && !api.floating;
   // History: the kit's side column in page and docked placements wide enough for it, the popover or sheet otherwise.
   const history = useHistoryColumn({ id: 'agent-history-column', storageKey: 'workspace-demo.history-column', conversations, enabled: !api.floating && !isMobile, beside: file ? PANEL : 0, title: 'Conversations' });
   useEffect(() => {
@@ -293,6 +312,10 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, setBeforeL
     const composer = document.querySelector<HTMLTextAreaElement>('[data-dock=chat] [data-testid=composer-input]');
     if (composer?.checkVisibility()) composer.focus({ preventScroll: true });
   }, [api.placement, file, chat.status]);
+  const tools = useMemo(() => voice ? <VoiceInput controller={chat.controller} transcribe={transcribe} /> : undefined, [chat.controller]);
+  const chatProps = useMemo(() => ({ actions: chat.actions, tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: openFile, fileChanges: true,
+    labels: { title: 'AP helper', placeholder: 'Ask about your payables…', emptyDescription: 'Review an invoice, check the policy, or ask what needs your approval.' } }), [chat.actions, tools, attachments, openFile]);
+  const agent = useMemo(() => ({ controller: chat.controller, label: 'AP helper', chatProps }), [chat.controller, chatProps]);
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
   const headerActions = [
     { id: 'navigation', label: 'Open navigation', icon: MenuIcon, onSelect: () => setOpenMobile(true) },
@@ -303,20 +326,21 @@ function Chat({ api, provider, file, openFile, closeFile, setUnsaved, setBeforeL
     { id: 'dock', label: 'Dock beside app', icon: PanelLeftIcon, onSelect: api.dock },
   ] : headerActions;
   const barTools = <ChatTools conversations={conversations} provider={provider} file={file} openFile={openFile} feed={feed} column={history.toggle} />;
-  const tools = voice ? <VoiceInput controller={chat.controller} transcribe={transcribe} /> : undefined;
-  const common = { controller: chat.controller, actions: chat.actions, headerActions, className: '[&_[data-action=navigation]]:md:hidden', tools, ...(attachments ? { attachments, pasteToFile: {} } : {}), onOpenFile: openFile, fileChanges: true };
   const viewer = file && provider ? <Document path={file} provider={provider} close={closeFile} onBack={replaceChat ? closeFile : undefined} onUnsaved={setUnsaved} setBeforeLeave={setBeforeLeave} /> : null;
   const header = <div data-testid="agent-panel-header" className="pi-chat flex h-14 shrink-0 items-center gap-0.5 px-3 text-foreground [&_button]:min-h-11 [&_button]:min-w-11">
     <h2 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">AP helper</h2>
     {barTools}<BlockActions actions={placementActions} testId="chat-action" menuLabel="More actions" className="[&_[data-action=navigation]]:md:hidden" />
   </div>;
+  // Floating, a file opens in the composer's own pane beside the window (a full-screen sheet on a phone); in the page and docked placements it is the workspace's file column.
   const conversation = <div hidden={replaceChat} inert={replaceChat} className={cn('min-h-0 flex-1 flex-col', replaceChat ? 'hidden' : 'flex')}>
-    <AmbientChat key={active} {...common} headerTools={api.floating ? barTools : undefined} embedded={!api.floating} variant="surface" defaultState="expanded" labels={{ title: 'AP helper', placeholder: 'Ask about your payables…', empty: 'Review an invoice, check the policy, or ask what needs your approval.' }} onDock={() => { api.dock(); api.setWidth(base.current); }} />
+    <FloatingComposer key={active} agent={agent} appId="workspace-demo" {...(api.floating ? { composer: FLOATING_OPEN, headerTools: barTools, headerActions, onDock: () => { api.dock(); api.setWidth(base.current); } } : { embedded: true })}>
+      {api.floating && viewer ? <FilePane path={file} view={viewer} onClosed={closeFile} /> : <FilePane path={undefined} view={null} onClosed={closeFile} />}
+    </FloatingComposer>
   </div>;
-  return <div ref={history.ref} data-history={history.column ? 'column' : undefined} className="flex min-h-0 min-w-0 flex-1">
+  return <div ref={history.ref} data-testid="chat-root" data-conversation={active} data-history={history.column ? 'column' : undefined} className="flex min-h-0 min-w-0 flex-1">
     {history.column}
     <FloatingViewer active={replaceChat} header={!api.floating && !replaceChat ? header : null}>
-    <ArtifactWorkspace chat={conversation} open={Boolean(file)} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={replaceChat ? 0 : 360} minChat={replaceChat ? 0 : 360} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset"
+    <ArtifactWorkspace chat={conversation} open={Boolean(file) && !api.floating} panel={viewer} onClose={closeFile} sheetBelow={0} minPanel={replaceChat ? 0 : 360} minChat={replaceChat ? 0 : 360} defaultWidth={PANEL} storageKey="workspace-demo.file-panel" panelLabel="File viewer" variant="inset"
       className={cn('bg-transparent', replaceChat && '[&>[data-testid=workspace-chat]]:hidden [&>[data-testid=workspace-divider]]:hidden [&>[data-testid=workspace-panel]]:!m-0 [&>[data-testid=workspace-panel]]:!w-full [&>[data-testid=workspace-panel]]:flex-1')} />
     </FloatingViewer>
   </div>;

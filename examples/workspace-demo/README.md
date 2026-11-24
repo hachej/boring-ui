@@ -5,7 +5,7 @@ Harbor & Pine Foods is a fictional company with 20 invoices, seven suppliers and
 ## The flow
 
 1. Click **Agent**. One `ArtifactWorkspace` fills the content area with its conversation and file column. The app stays mounted but hidden.
-2. Ask "what needs my approval this week?" The agent's `show` tool opens Approvals in the app and floats the same conversation as `AmbientChat`.
+2. Ask "what needs my approval this week?" The agent's `show` tool opens Approvals in the app and floats the same conversation as `FloatingComposer`.
 3. Dock the agent beside the app, or click **Agent** to return to its page. The controller, transcript, composer draft and open file survive without a conversation remount.
 4. Open an invoice to inspect its PDF and extracted fields. The agent can identify the duplicate, read the AP policy and propose a re-code. An approval card asks the person before the backend conditionally saves the decision and returns a receipt.
 5. While floating on a supplier page, ask "why is this flagged?" The agent answers without moving the page.
@@ -23,10 +23,10 @@ Voice is available only when the server has a transcription provider. A private 
 ## Composition
 
 - `Dock` controls placement only. [The Dock guide](../../registry/README.md#docks-dock) owns its API; [PAGE-TOOLS.md](../../docs/architecture/PAGE-TOOLS.md) owns the request-context role. Page reports `docked` because the agent leads.
-- One `ArtifactWorkspace` contains one `AmbientChat`, embedded for page and docked layouts. The renderer and the current file stay mounted across placement changes.
+- One `ArtifactWorkspace` contains one `FloatingComposer`, embedded for page and docked layouts. The renderer and the current file stay mounted across placement changes.
 - The same arrangement for an app shell (the Agent as a tab, collapsed beside the app, the shell's own drawer on a phone) is packaged as `PlacedAgentWorkspace` ([registry guide](../../registry/README.md#placed-agent-placed-agent-placedagentworkspace)); this demo keeps its own Dock composition, and `npm run app-shell:journey:placed` drives the packaged one at 1440 and 390 (`examples/app-shell/journey-placed.mjs`).
 - Every app screen is a fixed Experience over registered cells with schemas, state bindings, named actions and metadata in `cells.mjs`. `finance.tsx` renders flat metrics, searchable invoice and approval tables, the supplier directory and budget progress. No table dependency is needed.
-- `AmbientChat.headerTools` supplies the floating top-bar popovers. The embedded header uses the same `ChatTools` component.
+- `FloatingComposer headerTools` supplies the floating top-bar popovers. The embedded header uses the same `ChatTools` component.
 - The shared compact viewer header keeps Back, the file title, editing controls, and overflow in one row inside the inset card. Metadata appears on hover. Phone editing controls move into overflow; the file covers the chat without replacing its mount. Library and History use bottom drawers on phones.
 - The invoice buttons and the agent's `decide_invoice` tool call the same conditional backend operation in `ap.mjs`. Stale reviewed revisions are refused; repeating an accepted decision returns its receipt.
 - This is host presentation and fictional app policy, not a new Pi execution mechanism. Pi retains the native Harness and tools.

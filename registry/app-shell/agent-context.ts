@@ -23,14 +23,20 @@ export function useScreenActive(): boolean { return useContext(ScreenActiveConte
 /** The mounted provider's store, for `readAgentContext` (the transport option has no React context to read). */
 let current: Store | null = null;
 
-/** Holds the screens' contexts. `AgentLayerProvider` mounts one. */
+/**
+ * Holds the screens' contexts. `AgentLayerProvider` mounts one. Inside another provider it shares that one's store, so an app that keeps its own provider around its screens and mounts
+ * the standalone `FloatingComposer` beside them still has its screens read by `readAgentContext`.
+ */
 export function AgentContextProvider({ children }: { readonly children: ReactNode }) {
-  const [store] = useState<Store>(() => ({ entries: [], looking: [] }));
+  const outer = useContext(StoreContext);
+  const [own] = useState<Store>(() => ({ entries: [], looking: [] }));
+  const store = outer ?? own;
   useLayoutEffect(() => {
+    if (outer) return; // the outer provider owns the registry `readAgentContext` reads
     const mine = store;
     current = mine;
     return () => { if (current === mine) current = null; };
-  }, [store]);
+  }, [store, outer]);
   return createElement(StoreContext.Provider, { value: store }, children);
 }
 

@@ -6,7 +6,7 @@
 import { useMemo } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { useArtifactFollow } from '@hachej/boring-ui-kit/chat-react';
-import { ExternalLinkIcon, PanelLeftIcon } from '../_shared/icons';
+import { CircleIcon, ExternalLinkIcon, PanelLeftIcon } from '../_shared/icons';
 import { PiChat } from '../pi-chat/pi-chat';
 import { withChatPlugins } from '../pi-chat-plugins/chat-plugins';
 import type { ReplyRef } from '../pi-chat/config';
@@ -26,8 +26,8 @@ export interface FloatingHostProps {
   readonly embedded?: boolean | undefined;
   /** Host-owned controls in the window's title row (for example an icon-anchored popover), before the actions. */
   readonly headerTools?: ReactNode;
-  /** Host actions in the window's title row: two shown, the rest in « … ». */
-  readonly headerActions?: readonly ScreenHeaderAction[] | undefined;
+  /** Host actions in the window's title row: two shown, the rest in « … ». An action with no `icon` shows its label (as `AmbientChat`'s did). */
+  readonly headerActions?: readonly (Omit<ScreenHeaderAction, 'icon'> & { readonly icon?: ScreenHeaderAction['icon'] | undefined })[] | undefined;
   /** Adds « Dock chat » to the window's title row, for a host that floats this conversation out of a docked chat (the controller is shared, nothing is lost). */
   readonly onDock?: (() => void) | undefined;
   /** Adds « Open in full chat » to the window's title row: hand the conversation to the host's full chat. */
@@ -52,7 +52,7 @@ export function useHostedSpec(agent: AgentSpec, host: Host): AgentSpec {
     if (!given) return agent;
     const text = shellWords(locale ?? agent.chatProps?.locale, agent);
     const conversationId = () => String(agent.chatProps?.conversations?.activeId ?? agent.controller.getSnapshot().conversationId);
-    const actions: ScreenHeaderAction[] = [...(agent.headerActions ?? []), ...(headerActions ?? []),
+    const actions: ScreenHeaderAction[] = [...(agent.headerActions ?? []), ...(headerActions ?? []).map(action => action.icon ? action as ScreenHeaderAction : { ...action, icon: CircleIcon as ScreenHeaderAction['icon'], showLabel: 'always' as const }),
       ...(onOpenFull ? [{ id: 'open-full', label: text.openFull, icon: ExternalLinkIcon, onSelect: () => onOpenFull(conversationId()) }] : []),
       ...(onDock ? [{ id: 'dock', label: text.dockChat, icon: PanelLeftIcon, onSelect: onDock }] : [])];
     const replyFooter = withReplyFeedback(onFeedback, text, agent.chatProps?.replyFooter as ((reply: ReplyRef) => ReactNode) | undefined);

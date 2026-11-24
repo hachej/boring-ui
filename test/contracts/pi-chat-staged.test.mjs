@@ -9,8 +9,8 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const source = process.env.STAGED_SOURCE_ROOT ?? root;
 const out = `${root}.cache/pi-chat-staged-test`;
 mkdirSync(out, { recursive: true });
-await build({ stdin: { contents: `export { PiChat } from '${source}registry/pi-chat/pi-chat'; export { readChatPlacement } from '@hachej/boring-ui-kit/chat-react'; export { AmbientChat } from '${source}registry/pi-ambient/ambient';`, resolveDir: root, loader: 'tsx' }, outfile: `${out}/chat.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
-const { PiChat, AmbientChat, readChatPlacement } = await import(pathToFileURL(`${out}/chat.mjs`).href);
+await build({ stdin: { contents: `export { PiChat } from '${source}registry/pi-chat/pi-chat'; export { readChatPlacement } from '@hachej/boring-ui-kit/chat-react'; export { FloatingChat } from '${root}test/fixtures/floating-chat';`, resolveDir: root, loader: 'tsx' }, outfile: `${out}/chat.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
+const { PiChat, FloatingChat, readChatPlacement } = await import(pathToFileURL(`${out}/chat.mjs`).href);
 const assistant = (text, durationMs = 10, extra = {}) => ({ role: 'assistant', content: text === null ? [] : [{ type: 'text', text }], api: 'fictional', provider: 'fictional', model: 'fictional', usage: {}, stopReason: 'stop', timestamp: 1, durationMs, ...extra });
 const entry = (id, message) => ({ id, kind: 'message', byTaskId: id, model: [message] });
 const question = entry(1, { role: 'user', content: 'Quelle dose pour un adulte ?', timestamp: 0 });
@@ -53,6 +53,13 @@ test('two PiChat controllers isolate draft, status, placement and transcript nod
   assert.equal(readChatPlacement(a), 'docked'); assert.equal(readChatPlacement(b), 'floating');
   await f.render(f.h(PiChat, { controller: b, placement: 'floating' }));
   assert.equal(readChatPlacement(a), undefined); assert.equal(readChatPlacement(b), 'floating');
+});
+
+test('the standalone floating composer reports its open chat as floating (the model is told where it is shown)', async t => {
+  const f = await fixture(t), floating = controller('Questions');
+  await f.render(f.h(FloatingChat, { controller: floating }));
+  assert.ok(f.element.querySelector('[data-boring="pi-chat"]'), 'the conversation is open');
+  assert.equal(readChatPlacement(floating), 'floating');
 });
 
 test('inline stage entries preserve one answer, filtered copy/actions and summed rounds including empty rounds', async t => {
@@ -120,11 +127,11 @@ test('historical offers are opt-in, unread is host-owned, history is filtered an
   assert.equal(c.getSnapshot().view.entries.length, 32); assert.equal(c.getSnapshot().history.entries.length, 2);
 });
 
-test('PiChat and AmbientChat tailor one native error without losing duration metadata', async t => {
+test('PiChat and the floating composer tailor one native error without losing duration metadata', async t => {
   const f = await fixture(t), c = controller('Questions', { entries: [question, entry(2, assistant('Note conservée.', 1600)), entry(3, assistant(null, 15, { stopReason: 'error', errorMessage: 'Private traceback' }))], docs: {} });
-  for (const Surface of [PiChat, AmbientChat]) {
+  for (const Surface of [PiChat, FloatingChat]) {
     let received;
-    await f.render(f.h(Surface, { controller: c, state: 'expanded', presentation: 'natural', replyError: reply => { received = reply; return 'La note précédente reste disponible.'; }, unread: () => f.h('span', { 'data-testid': 'attached-unread' }, 'Non lu') }));
+    await f.render(f.h(Surface, { controller: c, presentation: 'natural', replyError: reply => { received = reply; return 'La note précédente reste disponible.'; }, unread: () => f.h('span', { 'data-testid': 'attached-unread' }, 'Non lu') }));
     const row = f.element.querySelector('[data-role="assistant"]');
     assert.equal(row.querySelectorAll('[role="alert"]').length, 1);
     assert.equal(row.querySelector('[data-testid="response-error"]').textContent, 'La note précédente reste disponible.');
@@ -136,17 +143,26 @@ test('PiChat and AmbientChat tailor one native error without losing duration met
 
 test('unread is attached in a start-aligned reply slot on both chat surfaces', async t => {
   const f = await fixture(t), c = controller('Questions', { entries: [question, entry(2, assistant('Note.', 8))], docs: {} });
-  for (const Surface of [PiChat, AmbientChat]) {
-    await f.render(f.h(Surface, { controller: c, state: 'expanded', unread: () => f.h('span', { 'data-testid': 'attached-unread' }, 'Non lu') }));
+  for (const Surface of [PiChat, FloatingChat]) {
+    await f.render(f.h(Surface, { controller: c, unread: () => f.h('span', { 'data-testid': 'attached-unread' }, 'Non lu') }));
     const unread = f.element.querySelector('[data-role="assistant"] [data-testid="attached-unread"]');
     assert.equal(unread.parentElement.dataset.testid, 'reply-unread');
     assert.ok(unread.parentElement.classList.contains('items-start'));
   }
 });
 
-test('AmbientChat forwards staged filtering, unread and duration seams', async t => {
+test('the floating composer shows the host reply footer under a settled reply, as PiChat does', async t => {
+  const f = await fixture(t), c = controller('Questions', { entries: [question, entry(2, assistant('Note.', 77))], docs: {} });
+  for (const Surface of [PiChat, FloatingChat]) {
+    await f.render(f.h(Surface, { controller: c, replyFooter: reply => f.h('small', { 'data-testid': 'host-footer' }, String(reply.durationMs)) }));
+    assert.equal(f.element.querySelector('[data-testid="host-footer"]')?.textContent, '77', Surface === PiChat ? 'PiChat' : 'the floating composer');
+  }
+});
+
+test('The floating composer forwards staged filtering, unread and duration seams', async t => {
   const f = await fixture(t), c = controller('Senior', { entries: [question, entry(2, assistant('Note\n::meta {}', 4)), stage(3), entry(4, assistant('Suite', 6))], docs: {} });
-  await f.render(f.h(AmbientChat, { controller: c, state: 'expanded', hideLine: line => line.startsWith('::meta'), unread: () => f.h('span', { 'data-testid': 'ambient-unread' }, 'Non lu'), renderEntry: value => value.kind === 'fictional.stage' ? { inline: true, content: f.h('span', null, 'Validé') } : undefined, replyFooter: reply => f.h('span', { 'data-testid': 'ambient-duration' }, reply.durationMs) }));
+  await f.render(f.h(FloatingChat, { controller: c, hideLine: line => line.startsWith('::meta'), unread: () => f.h('span', { 'data-testid': 'ambient-unread' }, 'Non lu'), renderEntry: value => value.kind === 'fictional.stage' ? { inline: true, content: f.h('span', null, 'Validé') } : undefined, replyFooter: reply => f.h('span', { 'data-testid': 'ambient-duration' }, reply.durationMs) }));
   assert.doesNotMatch(f.element.textContent, /::meta/); assert.ok(f.element.querySelector('[data-testid="ambient-unread"]'));
   assert.equal(f.element.querySelector('[data-testid="ambient-duration"]').textContent, '10');
+
 });

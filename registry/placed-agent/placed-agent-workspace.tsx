@@ -1,7 +1,7 @@
 'use client';
 
 // PlacedAgentWorkspace: the demo's arrangement over ONE controller. The agent is a page (`AgentWorkspace`, the app's « Agent » tab) or
-// collapsed beside the app: on a wide screen a floating `AmbientChat`, on a phone inside an app shell the shell's own bottom drawer (the
+// collapsed beside the app: on a wide screen a floating `FloatingComposer`, on a phone inside an app shell the shell's own bottom drawer (the
 // controller is lent to the shell's agent layer, `useAgentLoan`). Pi owns the conversation (the controller holds the draft and the rows);
 // this is host layout only, so no second chat state exists. The page stays mounted (hidden) while collapsed, so its open file survives.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -11,7 +11,9 @@ import { Maximize2Icon, PictureInPicture2Icon } from '../_shared/icons';
 import { Button } from '@/components/ui/button';
 import { AgentWorkspace } from '../pi-app/agent-workspace';
 import type { AgentWorkspaceProps, OpenedView } from '../pi-app/agent-workspace';
-import { AmbientChat, usePhone } from '../pi-ambient/ambient';
+import { usePhone } from '../utils/use-media';
+import { FloatingComposer } from '../app-shell/floating-composer';
+import { FLOATING_COMPOSER_PRESET } from '../app-shell/composer-config';
 import { useAgentLoan } from '../app-shell/agent-layer';
 import type { AgentSpec } from '../app-shell/agent-layer';
 import { cn } from '../utils/utils';
@@ -57,6 +59,9 @@ export function usePlacedAgentState(storageKey: string): readonly [boolean, (col
   return [collapsed, change];
 }
 
+/** The floating form: the one composer, open on first show, its place kept across visits (`local`). */
+const FLOATING_OPEN = { ...FLOATING_COMPOSER_PRESET, defaultLevel: 'open', at: { remember: 'local' } } as const;
+
 export function PlacedAgentWorkspace(props: PlacedAgentWorkspaceProps) {
   const { placement = 'tab+ambient', collapsed: controlled, onCollapsedChange, storageKey = 'boring.agent-workspace', controller, chat, locale, controls, opened: openedProp, defaultOpened = null, onOpenedChange, ...rest } = props;
   const [remembered, remember] = usePlacedAgentState(storageKey);
@@ -97,10 +102,11 @@ export function PlacedAgentWorkspace(props: PlacedAgentWorkspaceProps) {
   const barControls = (state: { readonly panelOpen: boolean }): ReactNode => <>{typeof controls === 'function' ? controls(state) : controls}{collapseButton}</>;
 
   const floating = mode === 'ambient' && !drawer && controller;
+  const floatingAgent = useMemo<AgentSpec | undefined>(() => controller ? { controller, chatProps: chatProps as AgentSpec['chatProps'] } : undefined, [controller, chatProps]);
   return <PlacedContext.Provider value={api}>
     <div data-testid="placed-agent" data-mode={mode} hidden={mode === 'ambient'} inert={mode === 'ambient'} className={cn('h-full min-h-0 min-w-0 flex-1', mode === 'ambient' ? 'hidden' : 'flex')}>
       <AgentWorkspace {...rest} {...(controller ? { controller } : {})} {...(chat ? { chat } : {})} {...(locale ? { locale } : {})} storageKey={storageKey} opened={opened} onOpenedChange={setOpened} controls={barControls} />
     </div>
-    {floating && createPortal(<AmbientChat key={rest.conversationId} {...chatProps} controller={controller} variant="surface" defaultState="expanded" storageKey={`${storageKey}.ambient`} storage="local" onDock={expand} />, document.body)}
+    {floating && floatingAgent && createPortal(<FloatingComposer key={rest.conversationId} agent={floatingAgent} appId={`${storageKey}.ambient`} composer={FLOATING_OPEN} onDock={expand} />, document.body)}
   </PlacedContext.Provider>;
 }

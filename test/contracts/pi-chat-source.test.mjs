@@ -498,19 +498,6 @@ test('earlier records use normal message components and footer without reviving 
 });
 
 
-test('the expanded ambient window shows the host reply footer under a settled reply', async () => {
-  const { AmbientWindow: AmbientChat } = await load('ambient', 'ambient-window.tsx', 'pi-ambient');
-  const view = { entries: entries([user('go')], [assistant([{ type: 'text', text: 'all done' }], { model: 'amb', timestamp: 9, durationMs: 77 })]), docs: {} };
-  const snapshot = { identity: {}, conversationId: 'c1', connection: { kind: 'connected' }, view, draft: { text: '', attachments: [], version: 0 }, outbox: [], history: { kind: 'disabled' },
-    send: { kind: 'idle' }, stop: 'idle', disposed: false };
-  const controller = new Proxy({ getSnapshot: () => snapshot, subscribe: () => () => {} }, { get: (target, key) => key in target ? target[key] : async () => {} });
-  const seen = [];
-  const html = renderToStaticMarkup(createElement(AmbientChat, { controller, state: 'expanded', replyFooter: reply => { seen.push(reply); return createElement('small', { 'data-testid': 'footer' }, `${reply.model.modelId} ${reply.durationMs}`); } }));
-  assert.match(html, /data-testid="footer">amb 77</);
-  assert.equal(seen[0].text, 'all done');
-  assert.ok(!renderToStaticMarkup(createElement(AmbientChat, { controller, state: 'expanded' })).includes('data-testid="footer"'));
-});
-
 test('audio extensions use the audio kind without changing ordinary file classification', async () => {
   const { fileKind, isVoicePath } = await load('voice-config', 'config.ts');
   for (const extension of ['webm', 'ogg', 'm4a', 'mp4', 'mp3', 'wav']) assert.equal(fileKind(`uploads/voice-20261020-101500.${extension}`), 'audio');

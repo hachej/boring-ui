@@ -11,7 +11,8 @@ import { defaultKinds } from '../../registry/pi-app-kinds/pi-app-kinds.ts';
 import { AgentWorkspace, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { createRecordsKind } from '../../registry/record-viewer/records-kind.tsx';
-import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
+import { FloatingComposer } from '../../registry/app-shell/floating-composer.tsx';
+import { FLOATING_COMPOSER_PRESET } from '../../registry/app-shell/composer-config.ts';
 import { Button } from '@/components/ui/button';
 import { GroupOneControls } from '../../test/fixtures/themes/group-one.jsx';
 import { ViewerChromeControls } from '../../test/fixtures/themes/viewer-chrome.jsx';
@@ -77,6 +78,9 @@ function useConfiguration(log) {
   }, [log]);
 }
 
+/** The floating chat: the one composer, open on first show, its place kept across visits. */
+const FLOATING_OPEN = { ...FLOATING_COMPOSER_PRESET, defaultLevel: 'open', at: { remember: 'local' } };
+
 function App() {
   const [selected, setSelected] = useState();
   const [logged, setLogged] = useState([]);
@@ -99,8 +103,8 @@ function App() {
   // The app's records kind (`?records=fr`) first, then the default list with the comment pins.
   const kinds = useMemo(() => [...(recordKinds ?? []), ...defaultKinds({ locale })], [recordKinds, locale]);
   // Configured: the chat can float over the panel (its "…" menu offers "Pop out chat"); the floating bar carries the dock action.
-  const floating = configured ? { floatBelow: 320, floatingChat: ({ headerStart, historyList, emptyState, decisions, controls, className, ...props }, dock) =>
-    <AmbientChat {...props} headerActions={config.dockActions} variant="surface" defaultState="expanded" onDock={dock} /> } : {};
+  const floating = configured ? { floatBelow: 320, floatingChat: ({ headerStart, historyList, emptyState, decisions, controls, className, controller, ...chatProps }, dock) =>
+    <FloatingComposer agent={{ controller, chatProps }} appId="workspace-app" composer={FLOATING_OPEN} headerActions={config.dockActions} onDock={dock} /> } : {};
   return <main data-testid="app" data-conversation={active} data-configured={configured || undefined} className="flex h-full min-h-0">
     {revisionProvider ? <AgentWorkspace locale={locale} artifactKinds={kinds} conversationId={active} controller={chat.status === 'ready' ? chat.controller : undefined} conversations={conversations}
       {...(resourcesOnly ? { resources: { endpoint: at('/api/resources'), fetch: authorized, identity, history: at('/api/history') } } : { revisionProvider })} {...(embedded ? { layout: 'embedded', ...(appTitle ? { title: appTitle } : {}) } : {})}

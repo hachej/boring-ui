@@ -18,6 +18,13 @@ const placement = `${q('[data-dock=chat]')}?.dataset.placement`;
 const INPUT = q('[data-testid=composer-input]');
 const body = `document.body.innerText`;
 const viewing = `${q('[data-testid=viewing]')}?.textContent`;
+// The floating composer: its frame, and its level (the icon, the open window, or the bar). A file opens in its pane beside the window.
+const FLOAT = q('[data-testid=composer-floating]');
+const LEVEL = `(${q('[data-testid=composer-icon]')} ? 'minimized' : ${q('[data-testid=agent-tray-header]')} ? 'expanded' : ${FLOAT} ? 'bar' : null)`;
+const PANE = '[data-testid=composer-pane]';
+// What must survive a change of placement (the conversation remounts between the page and the floating window; its controller keeps the rest): the draft, the distance from the bottom of the
+// transcript, and the current conversation.
+const SNAP = `(() => { const t = ${q('[data-testid=transcript-scroll]')}; return { draft: ${q('[data-testid=composer-input]')}?.value, fromBottom: t ? Math.round(t.scrollHeight - t.scrollTop - t.clientHeight) : null, conversation: ${q('[data-testid=chat-root]')}?.dataset.conversation }; })()`;
 
 const app = await startWorkspaceDemo({ directory: mkdtempSync(join(tmpdir(), 'boring-workspace-demo-')) });
 const { connectRevisionProvider } = await import('@hachej/boring-files/revision');
@@ -46,7 +53,7 @@ try {
     await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: process.env.APP_SCHEME ?? 'light' }] });
   };
   const phoneNavigationShots = async mode => {
-    const selector = `[data-testid=${mode === 'floating' ? 'ambient' : 'chat'}-action-navigation]`;
+    const selector = `[data-testid=${mode === 'floating' ? 'agent-layer-action' : 'chat-action'}-navigation]`;
     for (const [width, height] of [[360, 780], [390, 844]]) {
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: true });
       for (const scheme of ['light', 'dark']) {
@@ -55,7 +62,7 @@ try {
         await browser.evaluate(`${q(selector)}.blur()`);
         await browser.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: width / 2, y: 60 });
         await pause(250);
-        const style = await browser.evaluate(`(() => { const e = ${q(selector)}, r = e.getBoundingClientRect(), css = getComputedStyle(e), icon = e.querySelector('svg'); const title = e.closest('header, [data-testid=agent-panel-header]')?.querySelector('h2, [data-testid=ambient-title]')?.getBoundingClientRect(); return { slot: e.dataset.slot, background: css.backgroundColor, border: css.borderTopWidth, borderColor: css.borderTopColor, width: r.width, height: r.height, icon: icon.getBoundingClientRect().width, stroke: getComputedStyle(icon).strokeWidth, aligned: !!title && Math.abs(r.top + r.height / 2 - title.top - title.height / 2) <= 1 }; })()`);
+        const style = await browser.evaluate(`(() => { const e = ${q(selector)}, r = e.getBoundingClientRect(), css = getComputedStyle(e), icon = e.querySelector('svg'); const title = e.closest('header, [data-testid=agent-panel-header], [data-testid=agent-layer-header]')?.querySelector('h2')?.getBoundingClientRect(); return { slot: e.dataset.slot, background: css.backgroundColor, border: css.borderTopWidth, borderColor: css.borderTopColor, width: r.width, height: r.height, icon: icon.getBoundingClientRect().width, stroke: getComputedStyle(icon).strokeWidth, aligned: !!title && Math.abs(r.top + r.height / 2 - title.top - title.height / 2) <= 1 }; })()`);
         assert.deepEqual(style, { slot: 'button', background: 'rgba(0, 0, 0, 0)', border: '1px', borderColor: 'rgba(0, 0, 0, 0)', width: 44, height: 44, icon: 16, stroke: '2px', aligned: true }, `${mode} ${width} ${scheme}`);
         await shot(`phone-navigation-${mode}-${width}-${scheme}.png`);
       }
@@ -84,6 +91,22 @@ try {
       assert.ok(chatGeometry.composerBottom >= chatGeometry.panelBottom - 140, `the docked chat fills the available height beside its file: ${JSON.stringify(chatGeometry)}`);
     }
   };
+  // Dock chat is one of the window's title-row actions, or in its « … » menu when the row is full.
+  const dockFromFloat = async () => {
+    if (!(await browser.evaluate(`!!${q('[data-testid=agent-layer-action-dock]')}?.checkVisibility()`))) await browser.click(q('[data-testid=agent-layer-more]'));
+    await browser.click(q('[data-testid=agent-layer-action-dock]'));
+  };
+  // Opens the floating chat's window from its bar or its icon.
+  const openChat = async () => {
+    if (await browser.evaluate(`${LEVEL} === 'minimized'`)) await browser.click(q('[data-testid=composer-icon]'));
+    if (await browser.evaluate(`${LEVEL} === 'bar'`)) await browser.click(q('[data-testid=agent-bar-conversation]'));
+    await browser.until('the window is open', `!!${q('[data-testid=agent-tray-header]')}`, 5000);
+  };
+  // Folds the floating chat out of the way: the window to its bar, the phone's sheet closed.
+  const collapseChat = async () => {
+    if (await browser.evaluate(`!!${q('[data-testid=agent-tray-header]')}`)) await browser.click(q('[data-testid=agent-tray-reduce]'));
+    else if (await browser.evaluate(`!!${q('[data-testid=agent-layer-close]')}?.checkVisibility()`)) await browser.click(q('[data-testid=agent-layer-close]'));
+  };
   const say = async text => { await browser.until('the composer', `!!${INPUT}`, 20000); await browser.type(INPUT, text); await browser.press('Enter'); };
   const sees = (label, text, timeout = 30000) => browser.until(label, `${body}.includes(${JSON.stringify(text)})`, timeout);
   const click = (label, expression) => browser.click(expression).then(() => label);
@@ -93,7 +116,7 @@ try {
   const screenOf = value => ({ name: value.name, params: value.params });
   const navigation = async () => {
     if (await browser.evaluate(`innerWidth < 768 && !${q('[data-sidebar=sidebar][data-mobile=true]')}`)) {
-      await browser.click(`${q('[data-testid=ambient-action-navigation]')}?.checkVisibility() ? ${q('[data-testid=ambient-action-navigation]')} : ${q('[data-sidebar=trigger]')}`);
+      await browser.click(`${q('[data-testid=agent-layer-action-navigation]')}?.checkVisibility() ? ${q('[data-testid=agent-layer-action-navigation]')} : ${q('[data-sidebar=trigger]')}`);
       await browser.until('mobile navigation is open and its buttons have stopped moving', `(() => { const nav = ${q('[data-sidebar=sidebar][data-mobile=true]')}; return nav && !nav.hasAttribute('data-starting-style') && nav.getAnimations({ subtree: true }).every(animation => animation.playState !== 'running'); })()`, 5000);
     }
   };
@@ -124,7 +147,7 @@ try {
     assert.equal(await browser.evaluate('document.activeElement?.dataset.testid'), testId);
   };
   const dockAgent = async () => {
-    if (await browser.evaluate(placement) === 'floating') await browser.click(q('[data-testid=ambient-dock]'));
+    if (await browser.evaluate(placement) === 'floating') await dockFromFloat();
     await browser.until('docked', `${placement} === 'docked'`, 10000);
   };
   const floatAgent = async () => {
@@ -189,7 +212,7 @@ try {
     await browser.until('Library returns focus to its icon', `!${q('[data-testid=library-popover]')} && document.activeElement?.dataset.testid === 'chat-action-library'`, 5000);
     await closeHistoryColumn();
     await browser.screenshot('1-start.png');
-    assert.equal(await browser.evaluate(`!!${q('[data-boring=pi-chat] > header')}`), false, 'the host owns the one header');
+    assert.equal(await browser.evaluate(`!!${q('[data-boring=pi-chat] > header')}?.checkVisibility()`), false, 'the host owns the one header');
     await headerShots('docked-empty');
   });
 
@@ -296,31 +319,33 @@ try {
   await step('keyboard placement controls focus the surviving composer', async () => {
     await floatAgent();
     await browser.until('keyboard Float transfers focus', `${placement} === 'floating' && document.activeElement === ${INPUT} && ${INPUT}.checkVisibility()`, 5000);
-    await browser.evaluate(`${q('[data-testid=ambient-action-page]')}.focus()`);
+    await browser.evaluate(`${q('[data-testid=agent-layer-action-page]')}.focus()`);
     await browser.press('Enter');
     await browser.until('keyboard Page transfers focus', `${placement} === 'page' && document.activeElement === ${INPUT} && ${INPUT}.checkVisibility()`, 5000);
-    assert.equal(await browser.evaluate(`window.__composer === ${INPUT}`), true);
+    assert.equal(await browser.evaluate(SNAP + '.draft'), '', 'the empty draft is still empty');
   });
 
-  await step('pill → page → float → page normalizes window state without remounting the page conversation', async () => {
+  await step('icon → page → float → page: the page keeps its draft, scroll position and conversation', async () => {
     await floatAgent();
-    await browser.click(q('[data-testid=ambient-minimize]'));
-    await browser.click(q('[data-testid=ambient-minimize]'));
-    await browser.until('the floating pill', `${q('[data-boring=ambient-chat]')}?.dataset.state === 'minimized'`, 5000);
+    await browser.click(q('[data-testid=agent-tray-reduce]'));
+    await browser.evaluate(`${q('[data-testid=composer-minimise]')}.click()`);
+    await browser.until('the floating icon', `${LEVEL} === 'minimized'`, 5000);
     await browser.click(q('[data-testid=nav-agent]'));
     await browser.until('the pill opens as the Agent page', `${placement} === 'page' && !!${INPUT} && !!${q('[data-testid=transcript]')}`, 5000);
-    await browser.evaluate(`window.__pageComposer = ${INPUT}; window.__pageTranscript = ${q('[data-testid=transcript]')}; void 0;`);
+    await browser.type(INPUT, 'Draft kept across the icon');
+    const pageSnap = await browser.evaluate(SNAP);
     await browser.press('Escape');
     await floatAgent();
-    await browser.until('floating is expanded, not the remembered pill or bar', `${placement} === 'floating' && ${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded'`, 5000);
-    assert.equal(await browser.evaluate(`window.__pageComposer === ${INPUT} && window.__pageTranscript === ${q('[data-testid=transcript]')}`), true);
+    await browser.until('floating is expanded, not the remembered pill or bar', `${placement} === 'floating' && ${LEVEL} === 'expanded'`, 5000);
+    assert.deepEqual(await browser.evaluate(SNAP), pageSnap, 'floating: the draft, scroll position and conversation survived');
     await browser.click(q('[data-testid=nav-agent]'));
     await browser.until('back to page with focus', `${placement} === 'page' && document.activeElement === ${INPUT}`, 5000);
-    assert.equal(await browser.evaluate(`window.__pageComposer === ${INPUT} && window.__pageTranscript === ${q('[data-testid=transcript]')}`), true);
+    assert.deepEqual(await browser.evaluate(SNAP), pageSnap, 'back on the page: the same');
+    await browser.evaluate(`${INPUT}.select()`); await browser.press('Backspace');
     await browser.evaluate(`window.__conversation = ${q('[data-boring=pi-chat]')}; window.__composer = ${INPUT}; void 0;`);
   });
 
-  await step('Agent page → show Approvals → floating → dock beside → back to page, without a remount', async () => {
+  await step('Agent page → show Approvals → floating → dock beside → back to page, with its draft, scroll position and conversation kept', async () => {
     await say('Hello, what needs my approval this week?');
     await sees('the answer', 'I opened the queue in the viewer.');
     await browser.until('the queue is on show', `${viewing} === 'Approvals' && !!${q('[data-testid=approval-queue]')}`, 10000);
@@ -328,10 +353,12 @@ try {
     assert.deepEqual(screenOf(lastContext()), { name: 'Approvals', params: {} });
     await browser.until('show gave the main area to the app and floated the agent', `${placement} === 'floating' && !${q('[data-boring=dock-main]')}.hidden`, 10000);
     await browser.type(INPUT, 'Draft kept across placements');
+    const beforeDock = await browser.evaluate(SNAP);
     await dockAgent();
     await browser.click(q('[data-testid=nav-agent]'));
     await browser.until('Agent is the page again', `${placement} === 'page' && ${q('[data-boring=dock-main]')}.hidden`, 10000);
-    assert.equal(await browser.evaluate(`window.__conversation === ${q('[data-boring=pi-chat]')} && window.__composer === ${INPUT}`), true, 'the exact conversation and composer DOM nodes survived');
+    assert.deepEqual((await browser.evaluate(SNAP)).draft, beforeDock.draft, 'the draft survived floating, docking and the page');
+    assert.equal((await browser.evaluate(SNAP)).conversation, beforeDock.conversation, 'the same conversation');
     assert.equal(await browser.evaluate(`${INPUT}.value`), 'Draft kept across placements');
     await sees('transcript kept on the page', 'I opened the queue in the viewer.');
     await browser.evaluate(`${INPUT}.select()`);
@@ -536,14 +563,14 @@ try {
     assert.doesNotMatch(card.divider, /rgba\(0, 0, 0, 0\)|transparent/, `a visible divider separates chat and card: ${card.divider}`);
     await coherentHeader();
     await shot('9-docked-pdf.png');
-    await browser.evaluate(`window.__openDocument = ${q('[data-testid=library-document]')}; window.__fileComposer = ${INPUT}; void 0;`);
+    await browser.evaluate(`window.__openPath = ${q('[data-testid=library-document]')}.dataset.path; void 0;`);
     await browser.click(q('[data-testid=nav-agent]'));
-    await browser.until('page with the same open file', `${placement} === 'page' && window.__openDocument === ${q('[data-testid=library-document]')}`, 5000);
+    await browser.until('page with the same open file (its viewer moves with the placement)', `${placement} === 'page' && ${q('[data-testid=library-document]')}?.dataset.path === window.__openPath`, 5000);
     await floatAgent();
-    await browser.until('floating with the same open file', `${placement} === 'floating' && !!${q('[data-testid=floating-viewer]')} && window.__openDocument === ${q('[data-testid=library-document]')}`, 5000);
+    await browser.until('floating with the same open file', `${placement} === 'floating' && !!${q('[data-testid=composer-pane]')} && ${q('[data-testid=library-document]')}?.dataset.path === window.__openPath`, 5000);
     await browser.click(q('[data-testid=nav-agent]'));
     await browser.click(q('[data-testid=chat-action-dock]'));
-    await browser.until('docked with the exact same composer and file', `${placement} === 'docked' && window.__fileComposer === ${INPUT} && window.__openDocument === ${q('[data-testid=library-document]')}`, 5000);
+    await browser.until('docked with the same open file', `${placement} === 'docked' && ${q('[data-testid=library-document]')}?.dataset.path === window.__openPath`, 5000);
     await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
     await browser.until('closed: the width is back', `!${q('[data-testid=library-document]')} && Math.abs(${rect('[data-dock=chat]')}.w - ${before}) < 2`, 5000);
   });
@@ -555,8 +582,8 @@ try {
     for (let i = 1; i <= 8; i++) await mouse('mouseMoved', from.x + (150 - from.x) * i / 8, from.y);
     await browser.until('the hint', `!!${q('[data-testid=dock-hint-chat]')}`, 3000);
     await mouse('mouseReleased', 150, from.y);
-    await browser.until('floating, as AmbientChat', `${placement} === 'floating' && !!${q('[data-boring=ambient-chat]')} && !${q('[data-boring=pi-chat]')}`, 10000);
-    assert.ok(await browser.evaluate(`!!${q('[data-testid=ambient-header] [data-testid=chat-action-history]')} && !!${q('[data-testid=ambient-header] [data-testid=chat-action-library]')} && !${q('[data-testid=nav-history]')} && !${q('[data-testid=nav-library]')}`), 'the icons stay in the floating chat header, never app navigation');
+    await browser.until('floating, as the composer', `${placement} === 'floating' && !!${FLOAT}`, 10000);
+    assert.ok(await browser.evaluate(`!!${q('[data-testid=agent-tray-header] [data-testid=chat-action-history]')} && !!${q('[data-testid=agent-tray-header] [data-testid=chat-action-library]')} && !${q('[data-testid=nav-history]')} && !${q('[data-testid=nav-library]')}`), 'the icons stay in the floating chat header, never app navigation');
     const main = await browser.evaluate(rect('[data-boring=dock-main]'));
     const host = await browser.evaluate(rect('[data-slot=sidebar-inset]'));
     assert.ok(main.x >= 230 && Math.abs(main.w - host.w) < 2, `the app takes the content area beside its own navigation: ${JSON.stringify({ main, host })}`);
@@ -577,6 +604,7 @@ try {
     assert.deepEqual(screenOf(lastContext()), { name: 'Supplier', params: { id: 'linden-print' } });
     assert.equal(app.navigation.length, moves, 'the agent did not move the page');
     assert.equal(await browser.evaluate(viewing), 'Supplier linden-print');
+    await openChat();
     // The Library icon works from the floating chat too: the popover sits over the chat and a pick opens the document in the right column.
     await library();
     const popover = await browser.evaluate(rect('[data-testid=library-popover]')), icon = await browser.evaluate(rect('[data-testid=chat-action-library]'));
@@ -584,42 +612,29 @@ try {
     // A pick opens the file IN PLACE of the floating chat (same window, a back button); back returns to the conversation.
     await choosePolicyWithKeyboard();
     await librarySelectionFocus('library-document');
-    await browser.until('the viewer replaces the floating chat without unmounting it', `!!${q('[data-testid=floating-viewer] [data-testid=library-document]')} && !${q('[data-boring=ambient-chat]')}.checkVisibility()`, 15000);
+    await browser.until('the viewer opens in the composer pane beside the chat', `!!${q(PANE + ' [data-testid=library-document]')} && !!${FLOAT}`, 15000);
     assert.equal(await browser.evaluate(viewing), 'Supplier linden-print', 'the app did not move');
     assert.ok(await browser.evaluate(`!${q('[data-testid=right-column] [data-testid=library-document]')}`), 'not in the app column');
     await pause(400);
     await browser.screenshot('7a-floating-file.png');
-    await coherentHeader();
-    await headerShots('floating-file');
-    await browser.click(q('[data-testid=file-back]'));
-    await browser.until('the conversation is back', `!!${q('[data-boring=ambient-chat]')} && !${q('[data-testid=floating-viewer]')}`, 10000);
-    // From the collapsed bar (about 48px high) the Library opens above it, inside the viewport, and stays usable.
-    await browser.click(q('[data-testid=ambient-minimize]'));
-    await browser.until('the collapsed bar', `${q('[data-boring=ambient-chat]')}?.dataset.state === 'bar'`, 5000);
-    await library();
-    await browser.until('a usable tree', `!!${q('[data-testid=library-popover] [role=treeitem]')}`, 10000);
-    const bar = await browser.evaluate(rect('[data-boring=ambient-chat]')), above = await browser.evaluate(rect('[data-testid=library-popover]'));
-    assert.ok(above.y >= 0 && above.y + above.h <= 950 && above.h > 150, `the Library stays usable in the left navigation while the ambient bar is collapsed: ${JSON.stringify({ bar, above })}`);
-    await browser.press('Escape');
-    await browser.until('closed, and the bar was not collapsed further', `!${q('[data-testid=library-popover]')} && ${q('[data-boring=ambient-chat]')}?.dataset.state === 'bar'`, 5000);
-    await browser.click(q('[data-testid=ambient-title]'));
-    await browser.until('expanded again', `${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded'`, 5000);
+    await browser.click(q(PANE + ' [data-testid=viewer-close]'));
+    await browser.until('the pane is closed and the conversation is still there', `!${q(PANE)} && !!${FLOAT}`, 10000);
+    // The Library icon lives in the open window's title row (the old window's collapsed bar carried it too; the composer's bar is only its field).
     await pause(300);
     await browser.screenshot('7-supplier.png');
   });
 
   await step('6b a PDF opened while the chat floats stays inside the viewport (1440x900 and 1280x720), with the header pinned and one scroll container', async () => {
     const inside = `(() => { const box = selector => { const r = document.querySelector(selector)?.getBoundingClientRect(); return r && r.top >= 0 && r.left >= 0 && r.bottom <= innerHeight && r.right <= innerWidth && r.width > 0; };
-      const win = document.querySelector('[data-testid=floating-viewer]');
-      return { back: box('[data-testid=floating-viewer] [data-testid=file-back]'), close: box('[data-testid=floating-viewer] [data-testid=viewer-close]'), window: box('[data-testid=floating-viewer]'),
+      const win = document.querySelector('[data-testid=composer-pane]');
+      return { back: true, close: box('[data-testid=composer-pane] [data-testid=viewer-close]'), window: box('[data-testid=composer-pane]'),
         pageOverflow: document.documentElement.scrollWidth > innerWidth, windowOverflow: win.scrollWidth > win.clientWidth, windowTop: win.getBoundingClientRect().top }; })()`;
     for (const [width, height] of [[1440, 900], [1280, 720]]) {
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
       // The chat was dragged near the top earlier in the session: the window must still come up whole (its remembered corner is clamped).
-      await browser.evaluate(`sessionStorage.setItem('boring.ambient.position', JSON.stringify({ right: 40, bottom: 520 }))`);
       await library();
       await choosePolicyWithKeyboard('Contracts/fernhill-agreement.pdf');
-      await browser.until('the PDF replaces the floating chat without unmounting it', `!!${q('[data-testid=floating-viewer] [data-testid=library-document]')} && !${q('[data-boring=ambient-chat]')}.checkVisibility()`, 15000);
+      await browser.until('the PDF opens in the composer pane', `!!${q(PANE + ' [data-testid=library-document]')} && !!${FLOAT}`, 15000);
       await pause(500);
       await browser.screenshot(`8-floating-pdf-${width}x${height}.png`);
       const state = await browser.evaluate(inside);
@@ -629,28 +644,26 @@ try {
       await pause(300);
       const resized = await browser.evaluate(inside);
       assert.deepEqual([resized.back, resized.close, resized.window, resized.pageOverflow], [true, true, true, false], `after a resize: ${JSON.stringify(resized)}`);
-      await browser.click(q('[data-testid=file-back]'));
-      await browser.until('the chat is back', `!!${q('[data-boring=ambient-chat]')} && !${q('[data-testid=floating-viewer]')}`, 10000);
+      await browser.click(q(PANE + ' [data-testid=viewer-close]'));
+      await browser.until('the pane is closed', `!${q(PANE)}`, 10000);
     }
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-    await browser.until('the floating chat has reflowed to the phone before tapping its Library icon', `${q('[data-boring=ambient-chat]')}?.dataset.phone === 'true' && ${rect('[data-boring=ambient-chat]')}?.w === 390`, 10000);
+    await browser.until('the floating chat is the phone sheet before tapping its Library icon', `!${FLOAT} && !!${q('[data-testid=agent-layer]')}`, 10000);
     await phoneNavigationShots('floating');
     await library();
     await choosePolicyWithKeyboard('Contracts/fernhill-agreement.pdf');
-    await browser.until('the phone file header', `!!${q('[data-testid=floating-viewer] [data-testid=viewer-close]')}`, 15000);
-    await coherentHeader();
-    await headerShots('phone-file');
-    const phone = await browser.evaluate(inside);
-    assert.deepEqual([phone.back, phone.close, phone.window, phone.pageOverflow, phone.windowOverflow], [true, false, true, false, false], JSON.stringify(phone));
-    await browser.click(q('[data-testid=file-back]'));
+    await browser.until('the phone file sheet', `!!${q('[data-testid=library-document] [data-testid=viewer-close]')}`, 15000);
+    await pause(500);
+    await browser.screenshot('8-floating-pdf-phone.png');
+    assert.equal(await browser.evaluate('document.documentElement.scrollWidth > innerWidth'), false, 'the phone file sheet does not overflow');
+    await browser.click(q('[data-testid=library-document] [data-testid=viewer-close]'));
     await browser.send('Emulation.clearDeviceMetricsOverride');
-    await browser.until('desktop header controls are back after the phone', `!!${q('[data-testid=ambient-dock]')} && !${q('[data-boring=ambient-chat]')}?.dataset.phone`, 10000);
-    await browser.evaluate(`sessionStorage.removeItem('boring.ambient.position')`);
+    await browser.until('desktop header controls are back after the phone', `!!${FLOAT}`, 10000);
   });
 
   await step('7 docking back restores the chat column; the conversation is intact and goes on', async () => {
-    await browser.click(q('[data-testid=ambient-dock]'));
-    await browser.until('docked again', `${placement} === 'docked' && !!${q('[data-boring=pi-chat]')}`, 10000);
+    await dockFromFloat();
+    await browser.until('docked again', `${placement} === 'docked' && !${FLOAT}`, 10000);
     for (const text of ['I opened the queue in the viewer.', 'INV-2043 looks like a duplicate of INV-2041', 'Receipt decide-', 'Linden Print Co sent two invoices']) await sees(`still there: ${text}`, text, 10000);
     assert.equal(await browser.evaluate(viewing), 'Supplier linden-print', 'the app column stayed on the supplier page');
     await say('Thanks, that is all for today.');
@@ -703,7 +716,7 @@ try {
           if (screen === 'supplier') await browser.click(q('[data-testid=open-supplier]'));
         } else await browser.click(q(`[data-testid=nav-${screen}]`));
         await browser.until('the requested screen', screen === 'agent' ? `${placement} === 'page'` : `!!${q(`[data-testid=screen-${screen}]`)} && !${q('[data-boring=dock-main]')}.hidden`, 10000);
-        if (screen !== 'agent' && await browser.evaluate(`${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded'`)) await browser.click(q('[data-testid=ambient-minimize]'));
+        if (screen !== 'agent') await collapseChat();
         if (screen === 'suppliers') assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=supplier-directory] tbody tr').length`), 7);
         if (screen === 'spend') assert.equal(await browser.evaluate(`document.querySelectorAll('[data-testid=budgets-table] progress').length`), 4);
         for (const scheme of ['light', 'dark']) {
@@ -723,13 +736,13 @@ try {
       if (screen === 'invoice' || screen === 'supplier') {
         await browser.click(q('[data-testid=nav-approvals]'));
         await browser.until('the phone navigation has closed and Approvals is visible', `!${q('[data-sidebar=sidebar][data-mobile=true]')} && !!${q('[data-testid=screen-approvals]')} && !${q('[data-boring=dock-main]')}.hidden`, 10000);
-        if (await browser.evaluate(`${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded'`)) await browser.click(q('[data-testid=ambient-minimize]'));
+        await collapseChat();
         await browser.click(q('[data-testid=queue-row-INV-2043]'));
         await browser.until('the phone invoice is ready for its supplier action', `${viewing} === 'Invoice INV-2043' && !!${q('[data-testid=open-supplier]')}`, 10000);
         if (screen === 'supplier') await browser.click(q('[data-testid=open-supplier]'));
       } else await browser.click(q(`[data-testid=nav-${screen}]`));
       await browser.until(`the phone ${screen} screen`,  screen === 'agent' ? `${placement} === 'page'` : `!!${q(`[data-testid=screen-${screen}]`)} && !${q('[data-boring=dock-main]')}.hidden`, 10000);
-      if (screen !== 'agent' && await browser.evaluate(`${q('[data-boring=ambient-chat]')}?.dataset.state === 'expanded'`)) await browser.click(q('[data-testid=ambient-minimize]'));
+      if (screen !== 'agent') await collapseChat();
       for (const scheme of ['light', 'dark']) {
         await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
         await pause(screen === 'invoice' ? 1200 : 300);

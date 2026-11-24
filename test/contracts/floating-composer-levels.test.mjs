@@ -9,15 +9,14 @@ import { build } from 'esbuild';
 import { compile } from 'tailwindcss';
 import { registryCss } from '../../lab/studio/tailwind.mjs';
 
-// `AmbientChat` over the one composer: for the props the composer takes it is the floating composer (same bar, window, icon, remembered place); `onStateChange` and a controlled `state`
-// mirror its levels; the old toasts are its notices; a prop it does not take keeps the old window. Real Chromium at 1440 and 390, light and dark. Shots: .cache/evidence/ambient-composer.
+// `FloatingComposer` on a plain page: the floating bar, its window, its icon, the remembered place; the controlled `level` with `on.level`; the host's notices. Real Chromium at 1440 and 390, light and dark. Shots: .cache/evidence/floating-composer-levels.
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
 const registry = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8'));
 const item = name => registry.items.find(entry => entry.name === name);
 const block = vars => Object.entries(vars).map(([key, value]) => `--${key}: ${value};`).join('\n');
 const skip = !process.env.CHROMIUM && !process.env.CI;
-const shots = process.env.AMBIENT_COMPOSER_EVIDENCE ?? join(root, '.cache/evidence/ambient-composer');
+const shots = process.env.FLOATING_COMPOSER_LEVELS_EVIDENCE ?? join(root, '.cache/evidence/floating-composer-levels');
 
 let server, browser, port;
 before(async () => {
@@ -25,7 +24,7 @@ before(async () => {
   assert.ok(process.env.CHROMIUM, 'CHROMIUM must be set when CI is set');
   mkdirSync(shots, { recursive: true });
   mkdirSync(join(root, '.cache'), { recursive: true });
-  const work = mkdtempSync(join(root, '.cache/ambient-composer-'));
+  const work = mkdtempSync(join(root, '.cache/floating-composer-levels-'));
   const exported = JSON.parse(readFileSync(join(root, 'packages/ui/package.json'), 'utf8')).exports;
   const kit = { name: 'kit-sources', setup(builder) {
     builder.onResolve({ filter: /^@\/hooks\/use-mobile$/ }, () => ({ path: join(root, 'shadcn/ui/use-mobile.ts') }));
@@ -37,7 +36,7 @@ before(async () => {
     });
     builder.onResolve({ filter: /^@hachej\/boring-feedback\/ui$/ }, () => ({ path: join(root, 'packages/feedback/src/ui/index.ts') }));
   } };
-  const bundle = await build({ entryPoints: [join(root, 'test/fixtures/themes/ambient-composer.jsx')], bundle: true, write: false, metafile: true, format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty', '.excalidraw': 'text', '.drawio': 'text', '.html': 'text' }, plugins: [kit], logLevel: 'silent' });
+  const bundle = await build({ entryPoints: [join(root, 'test/fixtures/themes/floating-composer-levels.jsx')], bundle: true, write: false, metafile: true, format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty', '.excalidraw': 'text', '.drawio': 'text', '.html': 'text' }, plugins: [kit], logLevel: 'silent' });
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
   const vars = item('theme').cssVars;
@@ -91,17 +90,13 @@ const dragFrom = async (selector, toX, toY) => {
 };
 const tap = async selector => { const r = await rect(selector); const x = r.x + r.w / 2, y = r.y + r.h / 2; await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y); };
 const FRAME = '[data-testid=composer-floating]', ICON = '[data-testid=composer-icon]', NOTICE = '[data-testid=notice]';
-const LEGACY = '[data-testid=ambient-header]';
 const changes = () => browser.evaluate('window.__changes');
-const shot = async (name, dark) => { await browser.evaluate(`document.documentElement.classList.toggle('dark', ${dark})`); await wait(150); await browser.screenshot(`ambient-composer-${name}-${dark ? 'dark' : 'light'}.png`); };
+const shot = async (name, dark) => { await browser.evaluate(`document.documentElement.classList.toggle('dark', ${dark})`); await wait(150); await browser.screenshot(`floating-composer-levels-${name}-${dark ? 'dark' : 'light'}.png`); };
 const shots2 = async name => { for (const dark of [false, true]) await shot(name, dark); await browser.evaluate(`document.documentElement.classList.remove('dark')`); };
 
-test('1440: AmbientChat with props the composer takes is the one composer, floating; the state callback and the controlled state follow its levels', { skip, timeout: 180000 }, async () => {
+test('1440: the floating composer; on.level reports its levels and a controlled level follows the host', { skip, timeout: 180000 }, async () => {
   await open(1440);
-  assert.equal(await count(LEGACY), 0, 'not the old window');
   assert.equal(await count(FRAME), 1, 'the floating composer');
-  assert.equal(await browser.evaluate(`document.querySelector('[data-boring=ambient-chat]').dataset.variant`), 'contrast', 'the old root marker stays');
-  assert.equal(await browser.evaluate(`document.querySelector('[data-boring=ambient-chat]').classList.contains('dark')`), true, 'contrast is the default: a dark bar on any page');
   const bar = await rect(FRAME);
   assert.ok(bar.right > 1400 && bar.bottom > 860, `bottom right: ${JSON.stringify(bar)}`);
   await browser.evaluate('window.__clicks = 0');
@@ -110,26 +105,31 @@ test('1440: AmbientChat with props the composer takes is the one composer, float
   assert.equal(await browser.evaluate('window.__clicks'), 1, `the page stays usable under the bar (${JSON.stringify(target)})`);
   await shots2('1440-1-bar');
   await browser.evaluate(`document.querySelector('[data-testid=composer-controller] [data-action=chevron]').click()`);
-  await browser.until('the conversation is open', `window.__changes.includes('expanded')`);
-  assert.deepEqual(await changes(), ['expanded'], 'opening the conversation is reported as expanded');
+  await browser.until('the conversation is open', `window.__changes.includes('open')`);
+  assert.deepEqual(await changes(), ['open'], 'opening the conversation is reported as open');
   await shots2('1440-2-window');
+  // The host moves it: its own `level` wins, and is not echoed back as a change of the person's.
+  await browser.evaluate(`window.__set('folded')`);
+  await browser.until('the bar is back', `!document.querySelector('[data-testid=agent-tray-header]') && !!document.querySelector(${js(FRAME)})`);
+  await wait(900);
+  assert.deepEqual(await changes(), ['open'], 'a change the host asked for is not reported');
+  // The person folds the bar to its icon: the place is the person's own, not a level.
   await browser.evaluate(`document.querySelector('[data-testid=composer-controller] [data-action=minimise]').click()`);
   await browser.until('folded', `!!document.querySelector(${js(ICON)})`);
-  assert.deepEqual(await changes(), ['expanded', 'minimized'], 'folding to the icon is reported as minimized');
   await shots2('1440-3-icon');
-  // The host moves it: its own `state` wins, and is not echoed back as a change of the person's.
-  await browser.evaluate(`window.__set('bar')`);
-  await browser.until('the bar is back', `!document.querySelector(${js(ICON)}) && !!document.querySelector(${js(FRAME)})`);
-  await wait(900);
-  assert.deepEqual(await changes(), ['expanded', 'minimized'], 'a change the host asked for is not reported');
-  await browser.evaluate(`window.__set('minimized')`);
-  await browser.until('folded by the host', `!!document.querySelector(${js(ICON)})`);
   await click(ICON);
   await browser.until('restored by the person', `!document.querySelector(${js(ICON)})`);
-  assert.notEqual((await changes()).at(-1), 'minimized', 'the icon brings the bar (or the window it was) back, and says so');
 });
 
-test('1440: a background conversation\'s toast is the composer\'s notice, Open brings that conversation, a question stays until dismissed', { skip, timeout: 180000 }, async () => {
+test('1440: a controlled level the host does not take comes back to the host\'s value', { skip, timeout: 180000 }, async () => {
+  await open(1440, 'ignore=1');
+  await browser.evaluate(`document.querySelector('[data-testid=composer-controller] [data-action=chevron]').click()`);
+  await browser.until('the host heard it', `window.__changes.includes('open')`);
+  await browser.until('the host kept folded: the window closes again', `!document.querySelector('[data-testid=agent-tray-header]')`, 4000);
+  assert.equal(await count(FRAME), 1, 'the bar is as the host holds it');
+});
+
+test('1440: a host notice stands above the bar, Open brings that conversation, a question stays until dismissed', { skip, timeout: 180000 }, async () => {
   await open(1440);
   await browser.evaluate(`window.__push('done')`);
   await browser.until('a notice', `!!document.querySelector(${js(NOTICE)})`);
@@ -139,7 +139,7 @@ test('1440: a background conversation\'s toast is the composer\'s notice, Open b
   assert.ok(notice.y + notice.h <= frame.y + 1, `the notice stands above the bar: ${JSON.stringify({ notice, frame })}`);
   await shots2('1440-4-notice');
   await click('[data-testid=notice-action]');
-  await browser.until('the conversation is open', `window.__changes.includes('expanded')`);
+  await browser.until('the conversation is open', `window.__changes.includes('open')`);
   assert.equal(await count(NOTICE), 0, 'opening dismisses it');
   await browser.evaluate(`window.__push('input')`);
   await browser.until('a question', `!!document.querySelector(${js(NOTICE)})`);
@@ -148,7 +148,6 @@ test('1440: a background conversation\'s toast is the composer\'s notice, Open b
 
 test('390: on a phone the bar is at the bottom with its grabber, a notice stands above it inside the screen, Minimise folds it to the icon', { skip, timeout: 180000 }, async () => {
   await open(390);
-  assert.equal(await count(LEGACY), 0);
   assert.equal(await count('[data-testid=composer-input]') >= 1, true, 'the field is there');
   const field = await rect('[data-testid=composer-input]');
   assert.ok(field.y > 600 && field.right <= 390.5, `at the bottom, inside the screen: ${JSON.stringify(field)}`);
@@ -161,6 +160,5 @@ test('390: on a phone the bar is at the bottom with its grabber, a notice stands
   await click('[data-testid=notice-dismiss]');
   await click('[data-testid=composer-minimise]');
   await browser.until('folded', `!!document.querySelector(${js(ICON)})`);
-  assert.equal((await changes()).at(-1), 'minimized');
   await shots2('390-3-icon');
 });

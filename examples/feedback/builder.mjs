@@ -1,4 +1,4 @@
-// The builder agent of the feedback demo: the AmbientChat bar's agent with the opt-in feedback capability
+// The builder agent of the feedback demo: the floating bar's agent with the opt-in feedback capability
 // (`@hachej/boring-feedback/agent`) over the example's store, plus one small fictional tool, `edit_page`, that changes the fictional
 // Fernhill page. By default it runs on a keyless SCRIPTED model, so the demo and its journeys are deterministic and need no
 // key. `FEEDBACK_PROVIDER=openai|anthropic` (and the provider's usual key) swaps in a real model; nothing requires one.

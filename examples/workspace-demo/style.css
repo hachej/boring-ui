@@ -40,3 +40,8 @@ progress.over-budget::-webkit-progress-value { background: var(--destructive); }
   [data-testid="app-scroll"] { padding-bottom: 10rem; }
   [data-testid="screen-invoice"] [data-boring="experience-row"] { flex-direction: column; }
 }
+
+/* The sidebar is always beside the app from md up: the floating window's « Open navigation » action is for narrower screens only. */
+@media (min-width: 768px) {
+  [data-testid=agent-layer-action-navigation] { display: none; }
+}

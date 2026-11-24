@@ -1,5 +1,5 @@
 // The browser side of the dock example: the host's own app in `DockMain`, an agent chat in a `Dock` on its left and a files `Dock` on its right.
-// The chat docked is `PiChat`; floating it is `AmbientChat` on the same controller (draft, transcript and stream carry over). A button in the
+// The chat docked is `PiChat`; floating it is `FloatingComposer` on the same controller (draft, transcript and stream carry over). A button in the
 // chat header opens the files dock through `useDock('files')`; on a phone that dock is a full-screen sheet. Layout comes from `pi-workspace/dock.tsx`.
 // @ts-nocheck: an example page, bundled by esbuild and not part of the typechecked sources.
 import { createRoot } from 'react-dom/client';
@@ -8,7 +8,8 @@ import { PiChat as BarePiChat } from '../../registry/pi-chat/pi-chat.tsx';
 import type { PiChatProps } from '../../registry/pi-chat/pi-chat.tsx';
 import { withChatPlugins } from '../../registry/pi-chat-plugins/chat-plugins.ts';
 
-import { AmbientChat } from '../../registry/pi-ambient/ambient.tsx';
+import { FloatingComposer } from '../../registry/app-shell/floating-composer.tsx';
+import { FLOATING_COMPOSER_PRESET } from '../../registry/app-shell/composer-config.ts';
 import { useRemoteChat } from '@hachej/boring-ui-kit/chat-react';
 
 // The example ships every composer feature item (Markdown, `/`, `@`, model pill, voice, camera).
@@ -23,6 +24,9 @@ const ROWS = [
   { day: 'Fri', title: 'New recipe', note: 'Lentil soup with lemon, enough for four.' },
 ];
 const FILES = ['journal/2031-week-14.md', 'journal/2031-week-15.md', 'journal/recipes/lentil-soup.md', 'journal/photos/canal.jpg'];
+
+/** The floating chat: the one composer, open on first show, its place kept across visits. */
+const FLOATING_OPEN = { ...FLOATING_COMPOSER_PRESET, defaultLevel: 'open', at: { remember: 'local' } } as const;
 
 /** The host's own app: it neither knows nor cares what docks sit beside it. */
 function Journal() {
@@ -41,12 +45,12 @@ function Journal() {
   </div>;
 }
 
-/** The chat dock's content: `PiChat` while docked, `AmbientChat` while floating, one controller. */
+/** The chat dock's content: `PiChat` while docked, `FloatingComposer` while floating, one controller. */
 function Chat({ api }) {
   const files = useDock('files');
   const chat = useRemoteChat({ conversationId: conversation, endpoint: id => new URL(`/api/chat?conversation=${id}`, location.href), fetch: authorized, identity });
   if (chat.status !== 'ready') return <p role="status" data-testid="chat-connecting" className="p-4 text-sm text-muted-foreground">{chat.status === 'offline' ? 'Server unreachable. Retrying…' : 'Connecting…'}</p>;
-  if (api.floating) return <AmbientChat controller={chat.controller} actions={chat.actions} variant="surface" defaultState="expanded" onDock={api.dock} />;
+  if (api.floating) return <FloatingComposer agent={{ controller: chat.controller, chatProps: { actions: chat.actions } }} appId="dock-app" composer={FLOATING_OPEN} {...(api.canDock ? { onDock: api.dock } : {})} />;
   return <PiChat controller={chat.controller} actions={chat.actions} labels={{ title: 'Journal helper' }}
     headerActions={[{ id: 'files', label: files?.open ? 'Close files' : 'Open files', onSelect: () => files?.toggle() }]} />;
 }

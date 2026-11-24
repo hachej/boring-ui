@@ -1,13 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Button } from '@/components/ui/button';
-import { AmbientChat } from '../../../registry/pi-ambient/ambient.tsx';
+import { FloatingComposer } from '../../../registry/app-shell/floating-composer.tsx';
 import { BellIcon, DownloadIcon } from '../../../registry/_shared/icons.ts';
 import { ViewerFrame, ViewerWindowProvider } from '../../../registry/viewer-frame/viewer-frame.tsx';
 import { createDemoController } from '../../../ux/fixtures/demo-controller.mjs';
 import script from '../../../ux/scenarios/scripts/design-system.json';
 
-// `AmbientChat` with the window-content props the one composer now takes, over a fictional history that holds one finished reply and an artifact card (a plan).
+// `FloatingComposer` with the window-content props, over a fictional history that holds one finished reply and an artifact card (a plan).
 // `?embedded=1` mounts it in a container; `?panel=1` gives `artifactPanel` (the artifact opens in the window); `?host=1` gives `artifacts` with `artifactTarget="host"`; `?actions=1` gives
 // the header controls, Dock, Open in full chat and thumbs. `window.__log` lists what the host's callbacks received; `window.__panel` the panel's last api.
 const params = new URLSearchParams(location.search);
@@ -36,7 +36,6 @@ function Panel({ artifact, api }) {
 }
 
 function App() {
-  const [state] = useState(params.get('state') ?? undefined);
   const extra = useMemo(() => ({
     ...(params.get('panel') === '1' ? { artifactPanel: (artifact, api) => <Panel artifact={artifact} api={api} /> } : {}),
     ...(params.get('host') === '1' ? { artifacts: { open: artifact => window.__log.push(`host-open:${artifact.title}`) }, artifactTarget: 'host' } : {}),
@@ -46,8 +45,8 @@ function App() {
       onDock: () => window.__log.push('dock'), onOpenFull: id => window.__log.push(`full:${id}`), onFeedback: (reply, value) => window.__log.push(`feedback:${value}:${reply.text.slice(0, 15)}`),
     } : {}),
   }), []);
-  const bar = <AmbientChat controller={controller} actions={actions} labels={{ title: 'Garage assistant' }} variant={params.get('surface') === '1' ? 'surface' : 'contrast'} notifications={false}
-    {...(state ? { state } : {})} {...(params.get('fr') === '1' ? { locale: 'fr' } : {})} {...extra} {...(params.get('embedded') === '1' ? { embedded: true } : {})} />;
+  const agent = useMemo(() => ({ controller, label: 'Garage assistant', chatProps: { actions, labels: { title: 'Garage assistant' }, ...(params.get('fr') === '1' ? { locale: 'fr' } : {}) } }), []);
+  const bar = <FloatingComposer agent={agent} appId="harbor-garage" {...(params.get('fr') === '1' ? { locale: 'fr' } : {})} {...extra} {...(params.get('embedded') === '1' ? { embedded: true } : {})} />;
   return <main className="flex min-h-dvh flex-col p-6"><h1 className="text-lg font-medium">Harbor Garage (fictional site)</h1>
     <Button type="button" data-testid="page-button" variant="outline" onClick={() => { window.__clicks += 1; }}>Page action</Button>
     {params.get('embedded') === '1'

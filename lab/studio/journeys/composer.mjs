@@ -43,7 +43,10 @@ async function composer(t) {
     const WS = q('[data-testid=workspace-panel]'), ROOT = q('[data-boring=artifact-workspace]'), DIVIDER = q('[data-testid=workspace-divider]');
     const geometry = () => browser.evaluate(`(() => { const r = ${ROOT}.getBoundingClientRect(); return { left: r.left, width: r.width, panel: Math.round(${WS}.getBoundingClientRect().width) }; })()`);
     const floating = `${q('[data-testid=workspace-chat]')}?.dataset.floating === 'true'`;
-    const ambient = `${q('[data-boring=ambient-chat]')}`, hint = `${q('[data-testid=workspace-float-hint]')}`;
+    // The floating composer's level: its icon (folded), its open window (the tray), or its bar.
+    const FLOATING = q('[data-testid=composer-floating]');
+    const level = `(${q('[data-testid=composer-icon]')} ? 'minimized' : ${q('[data-testid=agent-tray-header]')} ? 'expanded' : ${FLOATING} ? 'bar' : null)`;
+    const ambient = FLOATING, hint = `${q('[data-testid=workspace-float-hint]')}`;
     const watches = () => t.app.watches.open;
     const watchesBefore = watches();
     const draft = 'draft that must survive floating';
@@ -71,30 +74,32 @@ async function composer(t) {
     await browser.until('the hint is back', `!!${hint}`, 5000);
     await dragging.release();
     await browser.until('the chat floats', floating, 5000);
-    await browser.until('the ambient window is expanded', `${ambient}?.dataset.state === 'expanded'`, 5000);
+    await browser.until('the floating window is open', `${level} === 'expanded'`, 5000);
     await t.pause(500);
     const after = await geometry();
     assert.ok(Math.abs(after.panel - after.width) < 2, `the panel spans the full width (${after.panel} of ${after.width})`);
-    assert.equal(await browser.evaluate(`!${q('[data-boring=pi-chat]')} && !${hint} && !${DIVIDER}`), true, 'no docked chat, hint or divider while floating');
+    assert.equal(await browser.evaluate(`document.querySelectorAll('[data-boring=pi-chat]').length === 1 && !${hint} && !${DIVIDER}`), true, 'one chat (the floating composer\'s), no hint or divider while floating');
     assert.deepEqual(await browser.evaluate(userMessages), sent, 'the transcript carried over');
     assert.equal(await browser.evaluate(`${MESSAGE}.value`), draft, 'the typed draft carried over');
     assert.equal(watches(), watchesBefore, 'no second watch stream was opened');
     await t.shots('float-floating');
     // Minimise to the bar and the pill, and restore.
-    await browser.click(q('[data-testid=ambient-minimize]'));
-    await browser.until('bar', `${ambient}?.dataset.state === 'bar'`, 5000);
+    await browser.click(q('[data-testid=agent-tray-reduce]'));
+    await browser.until('bar', `${level} === 'bar'`, 5000);
     await t.pause(400);
-    await browser.click(q('[data-testid=ambient-minimize]'));
-    await browser.until('pill', `${ambient}?.dataset.state === 'minimized'`, 5000);
+    await browser.click(q('[data-testid=agent-bar-conversation]'));
+    await browser.until('expanded again', `${level} === 'expanded'`, 5000);
     await t.pause(400);
-    await browser.click(q('[data-testid=ambient-pill]'));
-    await browser.until('bar again', `${ambient}?.dataset.state === 'bar'`, 5000);
+    // The strip's other controls open on hover or keyboard focus (CSS `hover:` needs a hover-capable pointer, which headless Chromium lacks): the control is activated through its own click.
+    await browser.evaluate(`${q('[data-testid=composer-minimise]')}.click()`);
+    await browser.until('icon', `${level} === 'minimized'`, 5000);
     await t.pause(400);
-    await browser.click(q('[data-testid=ambient-title]'));
-    await browser.until('expanded again', `${ambient}?.dataset.state === 'expanded'`, 5000);
+    await browser.click(q('[data-testid=composer-icon]'));
+    await browser.until('the icon brings back the window it was', `${level} === 'expanded' || ${level} === 'bar'`, 5000);
+    if ((await browser.evaluate(level)) === 'bar') { await browser.click(q('[data-testid=agent-bar-conversation]')); await browser.until('expanded again', `${level} === 'expanded'`, 5000); }
     assert.equal(await browser.evaluate(`${MESSAGE}.value`), draft, 'the draft survives minimising');
     // Dock: the chat is beside the panel again at the width it had above the threshold, with everything it had.
-    await browser.click(q('[data-testid=ambient-dock]'));
+    await browser.click(q('[data-testid=agent-layer-action-dock]'));
     await browser.until('docked', `!(${floating}) && !!${q('[data-boring=pi-chat]')} && !${ambient}`, 5000);
     await t.pause(400);
     assert.equal((await geometry()).panel, remembered, 'Dock restores the last width above the threshold');
@@ -105,15 +110,15 @@ async function composer(t) {
     await browser.evaluate(`${DIVIDER}.focus()`);
     await browser.press('ArrowLeft', { alt: true });
     await browser.until('Alt+Left floats the chat', floating, 5000);
-    await browser.click(q('[data-testid=ambient-dock]'));
+    await browser.click(q('[data-testid=agent-layer-action-dock]'));
     await browser.until('docked again', `!(${floating})`, 5000);
     await t.menu('[data-testid=workspace-panel]', 'demo-panel', 'float-chat');
     await browser.until('"Float chat" in the panel menu floats it', floating, 5000);
     assert.equal(await browser.evaluate(`${q('[data-testid=demo-panel-float-chat]')} === null`), true, 'the menu closed');
     // A reload keeps the floating state.
     await browser.reload(); await t.pause(600);
-    await browser.until('still floating after a reload', `${floating} && ${ambient}?.dataset.state === 'expanded' && !!${MESSAGE}`, 30000);
-    assert.equal(await browser.evaluate(`${ambient}.querySelector('[data-testid=composer-input]') !== null`), true);
+    await browser.until('still floating after a reload', `${floating} && ${level} === 'expanded' && !!${MESSAGE}`, 30000);
+    assert.equal(await browser.evaluate(`${q('[data-testid=composer-input]')} !== null`), true);
     // A phone keeps its sheet and ignores the floating state.
     await browser.emulate('phone');
     try {

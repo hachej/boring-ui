@@ -17,9 +17,9 @@ Registry presentation shares media subscriptions and nonfatal browser persistenc
 
 Preconditions: `npm run build`, Chromium; fictional data only.
 
-- **Phone.** `viewer-phone-layout`: run `npm run ambient:journey:scripted` and `npm run test:viewer-chrome`; compare phone and desktop screenshots. `node test/ui/ambient-position.test.mjs` pins 700px and 767 / 767.5 / 768px boundaries without remounting the composer.
+- **Phone.** `viewer-phone-layout`: run `npm run ambient:journey:scripted` and `npm run test:viewer-chrome`; compare phone and desktop screenshots. `node test/ui/floating-composer-window.test.mjs` pins the 700px and 767 / 767.5 / 768px boundaries and the media-listener cleanup of the floating composer.
 - **Keyboard.** `viewer-keyboard-inset`: `node test/ui/registry-utils.test.mjs` drives viewport resize/scroll, pinch zoom and observer cleanup; physical keyboard behavior still needs a real device.
-- **Persistence.** `viewer-layout-persistence`: `npm run windows:journey` and `npm run dock-app:journey` move/resize and reload. `node test/ui/registry-utils.test.mjs` and `node test/ui/ambient-position.test.mjs` drive malformed/denied browser storage.
+- **Persistence.** `viewer-layout-persistence`: `npm run windows:journey` and `npm run dock-app:journey` move/resize and reload. `node test/ui/registry-utils.test.mjs` and `node test/ui/floating-composer-window.test.mjs` drive malformed/denied browser storage.
 
 ## Gotchas
 
