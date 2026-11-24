@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-browser",
-  "version": "0.5.26",
+  "version": "0.6.0",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -51,7 +51,7 @@
     "@earendil-works/pi-ai": "1.6.0",
     "@earendil-works/chord": "1.6.0",
     "@earendil-works/pi-codemode": "1.6.0",
-    "@hachej/boring-files": "0.5.26",
+    "@hachej/boring-files": "0.6.0",
     "@sqlite.org/sqlite-wasm": "3.53.4-build2",
     "buffer": "6.0.3"
   },

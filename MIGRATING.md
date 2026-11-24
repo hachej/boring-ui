@@ -1,5 +1,9 @@
 # Unreleased
 
+# Migrating to 0.6.0
+
+- **0.6.0 is a version-only minor bump that marks the breaking changes already published in 0.5.25 (no code change).** Those are: stores a Pi 1.6.0 Harness writes cannot be opened by an older Harness (one-way), `askPerson` resolves to `{ answer }` or a park the tool must return, and the new `boring-ui-blocks design` rules fail an app at its next kit bump until it is migrated. Apps should move from `^0.5` to `^0.6` deliberately, after reading `# Migrating to 0.5.25` below; the `^0.5` range no longer takes new releases.
+
 # Migrating to 0.5.26
 
 - **Sub-agent cards show what the sub-agent does (no action needed for v1 apps).** `boring.delegate` details gain optional fields, all written by the app: `task` (one line), `now` (one short sentence, shown while it runs), `steps` (string[], the last 5 are shown), `result` (shown when done, 3 lines) and `counts` (`{ label, value }[]`, up to 4). `version` stays 1 (2 is also read), so details without the new fields render as before. `pi-chat-subagent` adds `SubagentActivityList({ runs, onOpen })`: a plain array of details in, one `SubagentCard` per run, running first, no fetching; `onOpen(conversationId)` opens the child conversation. New labels `subagentSteps`, `subagentResult`, `subagentList`, `subagentNone`, `subagentSummary` (English and French defaults; `boring-ui-blocks update` brings them).
