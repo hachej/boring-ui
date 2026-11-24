@@ -272,7 +272,7 @@ export interface FileTreeProps {
   readonly upload?: boolean;
   /** Offer version history in each file's actions menu. Default true. */
   readonly history?: boolean;
-  /** Offer the Refresh button. Default true; a host whose tree follows the workspace's change feed can hide it. */
+  /** Offer the Refresh button. Default true; a host whose tree follows the workspace's change feed (`refreshKey`) can hide it. */
   readonly refresh?: boolean;
   /** `list` (default) includes a Library header, inset search, metadata and file actions. `plain` keeps the compact tree. */
   readonly variant?: 'plain' | 'list';
@@ -280,6 +280,8 @@ export interface FileTreeProps {
   readonly title?: string;
   /** A host-owned dismissal action, shown at the right of the list header. */
   readonly onClose?: () => void;
+  /** Reload the open folders and the current search whenever this value changes (for example after the agent saves a file). */
+  readonly refreshKey?: unknown;
   /** Reload the open history panel whenever this value changes (for example the seq of the workspace's latest change event). */
   readonly historyKey?: unknown;
   /** The inline cap in bytes: a larger upload goes to `uploadBlob`, or is refused with `tooLarge` without it. No cap when omitted. */
@@ -332,7 +334,7 @@ const revealTruncated = (path: string) => (event: MouseEvent<HTMLElement>) => {
 const clearTruncated = (event: MouseEvent<HTMLElement>) => { event.currentTarget.removeAttribute('title'); };
 
 /** Renders a borrowed controller, for a workspace whose chat and tree share upload state. */
-export function FileTreeView({ components, controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refresh = true, variant = 'list', title, onClose, historyKey, maxBytes, tooLarge, uploadBlob, capabilities, onRenamed, onDeleted, decorate }: FileTreeViewProps) {
+export function FileTreeView({ components, controller, onOpen, selectedPath, className, uploadDirectory = 'uploads', locale = 'en', labels: given, upload = true, history = true, refresh = true, variant = 'list', title, onClose, refreshKey, historyKey, maxBytes, tooLarge, uploadBlob, capabilities, onRenamed, onDeleted, decorate }: FileTreeViewProps) {
   const changed = useRef({ onRenamed, onDeleted }); changed.current = { onRenamed, onDeleted };
   /** Tell the host about a committed rename or delete, so a viewer showing the file follows or closes. */
   const report = (mutation: FileMutation) => {
@@ -350,6 +352,15 @@ export function FileTreeView({ components, controller, onOpen, selectedPath, cla
   const list = variant === 'list';
   const labels: FileTreeLabels = { ...LOCALES[locale], ...given };
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  const shownKey = useRef(refreshKey);
+  useEffect(() => {
+    if (Object.is(shownKey.current, refreshKey)) return;
+    shownKey.current = refreshKey;
+    const { query, expanded } = controller.getSnapshot();
+    // Open folders are read again while searching too: their listing carries the host's word on writing in them.
+    if (query) void controller.search(query);
+    for (const directory of ['', ...expanded]) void controller.refresh(directory);
+  }, [controller, refreshKey]);
   const tree = useRef<HTMLUListElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
