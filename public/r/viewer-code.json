@@ -5,14 +5,14 @@
   "description": "The SVG, CSV and code kinds: `svgKind` (a preview from a blob URL, or its source), `codeKind` (TypeScript, JavaScript, Python, shell and JSON with coloured syntax and numbered lines, no highlighter dependency) and `csvKind` (a table, with an « @ » action on each row where the shell offers one: `RowReferenceContext`), drawn inside the artifact panel's bar. Each view loads the first time its artifact opens; other text stays in the panel's code block.",
   "dependencies": [
     "react@^19.0.0",
-    "@hachej/boring-ui-kit@^0.5.26"
+    "@hachej/boring-ui-kit@^0.6.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.26/r/utils.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.26/r/viewer-frame.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.26/r/pi-chat.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.26/r/button.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.26/r/_shared.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.0/r/utils.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.0/r/viewer-frame.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.0/r/pi-chat.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.0/r/button.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.0/r/_shared.json"
   ],
   "files": [
     {
