@@ -70,12 +70,12 @@ From the release after 0.4.23, also add `.../r/pi-app-kinds.json` and pass its `
 
 ### Chat that knows your app
 
-`PiChat` is the conversation: queue, steer, stop, attachments, `@` file mentions, voice messages, question and approval cards. `AmbientChat` floats the same chat over an existing site. `AppShell` puts one agent above any app, as a drawer on phones and a panel on wide screens.
+`PiChat` is the conversation: queue, steer, stop, attachments, `@` file mentions, voice messages, question and approval cards. `FloatingComposer` floats the same chat over an existing site. `AppShell` puts one agent above any app, as a drawer on phones and a panel on wide screens.
 
 ```tsx
-import { AmbientChat } from '@/components/pi-ambient/ambient';
+import { FloatingComposer } from '@/components/app-shell/floating-composer';
 
-<AmbientChat controller={controller} actions={actions} labels={{ title: 'Console assistant' }} />
+<FloatingComposer agent={{ controller, chatProps: { actions, labels: { title: 'Console assistant' } } }} appId="console" />
 ```
 
 See the [block list](registry/README.md#blocks-what-to-install).
@@ -150,7 +150,6 @@ Every example uses fictional data. Run it with `npm run <name>` after `npm run b
 | Example | What it shows |
 | --- | --- |
 | [`workspace-app`](examples/workspace-app/server.mjs) | The smallest whole agent app: sessions, chat, artifact panel, about 120 lines of server |
-| [`ambient`](examples/ambient/README.md) | An agent floating over an existing settings console |
 | [`app-shell`](examples/app-shell/README.md) | A phone-first app with one agent in a bottom drawer |
 | [`dock-app`](examples/dock-app/README.md) | Chat and files in resizable docks beside a host page |
 | [`shared-chat`](examples/shared-chat/README.md) | A team conversation with several people and agents |

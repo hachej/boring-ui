@@ -128,7 +128,7 @@ try {
     // The strip's other controls open on hover or keyboard focus (CSS `hover:` needs a hover-capable pointer, which headless Chromium lacks): the control is activated through its own click.
     await browser.evaluate(`${q('[data-testid=composer-minimise]')}.click()`);
     await browser.until('an icon', `${STATE} === 'minimized'`, 5000);
-    // The folded icon is not draggable (AmbientChat's pill was): it sits in the corner the window was in, and a tap restores.
+    // The folded icon is not draggable (the old ambient window's pill was): it sits in the corner the window was in, and a tap restores.
     await browser.click(q('[data-testid=composer-icon]'));
     await browser.until('the icon brings back the window it was', `${STATE} === 'expanded' || ${STATE} === 'bar'`, 5000);
     if ((await browser.evaluate(STATE)) === 'bar') { await browser.click(q('[data-testid=agent-bar-conversation]')); await browser.until('the window', `${STATE} === 'expanded'`, 5000); }

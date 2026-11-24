@@ -9,7 +9,7 @@ import type { RemoteChat, RemoteChatOptions } from './remote-chat.js';
 import { useControllerPerConversation } from './chat-react-controller.js';
 
 // ---- Placement: where the chat is shown, reported by the component that shows it and sent with each submit (see `useRemoteChat`).
-// `PiChat` reports `docked`, `AmbientChat` (also a docked chat floated by its divider) reports `floating`. Advisory for the model, never
+// `PiChat` reports `docked`, `FloatingComposer` (also a docked chat floated by its divider) reports `floating`. Advisory for the model, never
 // authority. See docs/architecture/PAGE-TOOLS.md (PLACE-1..3).
 export type ChatPlacement = 'docked' | 'floating';
 

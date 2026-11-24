@@ -609,7 +609,7 @@
       "name": "pi-chat",
       "type": "registry:block",
       "title": "Pi chat",
-      "description": "A complete Tailwind chat over the borrowed native chat controller: composer, messages, one collapsible activity block per turn (tool calls and reasoning), message queue, history and feedback cards for the opt-in feedback tool (lists, and Show offers that the host page resolves). Chat only: no layout. Owned, editable source; no AI SDK. The question, approval, sub-agent and artifact cards are separate items (pi-chat-question, pi-chat-approval, pi-chat-subagent, pi-artifacts); without them a question or an approval shows a \"waiting for your answer\" notice, a sub-agent call is an ordinary tool step and no artifact is offered. The optional pi-ambient and pi-workspace blocks build on it.",
+      "description": "A complete Tailwind chat over the borrowed native chat controller: composer, messages, one collapsible activity block per turn (tool calls and reasoning), message queue, history and feedback cards for the opt-in feedback tool (lists, and Show offers that the host page resolves). Chat only: no layout. Owned, editable source; no AI SDK. The question, approval, sub-agent and artifact cards are separate items (pi-chat-question, pi-chat-approval, pi-chat-subagent, pi-artifacts); without them a question or an approval shows a \"waiting for your answer\" notice, a sub-agent call is an ordinary tool step and no artifact is offered. The optional app-shell and pi-workspace blocks build on it.",
       "dependencies": [
         "@hachej/boring-ui-kit@^0.6.0",
         "@hachej/boring-files@^0.6.0",
@@ -1239,7 +1239,7 @@
       "name": "pi-chat-plugins",
       "type": "registry:block",
       "title": "Pi chat with every composer feature",
-      "description": "withChatPlugins(props): pi-chat with every composer feature item plugged in (Markdown, slash menu, mentions, model and effort picker, voice messages, phone camera). Components the host already passes are kept; features the host does not configure stay off. pi-app, pi-ambient, app-shell and shared-chat use it.",
+      "description": "withChatPlugins(props): pi-chat with every composer feature item plugged in (Markdown, slash menu, mentions, model and effort picker, voice messages, phone camera). Components the host already passes are kept; features the host does not configure stay off. pi-app, app-shell, app-shell and shared-chat use it.",
       "dependencies": [
         "react@^19.0.0"
       ],
@@ -1261,59 +1261,6 @@
           "path": "registry/pi-chat-plugins/chat-plugins.ts",
           "type": "registry:lib",
           "target": "components/pi-chat-plugins/chat-plugins.ts"
-        }
-      ]
-    },
-    {
-      "name": "pi-ambient",
-      "type": "registry:block",
-      "title": "Pi ambient agent",
-      "description": "AmbientChat (deprecated: the floating bar is the one composer, FloatingComposer of app-shell), now a wrapper that delegates to it and keeps the old window for the props the composer does not take yet (renderComposer, composerLayout, toast timing, className, system-notification bell); the window content (embedded, artifactPanel, artifacts, headerTools, headerActions, onDock, onOpenFull, onFeedback) is on the composer; and AgentNotifications, toasts over the kit's shared chat-react run notifications (they feed the composer's notices), with the one guarded browser Notification helper. A block over the pi-chat and app-shell items; its in-window artifact panel uses the pi-workspace layout.",
-      "css": {
-        "@layer utilities": {
-          ".pi-chat.pi-ambient :is([data-testid=\"composer-bar-attach\"], [data-testid=\"composer-bar-commands\"], [data-testid=\"composer-plus\"], [data-testid=\"composer-submit\"], [data-testid=\"composer-queue\"], [data-testid=\"voice-message-record\"], [data-testid=\"agent-talk\"])": {
-            "border-radius": "var(--pm-radius-round)"
-          }
-        }
-      },
-      "dependencies": [
-        "@hachej/boring-ui-kit@^0.6.0",
-        "react@^19.0.0",
-        "react-dom@^19.0.0",
-        "@earendil-works/pi-durable@~1.6.0",
-        "@earendil-works/pi-ai@~1.6.0"
-      ],
-      "registryDependencies": [
-        "@boring-ui/pi-chat",
-        "@boring-ui/pi-chat-plugins",
-        "@boring-ui/pi-chat-question",
-        "@boring-ui/app-shell",
-        "@boring-ui/pi-artifacts",
-        "@boring-ui/pi-workspace",
-        "@boring-ui/utils",
-        "@boring-ui/button",
-        "@boring-ui/_shared"
-      ],
-      "files": [
-        {
-          "path": "registry/pi-ambient/ambient.tsx",
-          "type": "registry:component",
-          "target": "components/pi-ambient/ambient.tsx"
-        },
-        {
-          "path": "registry/pi-ambient/ambient-window.tsx",
-          "type": "registry:component",
-          "target": "components/pi-ambient/ambient-window.tsx"
-        },
-        {
-          "path": "registry/pi-ambient/browser-notify.ts",
-          "type": "registry:hook",
-          "target": "components/pi-ambient/browser-notify.ts"
-        },
-        {
-          "path": "registry/pi-ambient/notifications.tsx",
-          "type": "registry:component",
-          "target": "components/pi-ambient/notifications.tsx"
         }
       ]
     },
@@ -1340,7 +1287,7 @@
       "name": "pi-workspace",
       "type": "registry:block",
       "title": "Pi workspace layout",
-      "description": "ArtifactWorkspace: the chat with a right-hand panel that slides in at full height, a resizable divider, full screen, a full-screen sheet on a phone and an opt-in float-when-narrow (the host swaps in AmbientChat from pi-ambient). Layout only; what is open is the host's. Pair it with the viewers item for the panel contents. Also dock.tsx, which re-exports the docks of the dock item (DockLayout, Dock, DockMain, useDock) for any host content on the left or right of the main area, each resizable, floatable, closable and a full-screen sheet on a phone.",
+      "description": "ArtifactWorkspace: the chat with a right-hand panel that slides in at full height, a resizable divider, full screen, a full-screen sheet on a phone and an opt-in float-when-narrow (the host swaps in FloatingComposer from app-shell). Layout only; what is open is the host's. Pair it with the viewers item for the panel contents. Also dock.tsx, which re-exports the docks of the dock item (DockLayout, Dock, DockMain, useDock) for any host content on the left or right of the main area, each resizable, floatable, closable and a full-screen sheet on a phone.",
       "dependencies": [
         "react@^19.0.0",
         "react-dom@^19.0.0"
@@ -1875,14 +1822,13 @@
       "name": "placed-agent",
       "type": "registry:block",
       "title": "Placed agent",
-      "description": "PlacedAgentWorkspace: AgentWorkspace over ONE controller, as a page (the app's Agent tab) or collapsed beside the app. Collapsed on a wide screen it is a floating AmbientChat; on a phone inside an app shell the same controller is lent to the shell's bottom drawer (useAgentLoan of app-shell), so one chat drawer serves the app. Outside a shell on a phone it stays the page. Placement is remembered (usePlacedAgentState) or controlled; usePlacedAgent gives collapse and expand to buttons inside it. The page stays mounted while collapsed, so its open file survives. Layout only: Pi owns the conversation.",
+      "description": "PlacedAgentWorkspace: AgentWorkspace over ONE controller, as a page (the app's Agent tab) or collapsed beside the app. Collapsed on a wide screen it is the floating FloatingComposer; on a phone inside an app shell the same controller is lent to the shell's bottom drawer (useAgentLoan of app-shell), so one chat drawer serves the app. Outside a shell on a phone it stays the page. Placement is remembered (usePlacedAgentState) or controlled; usePlacedAgent gives collapse and expand to buttons inside it. The page stays mounted while collapsed, so its open file survives. Layout only: Pi owns the conversation.",
       "dependencies": [
         "react@^19.0.0",
         "react-dom@^19.0.0"
       ],
       "registryDependencies": [
         "@boring-ui/pi-app",
-        "@boring-ui/pi-ambient",
         "@boring-ui/app-shell",
         "@boring-ui/utils",
         "@boring-ui/_shared"

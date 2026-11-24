@@ -1,6 +1,6 @@
 /**
  * Optional chat view rules: what a native Pi conversation view means for a chat surface. Pure functions over Pi types; no React,
- * files, agent or controller runtime. Registry items (pi-chat, pi-ambient, ...) draw these rows and words, they do not re-derive them.
+ * files, agent or controller runtime. Registry items (pi-chat, app-shell, ...) draw these rows and words, they do not re-derive them.
  *
  * `Content` is whatever the surface renders (React nodes in the registry); this module never reads it.
  */

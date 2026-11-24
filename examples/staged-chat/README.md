@@ -36,7 +36,7 @@ The two demo controls select failure state while sending the person's unadorned 
 
 The server is a loopback-only, unauthenticated fictional fixture. It seeds synthetic history directly into native entries so Show earlier can be exercised. `MemoryStorage` survives browser reload while the server runs, **not** process restart; production storage, authentication, revocation, retention and recovery qualification belong to the host. The native tasks checkpoint their own progress; no second scheduler or transcript store is introduced.
 
-- `test/contracts/pi-chat-staged.test.mjs`: public PiChat/AmbientChat happy-dom rendering seams and independence.
+- `test/contracts/pi-chat-staged.test.mjs`: public PiChat/FloatingComposer happy-dom rendering seams and independence.
 - `test/contracts/staged-chat-demo.test.mjs`: actual recipe DOM, stable task markers, one tailored failure notice, localized labels/timing, a single heading and clean submitted questions.
 - `test/packages/ui-native-chat.test.mjs`: actual native restoration and existing admission/lifecycle behavior.
 - `test/examples/staged-chat.test.mjs`: actual sequential native tasks, stage validation and both failures.

@@ -1,6 +1,6 @@
 /*
  * Every word the chat shows, and the icons it draws, as plain data. A host passes a partial `labels` (and `icons`) object to `PiChat`
- * (or `AmbientChat`, `AgentWorkspace`): what it leaves out keeps the default below. Strings that need a value are functions. No i18n
+ * (or `AgentWorkspace`): what it leaves out keeps the default below. Strings that need a value are functions. No i18n
  * framework: an app that translates passes its own object per language.
  */
 import { createContext, createElement, useContext, useMemo, useRef } from 'react';

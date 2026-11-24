@@ -17,7 +17,7 @@ The studio is the one reference page that assembles the full workspace. Each blo
 
 Files go through one route, `/api/resources` (`createRevisionHandler` over the workspace of the request, as its person): the viewers' reads and saves, the `@` picker's search (`revisionProvider.search`) and chat uploads (`useRevisionAttachments`: a conditional create under `uploads/<name>-<8 hex>.<ext>`, at most 5 MB). There is no separate search or upload route. The route answers the change feed (`?op=changes`) 501, the protocol's "no feed": a feed is one more long-lived request per tab beside the chat's, and a few visible tabs of a share link would exhaust the browser's connections per host; the studio's Workspace panel lists the files. Because the route answers the binding, `AgentWorkspace` also offers its read-only Library in the viewer menu.
 
-To embed an agent beside an existing site instead, see [`examples/ambient`](../../examples/ambient/README.md).
+To embed an agent beside an existing site instead, see `FloatingComposer` ([features/app-shell.md](../../features/app-shell.md)).
 
 The studio used to be thirteen demos, each with its own agent, tools and panel; they drifted apart. It is now three separate things:
 
@@ -86,7 +86,7 @@ Real-model scenarios were flaky (the model answered inline instead of calling a 
 
 | Layer | Command | Model | Retries | Blocks a merge? |
 | --- | --- | --- | --- | --- |
-| Scripted | `npm run studio:journey:scripted` (also `npm run ambient:journey:scripted`, `npm run studio:journey:correctness`) | a scripted model, no key | none: a failure is a bug | yes: the CI job `Studio scripted journeys` ([workflow](../../.github/workflows/studio-scripted.yml)) |
+| Scripted | `npm run studio:journey:scripted` (also `npm run studio:journey:scripted`, `npm run studio:journey:correctness`) | a scripted model, no key | none: a failure is a bug | yes: the CI job `Studio scripted journeys` ([workflow](../../.github/workflows/studio-scripted.yml)) |
 | Smoke | `OPENAI_API_KEY=... npm run studio:smoke` | the real model | `STUDIO_RETRIES`, default 2 | never: exits 0 unless the pass rate is below `STUDIO_SMOKE_MIN` (default 0.6, so 3 of 5); not part of `verify`; manual [workflow](../../.github/workflows/studio-smoke.yml) |
 
 Both need `CHROMIUM` (a Chromium or headless-shell binary) and a built tree (`npm run build`). The CI job installs the pinned headless shell
@@ -132,7 +132,7 @@ starts (so "the agent is working" is visible) and `hold` keeps a tool call on sc
 native message, including attached files and images), `results` (tool results since that message: `name`, `args`, `text`, `json`, `isError`, `details`), `last` and `history`.
 Two generic rules answer mechanical prompts without a script: `Reply with exactly: X` and the "write the numbers from 1 to N in English words ... end with the exact line: X" essay.
 Scenarios that begin with the same prompt share their turns (`REPORT_TURNS`, `SAVE_NOTES_TURNS` in `_script.mjs`) so the script is unambiguous. UI journeys (`journeys/*.mjs`) set
-`journey.script`, and the ambient example keeps its own in `examples/ambient/script.mjs`. The loader refuses a scenario that prompts the model and has no script.
+`journey.script`. The loader refuses a scenario that prompts the model and has no script.
 
 ## The standard agent
 
@@ -274,7 +274,7 @@ const controller = createNativeChatController({ identity, ...remote });
 ## Styles
 
 `tailwind.mjs` compiles Tailwind v4 once at startup with the library API (theme and utilities only, no preflight, so the
-viewer panels keep their own styles). It scans `registry/button`, `utils`, `pi-chat`, `pi-ambient`, `pi-workspace`, `pi-app`, `viewers` and this folder for classes, and
+viewer panels keep their own styles). It scans `registry/button`, `utils`, `pi-chat`, `app-shell`, `pi-workspace`, `pi-app`, `viewers` and this folder for classes, and
 `themeCss()` renders the registry `theme` item (the same shadcn tokens a consumer installs) for light and dark (the `.dark` class, which the ambient contrast window uses, and `prefers-color-scheme`); every example uses it. `styles.css` is the shell and panel CSS. The chat toolkit hooks
 for journeys are `data-testid` attributes: `composer-input`, `composer-submit` (`data-state` is `send` or `stop`), `connection`,
 `transcript`, `tool-card`, `tool-name`, `queue-item`, `question-card`, and for scenarios `scenario-list`, `scenario`, `scenario-next`.

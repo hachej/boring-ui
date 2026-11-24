@@ -34,7 +34,7 @@ The app shell is a registry block (`app-shell`), installed with `boring-ui-block
 | Full page | `AppShell layout="chat"` + `AgentWorkspace` (item `pi-app`) | the agent is the product |
 | Embedded screen | `AgentWorkspace layout="embedded"` in a nav item | one screen is a conversation with files and a Library; its bar controls go into the screen header |
 | Placed | `PlacedAgentWorkspace` (item `placed-agent`) | the same conversation lives in a tab and collapses beside the app |
-| Ambient bar | `AmbientChat` (item `pi-ambient`) | an existing website or console, no shell: a floating bar over it |
+| Ambient bar | `FloatingComposer` (item `app-shell`) | an existing website or console, no shell: a floating bar over it |
 | Bare chat | `PiChat` (item `pi-chat`) | you lay the page out yourself |
 
 `AppShell improve={spec}` adds a second agent (« Améliorer l'app ») to the account menu; omit it unless the host has such an agent. A launch link opens the layer: `agentLink({ agent, open, input })` builds it, `AppShell agentLink={false}` turns reading it off.

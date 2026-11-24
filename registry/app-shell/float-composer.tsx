@@ -49,7 +49,7 @@ export function snapCorner(rect: { readonly left: number; readonly top: number; 
 }
 
 /**
- * The place the old floating bar (`AmbientChat`) remembered, `{ right, bottom }` in px from the window's bottom right, as this bar's place: a corner when it is near one (the old default is), else free.
+ * The place the old floating bar remembered, `{ right, bottom }` in px from the window's bottom right, as this bar's place: a corner when it is near one (the old default is), else free.
  * Anything else (nothing saved, a malformed value) is no place.
  */
 export function legacyFloatPos(value: unknown): FloatPos | undefined {

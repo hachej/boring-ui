@@ -246,7 +246,7 @@ interface AgentWorkspaceBaseProps {
   readonly autoOpen?: boolean;
   /** A back button in a file's viewer bar (for example to the host's file list). */
   readonly fileBack?: { readonly label: string; readonly onBack: () => void } | undefined;
-  /** With `floatBelow`: the floating chat over the same session (for example `AmbientChat` of `pi-ambient` with `onDock={dock}`). */
+  /** With `floatBelow`: the floating chat over the same session (for example `FloatingComposer` of `app-shell` with `onDock={dock}`). */
   readonly floatingChat?: ((props: PiChatProps, dock: () => void) => ReactNode) | undefined;
   /** Shown above the chat (notices). */
   readonly chatTop?: ReactNode;

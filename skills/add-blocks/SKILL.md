@@ -1,6 +1,6 @@
 ---
 name: add-blocks
-description: Find, install, update, check and theme Boring UI registry blocks (shadcn items such as pi-chat, pi-ambient, pi-workspace, pi-app, app-shell, viewers, file-tree, documents, feedback, windows) with the boring-ui-blocks command. Use when asked to "add a chat/agent block", "install pi-app", "upgrade/update the Boring blocks", "boring-ui-blocks check fails", "blocks edited", "restyle/rebrand the agent UI", "change the chat labels/icons/actions", "dark mode for the chat", or when tempted to edit a file under src/components/pi-*.
+description: Find, install, update, check and theme Boring UI registry blocks (shadcn items such as pi-chat, app-shell, pi-workspace, pi-app, app-shell, viewers, file-tree, documents, feedback, windows) with the boring-ui-blocks command. Use when asked to "add a chat/agent block", "install pi-app", "upgrade/update the Boring blocks", "boring-ui-blocks check fails", "blocks edited", "restyle/rebrand the agent UI", "change the chat labels/icons/actions", "dark mode for the chat", or when tempted to edit a file under src/components/pi-*.
 ---
 
 # Add and maintain blocks
@@ -30,7 +30,7 @@ Pick by placement ([full table](../../registry/README.md#blocks-what-to-install)
 | Need | Block |
 | --- | --- |
 | The conversation only, in your own layout | `pi-chat` |
-| A floating bar over an existing site | `pi-ambient` (brings `pi-chat`, `pi-workspace`) |
+| A floating bar over an existing site | `app-shell` (`FloatingComposer`) |
 | Chat plus a resizable artifact panel | `pi-workspace` (brings `pi-chat`) |
 | A whole agent page: sessions, chat, viewers | `pi-app` (brings `pi-chat`, `pi-workspace`, `viewers`) |
 | One agent above any app, drawer on phones | `app-shell` (brings `pi-chat`, `feedback`, `sidebar`, `avatar`, `drawer`, `dropdown-menu`) |
@@ -68,7 +68,7 @@ Change a block only through these extension points ([source](../../registry/READ
 | Colours, radius, fonts, dark mode | The theme tokens in the app's CSS. `--shell` and `--overlay` are the kit's own tokens |
 | Any word, or French | `labels` (partial) and `locale="fr"` |
 | Icons, header, panel, message or row actions | `icons`, `headerActions`, `panelActions`, `messageActions`, `conversations.rowActions` |
-| Your own artifact type and renderer | `artifacts.kinds` on `PiChat`/`AmbientChat`, `artifactKinds` on `AgentWorkspace` (`[myKind, ...defaultKinds()]` keeps the default viewers) |
+| Your own artifact type and renderer | `artifacts.kinds` on `PiChat`, `artifactKinds` on `AgentWorkspace` (`[myKind, ...defaultKinds()]` keeps the default viewers) |
 | A viewer for a file kind | `viewers` on `AgentWorkspace` |
 | Something under or inside the composer | `belowComposer`, `tools` |
 | How a tool result renders | `renderTool`, `renderEntry`, `groupTool`, `replyFooter` |

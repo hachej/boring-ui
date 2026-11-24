@@ -154,7 +154,7 @@ is the same session, started by the same annotate toggle on touch or a compact s
 `useComposerFeedback(session)` calls `session.start({ mode: 'point' })` there, and `session.start()` (pins) elsewhere.
 
 - **The host's panel gets out of the way.** The kit never owns the host's panel. The host binds `usePointing(session)` (headless:
-  `isPointing(snapshot)`) to it, for example `<Sheet open={open && !pointing}>` or AmbientChat's `state={pointing ? 'minimized' : state}`.
+  `isPointing(snapshot)`) to it, for example `<Sheet open={open && !pointing}>` or FloatingComposer's `state={pointing ? 'minimized' : state}`.
   Because the host's own open state never changes, the panel comes back as it was when pointing ends. Navigation while pointing must
   leave that state alone (a tab bar that usually closes the panel does not do so while pointing). The host mounts `CommentBanner` and
   the one `NoteBubble` outside the panel, because the panel may unmount while it is hidden. To keep the person's typed text, the panel
@@ -595,7 +595,7 @@ defineAgent({ id: 'builder', model, extensions: [CodingTools, feedback.extension
 page. The pi-chat feedback card renders the offer as an element line that the
 person hovers or clicks.
 
-- When the agent bar (AmbientChat) is mounted **in the same application
+- When the agent bar (FloatingComposer) is mounted **in the same application
   page**, hovering or clicking the line resolves the anchor against the live
   page.
   - On `exact` or `moved`, it reveals the element.

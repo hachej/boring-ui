@@ -1,4 +1,4 @@
-/* The chat's words in French, the `locale="fr"` base of `PiChat`, `AmbientChat` and `AgentWorkspace`. Typed as `ChatLabels`, so a key added in English must be added here too. */
+/* The chat's words in French, the `locale="fr"` base of `PiChat` and `AgentWorkspace`. Typed as `ChatLabels`, so a key added in English must be added here too. */
 import { formatClock, formatTimestamp, humanToolName } from './labels';
 import type { ChatLabels } from './labels';
 

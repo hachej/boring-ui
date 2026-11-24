@@ -1,6 +1,6 @@
 ---
 name: boring-ui
-description: Entry point for building with Boring UI (the @hachej/boring-* npm packages and shadcn registry blocks for apps with an AI agent inside, on the Pi agent harness). Use when a task mentions boring-ui, @hachej/boring-ui-kit, @hachej/boring-agent, @hachej/boring-files, boring-ui-blocks, PiChat, AgentWorkspace, AmbientChat, AppShell, or asks to "add an agent/assistant/chat to my app", "build an app with an agent inside", or "use the Boring kit". Explains the packages, the rules every change must follow, and which boring-ui skill to load next.
+description: Entry point for building with Boring UI (the @hachej/boring-* npm packages and shadcn registry blocks for apps with an AI agent inside, on the Pi agent harness). Use when a task mentions boring-ui, @hachej/boring-ui-kit, @hachej/boring-agent, @hachej/boring-files, boring-ui-blocks, PiChat, AgentWorkspace, FloatingComposer, AppShell, or asks to "add an agent/assistant/chat to my app", "build an app with an agent inside", or "use the Boring kit". Explains the packages, the rules every change must follow, and which boring-ui skill to load next.
 ---
 
 # Boring UI
@@ -35,7 +35,7 @@ Keep all `@hachej/boring-*` packages on the same version. Pi packages are peers 
 | `@hachej/boring-feedback` | In-app feedback capture and delivery |
 | `@earendil-works/pi-durable`, `pi-ai`, `chord` | Pi itself: `Harness`, `createRegistry`, `defineTool`, storage, `NodeExecutionEnv`, models, `context` |
 
-Main blocks: `pi-chat` (the conversation), `pi-ambient` (a floating bar over an existing site), `pi-workspace` (chat plus an artifact panel), `pi-app` (a whole agent page: sessions, chat, viewers), `app-shell` (one agent above any app, phone drawer and desktop panel). The full list is in [registry/README.md](../../registry/README.md#blocks-what-to-install).
+Main blocks: `pi-chat` (the conversation), `pi-workspace` (chat plus an artifact panel), `pi-app` (a whole agent page: sessions, chat, viewers), `app-shell` (one agent above any app, phone drawer and desktop panel). The full list is in [registry/README.md](../../registry/README.md#blocks-what-to-install).
 
 ## Rules
 

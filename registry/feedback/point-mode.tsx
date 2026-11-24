@@ -1,7 +1,7 @@
 // Comment mode's banner (FEEDBACK.md, "Point mode"). While a session annotates, CommentBanner says so: « Comment mode · 2 notes », what to
 // do now, an on/off switch (off, the app works as usual and the notes stay) and Done. On a phone the assistant's panel covers the app, so
 // « Show in app » in the composer (`useComposerFeedback(session)`) starts the session in point mode: the host binds `usePointing(session)`
-// to hide its own panel (a Sheet's `open`, AmbientChat's `state`) and the banner sits at the bottom of the screen; each tap picks an
+// to hide its own panel (a Sheet's `open`, the floating composer's `level`) and the banner sits at the bottom of the screen; each tap picks an
 // element with the same picker, pins, NoteBubble and draft as feedback mode. With a mouse the banner sits at the top (`useCommenting`).
 // Done leaves the draft as the composer's chip (or, with `useSendEachNote`, each note already went to the chat) and the panel comes back.
 //

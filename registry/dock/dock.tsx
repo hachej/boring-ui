@@ -9,7 +9,7 @@ import { cn } from '../utils/utils';
 /**
  * Composable docks: `DockLayout` is a row holding one `DockMain` (the page's own content, an app for example) and any number of
  * `Dock`s on its left or right (a chat, a list of sessions, a file explorer, an artifact panel). Each dock is resizable from its inner
- * edge and has its own placement: docked, closed, floating (the content renders its own floating surface, for example `AmbientChat`) or,
+ * edge and has its own placement: docked, closed, floating (the content renders its own floating surface, for example `FloatingComposer`) or,
  * on a narrow layout, a full-screen sheet. `useDock(id)` reaches a dock from anywhere inside the layout, so a button in a chat header can
  * open the files or detach the chat. Layout only: what the docks show is the host's.
  */

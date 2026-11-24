@@ -9,7 +9,6 @@ import { chatTextFor } from '../../../registry/pi-chat/locale';
 const MAQUETTE = [{ match: target => target.resource.path.endsWith('.maquette.json'), label: 'Maquette', icon: WorkflowIcon }];
 const onboarding = { schema: 'boring.artifact', version: 1, title: 'Fictional onboarding', type: 'code', mediaType: 'application/json', language: 'json',
   target: { resource: { providerId: 'workspace', path: 'flows/onboarding.maquette.json' }, view: { kind: 'published' } }, revision: 'rev-1' };
-import { AgentNotifications, createNotificationStore } from '../../../registry/pi-ambient/notifications';
 import { ProviderSetup } from '../../../registry/provider-setup/provider-setup';
 import { ActionButton } from '../../../registry/button/actions';
 import { AccountChoices } from '../../../registry/app-shell/account';
@@ -23,11 +22,6 @@ export function GroupOneControls({ surface }) {
   const [pinned, setPinned] = useState(false);
   const [artifactOpen, setArtifactOpen] = useState(false);
   const [dark, setDark] = useState(false);
-  const [notifications] = useState(() => {
-    const store = createNotificationStore();
-    store.push({ kind: 'done', title: 'Fictional Cedar Works document', summary: 'The draft is ready for you to review.', conversationId: 'fictional-preview' });
-    return store;
-  });
   return <main className="pi-chat mx-auto grid w-full max-w-2xl gap-6 p-4" data-testid="group-one-controls" data-surface={surface}>
     {surface === 'choices' && <>
       <EmptyState title="Fictional Cedar Works" description="Choose a fictional draft." suggestions={[
@@ -41,7 +35,6 @@ export function GroupOneControls({ surface }) {
       <ArtifactCard artifact={onboarding} kinds={MAQUETTE} onOpen={() => setEvent('maquette opened')} />
     </>}
     {surface === 'artifacts' && <ChatTextProvider value={chatTextFor('fr')}><ArtifactCard artifact={{ ...onboarding, title: 'Dossier — Écritures et documents fictifs.html', type: 'html', mediaType: 'text/html', ordinal: 3 }} open={artifactOpen} onOpen={() => setArtifactOpen(true)} /></ChatTextProvider>}
-    {surface === 'notification' && <AgentNotifications store={notifications} variant="surface" placement="inline" autoDismissMs={0} onActivate={() => setEvent('notification opened')} className="static w-full" />}
     {surface === 'provider' && <ProviderSetup defaultOpen providers={[{ id: 'fictional', name: 'Fictional provider', models: [{ id: 'fictional-model', name: 'Fictional model' }], auth: ['api_key'], configured: true }]} value={{ provider: 'fictional', modelId: 'fictional-model' }} onSave={async () => { setEvent('provider saved'); }} />}
     {surface === 'toggles' && <>
       <ActionButton action={{ id: 'pin', label: 'Pin fictional document', icon: PinIcon, pressed: pinned, onSelect: () => setPinned(value => !value) }} testId="fixture" />

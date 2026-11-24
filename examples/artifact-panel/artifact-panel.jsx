@@ -1,4 +1,4 @@
-// The viewer shown inside the ambient window when an artifact card is opened (AmbientChat `artifactPanel`). It is the host's code: the
+// The viewer shown inside the floating composer's pane when an artifact card is opened (FloatingComposer `artifactPanel`). It is the host's code: the
 // standard viewer bar (title, type, copy, download, close, full screen) over the viewer for the artifact's type, read through
 // the same authenticated resource endpoint the host's own panels use. Documents are read-only here; artifact content is never executed
 // (HTML runs only in the viewer's sandboxed preview when the host opts in, which this demo does not).
@@ -67,7 +67,7 @@ function Version({ artifact, pinned, follow, client, identity, authorized, onClo
     <div className="min-h-0 flex-1 overflow-auto p-3"><CodeBlock code={saved.text} language={artifact.language ?? 'text'} /></div></ViewerFrame>);
 }
 
-/** Returns the `artifactPanel` render function for `AmbientChat`. */
+/** Returns the `artifactPanel` render function for `FloatingComposer`. */
 export function createArtifactPanel({ identity, authorized }) {
   const client = createResourceClient({ identity, endpoint: new URL('/api/resources', location.href), publication: true, reconciliation: true, fetch: authorized });
   return (artifact, api) => {

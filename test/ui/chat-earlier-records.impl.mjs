@@ -19,8 +19,8 @@ test('transcript history loads real persisted native records without restoring t
   const { createElement, act } = await import('react'); const { createRoot } = await import('react-dom/client');
   const out = new URL('../../.cache/chat-earlier-records/', import.meta.url); mkdirSync(out, { recursive: true });
   const output = new URL('chats.mjs', out);
-  await build({ stdin: { contents: `export { PiChat } from ${JSON.stringify(new URL('../../registry/pi-chat/pi-chat.tsx', import.meta.url).pathname)}; export { AgentWorkspace } from ${JSON.stringify(new URL('../../registry/pi-app/agent-workspace.tsx', import.meta.url).pathname)}; export { AmbientChat } from ${JSON.stringify(new URL('../../registry/pi-ambient/ambient.tsx', import.meta.url).pathname)};`, resolveDir: process.cwd(), sourcefile: 'earlier-records.tsx' }, outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', loader: { '.css': 'empty' }, plugins: [{ name: 'file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
-  const { PiChat, AgentWorkspace, AmbientChat } = await import(output.href);
+  await build({ stdin: { contents: `export { PiChat } from ${JSON.stringify(new URL('../../registry/pi-chat/pi-chat.tsx', import.meta.url).pathname)}; export { AgentWorkspace } from ${JSON.stringify(new URL('../../registry/pi-app/agent-workspace.tsx', import.meta.url).pathname)}; export { FloatingChat } from ${JSON.stringify(new URL('../fixtures/floating-chat.tsx', import.meta.url).pathname)};`, resolveDir: process.cwd(), sourcefile: 'earlier-records.tsx' }, outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', loader: { '.css': 'empty' }, plugins: [{ name: 'file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
+  const { PiChat, AgentWorkspace, FloatingChat } = await import(output.href);
   const fake = createFakeChatModel();
   const harness = await Harness.open(new MemoryStorage(), { registry: createRegistry(), models: fake.models }, context);
   const conversation = await harness.createConversation({ ownership: { kind: 'ownerless' }, agent: { model: fake.model } }, context);
@@ -38,8 +38,8 @@ test('transcript history loads real persisted native records without restoring t
   const cases = [
     ['no header', () => createElement(PiChat, { controller, header: false, showHistory: false })],
     ['standalone navigation', () => createElement(AgentWorkspace, { controller, conversationId: String(conversation.id), conversations, resources: { identity: { scopeId: 'fictional', principalId: 'alice', initiatorId: 'alice' }, endpoint: 'https://fictional.invalid/resources', fetch: async () => { throw new Error('Unexpected file request'); } } })],
-    ['floating', () => createElement(AmbientChat, { controller, defaultState: 'expanded', notifications: false })],
-    ['agent page', () => createElement(AmbientChat, { controller, embedded: true, defaultState: 'expanded', notifications: false })],
+    ['floating', () => createElement(FloatingChat, { controller })],
+    ['agent page', () => createElement(FloatingChat, { controller, embedded: true })],
   ];
   for (const [label, render] of cases) await t.test(label, async () => {
     controller.clearHistory();

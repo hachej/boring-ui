@@ -1,6 +1,6 @@
 'use client';
 
-// What a host page adds to the standalone composer (`FloatingComposer`), the window-content props `AmbientChat` has: header tools and actions, Dock and Open in full chat as header actions, thumbs on replies,
+// What a host page adds to the standalone composer (`FloatingComposer`), the window-content props of a floating chat: header tools and actions, Dock and Open in full chat as header actions, thumbs on replies,
 // the artifact panel and the host's artifact routing, and embedding the conversation in a container. Each is opt-in: with none of them the composer is what it was. They are merged into the one `AgentSpec`
 // the layer already reads, so the shell's own surfaces (`AppShell`'s `agent`) get no second path.
 import { useMemo } from 'react';
@@ -20,13 +20,13 @@ import type { ScreenHeaderAction } from './header-actions';
 import type { AppShellLocale } from './text';
 import type { ArtifactDescriptor } from '../pi-artifacts/artifact';
 
-/** The props `AmbientChat` has for what the window shows, with the same names and meaning. */
+/** The props for what the window shows. */
 export interface FloatingHostProps {
   /** Draw the conversation in the container the host gives it (a workspace pane) instead of floating over the page: the thread and its field fill the container, no bar, no icon, no remembered place. The host supplies any header; the header props below are not shown. */
   readonly embedded?: boolean | undefined;
   /** Host-owned controls in the window's title row (for example an icon-anchored popover), before the actions. */
   readonly headerTools?: ReactNode;
-  /** Host actions in the window's title row: two shown, the rest in « … ». An action with no `icon` shows its label (as `AmbientChat`'s did). */
+  /** Host actions in the window's title row: two shown, the rest in « … ». An action with no `icon` shows its label. */
   readonly headerActions?: readonly (Omit<ScreenHeaderAction, 'icon'> & { readonly icon?: ScreenHeaderAction['icon'] | undefined })[] | undefined;
   /** Adds « Dock chat » to the window's title row, for a host that floats this conversation out of a docked chat (the controller is shared, nothing is lost). */
   readonly onDock?: (() => void) | undefined;
