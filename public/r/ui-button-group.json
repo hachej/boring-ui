@@ -8,8 +8,8 @@
     "class-variance-authority@0.7.1"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.24/r/ui-separator.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.24/r/utils.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.25/r/ui-separator.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.5.25/r/utils.json"
   ],
   "files": [
     {
