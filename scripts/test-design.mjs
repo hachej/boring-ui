@@ -97,7 +97,11 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE } = {}
           // Library is a popover; History is the side column on a wide Agent page (remembered, so it may already be open) and a sheet on a phone.
           for (const panel of ['library', 'history']) {
             const surface = q(panel === 'library' ? '[data-testid=library-popover]' : '[data-testid=conversations]');
-            if (!(await browser.evaluate(`!!${surface}`))) await browser.click(q(`[data-testid=chat-action-${panel}]`));
+            if (!(await browser.evaluate(`!!${surface}`))) {
+              // Floating, the chat's tools are in the composer's open window: open it from its bar first.
+              if (await browser.evaluate(`!${q(`[data-testid=chat-action-${panel}]`)}?.checkVisibility()`)) await browser.evaluate(`${q('[data-testid=agent-bar-conversation]')}?.click()`);
+              await browser.click(q(`[data-testid=chat-action-${panel}]`));
+            }
             await browser.until(`${panel} surface`, `!!${surface}`, 5000);
             await inspect(`${prefix}-${panel}`, params);
             if (await browser.evaluate(`!!${q('[data-testid=history-column]')}`)) await browser.click(q('[data-testid=chat-action-history]'));
