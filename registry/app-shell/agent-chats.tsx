@@ -172,6 +172,17 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const collapsed = useCircleCollapsed();
   const unfolded = (barred && !layer.folded) || (exploring && layer.showing === 'agent') || (circling && layer.snap !== 'closed' && layer.showing === 'agent' && !collapsed);
   useEffect(() => { if (unfolded) markRead(); }, [unfolded, markRead]);
+  // The standalone composer's open window takes the cursor when it comes up, and again when its conversation changes (New chat remounts the field), unless a field is already in use
+  // (a person's own, or the one holding what was typed meanwhile) or the screen is touch (no keyboard pops up unasked). The shell's docks keep their own focus rules.
+  const standalone = !layer.docks && role === 'agent';
+  useEffect(() => {
+    if (!unfolded || !standalone || globalThis.matchMedia?.('(pointer: coarse)').matches || globalThis.document?.activeElement?.matches('input, textarea, select, [contenteditable]')) return;
+    const field = () => globalThis.document?.querySelector<HTMLElement>('[data-testid=composer-floating] [data-testid=composer-input], [data-testid=agent-layer] [data-testid=composer-input]');
+    const now = field();
+    if (now) { now.focus({ preventScroll: true }); return; }
+    const frame = requestAnimationFrame(() => field()?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [unfolded, standalone, spec.controller]);
   // The full page is on show (`suspended`): what arrives meanwhile is read there.
   const suspended = role === 'agent' && layer.suspended;
   useEffect(() => { if (suspended) clearUnread(spec.controller); }, [suspended, unreadCount, spec.controller]);
@@ -241,7 +252,7 @@ function SpecChat({ spec, visible, role }: { readonly spec: AgentSpec; readonly 
   const base = role === 'agent' && spec.voice && !oneRow ? <>{spec.chatProps?.tools}<TalkButton /></> : spec.chatProps?.tools;
   return <div data-spec={role} hidden={!visible} className={cn('min-h-0 min-w-0 flex-1', visible ? 'flex flex-col' : 'hidden')}>
     <ReplyActionContext.Provider value={replyAction ? <ReplyActionButton action={replyAction} testid="agent-reply-action" /> : null}>
-    <PiChat {...withChatPlugins(chatProps ?? {})} {...barProps} {...(Object.keys(wordLabels).length > 0 ? { labels: { ...wordLabels, ...spec.chatProps?.labels } } : {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && !layer.dockFloating && !layer.circle ? 'docked' : 'floating'} {...(feedback ? { feedback: inField ? { ...feedback, toggle: false } : feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
+    <PiChat {...withChatPlugins(chatProps ?? {})} {...barProps} {...(Object.keys(wordLabels).length > 0 ? { labels: { ...wordLabels, ...spec.chatProps?.labels } } : {})} {...(locale ? { locale } : {})} controller={spec.controller} keyboardInset={false} {...(hosted ? { composerHost: layer.composerSlot, dropZone: layer.dropZone, onSent: layer.onSent } : role === 'agent' && layer.contentComposer ? { onSent: layer.onSent } : {})} placement={layer.expanded && layer.docks && !layer.dockFloating && !layer.circle ? 'docked' : 'floating'} {...(feedback ? { feedback: inField ? { ...feedback, toggle: false } : feedback } : {})} {...(spec.feedback && !spec.chatProps?.sentContent ? { sentContent: sentFeedbackContent } : {})}
       {...(role === 'agent' && spec.voice ? { voiceMessage: { transcribe: spec.voice.transcribe, Bubble: PendingVoiceBubble }, tools: oneRow ? spec.chatProps?.tools : <>{spec.chatProps?.tools}<TalkButton /></>, composerRecording: capturing && !oneRow ? <TalkButton /> : undefined, pendingVoice: layer.voice.pending } : {})} {...(inField ? { tools: <>{base}<FieldFeedbackSlot slot={slot} /></> } : {})} />
     </ReplyActionContext.Provider>
     {barred && !readOnly && layer.folded && layer.cardSlot && createPortal(<><SendProblem controller={spec.controller} /><FoldedCard bar={barChat} onOpenFile={openFile} /></>, layer.cardSlot)}

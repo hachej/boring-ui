@@ -17,7 +17,7 @@ async function load(name, contents) {
   return import(pathToFileURL(join(out, `${name}.mjs`)).href);
 }
 const { frenchChatLabels } = await load('labels', `export { frenchChatLabels } from '${root}registry/pi-chat/labels-fr.ts';`);
-let PiChat, AmbientChat, voiceMessagePlugin, Composer;
+let PiChat, FloatingChat, voiceMessagePlugin, Composer;
 
 const SENT = 'Read @uploads/report-1a2b3c4d.pdf please';
 const pageComments = (extra = {}) => draftReport({
@@ -44,7 +44,7 @@ async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, loca
   // Base UI chooses its layout effects at import time; load the rendered blocks only after this browser realm exists.
   // The microphone, recorder and pending bubble are the optional pi-chat-voice item's, plugged in through voiceMessage (one bundle: one labels context).
   if (!PiChat) ({ PiChat, voiceMessagePlugin, Composer } = await load('pi-chat', `export { PiChat } from '${root}registry/pi-chat/pi-chat.tsx'; export { Composer } from '${root}registry/pi-chat/composer.tsx'; export { voiceMessagePlugin } from '${root}registry/pi-chat-voice/voice-message.tsx';`));
-  if (!AmbientChat) ({ AmbientChat } = await load('pi-ambient', `export { AmbientChat } from '${root}registry/pi-ambient/ambient.tsx';`));
+  if (!FloatingChat) ({ FloatingChat } = await load('floating-composer', `export { FloatingChat } from '${root}test/fixtures/floating-chat.tsx';`));
   const { Harness: NativeHarness, MemoryStorage, createRegistry } = await import('@earendil-works/pi-durable');
   const { BACKGROUND_CONTEXT: context } = await import('@earendil-works/chord/context');
   const { createNativeChatController } = await import('@hachej/boring-ui-kit/native-chat');
@@ -71,7 +71,7 @@ async function harness(t, { attachments, mentions, onOpenFile, pasteToFile, loca
   });
   const props = { controller, historyList: false, showHistory: false, ...(attachments ? { attachments } : {}), ...(mentions ? { mentions } : {}),
     ...(onOpenFile ? { onOpenFile } : {}), ...(pasteToFile ? { pasteToFile } : {}), ...(locale ? { locale } : {}), ...extra };
-  const Component = component === 'ambient' ? AmbientChat : component ?? PiChat;
+  const Component = component === 'ambient' ? FloatingChat : component ?? PiChat;
   const renderWith = async next => { Object.assign(props, next); await act(async () => ui.render(createElement(Component, props))); };
   const reload = async () => {
     const fresh = createNativeChatController({ identity: { runtimeId: 'fixture', scopeId: 'fixture', principalId: 'person' }, context, conversation });
@@ -178,8 +178,8 @@ test('a voice upload defaults to transcript only and explicitly opts into replay
   assert.equal(frenchChatLabels.fileKind.audio, 'Audio');
 });
 
-test('ambient voice transcripts also require explicit replay opt-in', async t => {
-  const { container, write, rerender } = await harness(t, { component: 'ambient', extra: { defaultState: 'expanded' } });
+test('floating composer voice transcripts also require explicit replay opt-in', async t => {
+  const { container, write, rerender } = await harness(t, { component: 'ambient', extra: {} });
   await write([{ role: 'user', content: '@uploads/voice-fictional.webm A retained fictional transcript', timestamp: 0 }]);
   assert.match(container.querySelector('[data-testid=voice-bubble]').textContent, /A retained fictional transcript/);
   assert.equal(container.querySelector('[data-testid=voice-play], [data-testid=voice-duration], audio'), null);
@@ -546,20 +546,20 @@ test('an upload mention is a card when only attachments is set (no mentions sear
   assert.equal(container.querySelector('[data-testid=user-text]').textContent.includes('@uploads'), false);
 });
 
-test('AmbientChat forwards onOpenFile and pasteToFile', async t => {
+test('FloatingComposer forwards onOpenFile and pasteToFile', async t => {
   const opened = [];
   const uploads = [];
   const attachments = { upload: (files, signal) => new Promise(() => { uploads.push(files); }) };
   const { controller, container, act, window } = await harness(t, { component: 'ambient', attachments, onOpenFile: path => opened.push(path), pasteToFile: { minLines: 3 },
-    extra: { defaultState: 'expanded' } });
+    extra: {} });
   await act(async () => { controller.setText(SENT); });
   await act(async () => { container.querySelector('[data-testid=composer-submit]').click(); });
   const card = container.querySelector('[data-testid=message-mention]');
-  assert.equal(card?.tagName, 'BUTTON', 'the card is clickable through the ambient chat');
+  assert.equal(card?.tagName, 'BUTTON', 'the card is clickable through the floating composer');
   await act(async () => card.click());
   assert.deepEqual(opened, ['uploads/report-1a2b3c4d.pdf']);
   await act(async () => { paste(window, container.querySelector('[data-testid=composer-input]'), 'one\ntwo\nthree\nfour'); });
-  assert.equal(uploads.length, 1, 'the custom threshold applies through the ambient chat');
+  assert.equal(uploads.length, 1, 'the custom threshold applies through the floating composer');
 });
 
 test('a thumbnail is dropped when its provider changes and when a read is unavailable', async t => {
@@ -728,7 +728,7 @@ test('empty transcription needs explicit audio-only confirmation, and Safari rec
 });
 
 for (const component of ['ambient', undefined]) test(`retained audio-only default has a localized status after native reload (${component ?? 'PiChat'})`, async t => {
-  const ui = await harness(t, { component, locale: 'fr', extra: { defaultState: 'expanded', ...(component === 'ambient' ? { labels: frenchChatLabels } : {}) } });
+  const ui = await harness(t, { component, locale: 'fr', extra: { ...(component === 'ambient' ? { labels: frenchChatLabels } : {}) } });
   await ui.write([{ role: 'user', content: '@uploads/voice-fictional.wav', timestamp: 0 }]);
   const check = () => {
     const bubble = ui.container.querySelector('[data-testid=voice-bubble]');

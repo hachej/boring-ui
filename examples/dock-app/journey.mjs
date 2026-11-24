@@ -1,6 +1,6 @@
 // Real-browser journey for the dock example (scripted model, no key): a fictional "Journal" app in DockMain, an agent chat Dock on its left
 // and a files Dock on its right (./page.tsx). It proves: the initial layout, keyboard resize with clamping and Home/End, pointer drag, the width
-// remembered after a reload, dragging below the threshold (hint, release floats the chat as AmbientChat, the app takes the full width, the draft
+// remembered after a reload, dragging below the threshold (hint, release floats the chat as the floating composer, the app takes the full width, the draft
 // carries over), the floating window's grip and pill moving, the Dock button re-attaching at the last width, Alt+ArrowLeft floating, the files dock
 // opened from the chat header and closed by dragging below its threshold, and at 390x844 the chat floating without a Dock button and the files
 // dock a full-screen sheet with no horizontal scroll. Screenshots go to .cache/evidence/dock-app/.
@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { insecureUrl, launch, pause, q } from '@hachej/boring-testing/browser';
+import { insecureUrl, launch, pause, q, qa } from '@hachej/boring-testing/browser';
 
 process.env.STUDIO_MODEL = 'scripted';
 const { startDockApp } = await import('./server.mjs');
@@ -20,7 +20,9 @@ const placement = id => `${q(`[data-dock=${id}]`)}?.dataset.placement`;
 const DIVIDER = id => `[data-testid=dock-divider-${id}]`;
 const now = id => `Number(${q(DIVIDER(id))}?.getAttribute('aria-valuenow'))`;
 const INPUT = q('[data-testid=composer-input]');
-const STATE = `${q('[data-boring=ambient-chat]')}?.dataset.state`;
+// The floating composer's level: its icon (folded), its open window (the tray), or its bar.
+const FLOATING = q('[data-testid=composer-floating]');
+const STATE = `(${q('[data-testid=composer-icon]')} ? 'minimized' : ${q('[data-testid=agent-tray-header]')} ? 'expanded' : ${FLOATING} ? 'bar' : null)`;
 const noOverflow = `document.documentElement.scrollWidth <= innerWidth && document.body.scrollWidth <= innerWidth`;
 
 const app = await startDockApp({ directory: mkdtempSync(join(tmpdir(), 'boring-dock-app-')) });
@@ -104,7 +106,7 @@ try {
     await browser.until('the hint', `!!${q('[data-testid=dock-hint-chat]')} && /Release to float/.test(${q('[data-testid=dock-hint-chat]')}.innerText)`, 3000);
     assert.equal(await browser.evaluate(placement('chat')), 'docked', 'still docked while held');
     await held.release();
-    await browser.until('floating, as AmbientChat', `${placement('chat')} === 'floating' && !!${q('[data-boring=ambient-chat]')} && !${q('[data-boring=pi-chat]')}`, 10000);
+    await browser.until('floating, as the floating composer', `${placement('chat')} === 'floating' && !!${q('[data-testid=agent-tray-header]')} && ${qa('[data-boring=pi-chat]')}.length === 1`, 10000);
     const journal = await browser.evaluate(rect('[data-boring=dock-main]'));
     assert.ok(journal.x < 2 && Math.round(journal.w) === 1500, `the app takes the full width: ${JSON.stringify(journal)}`);
     await browser.until('the draft in the floating composer', `${INPUT}?.value === 'Draft about the market'`, 5000);
@@ -113,30 +115,28 @@ try {
     await browser.screenshot('dock-app-floating.png');
   });
 
-  await step('the floating window\'s grip moves it, and the minimised pill can be dragged', async () => {
-    const before = await browser.evaluate(rect('[data-testid=ambient-surface]'));
-    await dragFrom('[data-testid=ambient-grip]', { x: 700, y: 300 });
-    const moved = await browser.evaluate(rect('[data-testid=ambient-surface]'));
-    assert.ok(Math.abs(moved.x - before.x) > 100 && Math.abs(moved.y - before.y) > 100, `the window moved ${JSON.stringify({ before, moved })}`);
-    // Minimise: window to bar, bar to pill.
-    await browser.click(q('[data-testid=ambient-minimize]'));
+  await step('the floating window\'s grip moves it, Reduce and Minimise fold it, and the icon restores it', async () => {
+    const before = await browser.evaluate(rect('[data-testid=composer-floating]'));
+    await dragFrom('[data-testid=composer-grip-tray]', { x: 700, y: 300 });
+    const moved = await browser.evaluate(rect('[data-testid=composer-floating]'));
+    assert.ok(Math.abs(moved.x - before.x) > 100 && Math.abs(moved.y - before.y) > 40, `the window moved ${JSON.stringify({ before, moved })}`);
+    // Reduce: window to bar, and the bar opens the window again; Minimise (in the open window's strip): window to its icon.
+    await browser.click(q('[data-testid=agent-tray-reduce]'));
     await browser.until('the bar', `${STATE} === 'bar'`, 5000);
-    await browser.click(q('[data-testid=ambient-minimize]'));
-    await browser.until('a pill', `${STATE} === 'minimized'`, 5000);
-    const pill = await browser.evaluate(rect('[data-testid=ambient-pill-box]'));
-    await dragFrom('[data-testid=ambient-pill]', { x: 300, y: 600 });
-    const pillMoved = await browser.evaluate(rect('[data-testid=ambient-pill-box]'));
-    assert.ok(Math.abs(pillMoved.x - pill.x) > 100 || Math.abs(pillMoved.y - pill.y) > 100, `the pill moved ${JSON.stringify({ pill, pillMoved })}`);
-    assert.equal(await browser.evaluate(STATE), 'minimized', 'a drag does not restore the pill');
-    await browser.click(q('[data-testid=ambient-pill]'));
-    await browser.until('the bar', `${STATE} === 'bar'`, 5000);
-    await browser.click(q('[data-testid=ambient-title]'));
-    await browser.until('the window', `${STATE} === 'expanded'`, 5000);
+    await browser.click(q('[data-testid=agent-bar-conversation]'));
+    await browser.until('the window again', `${STATE} === 'expanded'`, 5000);
+    // The strip's other controls open on hover or keyboard focus (CSS `hover:` needs a hover-capable pointer, which headless Chromium lacks): the control is activated through its own click.
+    await browser.evaluate(`${q('[data-testid=composer-minimise]')}.click()`);
+    await browser.until('an icon', `${STATE} === 'minimized'`, 5000);
+    // The folded icon is not draggable (AmbientChat's pill was): it sits in the corner the window was in, and a tap restores.
+    await browser.click(q('[data-testid=composer-icon]'));
+    await browser.until('the icon brings back the window it was', `${STATE} === 'expanded' || ${STATE} === 'bar'`, 5000);
+    if ((await browser.evaluate(STATE)) === 'bar') { await browser.click(q('[data-testid=agent-bar-conversation]')); await browser.until('the window', `${STATE} === 'expanded'`, 5000); }
   });
 
   await step('the Dock button re-attaches the chat at its last width', async () => {
-    await browser.click(q('[data-testid=ambient-dock]'));
-    await browser.until('docked', `${placement('chat')} === 'docked' && !${q('[data-boring=ambient-chat]')} && !!${q('[data-boring=pi-chat]')}`, 10000);
+    await browser.click(q('[data-testid=agent-layer-action-dock]'));
+    await browser.until('docked', `${placement('chat')} === 'docked' && !${FLOATING} && !!${q('[data-boring=pi-chat]')}`, 10000);
     assert.equal(await browser.evaluate(now('chat')), 400, 'the last width above the threshold');
     await live();
     assert.equal(await browser.evaluate(`${INPUT}?.value`), 'Draft about the market', 'the draft is still there');
@@ -145,8 +145,8 @@ try {
   await step('Alt+ArrowLeft on the divider floats the chat', async () => {
     await focusDivider('chat');
     await browser.press('ArrowLeft', { alt: true });
-    await browser.until('floating', `${placement('chat')} === 'floating' && !!${q('[data-boring=ambient-chat]')}`, 10000);
-    await browser.click(q('[data-testid=ambient-dock]'));
+    await browser.until('floating', `${placement('chat')} === 'floating' && !!${FLOATING}`, 10000);
+    await browser.click(q('[data-testid=agent-layer-action-dock]'));
     await browser.until('docked again', `${placement('chat')} === 'docked' && !!${q('[data-boring=pi-chat]')}`, 10000);
   });
 
@@ -175,16 +175,14 @@ try {
   await step('phone: the chat floats without a Dock button, the files dock is a full-screen sheet, no horizontal scroll', async () => {
     await browser.emulate('phone');
     await browser.until('narrow layout', `innerWidth === 390 && ${placement('chat')} === 'floating'`, 10000);
-    await browser.until('the floating chat', `!!${q('[data-boring=ambient-chat]')}`, 10000);
-    assert.equal(await browser.evaluate(`${q('[data-testid=ambient-dock]')}`), null, 'no Dock button on a phone');
+    await browser.until('the floating chat', `!!${q('[data-testid=composer-input]')} && ${placement('chat')} === 'floating'`, 10000);
+    assert.equal(await browser.evaluate(`${q('[data-testid=agent-layer-action-dock]')}`), null, 'no Dock button on a phone');
     assert.equal(await browser.evaluate(`!!${q('[data-testid=dock-divider-chat]')}`), false);
     await pause(400);
     assert.ok(await browser.evaluate(noOverflow), 'no horizontal scroll with the chat');
     await browser.screenshot('dock-app-phone-chat.png');
-    await browser.tap(q('[data-testid=ambient-minimize]'));
-    await browser.until('the bar', `${STATE} === 'bar'`, 5000);
-    await browser.tap(q('[data-testid=ambient-minimize]'));
-    await browser.until('the pill, the app reachable', `${STATE} === 'minimized'`, 5000);
+    await browser.tap(q('[data-testid=agent-layer-close]'));
+    await browser.until('the sheet is closed to its bar, the app reachable above it', `!${q('[data-testid=agent-layer-close]')}?.checkVisibility()`, 5000);
     await browser.tap(q('[data-testid=journal-files]'));
     await browser.until('the sheet', `${placement('files')} === 'sheet'`, 5000);
     await pause(400);

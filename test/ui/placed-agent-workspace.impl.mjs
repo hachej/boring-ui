@@ -61,20 +61,20 @@ test('wide: collapsing floats the same conversation, the page keeps its node, op
   await p.settle(() => p.q('[data-testid=placed-collapse]'));
   const composer = p.q('[data-testid=placed-agent] [data-testid=composer-input]'), note = p.q('[data-testid=host-note]');
   assert.ok(composer && note, 'the page shows its chat and its open view');
-  assert.equal(p.q('[data-boring=ambient-chat]'), null, 'no floating chat while the page is on show');
+  assert.equal(p.q('[data-testid=composer-floating]'), null, 'no floating chat while the page is on show');
   await p.act(async () => p.controller.setText('Résume la semaine'));
   await p.click(p.q('[data-testid=placed-collapse]'));
   assert.equal(p.q('[data-testid=placed-agent]').dataset.mode, 'ambient');
-  const floating = p.q('[data-boring=ambient-chat]');
-  assert.ok(floating && floating.parentElement === p.window.document.body, 'a floating AmbientChat over the app');
+  const floating = p.q('[data-testid=composer-floating]');
+  assert.ok(floating && !floating.closest('[data-testid=placed-agent]'), 'a floating composer over the app, outside the hidden page (portalled into the body)');
   assert.equal(floating.querySelector('[data-testid=composer-input]').value, 'Résume la semaine', 'the draft follows (one controller)');
   assert.equal(p.window.localStorage.getItem('fictional.agent.placement'), 'ambient', 'the placement is remembered');
   assert.ok(p.q('[data-testid=placed-agent]').hidden, 'the page is hidden, not unmounted');
   // « Dock chat » is a button of the floating window's title row (the one composer).
-  assert.ok(await p.settle(() => p.q('[data-boring=ambient-chat] [data-testid=agent-layer-action-dock]')), 'the title row has Dock chat');
-  await p.click(p.q('[data-boring=ambient-chat] [data-testid=agent-layer-action-dock]'));
+  assert.ok(await p.settle(() => p.q('[data-testid=composer-floating] [data-testid=agent-layer-action-dock]')), 'the title row has Dock chat');
+  await p.click(p.q('[data-testid=composer-floating] [data-testid=agent-layer-action-dock]'));
   assert.equal(p.q('[data-testid=placed-agent]').dataset.mode, 'tab');
-  assert.equal(p.q('[data-boring=ambient-chat]'), null);
+  assert.equal(p.q('[data-testid=composer-floating]'), null);
   assert.ok(p.q('[data-testid=placed-agent] [data-testid=composer-input]') === composer, 'the page keeps its exact composer');
   assert.ok(p.q('[data-testid=host-note]') === note, 'the open view survived the round trip');
   assert.equal(composer.value, 'Résume la semaine');
@@ -85,21 +85,21 @@ test('wide: a remembered placement is restored on load, and placement="tab" is a
   const p = await page(t, 1440);
   p.window.localStorage.setItem('fictional.agent.placement', 'ambient');
   await p.render(p.h(p.lib.PlacedAgentWorkspace, p.props()));
-  assert.ok(await p.settle(() => p.q('[data-boring=ambient-chat]')), 'reload restores the floating chat');
+  assert.ok(await p.settle(() => p.q('[data-testid=composer-floating]')), 'reload restores the floating chat');
   await p.render(p.h(p.lib.PlacedAgentWorkspace, p.props({ placement: 'tab', key: 'tab' })));
   await p.settle(() => p.q('[data-testid=placed-agent]'));
   assert.equal(p.q('[data-testid=placed-agent]').dataset.mode, 'tab');
-  assert.equal(p.q('[data-boring=ambient-chat]'), null, 'tab only: never floats, whatever was remembered');
+  assert.equal(p.q('[data-testid=composer-floating]'), null, 'tab only: never floats, whatever was remembered');
   assert.equal(p.q('[data-testid=placed-collapse]'), null, 'tab only: no collapse action');
 });
 
-test('phone outside an app shell: tab+ambient behaves as tab, never the ambient overlay', { timeout: 120000 }, async t => {
+test('phone outside an app shell: tab+ambient behaves as tab, never the floating composer', { timeout: 120000 }, async t => {
   const p = await page(t, 390);
   p.window.localStorage.setItem('fictional.agent.placement', 'ambient');
   await p.render(p.h(p.lib.PlacedAgentWorkspace, p.props()));
   await p.settle(() => p.q('[data-testid=placed-agent] [data-testid=composer-input]'));
   assert.equal(p.q('[data-testid=placed-agent]').dataset.mode, 'tab');
-  assert.equal(p.q('[data-boring=ambient-chat]'), null);
+  assert.equal(p.q('[data-testid=composer-floating]'), null);
   assert.equal(p.q('[data-testid=placed-collapse]'), null, 'nothing to collapse to');
 });
 
@@ -118,7 +118,7 @@ test('phone inside an app shell: collapse lends the same controller to the shell
   assert.deepEqual(changes, [true]);
   assert.equal(p.window.document.querySelectorAll('[data-testid=agent-layer]').length, 1, 'exactly one chat drawer');
   assert.equal(p.q('[data-testid=agent-layer]').dataset.state, 'peek');
-  assert.equal(p.q('[data-boring=ambient-chat]'), null, 'never the ambient overlay on a phone');
+  assert.equal(p.q('[data-testid=composer-floating]'), null, 'never the floating composer on a phone');
   assert.ok(p.q('[data-testid=screen-header]') && p.q('[data-testid=tabbar]'), 'the header and the tab bar are still there');
   assert.equal(p.q('[data-testid=agent-layer] [data-testid=composer-input]').value, 'Résume la semaine', 'the drawer shows the same draft');
   // Focusing the composer takes the drawer to full, where the title row (and the expand action) show.

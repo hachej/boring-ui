@@ -1,4 +1,4 @@
-// A message sent right after New chat never goes to the conversation being left (D-1499): the real PiChat and AmbientChat over the real
+// A message sent right after New chat never goes to the conversation being left (D-1499): the real PiChat and FloatingChat over the real
 // useConversationsClient, in a host that opens a conversation only once it is listed, as the example apps and Studio do. Fictional text only.
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -22,8 +22,8 @@ test('a message sent right after New chat does not reach the conversation being 
   const { useConversationsClient } = await import('@hachej/boring-ui-kit/chat-react');
   const out = new URL('../../.cache/pi-chat-new-chat-send/', import.meta.url); mkdirSync(out, { recursive: true });
   const output = new URL('chat.mjs', out);
-  await build({ stdin: { contents: `export { PiChat } from './pi-chat/pi-chat.tsx'; export { AmbientWindow as AmbientChat } from './pi-ambient/ambient-window.tsx';`, resolveDir: new URL('../../registry/', import.meta.url).pathname, loader: 'ts' }, outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', loader: { '.css': 'empty' }, plugins: [{ name: 'file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
-  const { PiChat, AmbientChat } = await import(output.href);
+  await build({ stdin: { contents: `export { PiChat } from './pi-chat/pi-chat.tsx'; export { FloatingChat } from '../test/fixtures/floating-chat.tsx';`, resolveDir: new URL('../../registry/', import.meta.url).pathname, loader: 'ts' }, outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', loader: { '.css': 'empty' }, plugins: [{ name: 'file-tree-css', setup(builder) { builder.onResolve({ filter: /^@hachej\/boring-ui-kit\/file-tree\.css$/ }, () => ({ path: new URL(import.meta.resolve('@hachej/boring-ui-kit/file-tree.css')).pathname, external: false })); } }] });
+  const { PiChat, FloatingChat } = await import(output.href);
   const element = document.createElement('div'); document.body.append(element); const root = createRoot(element);
   // A lagging select (selectLag: 5000) must not fire after the file's window is gone: "window is not defined" outside any test failed the whole run once the file ended early.
   const lagTimers = new Set();
@@ -196,7 +196,7 @@ test('a message sent right after New chat does not reach the conversation being 
     assert.equal(page.chats.old.sends.length, 0);
   });
 
-  for (const [name, Chat, chatProps] of [['PiChat', PiChat, {}], ['AmbientChat', AmbientChat, { defaultState: 'expanded' }]]) {
+  for (const [name, Chat, chatProps] of [['PiChat', PiChat, {}], ['FloatingChat', FloatingChat, {}]]) {
     await t.test(`${name}: a running reply can still be stopped while leaving`, async () => {
       const page = await open({ Chat, chatProps, oldDocs: { 'pi.live': { run: { taskId: 1 } } } });
       await page.onNew();
@@ -213,7 +213,7 @@ test('a message sent right after New chat does not reach the conversation being 
   }
 
   // D-1501: the New chat button keeps the focus otherwise, so typing goes nowhere and Space makes another conversation.
-  for (const [name, Chat, chatProps] of [['PiChat', PiChat, {}], ['AmbientChat', AmbientChat, { defaultState: 'expanded' }]]) {
+  for (const [name, Chat, chatProps] of [['PiChat', PiChat, {}], ['FloatingChat', FloatingChat, {}]]) {
     await t.test(`${name}: the cursor is in the new conversation's box once it opens`, async () => {
       const page = await open({ Chat, chatProps });
       const button = document.createElement('button'); document.body.append(button); button.focus();
@@ -320,7 +320,7 @@ test('a message sent right after New chat does not reach the conversation being 
   };
   const noHeldField = () => document.querySelector('[data-testid=new-chat-typing]') === null;
 
-  for (const [name, Chat, chatProps] of [['PiChat', PiChat, {}], ['AmbientChat', AmbientChat, { defaultState: 'expanded' }]]) {
+  for (const [name, Chat, chatProps] of [['PiChat', PiChat, {}], ['FloatingChat', FloatingChat, {}]]) {
     await t.test(`${name}: what is typed as the conversation opens lands whole in its box`, async () => {
       const page = await open({ Chat, chatProps, newText: '' });
       const button = await pressNew(page);
@@ -342,7 +342,7 @@ test('a message sent right after New chat does not reach the conversation being 
   const compose = (field, name) => act(async () => { field.dispatchEvent(new window.Event(name, { bubbles: true })); await new Promise(done => setTimeout(done, 0)); });
   const heldField = () => document.querySelector('[data-testid=new-chat-typing]');
 
-  for (const [name, Chat, chatProps] of [['PiChat', PiChat, {}], ['AmbientChat', AmbientChat, { defaultState: 'expanded' }]]) {
+  for (const [name, Chat, chatProps] of [['PiChat', PiChat, {}], ['FloatingChat', FloatingChat, {}]]) {
     await t.test(`${name}: a dead key open as the conversation opens finishes in the field, then lands whole, with no stray accent`, async () => {
       const page = await open({ Chat, chatProps, newText: '' });
       const button = await pressNew(page);
@@ -442,15 +442,15 @@ test('a message sent right after New chat does not reach the conversation being 
     button.remove();
   });
 
-  await t.test('AmbientChat coming up open leaves the focus in a field the person is in', async () => {
+  await t.test('FloatingChat coming up leaves the focus in a field the person is in', async () => {
     const other = document.createElement('input'); document.body.append(other); other.focus();
-    await open({ Chat: AmbientChat, chatProps: { defaultState: 'expanded' } });
+    await open({ Chat: FloatingChat, chatProps: {} });
     assert.equal(document.activeElement === other, true);
     other.remove();
   });
 
-  await t.test('AmbientChat coming up open with no field in use puts the cursor in its box', async () => {
-    await open({ Chat: AmbientChat, chatProps: { defaultState: 'expanded' } });
+  await t.test('FloatingChat coming up with no field in use puts the cursor in its box', async () => {
+    await open({ Chat: FloatingChat, chatProps: {} });
     assert.equal(document.activeElement === input(), true);
   });
 
@@ -696,7 +696,7 @@ test('a message sent right after New chat does not reach the conversation being 
   });
 
   await t.test('the ambient chat shows the message too', async () => {
-    const page = await open({ Chat: AmbientChat, chatProps: { defaultState: 'expanded' } });
+    const page = await open({ Chat: FloatingChat, chatProps: {} });
     await page.onNew();
     await settle(() => page.create.resolve(new Response('no', { status: 500 })));
     assert.match(failed()?.textContent ?? '', /wasn't made/);
@@ -749,8 +749,8 @@ test('a message sent right after New chat does not reach the conversation being 
     } finally { globalThis.matchMedia = stock; }
   });
 
-  await t.test('AmbientChat waits too', async () => {
-    const page = await open({ Chat: AmbientChat, chatProps: { defaultState: 'expanded' } });
+  await t.test('FloatingChat waits too', async () => {
+    const page = await open({ Chat: FloatingChat, chatProps: {} });
     assert.equal(enabled(), true, 'the composer works before New chat');
     await page.onNew();
     assert.equal(enabled(), false);

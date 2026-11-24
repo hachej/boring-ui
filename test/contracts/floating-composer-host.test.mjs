@@ -9,15 +9,15 @@ import { build } from 'esbuild';
 import { compile } from 'tailwindcss';
 import { registryCss } from '../../lab/studio/tailwind.mjs';
 
-// The window-content props of `AmbientChat` on the one composer: header tools and actions, Dock and Open in full chat, thumbs on replies, an artifact opened inside the window or in the host,
-// and the conversation embedded in a container. Each driven through the real `AmbientChat`, in real Chromium at 1440 and 390, light and dark. Shots: .cache/evidence/ambient-gaps.
+// The window-content props of `FloatingComposer`: header tools and actions, Dock and Open in full chat, thumbs on replies, an artifact opened inside the window or in the host,
+// and the conversation embedded in a container. Each driven through the real `FloatingComposer`, in real Chromium at 1440 and 390, light and dark. Shots: .cache/evidence/floating-composer-host.
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
 const registry = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8'));
 const item = name => registry.items.find(entry => entry.name === name);
 const block = vars => Object.entries(vars).map(([key, value]) => `--${key}: ${value};`).join('\n');
 const skip = !process.env.CHROMIUM && !process.env.CI;
-const shots = process.env.AMBIENT_GAPS_EVIDENCE ?? join(root, '.cache/evidence/ambient-gaps');
+const shots = process.env.FLOATING_COMPOSER_HOST_EVIDENCE ?? join(root, '.cache/evidence/floating-composer-host');
 
 let server, browser, port;
 before(async () => {
@@ -25,7 +25,7 @@ before(async () => {
   assert.ok(process.env.CHROMIUM, 'CHROMIUM must be set when CI is set');
   mkdirSync(shots, { recursive: true });
   mkdirSync(join(root, '.cache'), { recursive: true });
-  const work = mkdtempSync(join(root, '.cache/ambient-gaps-'));
+  const work = mkdtempSync(join(root, '.cache/floating-composer-host-'));
   const exported = JSON.parse(readFileSync(join(root, 'packages/ui/package.json'), 'utf8')).exports;
   const kit = { name: 'kit-sources', setup(builder) {
     builder.onResolve({ filter: /^@\/hooks\/use-mobile$/ }, () => ({ path: join(root, 'shadcn/ui/use-mobile.ts') }));
@@ -37,7 +37,7 @@ before(async () => {
     });
     builder.onResolve({ filter: /^@hachej\/boring-feedback\/ui$/ }, () => ({ path: join(root, 'packages/feedback/src/ui/index.ts') }));
   } };
-  const bundle = await build({ entryPoints: [join(root, 'test/fixtures/themes/ambient-gaps.jsx')], bundle: true, write: false, metafile: true, format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty', '.excalidraw': 'text', '.drawio': 'text', '.html': 'text' }, plugins: [kit], logLevel: 'silent' });
+  const bundle = await build({ entryPoints: [join(root, 'test/fixtures/themes/floating-composer-host.jsx')], bundle: true, write: false, metafile: true, format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty', '.excalidraw': 'text', '.drawio': 'text', '.html': 'text' }, plugins: [kit], logLevel: 'silent' });
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
   const vars = item('theme').cssVars;
@@ -76,10 +76,10 @@ const open = async (width, query = '', { keep = false } = {}) => {
 const rect = selector => browser.evaluate(`(() => { const e = document.querySelector(${js(selector)}); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom }; })()`);
 const count = selector => browser.evaluate(`document.querySelectorAll(${js(selector)}).length`);
 const click = selector => browser.evaluate(`document.querySelector(${js(selector)}).click()`);
-const shot = async (name, dark) => { await browser.evaluate(`document.documentElement.classList.toggle('dark', ${dark})`); await wait(150); await browser.screenshot(`ambient-gaps-${name}-${dark ? 'dark' : 'light'}.png`); };
+const shot = async (name, dark) => { await browser.evaluate(`document.documentElement.classList.toggle('dark', ${dark})`); await wait(150); await browser.screenshot(`floating-composer-host-${name}-${dark ? 'dark' : 'light'}.png`); };
 const shots2 = async name => { for (const dark of [false, true]) await shot(name, dark); await browser.evaluate(`document.documentElement.classList.remove('dark')`); };
 
-const FRAME = '[data-testid=composer-floating]', ICON = '[data-testid=composer-icon]', LEGACY = '[data-testid=ambient-header]', PANE = '[data-testid=composer-pane]';
+const FRAME = '[data-testid=composer-floating]', ICON = '[data-testid=composer-icon]', PANE = '[data-testid=composer-pane]';
 const CHEVRON = '[data-action=chevron]';
 const log = () => browser.evaluate('window.__log');
 const openConversation = async () => {
@@ -91,7 +91,6 @@ const card = '[data-testid=artifact-card][data-state=ready]';
 
 test('1440: header tools and actions, Open in full chat and Dock are in the window\'s title row (or its menu) and fire; thumbs rate a reply', { skip, timeout: 180000 }, async () => {
   await open(1440, 'actions=1');
-  assert.equal(await count(LEGACY), 0, 'not the old window');
   assert.equal(await count(FRAME), 1, 'the one composer, floating');
   await openConversation();
   const header = '[data-testid=agent-tray-header]';
@@ -156,7 +155,6 @@ test('1440: embedded draws the conversation in its container, not floating', { s
   await open(1440, 'embedded=1');
   assert.equal(await count(FRAME), 0, 'no floating bar');
   assert.equal(await count(ICON), 0, 'no icon');
-  assert.equal(await count(LEGACY), 0, 'not the old window');
   const host = await rect('[data-testid=embed-host]');
   const field = await rect('[data-testid=embed-host] [data-testid=composer-input]');
   assert.ok(field && field.x >= host.x && field.right <= host.right + 1 && field.bottom <= host.bottom + 1, `the field is inside the container: ${JSON.stringify({ host, field })}`);
@@ -168,7 +166,6 @@ test('1440: embedded draws the conversation in its container, not floating', { s
 
 test('390: header actions and Open in full chat are in the sheet\'s title row, Dock in its menu; an artifact opens full screen and closes', { skip, timeout: 180000 }, async () => {
   await open(390, 'actions=1&panel=1');
-  assert.equal(await count(LEGACY), 0);
   await openConversation();
   assert.equal(await count('[data-testid=agent-layer-header] [data-testid=host-tool]'), 1, 'the host tool is in the sheet\'s title row');
   await click('[data-testid=agent-layer-action-export]');

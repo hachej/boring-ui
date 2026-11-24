@@ -11,7 +11,7 @@ The studio is the one reference page that assembles the full workspace. Each blo
 | `pi-app` | `AgentWorkspace`, the page layout: the sessions pane (a drawer below 901px), the chat, and the artifact / file viewers in the panel (versions, auto-open). The studio adds its own panel view (the Workspace tabs), the canvas viewer, share links and the variant header |
 | `pi-chat` | the conversation (`PiChat`), composer features, cards |
 | `pi-workspace` | `ArtifactWorkspace` (inside `pi-app`): the resizable panel, full screen, phone sheet, float-when-narrow |
-| `pi-ambient` | `AmbientChat`, the chat's floating form when the workspace is narrower than `floatBelow` |
+| `app-shell` | `FloatingComposer`, the chat's floating form when the workspace is narrower than `floatBelow` |
 | `viewers` | the panes inside the panel (Markdown, HTML, image, PDF) |
 | variants and scenarios | below: where tools run, and what a person can ask |
 

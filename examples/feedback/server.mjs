@@ -1,4 +1,4 @@
-// Feedback demo: "Fernhill Studio", a small fictional settings page with the AmbientChat agent bar whose composer has the Feedback
+// Feedback demo: "Fernhill Studio", a small fictional settings page with the floating agent bar (FloatingComposer) whose composer has the Feedback
 // button (feedback mode, then one chip; `?ui=classic` mounts the Release 1 picker, sheet, list and report instead). Feedback is kept
 // by @hachej/boring-feedback/store as one file per report in a SQLite workspace (workspace.mjs), behind a small authenticated save/list/read route, and voice goes
 // through `/api/transcribe` (transcribe-route.mjs and transcription.mjs, example glue an app replaces). Fictional content only; the

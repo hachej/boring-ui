@@ -17,7 +17,7 @@ mkdirSync(evidence, { recursive: true });
 const step = async (name, run) => { const started = Date.now(); await run(); console.log(`ok  ${name} (${Date.now() - started} ms)`); };
 const rect = selector => `(() => { const r = ${q(selector)}?.getBoundingClientRect(); return r && { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom }; })()`;
 const COMPOSER = '[data-testid=composer-input]';
-const PAGE = '[data-testid=placed-agent]', FLOAT = '[data-boring=ambient-chat]', LAYER = '[data-testid=agent-layer]';
+const PAGE = '[data-testid=placed-agent]', FLOAT = '[data-testid=composer-floating]', LAYER = '[data-testid=agent-layer]';
 const live = `(() => { const e = ${q(PAGE + ' ' + COMPOSER)}; return !!e && !e.disabled; })()`;
 const hash = `location.hash`;
 
@@ -59,7 +59,7 @@ try {
   });
 
   await step('2 wide: expand returns to the tab with the same nodes, open file and draft; a reload restores the floating placement', async () => {
-    await browser.click(q('[data-testid=ambient-dock]'));
+    await browser.click(q('[data-testid=agent-layer-action-dock]'));
     await browser.until('back on the Agent tab', `${hash} === '#agent' && ${q(PAGE)}.checkVisibility() && !${q(FLOAT)}`, 10000);
     assert.equal(await browser.evaluate(`${q(PAGE + ' ' + COMPOSER)}.__mark`), 'page-composer', 'the exact composer node');
     assert.equal(await browser.evaluate(`${q('[data-testid=viewer-panel]')}.__mark`), 'page-panel', 'the open file kept its node');

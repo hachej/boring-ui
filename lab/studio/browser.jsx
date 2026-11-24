@@ -5,8 +5,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PanelRightOpenIcon } from 'lucide-react';
 import { artifactKey } from '../../registry/pi-artifacts/artifact.ts';
-// The lab stays on the old window (`AmbientWindow`): its journeys drive that window's own controls.
-import { AmbientWindow as AmbientChat } from '../../registry/pi-ambient/ambient-window.tsx';
+// The floating chat is the one composer (`FloatingComposer`): its journeys drive that composer's own controls.
+import { FloatingComposer } from '../../registry/app-shell/floating-composer.tsx';
+import { FLOATING_COMPOSER_PRESET } from '../../registry/app-shell/composer-config.ts';
 import { AgentWorkspace, useArtifactVersions, useConversations, useRemoteChat } from '../../registry/pi-app/agent-workspace.tsx';
 import { useRevisionAttachments } from '../../registry/pi-app/use-revision-attachments.ts';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
@@ -22,6 +23,8 @@ import { INTERACTIVE_HTML } from './interactive.mjs';
 // The bearer token: the page's own (the studio's person), or one a link carried in its fragment (`#token=...`, a fixture token of a
 // team person), kept for this tab and removed from the address bar. The identity is what the server says this token is (/api/studio).
 const KINDS = defaultKinds();
+/** The floating chat: the one composer, open on first show, its place kept across visits. */
+const FLOATING_OPEN = { ...FLOATING_COMPOSER_PRESET, defaultLevel: 'open', at: { remember: 'local' } };
 const token = (() => {
   const carried = new URLSearchParams(location.hash.slice(1)).get('token');
   if (carried) { try { sessionStorage.setItem('studio.token', carried); } catch { /* optional */ } history.replaceState(null, '', location.pathname + location.search); return carried; }
@@ -167,8 +170,8 @@ function App() {
   const panels = useMemo(() => variant && ({
     workspace: (view, win) => <WorkspacePanel key={variant.id} variant={variant} tab={view.tab} onTab={tab => setOpened({ kind: 'workspace', tab })} conversation={conversationId} onOpenFile={openFile} onClose={win.close} />,
   }), [variant, conversationId]); // eslint-disable-line
-  // The same controller drives both surfaces: when the divider is dragged far enough the chat floats (AmbientChat) and docks back (PiChat) with its transcript, draft and queue.
-  const floating = ({ headerStart, historyList, emptyState, decisions, controls, className, ...props }, dock) => <AmbientChat key={active} {...props} variant="surface" defaultState="expanded" onDock={dock} />;
+  // The same controller drives both surfaces: when the divider is dragged far enough the chat floats (FloatingComposer) and docks back (PiChat) with its transcript, draft and queue.
+  const floating = ({ headerStart, historyList, emptyState, decisions, controls, className, controller: floatController, ...chatProps }, dock) => <FloatingComposer key={active} agent={{ controller: floatController, chatProps }} appId="studio" composer={FLOATING_OPEN} onDock={dock} />;
   if (!studio) return <p className="studio-loading">Loading…</p>;
   if (!variant) return <p className="studio-loading" role="alert">The studio server is unreachable, or no variant is available.</p>;
   return <div className="studio" data-variant={variant.id}>

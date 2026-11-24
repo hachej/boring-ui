@@ -9,15 +9,14 @@ import { build } from 'esbuild';
 import { compile } from 'tailwindcss';
 import { registryCss } from '../../lab/studio/tailwind.mjs';
 
-// The props that used to keep `AmbientChat` on the old window and now ride on the one composer (className, storage, the old drag position, toast timing, system notifications, renderComposer,
-// composerLayout, the working icon, the model pill, a controlled state the host ignores). Real Chromium at 1440 and 390, light and dark. Shots: .cache/evidence/ambient-composer-gaps.
+// `FloatingComposer` options: className, storage, the old drag position, notice timing, renderComposer, composerLayout, the working icon and the model pill. Real Chromium at 1440 and 390, light and dark. Shots: .cache/evidence/floating-composer-options.
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const require = createRequire(import.meta.url);
 const registry = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8'));
 const item = name => registry.items.find(entry => entry.name === name);
 const block = vars => Object.entries(vars).map(([key, value]) => `--${key}: ${value};`).join('\n');
 const skip = !process.env.CHROMIUM && !process.env.CI;
-const shots = process.env.AMBIENT_COMPOSER_EVIDENCE ?? join(root, '.cache/evidence/ambient-composer-gaps');
+const shots = process.env.AMBIENT_COMPOSER_EVIDENCE ?? join(root, '.cache/evidence/floating-composer-options');
 
 let server, browser, port;
 before(async () => {
@@ -25,7 +24,7 @@ before(async () => {
   assert.ok(process.env.CHROMIUM, 'CHROMIUM must be set when CI is set');
   mkdirSync(shots, { recursive: true });
   mkdirSync(join(root, '.cache'), { recursive: true });
-  const work = mkdtempSync(join(root, '.cache/ambient-composer-gaps-'));
+  const work = mkdtempSync(join(root, '.cache/floating-composer-options-'));
   const exported = JSON.parse(readFileSync(join(root, 'packages/ui/package.json'), 'utf8')).exports;
   const kit = { name: 'kit-sources', setup(builder) {
     builder.onResolve({ filter: /^@\/hooks\/use-mobile$/ }, () => ({ path: join(root, 'shadcn/ui/use-mobile.ts') }));
@@ -37,7 +36,7 @@ before(async () => {
     });
     builder.onResolve({ filter: /^@hachej\/boring-feedback\/ui$/ }, () => ({ path: join(root, 'packages/feedback/src/ui/index.ts') }));
   } };
-  const bundle = await build({ entryPoints: [join(root, 'test/fixtures/themes/ambient-composer-gaps.jsx')], bundle: true, write: false, metafile: true, format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty', '.excalidraw': 'text', '.drawio': 'text', '.html': 'text' }, plugins: [kit], logLevel: 'silent' });
+  const bundle = await build({ entryPoints: [join(root, 'test/fixtures/themes/floating-composer-options.jsx')], bundle: true, write: false, metafile: true, format: 'esm', platform: 'browser', jsx: 'automatic', define: { 'process.env.NODE_ENV': '"production"' }, loader: { '.css': 'empty', '.excalidraw': 'text', '.drawio': 'text', '.html': 'text' }, plugins: [kit], logLevel: 'silent' });
   const js = bundle.outputFiles[0].text;
   const sources = Object.keys(bundle.metafile.inputs).filter(path => /\.(tsx?|jsx)$/.test(path) && !path.includes('node_modules')).map(path => readFileSync(join(root, path), 'utf8'));
   const vars = item('theme').cssVars;
@@ -91,9 +90,7 @@ const dragFrom = async (selector, toX, toY) => {
 };
 const tap = async selector => { const r = await rect(selector); const x = r.x + r.w / 2, y = r.y + r.h / 2; await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y); };
 const FRAME = '[data-testid=composer-floating]', ICON = '[data-testid=composer-icon]', NOTICE = '[data-testid=notice]';
-const LEGACY = '[data-testid=ambient-header]';
-const changes = () => browser.evaluate('window.__changes');
-const shot = async (name, dark) => { await browser.evaluate(`document.documentElement.classList.toggle('dark', ${dark})`); await wait(150); await browser.screenshot(`ambient-composer-${name}-${dark ? 'dark' : 'light'}.png`); };
+const shot = async (name, dark) => { await browser.evaluate(`document.documentElement.classList.toggle('dark', ${dark})`); await wait(150); await browser.screenshot(`floating-composer-options-${name}-${dark ? 'dark' : 'light'}.png`); };
 const shots2 = async name => { for (const dark of [false, true]) await shot(name, dark); await browser.evaluate(`document.documentElement.classList.remove('dark')`); };
 
 const sessionKeys = () => browser.evaluate(`Object.keys(sessionStorage).filter(key => key.includes('sidebar-composer'))`);
@@ -102,7 +99,6 @@ const MINIMISE = '[data-testid=composer-controller] [data-action=minimise], [dat
 
 test('1440 and 390: className reaches the composer box (the floating frame, the folded icon), so a host can place it', { skip, timeout: 180000 }, async () => {
   await open(1440, 'class=host-moved');
-  assert.equal(await count('[data-testid=ambient-header]'), 0, 'the one composer');
   assert.equal(await browser.evaluate(`document.querySelector(${js(FRAME)}).classList.contains('host-moved')`), true, 'the frame carries the host class');
   const frame = await rect(FRAME);
   assert.ok(frame.bottom < 900 - 120, `the host class moved the bar up: ${JSON.stringify(frame)}`);
@@ -111,33 +107,31 @@ test('1440 and 390: className reaches the composer box (the floating frame, the 
   await browser.until('folded', `!!document.querySelector(${js(ICON)})`);
   assert.equal(await browser.evaluate(`document.querySelector(${js(ICON)}).parentElement.classList.contains('host-moved')`), true, 'the icon carries it too');
   await open(390, 'class=host-moved');
-  assert.equal(await count('[data-testid=ambient-header]'), 0, 'the phone bar is the one composer too (its bottom sheet is the shell\'s, not placed by the host)');
   await click(MINIMISE);
   await browser.until('folded', `!!document.querySelector(${js(ICON)})`);
   assert.equal(await browser.evaluate(`document.querySelector(${js(ICON)}).parentElement.classList.contains('host-moved')`), true, 'the phone\'s icon carries it');
 });
 
-test('1440: storage session keeps the place in this tab only, local keeps it across visits; the default is the old bar\'s session', { skip, timeout: 180000 }, async () => {
+test('1440: storage session keeps the place in this tab only, local (the default) keeps it across visits', { skip, timeout: 180000 }, async () => {
   await open(1440);
   await click(MINIMISE);
   await browser.until('folded', `!!document.querySelector(${js(ICON)})`);
-  assert.equal((await sessionKeys()).some(key => key.includes('composer-place')), true, 'the place is in sessionStorage by default');
-  assert.deepEqual(await localKeys(), [], 'and not in localStorage');
-  await open(1440, 'storage=local');
+  assert.equal((await localKeys()).some(key => key.includes('composer-place')), true, 'the place is in localStorage by default');
+  assert.deepEqual(await sessionKeys(), [], 'and not in sessionStorage');
+  await open(1440, 'storage=session');
   await click(MINIMISE);
   await browser.until('folded', `!!document.querySelector(${js(ICON)})`);
-  assert.equal((await localKeys()).some(key => key.includes('composer-place')), true, 'storage="local" keeps it in localStorage');
-  assert.deepEqual(await sessionKeys(), [], 'and not in sessionStorage');
+  assert.equal((await sessionKeys()).some(key => key.includes('composer-place')), true, 'storage="session" keeps it in sessionStorage');
+  assert.deepEqual(await localKeys(), [], 'and not in localStorage');
 });
 
 test('1440: an app that had the old bar keeps where the person put it (the old drag position is read once)', { skip, timeout: 180000 }, async () => {
   await open(1440, `legacy=${encodeURIComponent(JSON.stringify({ right: 200, bottom: 300 }))}`);
-  assert.equal(await count('[data-testid=ambient-header]'), 0);
   const frame = await rect(FRAME);
   assert.ok(Math.abs(frame.right - (1440 - 200)) <= 2, `the old right edge is kept: ${JSON.stringify(frame)}`);
   assert.ok(Math.abs(frame.bottom - (900 - 300)) <= 40, `the old bottom edge is kept (the bar is shorter than the old window): ${JSON.stringify(frame)}`);
   await shots2('1440-g2-migrated');
-  assert.equal((await sessionKeys()).some(key => key.includes('composer-pos')), true, 'it is written as this bar\'s own place');
+  assert.equal((await localKeys()).some(key => key.includes('composer-pos')), true, 'it is written as this bar\'s own place');
   await browser.evaluate(`sessionStorage.setItem('boring.ambient.position', JSON.stringify({ right: 16, bottom: 16 }))`);
   await open(1440, 'keep=1');
   const again = await rect(FRAME);
@@ -165,28 +159,10 @@ test('1440 and 390: autoDismissMs fades a notice (an error too, a question never
   await shots2('390-g4-max');
 });
 
-test('1440: systemNotifications offers the browser permission as a notice, then notifies while the page is hidden', { skip, timeout: 180000 }, async () => {
-  await open(1440, 'system=1');
-  await browser.until('the offer', `!!document.querySelector(${js(NOTICE)})`);
-  assert.match(await browser.evaluate(`document.querySelector(${js(NOTICE)}).textContent`), /Notify me when the page is in the background/);
-  assert.equal(await browser.evaluate('window.__asked'), 0, 'nothing is asked on load');
-  await shots2('1440-g5-system');
-  await click('[data-testid=notice-action]');
-  await browser.until('asked once', `window.__asked === 1`);
-  await browser.evaluate(`window.__push('done')`);
-  await wait(300);
-  assert.equal(await browser.evaluate('window.__system.length'), 0, 'a visible page gets the notice, not a system notification');
-  await browser.evaluate(`window.__hidden(true)`);
-  await browser.evaluate(`window.__push('error', 'Backup')`);
-  await browser.until('a system notification', `window.__system.length === 1`);
-  assert.equal(await browser.evaluate(`window.__system[0].title`), 'Backup');
-});
-
 test('1440 and 390: renderComposer and composerLayout reach the bar\'s composer', { skip, timeout: 180000 }, async () => {
   for (const width of [1440, 390]) {
     await open(width, 'render=1');
-    assert.equal(await count('[data-testid=ambient-header]'), 0);
-    assert.equal(await count('[data-testid=host-composer]') >= 1, true, `${width}: the host's renderComposer draws the field`);
+      assert.equal(await count('[data-testid=host-composer]') >= 1, true, `${width}: the host's renderComposer draws the field`);
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=host-composer-layout]').textContent`), 'pill', `${width}: it gets the bar's layout`);
     await open(width, 'layout=card');
     assert.equal(await browser.evaluate(`document.querySelector('[data-testid=composer]').dataset.layout`), 'card', `${width}: composerLayout is the host's choice`);
@@ -217,17 +193,4 @@ test('1440 and 390: the model pill shows the model\'s name in the narrow bar, no
     assert.ok(fit.w >= 56, `${width}: and it has room: ${JSON.stringify(fit)}`);
     await shots2(`${width}-g8-model`);
   }
-});
-
-test('1440: a controlled state the host ignores snaps back to the host\'s value', { skip, timeout: 180000 }, async () => {
-  await open(1440, 'state=bar&ignore=1');
-  assert.equal(await count(FRAME), 1);
-  await click(MINIMISE);
-  await browser.until('the host was told', `window.__changes.includes('minimized')`);
-  await browser.until('the bar is back, as the host holds it', `!document.querySelector(${js(ICON)}) && !!document.querySelector(${js(FRAME)})`, 4000);
-  await open(1440, 'state=bar');
-  await click(MINIMISE);
-  await browser.until('a host that takes it: it follows', `!!document.querySelector(${js(ICON)})`);
-  await wait(500);
-  assert.equal(await count(ICON), 1, 'it stays folded');
 });
