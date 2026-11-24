@@ -72,6 +72,8 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE } = {}
           await browser.type(input, prompt);
           await browser.click(q('[data-testid=composer-submit]'));
           await browser.until('scripted response', `${q('[data-testid=composer-submit]')}?.dataset.state === 'send' && !!${q('[data-testid=transcript] article[data-role=assistant]')}`, 30000);
+          // The workspace demo's `show` floats the agent a moment after its answer; the chat remounts as the floating composer, so wait for it before auditing or mutating a control.
+          if (name === 'workspace') await browser.until('the agent has floated', `${q('[data-dock=chat]')}?.dataset.placement === 'floating' && !!${q('[data-testid=composer-floating], [data-testid=agent-layer]')}`, 30000);
           prepared = true;
         }
         if (name === 'standalone') {
