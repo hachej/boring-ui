@@ -71,7 +71,7 @@ The probe supplies a small Node-compatible adapter over `InMemoryFs`, denies chi
 
 ## json-render composition — executed, passed
 
-Command in v4: `node scripts/probe-json-render.mjs <isolated install>`. Deterministic in-process evaluator, invented sentinel strings, `fetch` denied; no model or Gateway call.
+Command in v4 (script since deleted, see git history): `node scripts/probe-json-render.mjs <isolated install>`. Deterministic in-process evaluator, invented sentinel strings, `fetch` denied; no model or Gateway call.
 
 ```text
 PASS: @json-render/core@0.21.0, @json-render/react@0.21.0, zod@4.6.5; 2 evaluator request(s) carried descriptions only: no literal prop, state value, binding path or action parameter.
@@ -85,7 +85,7 @@ These observations shape [EXPERIENCE.md](../architecture/EXPERIENCE.md): strippi
 
 ## Jev live composition (A31, real-model level) — executed, passed
 
-Command in v4: `node scripts/probe-jev-live.mjs <isolated install> .cache/evidence/jev-live 3`, with `TYPESAFE_API_KEY` read from the local Vault into the process environment and never printed. Endpoint `https://api.typesafe.ai/v1/systemone`, model `jev-latest`, which resolved to `jev-1.13.0`. Same isolated install as the composition probe. Network was limited to that endpoint, and every request body was captured before it left. Candidates were invented and metadata-only: each full cell (bindings, invented values and an action parameter, all carrying sentinels) was stripped to `{ id, description, root?, maxUses?, element: { type, props: { cell } } }`. After composition the markers were rebound to the full cells, bindings resolved against an invented state, and the result validated by `catalog.validate` plus each element's strict props schema.
+Command in v4 (script since deleted, see git history): `node scripts/probe-jev-live.mjs <isolated install> .cache/evidence/jev-live 3`, with `TYPESAFE_API_KEY` read from the local Vault into the process environment and never printed. Endpoint `https://api.typesafe.ai/v1/systemone`, model `jev-latest`, which resolved to `jev-1.13.0`. Same isolated install as the composition probe. Network was limited to that endpoint, and every request body was captured before it left. Candidates were invented and metadata-only: each full cell (bindings, invented values and an action parameter, all carrying sentinels) was stripped to `{ id, description, root?, maxUses?, element: { type, props: { cell } } }`. After composition the markers were rebound to the full cells, bindings resolved against an invented state, and the result validated by `catalog.validate` plus each element's strict props schema.
 
 **Adapter.** TypeSafe takes json-render's `{ state, questions }` body plus `model`. It answers `answers[q] = { type: "choice", choice, confidence, probabilities }` and `usage.input_tokens`, so a direct adapter fits the evaluator interface in [CONTRACTS.md](../contracts/CONTRACTS.md#experiences-cells-and-composition) as written. `experimental_createEvaluator` in 0.21.0 has the Gateway URL fixed; its `fetch` option can redirect to the TypeSafe endpoint with the body plus `model`, and that path also completed (462 ms, `finish`), though it drops TypeSafe's confidence (it reads Gateway `providerMetadata`).
 
