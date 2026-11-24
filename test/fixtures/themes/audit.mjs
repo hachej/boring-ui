@@ -40,6 +40,8 @@ export function auditDesign({ groups, palette, radiusBindings }) {
     if (element === probe || element.namespaceURI !== 'http://www.w3.org/1999/xhtml' || !element.checkVisibility() || !element.closest('.pi-chat, .boring-viewer, .app-shell, [data-boring], [data-slot=dropdown-menu-content], [role=dialog]')) continue;
     const box = element.getBoundingClientRect();
     if (!box.width || !box.height || box.bottom <= 0 || box.top >= innerHeight || box.right <= 0 || box.left >= innerWidth) continue;
+    // The one composer's own bar (its box, ring, strip and folded-bar controls) is the composer family's design, audited by scripts/test-composer-design.mjs; the conversation around it stays audited.
+    if (element.closest('[data-testid=agent-composer-box]') || element.matches('button[data-testid=agent-bar-conversation], button[data-testid=composer-minimise]')) continue;
     // A PDF's foreign document and rich editor document are content exceptions; their chrome remains audited.
     if (element.closest('.tiptap, .ProseMirror') || element.matches('iframe, canvas, img, script, style, link')) continue;
     // A semantic list/card/menu button remains in its own unmigrated group. Native
