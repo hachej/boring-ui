@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { mentionedPaths } from '@hachej/boring-ui-kit/chat-text';
-import { buildPage, root } from '../ux/runner/build.mjs';
+import { buildPage, root } from '../../ux/runner/build.mjs';
 
 // The design-system page's file tree (the same FileTreeView the Library shows) and the table viewer's « @ » row action, driven in a real Chromium on the real page:
 // a file lines up with its sibling folders, rows and icons stay compact, no second tooltip repeats a label; a row of the sample table becomes one `row` chip in the

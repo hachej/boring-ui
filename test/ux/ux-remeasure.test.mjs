@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { median, remeasure, suspects } from '../ux/runner/remeasure.mjs';
+import { median, remeasure, suspects } from '../../ux/runner/remeasure.mjs';
 
 const flow = (id, viewport, settled) => ({ id, viewport, steps: settled.map(settledMs => ({ ok: true, settledMs, firstChangeMs: 20, cls: 0 })) });
 const th = { settledMs: 800 };

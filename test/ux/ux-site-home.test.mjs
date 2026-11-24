@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { site } from '../ux/runner/site.mjs';
+import { site } from '../../ux/runner/site.mjs';
 
 // The site is one top bar (page menu, Phone and Desktop switch, theme switch) over the app in a frame, with the design system as the default page.
 test('every demo page is a top bar over a frame, the home is the design system, and the menu lists the pages', async t => {

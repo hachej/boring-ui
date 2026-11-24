@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { buildPage, root } from '../ux/runner/build.mjs';
+import { buildPage, root } from '../../ux/runner/build.mjs';
 
 // `AgentCard` props `notch` and `cite` on the real design-system page (inside the AppShell): the card with `notch={false}` draws no strip while the others keep theirs,
 // and the card with `cite={<CiteButton/>}` shows the @ on hover (always on touch), puts one chip with the card's title in the page's composer, and keeps the @ shown while cited.

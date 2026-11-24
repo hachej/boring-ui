@@ -5,8 +5,8 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import test from 'node:test';
-import { buildPage, root } from '../ux/runner/build.mjs';
-import { loadAll } from '../ux/runner/scenario.mjs';
+import { buildPage, root } from '../../ux/runner/build.mjs';
+import { loadAll } from '../../ux/runner/scenario.mjs';
 
 // The `/` menu of the one composer (the design-system page's real AppShell): Commands, Skills and Actions under headings, filtered as you type,
 // driven by the keyboard, and each kind does its own thing (a command acts on the page, a skill is sent to the assistant, an action asks approval first).

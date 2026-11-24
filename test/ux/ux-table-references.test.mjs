@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { mentionedPaths } from '@hachej/boring-ui-kit/chat-text';
-import { buildPage, root } from '../ux/runner/build.mjs';
+import { buildPage, root } from '../../ux/runner/build.mjs';
 
 // The table viewer's row references on the real design-system page: the action's tooltip and name, a chip per row that adds up (once each, with its own remove),
 // several rows at once (a chip each up to three, one grouped chip above), and the structured references the assistant receives, in order.

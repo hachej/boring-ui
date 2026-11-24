@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { buildPage, root } from '../ux/runner/build.mjs';
+import { buildPage, root } from '../../ux/runner/build.mjs';
 
 // AppShell `headerAgent={false}` removes the assistant icon from the screen header (default: shown), and `agentNav="above-bottom"` puts the left bar's assistant entry above
 // the nav items placed after the screen's content (default `end`: below them). The assistant stays reachable from the left bar either way.

@@ -6,9 +6,9 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { site } from '../ux/runner/site.mjs';
+import { site } from '../../ux/runner/site.mjs';
 
-const root = fileURLToPath(new URL('../', import.meta.url));
+const root = fileURLToPath(new URL('../../', import.meta.url));
 const SAFE_DOMAINS = /^(example\.test|example\.com|example\.org|invalid|example\.invalid)$/i;
 // The kit's own public names are not private: its npm scope and its public repository.
 const PUBLIC = /@hachej\/boring-[\w-]+|hachej\/boring-ui/gi;

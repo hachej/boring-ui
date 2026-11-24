@@ -28,8 +28,8 @@ How an app and the kit tell the person something at the composer, in five patter
 - `notify-notice`, `notify-queue`, `notify-fade`, `notify-reference`, `notify-update`: `node --test test/contracts/app-shell-render.impl.mjs` (four notices of four kinds give one `role=status` and « 3 more waiting »; the cap; the fake clock; swipe; the `@`; the update test unchanged).
 - `notify-phone`: the "a notice appears above the bar" test of `test/contracts/one-composer.test.mjs` (1440, 390 and 360: one notice, no tray, focus unmoved, 44 px buttons, not under the tab bar).
 - `notify-needs-you`: the "AC-6" test of the same file (approval and form, 1280 and 390).
-- `notify-field-status`: the "a status replaces the placeholder" test of the same file and `test/ux-table-references.test.mjs` (« 1 referenced »).
-- `notify-play`: `CHROMIUM=... node --test test/ux-site-play.test.mjs` (the five items, light and dark, 1440 and 390; shots in `.cache/evidence/composer-content/notifications-play-*`).
+- `notify-field-status`: the "a status replaces the placeholder" test of the same file and `test/ux/ux-table-references.test.mjs` (« 1 referenced »).
+- `notify-play`: `CHROMIUM=... node --test test/ux/ux-site-play.test.mjs` (the five items, light and dark, 1440 and 390; shots in `.cache/evidence/composer-content/notifications-play-*`).
 
 ## Gotchas
 

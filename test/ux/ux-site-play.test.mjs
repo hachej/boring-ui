@@ -5,9 +5,9 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import test from 'node:test';
-import { buildPage, root } from '../ux/runner/build.mjs';
-import { loadAll } from '../ux/runner/scenario.mjs';
-import { site } from '../ux/runner/site.mjs';
+import { buildPage, root } from '../../ux/runner/build.mjs';
+import { loadAll } from '../../ux/runner/scenario.mjs';
+import { site } from '../../ux/runner/site.mjs';
 
 // The top bar's Play menu lists the page's "things to try" and plays one into the real demo: the scripted assistant's response shows in the conversation.
 const require = createRequire(join(root, 'package.json'));
