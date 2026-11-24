@@ -345,6 +345,11 @@ export const defaultChatLabels = {
   subagentToolCalls: (count: number) => `${count} tool ${count === 1 ? 'call' : 'calls'}`,
   subagentTokens: (input: number, output: number) => `${input} tokens in, ${output} tokens out`,
   subagentConversation: (id: number) => `Open conversation ${id}`,
+  subagentSteps: 'Steps',
+  subagentResult: 'Result',
+  subagentList: 'Sub-agents',
+  subagentNone: 'No sub-agent is working.',
+  subagentSummary: (running: number, finished: number) => `${running} running · ${finished} finished`,
   // Artifact cards
   artifact: 'Artifact',
   artifactTypes: { markdown: 'Document', html: 'HTML page', svg: 'SVG image', code: 'Code', canvas: 'Canvas' },
