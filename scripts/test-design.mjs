@@ -29,7 +29,7 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE } = {}
   mkdirSync(evidence, { recursive: true });
   // Import and start one app at a time. All data and model responses are fictional.
   const { startWorkspaceApp } = await import('../examples/workspace-app/server.mjs');
-  const { startWorkspaceDemo } = await import('../demos/workspace/server.mjs');
+  const { startWorkspaceDemo } = await import('../examples/workspace-demo/server.mjs');
   const { misses } = await import('../lab/studio/scripted-model.mjs');
   const input = q('[data-testid=composer-input]');
   for (const [name, start, prompt] of [['standalone', startWorkspaceApp, 'Write a picnic plan and present it.'], ['workspace', startWorkspaceDemo, 'what needs my approval this week']]) {

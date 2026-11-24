@@ -6,10 +6,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
-import { validWorkspacePath } from '../../demos/workspace/paths.mjs';
+import { validWorkspacePath } from '../../examples/workspace-demo/paths.mjs';
 
 process.env.STUDIO_MODEL = 'scripted';
-const { startWorkspaceDemo } = await import('../../demos/workspace/server.mjs');
+const { startWorkspaceDemo } = await import('../../examples/workspace-demo/server.mjs');
 
 const say = async (app, content) => {
   const conversation = await app.conversations.open('ap-helper', Number(app.current));

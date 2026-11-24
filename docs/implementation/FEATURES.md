@@ -374,7 +374,7 @@ See [PARTIAL](PARTIAL.md#portable-library-tree) for candidate qualifications.
 
 ## Workspace AP demo and inset viewer headers
 
-The [workspace demo](../../demos/workspace/README.md) composes fixed registered cells, one mounted chat and a file column across page, docked and floating placements. App navigation excludes History and Library; their top-bar icons open Base UI popovers. The app presentation adapts the pinned MIT Tremor Planner template.
+The [workspace demo](../../examples/workspace-demo/README.md) composes fixed registered cells, one mounted chat and a file column across page, docked and floating placements. App navigation excludes History and Library; their top-bar icons open Base UI popovers. The app presentation adapts the pinned MIT Tremor Planner template.
 
 `AmbientChat.headerTools` accepts host-owned header controls. Compact viewer headers keep one row by default. `ViewerFrame compactHeader={false}` restores the former chrome and honors the opt-in `ViewerWindow.headerLayout: 'stacked'` layout. `test/contracts/viewers-source.test.mjs` drives stacked and default headers, menus and handlers. `workspace-demo:journey` drives AP decisions, retained DOM identity and drafts, live Library updates, popover placement, in-card header geometry and narrow-table layout. Its screenshot matrix covers nine screens, light and dark, at 1440×900, 1280×720 and 390×844 under `.cache/evidence/saas-v2/`. The headless browser shows the PDF download fallback; this is not native PDF plug-in qualification or a real-model judgment.
 

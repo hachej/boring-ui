@@ -157,7 +157,7 @@ Every example uses fictional data. Run it with `npm run <name>` after `npm run b
 | [`bot`](examples/bot/README.md) | One lifelong conversation with memory and a self it can edit |
 | [`browser-agent`](examples/browser-agent/README.md) | A coding agent that runs entirely in one browser tab |
 | [`hosts`](examples/hosts/README.md) | The same agent on Cloudflare Durable Objects and AWS |
-| [`workspace-demo`](demos/workspace/README.md) | A fictional accounts-payable week with approvals |
+| [`workspace-demo`](examples/workspace-demo/README.md) | A fictional accounts-payable week with approvals |
 
 The [studio](lab/README.md) is a playground over every block (`npm run studio`).
 
@@ -205,7 +205,6 @@ One job per top-level folder. What the kit does is in the [feature map](features
 | [`shadcn/`](shadcn/README.md) | `ui/`: the kit's own shadcn primitives (Base UI, compact defaults) | boring-factory's bundle (by path), the design checks |
 | `shared/` | Host helpers (standard agent, workspace and MCP tools, SQLite workspaces, canvas transport) imported by relative path, not a package | examples, fixtures, `lab/`, boring-factory (`local-host.mjs`) |
 | [`examples/`](examples/README.md) | Single-feature and host recipes, one runnable app each | people learning the kit; boring-factory (`app-shell`) |
-| [`demos/`](demos/README.md) | One story demo, told end to end | people evaluating the kit |
 | [`lab/`](lab/README.md) | The studio playground over every block, plus its scripted-model and Tailwind helpers | maintainers, the scripted CI journeys, boring-factory |
 | `fixtures/` | Fictional data and fake hosts | tests, examples |
 | `test/` | All tests and their fixtures | CI, boring-factory (`test/fixtures`) |
@@ -214,7 +213,7 @@ One job per top-level folder. What the kit does is in the [feature map](features
 | [`docs/`](docs/) | Specs, contracts, guides and per-task notes | everyone |
 | [`skills/`](skills/README.md) | Agent skills for building apps with the kit | coding agents, boring-factory's `build-app` |
 
-`examples/` are recipes to copy, `demos/` tell one product story, and `lab/` is the playground that exercises the library itself.
+`examples/` are recipes to copy (`examples/workspace-demo` tells one product story end to end), and `lab/` is the playground that exercises the library itself.
 
 ## Contributing
 

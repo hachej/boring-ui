@@ -45,7 +45,7 @@ Docs only. Searched on origin/main (f220d51ee) in this repo, `boring-factory/mai
 2. (Dropped: the fresh search found no dead script.)
 3. READMEs: `skills/README.md`, `shadcn/README.md`; then, after #2137 merges (it edits root `README.md` and `demos/`), one line per top-level folder in the root README. Docs only.
 4. MIGRATING.md: move old released sections to `docs/migrating/ARCHIVE.md`, with the release scripts still passing (check `check-release-notes` on the diff).
-5. Merge `demos/` into `examples/` (touches `package.json`, `verify.yml`, tests, `.gitignore`; wait for open PRs, #2137 touches the demo).
+5. (Done: `demos/workspace` is now `examples/workspace-demo`.) Merge `demos/` into `examples/` (touches `package.json`, `verify.yml`, tests, `.gitignore`; wait for open PRs, #2137 touches the demo).
 6. `tools/` into `scripts/` (comment-only edits in `packages/ui`, `packages/feedback` need an Unreleased line).
 7. Group `scripts/` into `scripts/{release,check,journeys}` only for files with no pinned outside path (`css-stub-*` stay); last, biggest churn, likely skipped.
 

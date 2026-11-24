@@ -212,7 +212,7 @@ jobs:
           npm run registry:build
           npm run test:app-registry-consumer
   demo-worker:
-    # The public workspace demo's Worker (demos/workspace/cloudflare): build the page and bundle the Worker with a wrangler dry run.
+    # The public workspace demo's Worker (examples/workspace-demo/cloudflare): build the page and bundle the Worker with a wrangler dry run.
     # No Cloudflare account or secret is used; nothing is deployed.
     name: Public demo Worker bundle
     runs-on: ubuntu-latest
@@ -227,7 +227,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run workspace-demo:cloudflare:build
-      - run: npx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/demo-worker" --config demos/workspace/cloudflare/wrangler.jsonc
+      - run: npx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/demo-worker" --config examples/workspace-demo/cloudflare/wrangler.jsonc
         env:
           WRANGLER_SEND_METRICS: 'false'
   isolated-consumers-ok:

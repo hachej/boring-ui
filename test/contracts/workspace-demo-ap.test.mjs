@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openAccountsPayable } from '../../demos/workspace/ap.mjs';
+import { openAccountsPayable } from '../../examples/workspace-demo/ap.mjs';
 import { openSqliteWorkspaces } from '../../shared/sqlite-workspaces.mjs';
 
 // The workspace demo's backend: a decision is a conditional write on the reviewed revision, and repeating it returns its receipt.
