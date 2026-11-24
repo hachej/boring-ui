@@ -10,7 +10,7 @@ packages/ui/r/
 *.tgz
 .claude/worktrees/
 examples/hosts/cloudflare/public/
-demos/workspace/cloudflare/public/
+examples/workspace-demo/cloudflare/public/
 .wrangler/
 .dev.vars
 .gen/

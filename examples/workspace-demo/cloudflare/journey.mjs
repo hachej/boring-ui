@@ -2,8 +2,8 @@
 // over HTTP: sessions are separate objects that never see each other's files or decisions, an oversized or unsized body is refused, the
 // per-session message limit answers 429, and an idle session's data is deleted. Screenshots (desktop 1440 and phone 390, light and dark,
 // stock and brand theme) go to .cache/evidence/demo-worker/.
-//   DEMO_URL=https://demo.senecaapp.ai CHROMIUM=<binary> node demos/workspace/cloudflare/journey.mjs   # a running Worker (skips the expiry proof)
-//   CHROMIUM=<binary> node demos/workspace/cloudflare/journey.mjs                                       # starts `wrangler dev --local` itself
+//   DEMO_URL=https://demo.senecaapp.ai CHROMIUM=<binary> node examples/workspace-demo/cloudflare/journey.mjs   # a running Worker (skips the expiry proof)
+//   CHROMIUM=<binary> node examples/workspace-demo/cloudflare/journey.mjs                                       # starts `wrangler dev --local` itself
 // Build first: npm run workspace-demo:cloudflare:build. Fictional content only.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';

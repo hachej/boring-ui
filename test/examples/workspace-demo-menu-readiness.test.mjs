@@ -6,7 +6,7 @@ import { Window } from 'happy-dom';
 import { q } from '@hachej/boring-testing/browser';
 
 for (const mode of ['source', 'rich']) for (const expanded of [false, true]) test(`workspace demo's actual ${mode} mode action handles an ${expanded ? 'open' : 'exiting'} menu`, async t => {
-  const source = readFileSync(new URL('../../demos/workspace/journey.mjs', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../../examples/workspace-demo/journey.mjs', import.meta.url), 'utf8');
   const marker = "await browser.screenshot('4-policy.png');";
   const start = source.indexOf(marker);
   const end = source.indexOf('await browser.type(', start);

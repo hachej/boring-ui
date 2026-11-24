@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { launch, q } from '@hachej/boring-testing/browser';
 import { connectRevisionProvider } from '@hachej/boring-files/revision';
 import { startWorkspaceApp } from '../workspace-app/server.mjs';
-import { startWorkspaceDemo } from '../../demos/workspace/server.mjs';
+import { startWorkspaceDemo } from '../../examples/workspace-demo/server.mjs';
 
 const evidence = resolve(process.env.LIBRARY_EVIDENCE ?? '.cache/evidence/library/after');
 mkdirSync(evidence, { recursive: true });

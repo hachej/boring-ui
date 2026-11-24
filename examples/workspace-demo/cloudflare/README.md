@@ -31,7 +31,7 @@ Inside the shared implementation VM, run these through the lane's `capped` wrapp
 
 ```sh
 npm ci
-npm run workspace-demo:cloudflare:build        # packages, then the page into demos/workspace/cloudflare/public (gitignored)
+npm run workspace-demo:cloudflare:build        # packages, then the page into examples/workspace-demo/cloudflare/public (gitignored)
 npm run workspace-demo:cloudflare:dev          # wrangler dev --local, http://localhost:8787
 CHROMIUM=<chromium binary> npm run workspace-demo:cloudflare:journey
 ```
@@ -45,11 +45,11 @@ Not deployed by this change. With `CLOUDFLARE_API_TOKEN` (Workers Scripts, Durab
 ```sh
 npm ci
 npm run workspace-demo:cloudflare:build
-npx wrangler deploy --config demos/workspace/cloudflare/wrangler.jsonc
+npx wrangler deploy --config examples/workspace-demo/cloudflare/wrangler.jsonc
 ```
 
 `wrangler.jsonc` names the Worker `boring-ui-demo` and declares `demo.senecaapp.ai` as a custom domain (`routes: [{ pattern: "demo.senecaapp.ai", custom_domain: true }]`): the deploy creates the DNS record and certificate on the `senecaapp.ai` zone. `workers_dev` is off, so the demo has no `*.workers.dev` address. No secret is needed. Check afterwards with `DEMO_URL=https://demo.senecaapp.ai CHROMIUM=<binary> npm run workspace-demo:cloudflare:journey` (it skips the expiry proof against a deployment).
 
-Dry run (no account needed; CI runs it): `npx wrangler deploy --dry-run --outdir /var/tmp/demo-worker-dry --config demos/workspace/cloudflare/wrangler.jsonc`.
+Dry run (no account needed; CI runs it): `npx wrangler deploy --dry-run --outdir /var/tmp/demo-worker-dry --config examples/workspace-demo/cloudflare/wrangler.jsonc`.
 
-Delete: `npx wrangler delete --config demos/workspace/cloudflare/wrangler.jsonc` (removes the Worker, its custom domain and every session's data).
+Delete: `npx wrangler delete --config examples/workspace-demo/cloudflare/wrangler.jsonc` (removes the Worker, its custom domain and every session's data).

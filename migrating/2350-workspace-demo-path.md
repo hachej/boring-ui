@@ -1,0 +1,1 @@
+- **Docs: the workspace demo now lives in `examples/workspace-demo` (was `demos/workspace`).** No package or registry path changes; update any link or `wrangler --config` path you copied from the demo.

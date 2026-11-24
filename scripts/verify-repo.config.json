@@ -2,7 +2,6 @@
   "version": 1,
   "allowedTopLevel": [
     ".github",
-    "demos",
     "docs",
     "examples",
     "features",
