@@ -462,8 +462,7 @@ and never republishes. Keep the local file until the result is known. Upload sta
 Both components take `locale` (`en` by default, or `fr`; the words are exported as
 `defaultFileTreeLabels` and `frenchFileTreeLabels`) and `labels` to override any word,
 including the accessible names, or to add another language, `upload={false}` and
-`history={false}` to hide upload controls or the version-history menu item, and `refreshKey`: when its value changes the open folders and the current
-search reload, for example after an agent saves a file. A search result shows its
+`history={false}` to hide upload controls or the version-history menu item. A search result shows its
 name with its folder in the metadata line in `list`, or on the same line in `plain`. `AgentWorkspace` passes the same options to its
 Library through `fileTree`, with its own `locale`.
 

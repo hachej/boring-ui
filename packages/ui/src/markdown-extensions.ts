@@ -135,7 +135,7 @@ function createSourceTable(schema: () => Schema | undefined) {
 export type MarkdownImageResolver = (source: string) => string | undefined;
 
 /** Only an image carried inside the document itself loads by default. Anything else needs the host's resolver. */
-export const inlineImagesOnly: MarkdownImageResolver = source => /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=]+$/i.test(source) ? source : undefined;
+const inlineImagesOnly: MarkdownImageResolver = source => /^data:image\/(?:png|jpe?g|gif|webp);base64,[a-z0-9+/=]+$/i.test(source) ? source : undefined;
 
 export interface MarkdownExtensionOptions {
   readonly placeholder?: string | (() => string);

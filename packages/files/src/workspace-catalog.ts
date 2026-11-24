@@ -36,7 +36,7 @@ const rank = (path: string, query: string) => {
   const name = path.slice(path.lastIndexOf('/') + 1).toLowerCase();
   return name.startsWith(query) ? '0' : name.includes(query) ? '1' : '2';
 };
-export function catalogPath(path: string, allowRoot = false): string {
+function catalogPath(path: string, allowRoot = false): string {
   if (allowRoot && path === '') return path;
   return locator({ resource: { providerId: 'catalog', path }, view: { kind: 'published' } }).resource.path;
 }

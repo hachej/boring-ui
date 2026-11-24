@@ -33,7 +33,7 @@ export async function runOp(def: AppDefinition, op: Op, input: unknown, call: Op
 }
 
 /** One plain operation as one pi-durable tool. Who, the unit, the time and the command id are read inside each call. */
-export function opTool(def: AppDefinition, op: Op, scope: Scope | undefined, attribution: Acting, commandId: ((...a: Parameters<Acting>) => Promise<string>) | undefined, host: OpHost) {
+function opTool(def: AppDefinition, op: Op, scope: Scope | undefined, attribution: Acting, commandId: ((...a: Parameters<Acting>) => Promise<string>) | undefined, host: OpHost) {
   const sender = async (...a: Parameters<Acting>) => { try { return (await attribution(...a)).requestedBy; } catch (error) { if (error instanceof SenderUnknown) return SENDER_UNKNOWN; throw error; } };
   const tool = defineTool({
     name: op.name, description: op.description,

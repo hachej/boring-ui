@@ -34,7 +34,7 @@ export const maxDirPageEntries = 1000, maxWatchTargets = 64, maxWatchExcludeName
 
 const text = z.string(), number = z.number().finite();
 /** Bytes travel as canonical base64 text; JSON number arrays multiplied the size by three to four. */
-export function encodeBytes(value: Uint8Array): string {
+function encodeBytes(value: Uint8Array): string {
   let text = '';
   for (let index = 0; index < value.length; index += 0x8000) text += String.fromCharCode(...value.subarray(index, index + 0x8000));
   return btoa(text);

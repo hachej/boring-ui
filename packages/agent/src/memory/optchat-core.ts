@@ -58,7 +58,7 @@ export function cutBytes(text: string, max: number): string {
 }
 
 /** A 53-bit string hash (cyrb53), base 36. Fingerprints only need to tell different content apart. */
-export function hashText(text: string): string {
+function hashText(text: string): string {
   let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i);
@@ -92,7 +92,7 @@ const textOf = (content: Content): string => typeof content === 'string' ? conte
   : (content ?? []).map(part => part.type === 'text' ? part.text ?? '' : `[${part.type}]`).filter(Boolean).join('\n');
 
 /** Keep the head and tail of text longer than `cap` characters, and say how much was cut. */
-export function capText(text: string, cap: number): string {
+function capText(text: string, cap: number): string {
   if (text.length <= cap) return text;
   const head = Math.ceil(cap / 2), tail = Math.floor(cap / 2);
   return `${text.slice(0, head)}\n[… ${text.length - cap} characters cut …]\n${text.slice(text.length - tail)}`;
