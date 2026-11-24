@@ -19,7 +19,7 @@ export interface ConversationsClient {
   readonly opened: string | undefined;
   /** Ends `opened` and returns what the person typed since New, for the new box. */
   readonly openedSeen: () => string;
-  /** New chat was refused or got no answer in time, in the conversation on screen. `typed`: the person's text was dropped. `PiChat` and `AmbientChat` say so. */
+  /** New chat was refused or got no answer in time, in the conversation on screen. `typed`: the person's text was dropped. `PiChat` says so. */
   readonly newFailed: { readonly typed: boolean } | undefined;
   /** The person closed that message. */
   readonly newFailedSeen: () => void;

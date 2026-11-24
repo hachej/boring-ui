@@ -264,7 +264,7 @@ export function feedbackMentionRenderer(onOpen?: ((path: string) => void) | unde
 }
 
 /**
- * A `renderTool` for `PiChat` or `AmbientChat`: cards for `feedback` list results, offers and refusals, `inline` so they
+ * A `renderTool` for `PiChat`: cards for `feedback` list results, offers and refusals, `inline` so they
  * stay in the transcript in expert mode. Memoize it; compose with another renderer as `(c, r) => feedback(c, r) ?? mine(c, r)`.
  */
 export function feedbackRenderTool(config: FeedbackCardConfig = {}): (call: ToolCall, result: ToolResultMessage | undefined) => ChatCard | undefined {

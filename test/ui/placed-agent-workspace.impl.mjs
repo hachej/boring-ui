@@ -6,7 +6,7 @@ import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 
 // PlacedAgentWorkspace (registry/placed-agent): the Agent tab and the collapsed agent over ONE controller. Wide: the collapsed agent is a
-// floating AmbientChat; the page keeps its node and its open view, and the draft (held by the controller) follows. Phone: never the ambient
+// floating composer; the page keeps its node and its open view, and the draft (held by the controller) follows. Phone: never the ambient
 // overlay; inside an app shell the same controller becomes the shell's drawer, outside one the agent stays a page.
 const root = fileURLToPath(new URL('../../', import.meta.url));
 let bundles = 0;

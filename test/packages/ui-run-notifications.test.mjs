@@ -1,14 +1,11 @@
-// Exercise the installed registry adapter and the kit's public API, with fictional native views.
+// Exercise the kit's public notification API (`watchConversation`, `useRunNotifications`, the store), with fictional native views.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync } from 'node:fs';
-import { build } from 'esbuild';
 import { Window } from 'happy-dom';
 import { createNotificationStore as kitStore, watchConversation as kitWatch, useRunNotifications } from '@hachej/boring-ui-kit/chat-react';
-const out = new URL('../../.cache/run-notifications-test/', import.meta.url);
-mkdirSync(out, { recursive: true });
-await build({ entryPoints: [new URL('../../registry/pi-ambient/notifications.tsx', import.meta.url).pathname], outfile: new URL('notifications.mjs', out).pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
-const { watchConversation, createNotificationStore, frenchNotificationLabels } = await import(new URL('notifications.mjs', out));
+const watchConversation = kitWatch, createNotificationStore = kitStore;
+// The surface's words as the kit's `NoticeText` (the `text` option), here in French.
+const frenchText = { approve: summary => `Approbation requise : ${summary}`, runFailed: 'L’exécution a échoué', finished: 'Terminé' };
 const call = { type: 'toolCall', id: 'ask-1', name: 'ask_user', arguments: { question: 'Which fictional harbour?' } };
 const message = { id: 1, kind: 'message', byTaskId: 1, model: [{ role: 'assistant', content: [call], stopReason: 'toolUse', timestamp: 1 }] };
 function source() {
@@ -33,7 +30,7 @@ test('watchConversation notifies a question with no active run and dismisses its
 
 test('watchConversation observes doc-only approval decisions and reconnects without losing a finish', () => {
   const controller = source(), store = createNotificationStore();
-  const stop = watchConversation(controller, store, { conversationId: 'harbour', title: 'Fictional harbour', labels: frenchNotificationLabels });
+  const stop = watchConversation(controller, store, { conversationId: 'harbour', title: 'Fictional harbour', text: frenchText });
   const approval = { ...message, model: [{ ...message.model[0], content: [{ ...call, name: 'delete_all' }] }] };
   const details = decision => ({ 'pi.live': { run: { taskId: 1 }, tools: [{ callId: call.id, details: { 'boring.approval': { summary: 'Delete fictional files?', ...(decision ? { decision } : {}) } } }] } });
   controller.set([approval], details());
@@ -108,8 +105,7 @@ test('public hook and watcher deliver identical transitions; suppression, replac
   assert.equal(controller.listeners, 0);
 });
 
-test('public notification store is shared by legacy re-export and handles keyed replacement and dismissals', () => {
-  assert.equal(createNotificationStore, kitStore);
+test('the public notification store handles keyed replacement and dismissals', () => {
   const store = kitStore(); let changes = 0;
   const stop = store.subscribe(() => changes++);
   const id = store.push({ kind: 'done', title: 'Fictional', conversationId: 'a' });

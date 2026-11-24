@@ -1,6 +1,6 @@
 ---
 name: build-agent-app
-description: Build a React + Node app with an AI agent inside using Boring UI, or add one to an existing app. Use when asked to "create an agent app", "add an AI assistant/chat/copilot to my app", "scaffold a Boring UI app", "wire AgentWorkspace/PiChat to a server", "set up the Pi Harness with the kit", or to connect the pi-app, pi-chat or pi-ambient blocks to defineAgent, createChatTransportHandler, createConversationsHandler and createRevisionHandler. Gives the verified smallest setup (one Node server, one page) and how to extend it.
+description: Build a React + Node app with an AI agent inside using Boring UI, or add one to an existing app. Use when asked to "create an agent app", "add an AI assistant/chat/copilot to my app", "scaffold a Boring UI app", "wire AgentWorkspace/PiChat to a server", "set up the Pi Harness with the kit", or to connect the pi-app, pi-chat or app-shell blocks to defineAgent, createChatTransportHandler, createConversationsHandler and createRevisionHandler. Gives the verified smallest setup (one Node server, one page) and how to extend it.
 ---
 
 # Build an agent app
@@ -54,7 +54,7 @@ Other placements use the same server:
 | Placement | Block | Component |
 | --- | --- | --- |
 | Whole page: sessions, chat, viewers | `pi-app` | `AgentWorkspace` |
-| Floating bar over an existing site | `pi-ambient` | `AmbientChat` |
+| Floating bar over an existing site | `app-shell` | `FloatingComposer` |
 | One agent above any app (phone drawer, desktop panel) | `app-shell` | `AppShell` |
 | Only the conversation, your own layout | `pi-chat` | `PiChat` |
 

@@ -11,7 +11,7 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const source = process.env.DECIDED_SOURCE_ROOT ?? root;
 const out = `${root}.cache/pi-chat-decided-approval-test`;
 mkdirSync(out, { recursive: true });
-await build({ stdin: { contents: `export { PiChat } from './registry/pi-chat/pi-chat.tsx'; export { watchConversation } from './registry/pi-ambient/notifications.tsx'; export { ApprovalCard } from './registry/pi-chat-approval/approval-card.tsx';`, resolveDir: source, loader: 'tsx' },
+await build({ stdin: { contents: `export { PiChat } from './registry/pi-chat/pi-chat.tsx'; export { watchConversation } from '@hachej/boring-ui-kit/chat-react'; export { ApprovalCard } from './registry/pi-chat-approval/approval-card.tsx';`, resolveDir: source, loader: 'tsx' },
   outfile: `${out}/chat.mjs`, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
 const { PiChat, watchConversation, ApprovalCard } = await import(pathToFileURL(`${out}/chat.mjs`).href);
 

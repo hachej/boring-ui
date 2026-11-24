@@ -76,7 +76,7 @@ export interface AgentSpec {
   readonly workingWords?: ((phase: { readonly tool?: string; readonly stage?: string; readonly text: string }) => string | undefined) | undefined;
 }
 
-/** What an `artifactPanel` gets: the panel's own controls and the versions of the artifact it shows (the same members as `AmbientArtifactPanelApi`). */
+/** What an `artifactPanel` gets: the panel's own controls and the versions of the artifact it shows. */
 export interface AgentArtifactPanelApi {
   readonly fullscreen: boolean;
   /** Absent on a phone, where the panel is already a full-screen sheet. */

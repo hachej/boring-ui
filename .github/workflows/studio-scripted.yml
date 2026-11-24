@@ -1,5 +1,5 @@
 name: Scripted browser journeys
-# The blocking browser layer: real Chromium against the studio and the ambient example with a scripted model (no key, no network model,
+# The blocking browser layer: real Chromium against the studio and the workspace demo with a scripted model (no key, no network model,
 # one logged retry per journey scenario). A repeated failure blocks. The required check "Studio scripted journeys" is the final ci-ok job.
 # The real-model layer is separate and never blocks: .github/workflows/studio-smoke.yml.
 on:
@@ -228,11 +228,6 @@ jobs:
         run: node scripts/retry-journey.mjs workspace-demo:journey
         env:
           APP_EVIDENCE: ${{ runner.temp }}/evidence/workspace-demo
-      - name: Ambient journey with the scripted model
-        if: matrix.shard == 'workspace'
-        run: node scripts/retry-journey.mjs ambient:journey:scripted
-        env:
-          AMBIENT_EVIDENCE: ${{ runner.temp }}/evidence/ambient
       - name: Canvas command evidence
         if: always() && matrix.shard == 'documents'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -123,7 +123,7 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE } = {}
         assert.ok(ordinary === null || ordinary > 0, `${prefix}: a hand-set circle on an ordinary button must fail group 1`);
         assert.equal(badButton.groups.find(group => group.id === '1').violations.filter(finding => finding.target === 'button[data-testid=composer-plus]' && finding.family === 'radius').length, 0, `${prefix}: the composer's own action circle passes`);
       }
-      if (name === 'standalone') for (const theme of ['stock', 'brand']) for (const mode of ['light', 'dark']) for (const width of [1440, 390]) for (const surface of ['choices', 'notification', 'provider', 'toggles']) {
+      if (name === 'standalone') for (const theme of ['stock', 'brand']) for (const mode of ['light', 'dark']) for (const width of [1440, 390]) for (const surface of ['choices', 'provider', 'toggles']) {
         const params = { theme, mode, width }, prefix = `${name}-${theme}-${mode}-${width}-${surface}`;
         await visit(params, `${app.url}?controls=${surface}&theme=${theme}&mode=${mode}`, `!!${q('[data-testid=group-one-controls]')}`);
         await inspect(prefix, params);
@@ -136,11 +136,6 @@ export async function testDesign({ evidence = process.env.DESIGN_EVIDENCE } = {}
           assert.ok(heights.length >= 2 && heights.every(height => height >= 31.9), `${prefix}: question options keep at least the stock Button height, got ${JSON.stringify(heights)}`);
           await browser.click(q('[data-testid=question-option]'));
           await browser.until('fictional question callback', `${q('[data-testid=question-card]')}.dataset.state === 'sent'`);
-        } else if (surface === 'notification') {
-          const box = await browser.evaluate(`(() => { const button = ${q('[data-testid=agent-toast-open]')}; return { height: button.clientHeight, content: button.scrollHeight }; })()`);
-          assert.ok(box.content <= box.height + 1, `${prefix}: notification text must fit its activation box`);
-          await browser.click(q('[data-testid=agent-toast-open]'));
-          await browser.until('notification callback', `${q('[data-testid=group-one-event]')}.textContent === 'notification opened'`);
         } else if (surface === 'provider') {
           await browser.click(q('[data-testid=provider-save]'));
           await browser.until('provider callback', `${q('[data-testid=group-one-event]')}.textContent === 'provider saved'`);

@@ -15,7 +15,7 @@ export function Host(props) { return h(MessageScrollerProvider, { autoScroll: tr
 function Transcript({ rows, heights, expose, open = true }) {
   const { stick, visible } = useTranscript(rows, 60, 40);
   expose(stick);
-  // Like AmbientChat, the scroller is mounted only while the panel is open.
+  // Like the floating composer, the scroller is mounted only while the panel is open.
   if (!open) return null;
   return h(MessageScroller, null, h(MessageScrollerViewport, { ref: stick.scrollRef, 'data-testid': 'transcript-scroll' },
     h(MessageScrollerContent, { 'data-testid': 'transcript' },

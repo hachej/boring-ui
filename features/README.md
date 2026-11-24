@@ -20,7 +20,6 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | UX harness | scenarios, capture, check, judge, loop and showcase for layouts and components | [ux-harness.md](ux-harness.md) |
 | Chat | `pi-chat`, composer features, cards, mentions, conversations | [chat.md](chat.md) |
 | Agent workspace | `pi-app`, embedded and placed workspaces, Library, viewers | [agent-workspace.md](agent-workspace.md) |
-| Ambient agent | the floating bar over an existing site, notifications | [ambient.md](ambient.md) |
 | Shared chat | the room: people and agents in one conversation | [shared-chat.md](shared-chat.md) |
 | Spaces | switcher, members sheet and client for a host's shared spaces | [spaces.md](spaces.md) |
 | Needs-you blocks | InlineQuestion, StatusNarrative, then SpaceCard | [attention.md](attention.md) |

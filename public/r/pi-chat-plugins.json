@@ -2,7 +2,7 @@
   "$schema": "https://ui.shadcn.com/schema/registry-item.json",
   "name": "pi-chat-plugins",
   "title": "Pi chat with every composer feature",
-  "description": "withChatPlugins(props): pi-chat with every composer feature item plugged in (Markdown, slash menu, mentions, model and effort picker, voice messages, phone camera). Components the host already passes are kept; features the host does not configure stay off. pi-app, pi-ambient, app-shell and shared-chat use it.",
+  "description": "withChatPlugins(props): pi-chat with every composer feature item plugged in (Markdown, slash menu, mentions, model and effort picker, voice messages, phone camera). Components the host already passes are kept; features the host does not configure stay off. pi-app, app-shell, app-shell and shared-chat use it.",
   "dependencies": [
     "react@^19.0.0"
   ],

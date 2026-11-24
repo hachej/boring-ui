@@ -30,7 +30,7 @@ export interface PiChatActions {
   readonly withdraw?: (id: QueuedMessage['id']) => Promise<unknown>;
 }
 
-/** The props `PiChat` and `AmbientChat` both take and hand to `useChatSession`. */
+/** The props `PiChat` takes and hand to `useChatSession`. */
 export interface ChatFeatureProps {
   /** `expert` hides successful tool details and reasoning; `developer` shows everything. */
   readonly mode?: Mode;
@@ -127,7 +127,7 @@ export type { FilesHandler } from '@hachej/boring-ui-kit/chat-react';
 import { useChatSession as useHeadlessChatSession } from '@hachej/boring-ui-kit/chat-react';
 import type { FilesHandler } from '@hachej/boring-ui-kit/chat-react';
 
-/** The chat behaviour every surface over a `NativeChatController` shares (`PiChat`, `AmbientChat`): sending, queue actions, uploads, pickers, rows. */
+/** The chat behaviour every surface over a `NativeChatController` shares (`PiChat`): sending, queue actions, uploads, pickers, rows. */
 export interface ChatSessionOptions extends Readonly<{ [Key in keyof ChatFeatureProps]: ChatFeatureProps[Key] | undefined }> {
   readonly controller: ChatController;
   /** The controller the host currently passes; a surface that outlives its controller stops acting on the old one. */

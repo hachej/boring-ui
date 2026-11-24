@@ -295,7 +295,7 @@ before any picker ships.
 **Spike (time-boxed):**
 
 - Apply the default policy of FEEDBACK.md to the fictional Northwind Console
-  screens (`examples/ambient`) and to a fixture page dense with canaries.
+  screens (`examples/feedback`) and to a fixture page dense with canaries.
 - Record the false-mask rate (useful text hidden) per screen and confirm zero
   canary leaks.
 - Decide which elements the example marks `data-feedback-visible` (labels,
@@ -471,7 +471,7 @@ and copies or saves it, with no agent.
   - the `registry.json` item and the registry policy updates for its
     `@hachej/boring-feedback@0.0.0` dependency;
   - `examples/feedback/`, a small standalone fictional application with
-    AmbientChat, the store route, the picker and the visibility marks.
+    FloatingComposer, the store route, the picker and the visibility marks.
   - `test/packages/feedback-picker.test.mjs` and
     `test/packages/feedback-ui.test.mjs`.
 
@@ -562,7 +562,7 @@ the same page.
   `unsupported`.
 - **The feedback card** renders mentions, `list` results and offers.
   - Its Show button calls WP6's resolve-and-reveal when the card is mounted in
-    the subject's application page (AmbientChat in that page).
+    the subject's application page (FloatingComposer in that page).
   - Otherwise it is `unavailable` with "open the application page".
   - It displays the honest result.
 
@@ -643,7 +643,7 @@ locations. If the spike finds no acceptable option, Release 1 ships without
   - `VERIFY.json` updates.
 
 **Spec:** one driven Chromium journey on `examples/feedback` (Northwind
-Console with AmbientChat and the builder agent), with a fake model.
+Console with FloatingComposer and the builder agent), with a fake model.
 
 1. Point at the Save button and refine to its parent and back.
 2. Annotate, Copy, then Save.

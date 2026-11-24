@@ -30,7 +30,7 @@ export interface WorkspaceChatLayout {
 export interface ArtifactWorkspaceProps {
   /**
    * Usually a `PiChat`. It stays mounted while the panel opens, resizes, goes full screen and closes. With `floatBelow`, pass a function that
-   * returns the docked chat or, while `floating`, an `AmbientChat` on the same controller (`onDock` there is `dock`): the chat is then a different surface over one session.
+   * returns the docked chat or, while `floating`, a `FloatingComposer` on the same controller (`onDock` there is `dock`): the chat is then a different surface over one session.
    */
   readonly chat: ReactNode | ((layout: WorkspaceChatLayout) => ReactNode);
   /** Whether the panel is open. Closing is the host's decision (`onClose`); the workspace never unmounts `chat`. */

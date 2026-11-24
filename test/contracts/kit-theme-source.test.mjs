@@ -8,7 +8,7 @@ const root = new URL('../../', import.meta.url);
 const registry = JSON.parse(readFileSync(new URL('registry.json', root), 'utf8'));
 const TOKENS = ['background', 'foreground', 'card', 'card-foreground', 'popover', 'popover-foreground', 'primary', 'primary-foreground', 'secondary',
   'secondary-foreground', 'muted', 'muted-foreground', 'accent', 'accent-foreground', 'destructive', 'border', 'input', 'ring'];
-const KIT = ['feedback', 'pi-chat', 'pi-chat-markdown', 'pi-chat-slash', 'pi-chat-mentions', 'pi-chat-pickers', 'pi-chat-voice', 'pi-chat-attachments', 'pi-chat-question', 'pi-chat-approval', 'pi-chat-subagent', 'pi-artifacts', 'pi-chat-plugins', 'pi-ambient', 'pi-workspace', 'button', 'utils', 'viewer-frame', 'viewer-markdown', 'viewer-html', 'viewer-image', 'viewer-pdf', 'viewer-code'];
+const KIT = ['feedback', 'pi-chat', 'pi-chat-markdown', 'pi-chat-slash', 'pi-chat-mentions', 'pi-chat-pickers', 'pi-chat-voice', 'pi-chat-attachments', 'pi-chat-question', 'pi-chat-approval', 'pi-chat-subagent', 'pi-artifacts', 'pi-chat-plugins', 'pi-workspace', 'button', 'utils', 'viewer-frame', 'viewer-markdown', 'viewer-html', 'viewer-image', 'viewer-pdf', 'viewer-code'];
 
 /** Every [selector path, property] declared in an item's `css` object. */
 function declarations(css, path = []) {
@@ -26,15 +26,6 @@ test('kit items declare no shadcn palette token, no :root block and no prefers-c
       assert.ok(!path.some(selector => /:root|prefers-color-scheme/.test(selector)), `theme block in ${where}`);
       assert.ok(!path.some(selector => /data-variant=\\?"?contrast/.test(selector)), `contrast variant styled by colour declarations in ${where}`);
     }
-  }
-});
-
-test('the ambient contrast variant is the host\'s own dark theme: its root carries .dark', () => {
-  assert.match(readFileSync(new URL('registry/pi-ambient/ambient.tsx', root), 'utf8'), /variant === 'contrast' \? 'dark scheme-dark contents'/, 'the wrapper root carries .dark for contrast');
-  for (const file of ['ambient-window.tsx', 'notifications.tsx']) {
-    const source = readFileSync(new URL(`registry/pi-ambient/${file}`, root), 'utf8');
-    assert.match(source, /variant === 'contrast' && 'dark scheme-dark'/, file);
-    assert.doesNotMatch(source, /oklch\(|#[0-9a-f]{3,8}\b/i, `${file} hard-codes no colour`);
   }
 });
 

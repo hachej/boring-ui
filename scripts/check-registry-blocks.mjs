@@ -3,8 +3,8 @@
 // 1. Every source file under registry/<item>/ is listed in that item of registry.json (nothing ships by accident or is
 //    imported by path from outside the item).
 // 2. A file may import another item (`../<item>/<file>`) only when that item is in its own item's registryDependencies
-//    (transitively) and lists the file. pi-chat declares none, so the chat never imports pi-ambient or pi-workspace, and
-//    pi-workspace never imports pi-ambient (the host swaps AmbientChat in when the chat floats).
+//    (transitively) and lists the file. pi-chat declares none, so the chat never imports pi-workspace, and
+//    pi-workspace never imports app-shell (the host swaps FloatingComposer in when the chat floats).
 // 3. Declared registryDependencies name only items of this registry (`@boring-ui/<item>`), never a shadcn component and never the theme:
 //    a block takes shadcn components and tokens from the app. A source file imports `@/components/ui/<name>` (the shadcn CLI rewrites it
 //    to the app's `ui` alias from components.json) only for a name in SHADCN_BUILTINS, and `@/hooks/<name>` only for SHADCN_HOOKS. That one

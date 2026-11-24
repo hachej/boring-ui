@@ -348,8 +348,8 @@ test('createPresentAcks refuses the calls waiting for a file whose view failed, 
   assert.equal(sent.at(-1).reason.length, 200, 'the reason is bounded to what the server accepts');
 });
 
-test('the Ambient example host acknowledges only its loaded mounted revision, clears it on close and reports a failed load', async () => {
-  const { createArtifactPanel } = await load('ambient-host', '../examples/ambient/artifact-panel.jsx');
+test('the artifact-panel example host acknowledges only its loaded mounted revision, clears it on close and reports a failed load', async () => {
+  const { createArtifactPanel } = await load('artifact-panel-host', '../examples/artifact-panel/artifact-panel.jsx');
   const { createResourceHandler } = await import('@hachej/boring-files/remote');
   const { createElement: h, act } = await import('react');
   const { createRoot } = await import('react-dom/client');

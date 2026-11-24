@@ -19,7 +19,7 @@ The library defines no verbs of its own (navigate, highlight, prefill…) and no
 
 The registry Dock also supports `page`, where the self-contained agent workspace replaces the main area. It reports `docked` in request context because the agent leads. The [Dock guide](../../registry/README.md#docks-dock) owns its API and persistence.
 
-The request-context role of the same chat is either **docked**, beside the page (`PiChat` in a `Dock` or `ArtifactWorkspace`, and the `AgentLayer` panel expanded beside the app on a wide screen), or **floating**, over the page (`AmbientChat`, including a docked chat floated by its divider, the `AgentLayer` panel floated over the app, and the `AgentLayer` phone drawer). The component that sends a submit adds its placement to the request context:
+The request-context role of the same chat is either **docked**, beside the page (`PiChat` in a `Dock` or `ArtifactWorkspace`, and the `AgentLayer` panel expanded beside the app on a wide screen), or **floating**, over the page (`FloatingComposer`, including a docked chat floated by its divider, the `AgentLayer` panel floated over the app, and the `AgentLayer` phone drawer). The component that sends a submit adds its placement to the request context:
 
 ```json
 { "name": "invoice", "params": { "id": 42 }, "placement": "docked" }

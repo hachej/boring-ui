@@ -1,7 +1,7 @@
 'use client';
 
 // The standalone entry of the one composer: a page with no `AppShell` (an existing site) mounts the same bar, floating over the page or folded to its icon, with the same strip, the same
-// conversation levels, the unread mark and the needs-you ring. What `AmbientChat` does today, on the shell's composer. No side dock, no right pane: the conversation opens as the window above
+// conversation levels, the unread mark and the needs-you ring. The shell's composer on a site of its own. No side dock, no right pane: the conversation opens as the window above
 // the bar, or full screen; on a phone it is the bottom sheet. Props are the agent and its words; nothing else is configurable. Host concern: Pi has no layout.
 import type { ReactElement, ReactNode } from 'react';
 import { usePhone } from '../utils/use-media';
@@ -42,7 +42,7 @@ export interface FloatingComposerProps extends FloatingHostProps {
   readonly notices?: readonly AppShellNotice[] | ((layer: Omit<AgentLayerApi, 'agent'>) => readonly AppShellNotice[]) | undefined;
   /** Where the place (floating, folded, the corner or free position) is remembered: `local` (default, kept across visits) or `session` (this browser tab only). */
   readonly storage?: Persistence;
-  /** The key the old floating bar (`AmbientChat`) kept its dragged position under (`{ right, bottom }`). With no place of its own yet, the composer starts where that was, once: nothing is lost on an upgrade. Read from `legacyPositionStorage` (default `session`, as the old bar). */
+  /** The key the old floating bar kept its dragged position under (`{ right, bottom }`). With no place of its own yet, the composer starts where that was, once: nothing is lost on an upgrade. Read from `legacyPositionStorage` (default `session`, as the old bar). */
   readonly legacyPositionKey?: string;
   readonly legacyPositionStorage?: Persistence;
   /** Classes for the composer's own box (the floating frame, the folded icon, the bottom bar of a wide window; a phone's bottom sheet is the shell's own), so a host can move or size it. */

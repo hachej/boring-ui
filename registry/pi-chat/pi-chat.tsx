@@ -107,7 +107,7 @@ export interface PiChatProps extends ChatFeatureProps {
   readonly keyboardInset?: boolean;
   readonly decisions?: ReactNode;
   readonly controls?: ReactNode;
-  /** Host controls at the end of the composer bar (for example a microphone), like AmbientChat's tools slot. */
+  /** Host controls at the end of the composer bar (for example a microphone), like the floating composer's tools slot. */
   readonly tools?: ReactNode;
   /** Host controls at the left edge of the composer bar, before "+" (for example an app's own menu). Absent: nothing changes. */
   readonly composerStart?: ReactNode;
