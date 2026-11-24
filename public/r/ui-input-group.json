@@ -8,10 +8,10 @@
     "react@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.0/r/ui-button.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.0/r/ui-input.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.0/r/ui-textarea.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.0/r/utils.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.1/r/ui-button.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.1/r/ui-input.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.1/r/ui-textarea.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.1/r/utils.json"
   ],
   "files": [
     {
