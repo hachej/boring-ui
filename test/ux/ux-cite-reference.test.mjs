@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { mentionedPaths } from '@hachej/boring-ui-kit/chat-text';
-import { buildPage, root } from '../ux/runner/build.mjs';
+import { buildPage, root } from '../../ux/runner/build.mjs';
 
 // The cite button on the real design-system page: one chip per citation (title and number, tooltip, own remove), a second citation adds a second chip, the same one again
 // changes nothing, the text typed stays free, the agent receives a structured reference, and French is a setting (`locale="fr"`).

@@ -5,10 +5,10 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import test from 'node:test';
-import { buildPage, root } from '../ux/runner/build.mjs';
-import { loadAll } from '../ux/runner/scenario.mjs';
-import { site } from '../ux/runner/site.mjs';
-import { variants } from '../ux/runner/site-page.mjs';
+import { buildPage, root } from '../../ux/runner/build.mjs';
+import { loadAll } from '../../ux/runner/scenario.mjs';
+import { site } from '../../ux/runner/site.mjs';
+import { variants } from '../../ux/runner/site-page.mjs';
 
 // The demo site's top bar: a page switcher with search, one Options menu, and on a phone a bar of the page name and a "more" menu.
 const require = createRequire(join(root, 'package.json'));

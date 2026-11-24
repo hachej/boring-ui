@@ -5,9 +5,9 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import test from 'node:test';
-import { buildPage, root } from '../ux/runner/build.mjs';
-import { loadAll } from '../ux/runner/scenario.mjs';
-import { site } from '../ux/runner/site.mjs';
+import { buildPage, root } from '../../ux/runner/build.mjs';
+import { loadAll } from '../../ux/runner/scenario.mjs';
+import { site } from '../../ux/runner/site.mjs';
 
 // The agent card on its own page (ux/fixtures/component-agent-card.jsx, scripted agent: no model) at a phone and a desktop size, then through the built showcase site.
 const require = createRequire(join(root, 'package.json'));

@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { buildPage, root } from '../ux/runner/build.mjs';
+import { buildPage, root } from '../../ux/runner/build.mjs';
 
 // Every sample the demo's Library holds (`?demo=1`, invented files made in memory), opened through the real shell: the Library tree, a click, the pane's viewer.
 // Each sample names the viewer it must open (a testid inside the pane), and the pane must be drawn, not blank, with no console error, at 1440 and 390.

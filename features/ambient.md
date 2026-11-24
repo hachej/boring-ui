@@ -26,7 +26,7 @@
 
 Preconditions: `npm run build`, Chromium.
 
-- **Phone and `/`.** `ambient-phone-grabber`, `ambient-slash`: `CHROMIUM=... node --test test/ux-ambient.test.mjs` (390 and 360: no strip, the grabber taps bar and full window, round 44px buttons; 1440 and 390: `/` shows three headings, `/exp` leaves the action, the Commands button opens the menu on touch).
+- **Phone and `/`.** `ambient-phone-grabber`, `ambient-slash`: `CHROMIUM=... node --test test/ux/ux-ambient.test.mjs` (390 and 360: no strip, the grabber taps bar and full window, round 44px buttons; 1440 and 390: `/` shows three headings, `/exp` leaves the action, the Commands button opens the menu on touch).
 - **Bar.** `ambient-bar`: `npm run ambient:journey` (or `ambient:journey:scripted` without a model): type, expand, minimise, drag, reload; position and conversation persist.
 - **Jump to latest.** `ambient-jump-latest`: the scripted journey scrolls the expanded window up, checks the arrow is outside the messages' box, clicks it and is back at the end (`06b-scrolled-up.png`).
 - **Notifications.** `ambient-notifications`: the journey's background task raises a toast (old window); on the composer `node --test test/contracts/ambient-composer.test.mjs` pushes a notification into the store: the notice stands above the bar (1440) or above the field (390), Open brings the conversation, a question stays.

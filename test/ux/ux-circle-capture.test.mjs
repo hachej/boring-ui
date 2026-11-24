@@ -7,9 +7,9 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { root } from '../ux/runner/build.mjs';
-import { capture } from '../ux/runner/capture.mjs';
-import { loadAll } from '../ux/runner/scenario.mjs';
+import { root } from '../../ux/runner/build.mjs';
+import { capture } from '../../ux/runner/capture.mjs';
+import { loadAll } from '../../ux/runner/scenario.mjs';
 
 // Like the other ux browser tests: it needs a Chromium and playwright-core (not a dependency; the main test job has none), and skips without them.
 let playwright; try { playwright = createRequire(join(root, 'package.json'))('playwright-core'); } catch { /* not installed */ }

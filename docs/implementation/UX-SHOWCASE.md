@@ -60,7 +60,7 @@ Boards and canvases (tldraw) are not in this public demo: tldraw needs a licence
 
 ## What it never publishes
 
-The judge's grades, verdicts and the loop's scoreboards (`ux:judge` output stays internal), raw `result.json`, console logs, and anything outside the captured folder. Scenario and fixture data must be invented: `test/ux-invented-data.test.mjs` fails on a real-looking e-mail address, a key or token, or a denied name, in the fixtures, the scenarios and a generated site.
+The judge's grades, verdicts and the loop's scoreboards (`ux:judge` output stays internal), raw `result.json`, console logs, and anything outside the captured folder. Scenario and fixture data must be invented: `test/ux/ux-invented-data.test.mjs` fails on a real-looking e-mail address, a key or token, or a denied name, in the fixtures, the scenarios and a generated site.
 
 ## Cost
 

@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { changedFiles, checkSteps, commitRound, detailed, errorText, discard, failingTests, forbiddenTouched, incomplete, medianShiftLines, retried, runRound, waitForLoad } from '../ux/runner/loop-round.mjs';
+import { changedFiles, checkSteps, commitRound, detailed, errorText, discard, failingTests, forbiddenTouched, incomplete, medianShiftLines, retried, runRound, waitForLoad } from '../../ux/runner/loop-round.mjs';
 
 const git = (cwd, ...a) => execFileSync('git', ['-C', cwd, ...a], { encoding: 'utf8' }).trim();
 function repo() {

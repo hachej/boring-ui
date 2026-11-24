@@ -3,9 +3,9 @@ import test from 'node:test';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { advise } from '../ux/runner/advisor.mjs';
-import { declared, declaredExcess, shiftExcess, topSources, totals, traceText, worstSteps } from '../ux/runner/trace.mjs';
-import { fineSignal, fineText, specBlock, specItems, advisorDue, addTried, allNine, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from '../ux/runner/loop-state.mjs';
+import { advise } from '../../ux/runner/advisor.mjs';
+import { declared, declaredExcess, shiftExcess, topSources, totals, traceText, worstSteps } from '../../ux/runner/trace.mjs';
+import { fineSignal, fineText, specBlock, specItems, advisorDue, addTried, allNine, claimPid, firstChange, focusBrief, overCap, pauseDue, pauseFor, pauseHours, pickFocus, readTried, releasePid, rethinkDue, triedText, updateMisses, writeStatus } from '../../ux/runner/loop-state.mjs';
 
 const KEYS = ['clarity', 'layout', 'states', 'phone', 'polish', 'flows'], dir = () => mkdtempSync(join(tmpdir(), 'ux-state-'));
 const grades = (...v) => Object.fromEntries(KEYS.map((k, i) => [k, v[i]]));

@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { buildPage, root } from '../ux/runner/build.mjs';
+import { buildPage, root } from '../../ux/runner/build.mjs';
 
 // The design system's scripted assistant through the real shell (composer="bar"): a file the reply cites is a chip that opens it in the pane,
 // the file card names the file's real kind, and the app's reply action is a button with its own icon.

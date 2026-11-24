@@ -45,7 +45,7 @@ Six criteria in `CRITERIA.md`: clarity and hierarchy, layout and spacing, states
 
 ## The loop (runbook)
 
-The worker (Codex, `workspace-write` sandbox) cannot write the worktree's git directory and cannot start Chromium, so it only edits files; the loop does everything else (`loop.mjs`, git and round mechanics in `loop-round.mjs`, tested by `test/ux-loop-round.test.mjs` with a fake worker).
+The worker (Codex, `workspace-write` sandbox) cannot write the worktree's git directory and cannot start Chromium, so it only edits files; the loop does everything else (`loop.mjs`, git and round mechanics in `loop-round.mjs`, tested by `test/ux/ux-loop-round.test.mjs` with a fake worker).
 
 Per round:
 1. Eyes. The loop copies the last accepted capture (pictures, flow strips, `metrics.json`), the judge's remarks, `check-lines.txt` and, when the last round was discarded, `last-failure.txt` into `round-N/eyes/` and points `worker-brief.md` at it.

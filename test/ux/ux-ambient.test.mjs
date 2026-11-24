@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import test from 'node:test';
-import { buildPage, root } from '../ux/runner/build.mjs';
+import { buildPage, root } from '../../ux/runner/build.mjs';
 
 // The ambient bar (`AmbientChat`) on a phone behaves as the app shell's bar does: no strip, the grabber on the top edge is the size control (a tap
 // opens the full window, whose minimize goes back), 44px hit areas, round composer actions (by their test ids); and its `/` menu is the same grouped menu with a Commands button on touch.
