@@ -1,5 +1,5 @@
 // The workspace page invalidates its file views from the provider's change feed (ruling 2): the tree, the history panel and the
-// @ search reload when the feed's seq moves; `fileTree.refreshKey` stays for a provider without a feed.
+// @ search reload when the feed's seq moves.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdirSync } from 'node:fs';

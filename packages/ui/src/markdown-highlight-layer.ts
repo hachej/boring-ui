@@ -16,7 +16,7 @@ export function markdownMarkerBackground(colour: MarkColour): string {
 
 /** The native serializer proves the complete source unchanged after removing two sentinels.
  * If syntax/escaping/normalization changes, there is no source projection. */
-export function markdownTextProjection(editor: Editor, source: string): readonly { readonly rich: number; readonly source: MarkdownQuoteRange }[] {
+function markdownTextProjection(editor: Editor, source: string): readonly { readonly rich: number; readonly source: MarkdownQuoteRange }[] {
   if (!editor.markdown || source.includes(left) || source.includes(right) || finishRichMarkdown(editor.getMarkdown(), source) !== source) return [];
   const leaves: { position: number; text: string }[] = [];
   editor.state.doc.descendants((node, position) => { if (node.isText && node.text) leaves.push({ position, text: node.text }); });

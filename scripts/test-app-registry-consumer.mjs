@@ -110,7 +110,7 @@ async function testStyle(style) {
   export function BoundWorkspace({ revisionProvider }: { readonly revisionProvider: RevisionProvider }) {
     return <><AgentWorkspace revisionProvider={revisionProvider} controller={undefined} conversationId={undefined} history="popover" /><FileTree revisionProvider={revisionProvider} />
     <Documents provider={revisionProvider} locale="fr" /><DocumentSheet provider={revisionProvider} path={undefined} onClose={() => {}} onShowAll={() => {}} />
-      <AgentWorkspace revisionProvider={revisionProvider} chat={{ showHistory: false, showConnectionStatus: false, tools: <button type="button">Mic</button> }} libraryPlacement="pane" locale="fr" fileTree={{ labels: { search: 'Rechercher' }, upload: false, history: false, refreshKey: 1 }} onUnsavedChange={unsaved => { void unsaved; }} controller={undefined} conversationId={undefined}
+      <AgentWorkspace revisionProvider={revisionProvider} chat={{ showHistory: false, showConnectionStatus: false, tools: <button type="button">Mic</button> }} libraryPlacement="pane" locale="fr" fileTree={{ labels: { search: 'Rechercher' }, upload: false, history: false }} onUnsavedChange={unsaved => { void unsaved; }} controller={undefined} conversationId={undefined}
         agents={{ items: [{ id: 'pm', label: 'PM' }, { id: 'dev', label: 'Developer' }], activeId: 'pm', onSelect: () => {} }} /></>;
   }
 

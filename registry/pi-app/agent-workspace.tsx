@@ -171,12 +171,11 @@ interface AgentWorkspaceBaseProps {
   /** The page's language: `en` (default) or `fr`, for the chat, the panes, the viewers and the Library. `labels` and `chat.labels` override any word. */
   readonly locale?: ChatLocale | undefined;
   /**
-   * The Library tree's options: its words (`labels`, over `defaultFileTreeLabels`), whether it offers Upload and History, and a
-   * `refreshKey` that reloads it when it changes. Deprecated: with a `revisionProvider` that has a change feed (`connectRevisionProvider`)
-   * the tree, the Library, the history panel and the @ search reload from the workspace's own change events; `refreshKey` remains
-   * for a provider without one.
+   * The Library tree's options: its words (`labels`, over `defaultFileTreeLabels`) and whether it offers Upload and History. With a
+   * `revisionProvider` that has a change feed (`connectRevisionProvider`) the tree, the Library, the history panel and the @ search
+   * reload from the workspace's own change events.
    */
-  readonly fileTree?: Pick<FileTreeViewProps, 'labels' | 'upload' | 'history' | 'refreshKey' | 'capabilities'> | undefined;
+  readonly fileTree?: Pick<FileTreeViewProps, 'labels' | 'upload' | 'history' | 'capabilities'> | undefined;
   /**
    * How the chat's attachments are saved under `uploads/` (they exist only with a Library, `revisionProvider` or `resources`). Every file
    * is reference-only by default: the message carries its `@path` and the agent reads it with its file tools. See `WorkspaceUploads`.
@@ -467,18 +466,16 @@ export function AgentWorkspace({ layout = 'default', barPanels, barOptions, pane
   // The workspace's change feed: every file view below reloads when its seq moves (agent writes, saves, shell changes).
   const feed = useWorkspaceChangeFeed(libraryProvider);
   // The shared tree controller reloads, shown or not: the Library may be on its other tab when a file arrives, and mounting the tree
-  // later must not show the listing from before. `fileTree.refreshKey` (deprecated) does the same for a provider without a feed.
-  const { refreshKey, ...viewOptions } = treeOptions ?? {};
-  const refreshedKey = useRef(refreshKey);
+  // later must not show the listing from before.
+  const viewOptions = treeOptions ?? {};
   const refreshedSeq = useRef(feed.seq);
   useEffect(() => {
-    if (!libraryController || (Object.is(refreshedKey.current, refreshKey) && refreshedSeq.current === feed.seq)) return;
-    refreshedKey.current = refreshKey;
+    if (!libraryController || refreshedSeq.current === feed.seq) return;
     refreshedSeq.current = feed.seq;
     const { query, expanded } = libraryController.getSnapshot();
     if (query) void libraryController.search(query);
     else for (const directory of ['', ...expanded]) void libraryController.refresh(directory);
-  }, [libraryController, refreshKey, feed.seq]);
+  }, [libraryController, feed.seq]);
   const openFile = useCallback((path: string) => { setOpened({ kind: 'file', path }); }, [setOpened]);
   // The file on show was renamed, moved or deleted from the Library: follow it to its new path, or close it (its old path is gone).
   const followFile = (from: string, to: string | null) => {

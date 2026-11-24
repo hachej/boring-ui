@@ -8,7 +8,7 @@ export type MarkdownRichSafety = { readonly safe: true } | { readonly safe: fals
 const FENCE = /^ {0,3}(```|~~~)/;
 
 /** Blank-line runs outside fenced code collapse to one blank line, and the ends are trimmed: the only whitespace the rich editor may normalise. */
-export function normalizeMarkdownWhitespace(text: string): string {
+function normalizeMarkdownWhitespace(text: string): string {
   const lines = text.split('\n');
   const out: string[] = [];
   let fence: string | undefined;
@@ -111,10 +111,4 @@ export function checkMarkdownRichSafety(text: string, options: { readonly maxByt
   if (cache.size > 32) cache.delete(cache.keys().next().value as string);
   if (typeof document !== 'undefined') cache.set(text, result);
   return result;
-}
-
-export function describeUnsafe(safety: MarkdownRichSafety): string {
-  if (safety.safe) return '';
-  if (safety.reasons.includes(MARKDOWN_TOO_LARGE_REASON)) return 'Rich editing is off because this document is too large for it. You can still edit the Markdown source.';
-  return `Rich editing is off because this document contains ${safety.reasons.join(', ')}, which it could not keep exactly. You can still edit the Markdown source.`;
 }

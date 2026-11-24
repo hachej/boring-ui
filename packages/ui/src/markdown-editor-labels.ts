@@ -66,10 +66,6 @@ export interface MarkdownEditorLabels extends MarkdownEditorMenuLabels, TextDraf
   readonly conflictDiffLegend: string;
   /** Short revision shown after a save; the full one is in its `title` and `data-revision`. */
   readonly savedRevision: (revision: string) => string;
-  /** @deprecated No longer drawn: the conflict strip offers Keep mine, Take theirs and Review diff. Kept so existing overrides still type-check. */
-  readonly checkSavedVersion: string;
-  /** @deprecated No longer drawn: see `takeTheirs`. Kept so existing overrides still type-check. */
-  readonly discardLocal: string;
   readonly conflictFallback: string;
   readonly saveFallback: string;
   readonly saveFailed: string;
@@ -131,7 +127,6 @@ export const markdownEditorLabels: Record<'en' | 'fr', MarkdownEditorLabels> = {
     conflictDiffName: 'Differences between the saved version and your text',
     conflictDiffLegend: 'Lines marked − are in the saved version. Lines marked + are in your text.',
     savedRevision: revision => `Saved revision ${revision}`,
-    checkSavedVersion: 'Check saved version', discardLocal: 'Discard local changes and reload',
     conflictFallback: 'The document changed elsewhere. Your text is still available.',
     saveFallback: 'The document could not be saved. Your text is still available.',
     saveFailed: 'The save could not be completed. Your text is still available.',
@@ -167,7 +162,6 @@ export const markdownEditorLabels: Record<'en' | 'fr', MarkdownEditorLabels> = {
     conflictDiffName: 'Différences entre la version enregistrée et votre texte',
     conflictDiffLegend: 'Les lignes marquées − sont dans la version enregistrée. Les lignes marquées + sont dans votre texte.',
     savedRevision: revision => `Révision enregistrée ${revision}`,
-    checkSavedVersion: 'Vérifier la version enregistrée', discardLocal: 'Abandonner mes modifications et recharger',
     conflictFallback: 'Le document a été modifié ailleurs. Votre texte est toujours disponible.',
     saveFallback: 'Le document n’a pas pu être enregistré. Votre texte est toujours disponible.',
     saveFailed: 'L’enregistrement n’a pas pu aboutir. Votre texte est toujours disponible.',

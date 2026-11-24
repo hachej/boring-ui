@@ -246,12 +246,11 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   assert.equal(element.querySelector('[data-testid=agent-select]'), null, 'one agent shows no switcher');
 
   // The tree's words, its Upload and History buttons and its refresh follow the host's `fileTree` options.
-  let listings = 0; const list = binding.list;
-  const counted = { ...binding, list: async (...args) => { listings++; return list(...args); },
+  const counted = { ...binding,
     search: async () => ({ entries: [{ path: 'Maquettes/first.html', kind: 'file', size: 20 }] }) };
-  const french = refreshKey => workspace({ key: 'french', storageKey: 'french-proof', revisionProvider: counted, libraryPlacement: 'pane', conversations, locale: 'fr',
-    fileTree: { labels: { search: 'Rechercher un document' }, upload: false, history: false, refreshKey } });
-  await act(async () => root.render(french(1)));
+  const french = () => workspace({ key: 'french', storageKey: 'french-proof', revisionProvider: counted, libraryPlacement: 'pane', conversations, locale: 'fr',
+    fileTree: { labels: { search: 'Rechercher un document' }, upload: false, history: false } });
+  await act(async () => root.render(french()));
   // locale: 'fr' translates the pane, the chat and the tree; `labels` still override a word.
   assert.equal(element.querySelector('[data-testid=sessions-tab-library]').textContent, 'Bibliothèque');
   assert.equal(element.querySelector('[data-testid=sessions-tab-conversations]').textContent, 'Conversations');
@@ -264,11 +263,6 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
   assert.ok([...pane.querySelectorAll('button')].some(button => button.textContent === 'Actualiser'));
   assert.equal(pane.querySelector('input[type=file]'), null, 'no Upload with upload: false');
   assert.equal([...pane.querySelectorAll('button')].filter(button => button.textContent === 'History').length, 0, 'no History with history: false');
-  const before = listings;
-  await act(async () => root.render(french(1)));
-  assert.equal(listings, before, 'the same refreshKey does not reload');
-  await act(async () => root.render(french(2)));
-  assert.ok(listings > before, 'a new refreshKey reloads the tree');
   const input = pane.querySelector('input[aria-label="Rechercher un document"]');
   await act(async () => {
     Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, 'first');
@@ -282,13 +276,8 @@ test('revision workspace preserves file drafts, docked and floating chat mounts,
     Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, '');
     input.dispatchEvent(new window.Event('input', { bubbles: true }));
   });
-  // A new refreshKey while the Library tab is hidden reloads it too, so it is current when shown again.
   await act(async () => element.querySelector('[data-testid=sessions-tab-conversations]').click());
   assert.equal(element.querySelector('[data-testid=sessions-library]'), null);
-  const hidden = listings;
-  await act(async () => root.render(french(3)));
-  for (let n = 0; n < 50 && listings === hidden; n++) await act(async () => new Promise(r => setTimeout(r, 10)));
-  assert.ok(listings > hidden, 'the hidden Library reloads');
 
   // A single-session page (no conversations) keeps the left pane for its Library alone.
   await act(async () => root.render(workspace({ key: 'single', storageKey: 'single-proof', libraryPlacement: 'pane' })));

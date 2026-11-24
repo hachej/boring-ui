@@ -3532,21 +3532,6 @@
       ]
     },
     {
-      "name": "viewers",
-      "type": "registry:component",
-      "title": "Viewers",
-      "description": "Deprecated aggregate: installs every viewer item (viewer-frame, viewer-markdown, viewer-html, viewer-image, viewer-pdf, viewer-code). Add the items you use instead.",
-      "files": [],
-      "registryDependencies": [
-        "@boring-ui/viewer-frame",
-        "@boring-ui/viewer-markdown",
-        "@boring-ui/viewer-html",
-        "@boring-ui/viewer-image",
-        "@boring-ui/viewer-pdf",
-        "@boring-ui/viewer-code"
-      ]
-    },
-    {
       "name": "provider-setup",
       "type": "registry:component",
       "title": "Provider setup",

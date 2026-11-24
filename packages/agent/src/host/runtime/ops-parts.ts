@@ -12,7 +12,7 @@ export const NEVER = new AbortController().signal;
 export const json = (value: unknown, isError = false): ToolExecutionResult => ({ output: [{ type: 'text', text: JSON.stringify(value) }], isError });
 export const wire = (r: Refusal) => ({ _tag: r.kind, ...r.detail });
 
-export const plainOp = (def: AppDefinition, name: string) => def.ops?.list.find((op) => op.name === name);
+const plainOp = (def: AppDefinition, name: string) => def.ops?.list.find((op) => op.name === name);
 export const opsFor = (def: AppDefinition, audience: string): readonly Op[] => (def.expose[audience] ?? []).flatMap((name) => plainOp(def, name) ?? []);
 export const domainNames = (def: AppDefinition, audience: string) => (def.expose[audience] ?? []).filter((name) => !plainOp(def, name));
 

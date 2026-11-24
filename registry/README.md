@@ -1480,8 +1480,8 @@ controlled `libraryOpen` prop.
 the panes, the viewers and the Library to French; English stays the default. The French
 words are exported (`frenchChatLabels`, `frenchAppLabels`, `frenchFileTreeLabels`) and typed
 like the English ones, and `labels` / `chat.labels` still override any word.
-`fileTree={{ upload: false, history: false, refreshKey }}` hides the Library's Upload and
-version-history menu item and reloads it when `refreshKey` changes.
+`fileTree={{ upload: false, history: false }}` hides the Library's Upload and
+version-history menu item.
 The shared tree defaults to `variant="list"`: one title/count/upload/close row,
 inset search, 48px rows with kind and size, and Open, Version history and Download
 in a keyboard-accessible ⋯ menu. Picker and drop uploads use the existing provider.
