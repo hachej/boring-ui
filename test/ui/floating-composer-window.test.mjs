@@ -22,7 +22,7 @@ async function harness(t, view = { conversation: { id: 1 }, entries: [], docs: {
   mkdirSync(out, { recursive: true });
   const output = new URL('chat.mjs', out);
   await build({ entryPoints: [new URL('../fixtures/floating-chat.tsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', packages: 'external', logLevel: 'silent' });
-  const { FloatingChat } = await import(output.href);
+  const { FloatingChat, AgentContextProvider, readAgentContext, useAgentContext } = await import(output.href);
   const { createNativeChatController } = await import('@hachej/boring-ui-kit/native-chat');
   const element = window.document.createElement('div');
   window.document.body.append(element);
@@ -36,7 +36,7 @@ async function harness(t, view = { conversation: { id: 1 }, entries: [], docs: {
     await window.happyDOM.close();
     for (const [name, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
   });
-  return { window, element, root, chat, act, createElement, FloatingChat };
+  return { window, element, root, chat, act, createElement, FloatingChat, AgentContextProvider, readAgentContext, useAgentContext };
 }
 
 /** Renders the bar with the given storage props, moves it one step up with the grip's arrow key, and returns the storage contents. */
@@ -82,7 +82,7 @@ test('A card opens the host\'s panel, which reports its real mount and its failu
 });
 
 test('the floating composer uses the shared below-768 phone layout and releases its media listener', async t => {
-  const { window, element, root, chat, act, createElement, FloatingChat } = await harness(t);
+  const { window, element, root, chat, act, createElement, FloatingChat, AgentContextProvider, readAgentContext, useAgentContext } = await harness(t);
   window.happyDOM.setWindowSize({ width: 700, height: 800 });
   const original = globalThis.matchMedia;
   const listeners = new Set();
@@ -106,8 +106,18 @@ test('the floating composer uses the shared below-768 phone layout and releases 
 });
 
 test('the floating composer remains usable when the browser denies storage access', async t => {
-  const { element, root, chat, act, createElement, FloatingChat } = await harness(t);
+  const { element, root, chat, act, createElement, FloatingChat, AgentContextProvider, readAgentContext, useAgentContext } = await harness(t);
   for (const name of ['sessionStorage', 'localStorage']) Object.defineProperty(globalThis, name, { configurable: true, get() { throw new Error('fixture storage denied'); } });
   await act(async () => root.render(createElement(FloatingChat, { controller: chat })));
   assert.ok(element.querySelector('[data-testid=composer-input]'), 'denied persistence does not disable chat');
+});
+
+test('an app that keeps its own agent-context provider around its screens still has them read beside the floating composer', async t => {
+  const { element, root, chat, act, createElement: h, FloatingChat, AgentContextProvider, readAgentContext, useAgentContext } = await harness(t);
+  const Screen = () => { useAgentContext({ name: 'Approvals', params: { queue: 'open' } }); return null; };
+  await act(async () => root.render(h(AgentContextProvider, null, h(Screen))));
+  // The composer comes up later (the chat connects, or the app floats it): its layer must not take the registry over.
+  await act(async () => root.render(h(AgentContextProvider, null, h(Screen), h(FloatingChat, { controller: chat }))));
+  assert.ok(element.querySelector('[data-testid=composer-input]'), 'the composer is up');
+  assert.deepEqual(readAgentContext(), { name: 'Approvals', params: { queue: 'open' } }, 'the screen the app registered is the context a message carries');
 });

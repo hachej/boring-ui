@@ -124,7 +124,7 @@ try {
     const sees = (label, text, timeout = 30000) => browser.until(label, `${body}.includes(${JSON.stringify(text)})`, timeout);
     const dockAgent = async () => {
       const now = await browser.evaluate(placement);
-      if (now === 'floating') await browser.click(q('[data-testid=ambient-dock]'));
+      if (now === 'floating') { if (!(await browser.evaluate(`!!${q('[data-testid=agent-layer-action-dock]')}?.checkVisibility()`))) await browser.click(q('[data-testid=agent-layer-more]')); await browser.click(q('[data-testid=agent-layer-action-dock]')); }
       else if (now === 'page') await browser.click(q('[data-testid=chat-action-dock]'));
       await browser.until('docked', `${placement} === 'docked'`, 10000);
     };

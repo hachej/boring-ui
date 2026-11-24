@@ -171,7 +171,7 @@ function App() {
     workspace: (view, win) => <WorkspacePanel key={variant.id} variant={variant} tab={view.tab} onTab={tab => setOpened({ kind: 'workspace', tab })} conversation={conversationId} onOpenFile={openFile} onClose={win.close} />,
   }), [variant, conversationId]); // eslint-disable-line
   // The same controller drives both surfaces: when the divider is dragged far enough the chat floats (FloatingComposer) and docks back (PiChat) with its transcript, draft and queue.
-  const floating = ({ headerStart, historyList, emptyState, decisions, controls, className, controller: floatController, ...chatProps }, dock) => <FloatingComposer key={active} agent={{ controller: floatController, chatProps }} appId="studio" composer={FLOATING_OPEN} onDock={dock} />;
+  const floating = ({ headerStart, historyList, emptyState, decisions, controls, className, controller: floatController, ...chatProps }, dock) => <FloatingComposer key={active} agent={{ controller: floatController, chatProps: { ...chatProps, composerLayout: 'card' } }} appId="studio" composer={FLOATING_OPEN} onDock={dock} />;
   if (!studio) return <p className="studio-loading">Loading…</p>;
   if (!variant) return <p className="studio-loading" role="alert">The studio server is unreachable, or no variant is available.</p>;
   return <div className="studio" data-variant={variant.id}>

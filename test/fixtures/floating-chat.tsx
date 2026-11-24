@@ -4,6 +4,7 @@ import { FloatingComposer } from '../../registry/app-shell/floating-composer';
 import { FLOATING_COMPOSER_PRESET } from '../../registry/app-shell/composer-config';
 import type { FloatingComposerProps } from '../../registry/app-shell/floating-composer';
 import type { AgentSpec } from '../../registry/app-shell/layer-context';
+export { AgentContextProvider, readAgentContext, useAgentContext } from '../../registry/app-shell/agent-context';
 
 const OPEN = { ...FLOATING_COMPOSER_PRESET, defaultLevel: 'open', at: { remember: false } } as const;
 
