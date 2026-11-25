@@ -4,6 +4,7 @@
 // Markdown and HTML in their editors (revisioned through the host's resource client, so saves go back to the file and an edit made behind
 // the editor's back is a conflict), images and PDFs read-only from the file's bytes, a drawing kind in the artifact panel, anything else as
 // text. Each viewer loads the first time its kind opens. A host viewer (`viewers[kind]`) wins over a document kind.
+import { useVisibleInterval } from '@hachej/boring-ui-kit/visible-interval';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { DownloadIcon } from '../_shared/icons';
@@ -171,9 +172,10 @@ function FileBytes({ path, kind, locator, options, onClose, back, media }: Commo
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- load is async: it sets state when the read settles, not during the effect
     void load();
-    const timer = kind === 'text' ? setInterval(() => { void load(); }, POLL_MS) : undefined;
-    return () => { running.current?.abort(); clearInterval(timer); };
+    return () => { running.current?.abort(); };
   }, [load, kind]);
+  // A text file is followed while the tab is shown (paused when hidden, stopped after ten idle minutes).
+  useVisibleInterval(() => { void load(); }, POLL_MS, { enabled: kind === 'text' });
   // A pointer file is resolved here, where it is read, once per read: the viewers below receive the item, never the pointer.
   const blob = useMemo(() => file.kind === 'ready' && isBlobPointerPath(path) ? resolveBlobPointer(file.bytes, options.blobBase) : undefined, [file, path, options.blobBase]);
   // A lazily loaded pane (an image, a PDF, a large file's viewer) counts as shown once it has mounted; the text view at once.
