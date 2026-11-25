@@ -18,7 +18,11 @@ import { Canvas } from './panels/canvas.jsx';
 import { useScenarioRun, useTyped } from './scenarios-ui.jsx';
 import { setStudioContext, shareStudioLink, takeLink } from './share-link.mjs';
 import { savedResource } from './saved-resource.mjs';
+import { d3Library } from '@hachej/boring-ui-kit/offline-libs';
 import { INTERACTIVE_HTML } from './interactive.mjs';
+
+// The studio's pages may declare `<!-- lib: d3 -->`: the host lists the offline libraries, the kit has none built in.
+const STUDIO_INTERACTIVE = { ...INTERACTIVE_HTML, libraries: { d3: d3Library } };
 
 // The bearer token: the page's own (the studio's person), or one a link carried in its fragment (`#token=...`, a fixture token of a
 // team person), kept for this tab and removed from the address bar. The identity is what the server says this token is (/api/studio).
@@ -185,7 +189,7 @@ function App() {
       <label className="studio-mode" title="Show every tool call with its arguments and result"><input type="checkbox" checked={mode === 'developer'} onChange={event => setMode(event.target.checked ? 'developer' : 'expert')} /> Tool calls</label>
     </header>
     <main className="studio-main" data-testid="studio-main" data-conversation={conversationId}>
-      <AgentWorkspace artifactKinds={KINDS} controller={controller} conversationId={active} conversations={conversations} resources={resources} detect={detect} viewers={viewers} interactive={INTERACTIVE_HTML} share={shareStudioLink}
+      <AgentWorkspace artifactKinds={KINDS} controller={controller} conversationId={active} conversations={conversations} resources={resources} detect={detect} viewers={viewers} interactive={STUDIO_INTERACTIVE} share={shareStudioLink}
         opened={opened} onOpenedChange={setOpened} panels={panels} fileBack={{ label: 'Files', onBack: () => setOpened({ kind: 'workspace', tab: 'files' }) }}
         storageKey="studio" sheetBelow={901} drawerBelow={901} floatBelow={320}
         chat={{ labels: CHAT_LABELS, showHistory: true, mode, actions: chat.actions, ...composer, emptyState: scenarioRun.emptyState, decisions: scenarioRun.decisions }}

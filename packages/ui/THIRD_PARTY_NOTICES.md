@@ -329,7 +329,7 @@ The kit carries, unmodified, `viewer-static.min.js` of jgraph/drawio v32.4.1 (ht
 
 ---
 
-The HTML viewer's offline library `d3` (packages/ui/src/offline-libs/d3.ts) is d3 7.9.1 (https://d3js.org), unmodified and minified. It is injected into sandboxed HTML pages that declare `<!-- lib: d3 -->`.
+The HTML viewer's offline library `d3` (packages/ui/src/offline-libs/d3.ts) is d3 7.9.1 (https://d3js.org), unmodified and minified. It is vendored in the kit and available as the opt-in export `d3Library` of `@hachej/boring-ui-kit/offline-libs`; it is bundled and injected only into the sandboxed HTML pages of a host that lists it in `libraries` and that declare `<!-- lib: d3 -->`.
 
 ```text
 ISC License

@@ -20,18 +20,20 @@ test('declaredLibraries reads one grammar: comma-separated names in `<!-- lib: .
   assert.deepEqual(declaredLibraries('<!-- lib: -->'), []);
 });
 
-test('withOfflineLibraries adds a host library, keeps d3, and refuses a bad name, version or built-in override', async () => {
+test('withOfflineLibraries validates the host\'s whole list: nothing is built in, a bad name or version is refused', async () => {
   const { withOfflineLibraries, offlineLibraryHead } = await import('@hachej/boring-ui-kit/offline-libs');
+  assert.deepEqual(withOfflineLibraries(), {}, 'no list, no libraries');
   const all = withOfflineLibraries({ chart: { version: '4.4.1', load: async () => ({ default: 'window.chart = 1;' }) } });
-  assert.deepEqual(Object.keys(all).sort(), ['chart', 'd3']);
+  assert.deepEqual(Object.keys(all), ['chart'], 'd3 is not built in');
   assert.match((await offlineLibraryHead(['chart'], all)).head, /window\.chart = 1;/);
   const unlisted = await offlineLibraryHead(['other'], all);
   assert.match(unlisted.problems[0], /Unknown library "other"/);
-  assert.match(unlisted.problems[0], /Available: d3, chart/);
+  assert.match(unlisted.problems[0], /Available: chart\./);
   const load = async () => ({ default: '' });
   assert.throws(() => withOfflineLibraries({ Chart: { version: '1.0.0', load } }), /lowercase/);
   assert.throws(() => withOfflineLibraries({ chart: { version: 'latest', load } }), /pinned/);
-  assert.throws(() => withOfflineLibraries({ d3: { version: '1.0.0', load } }), /built in/);
+  assert.deepEqual(Object.keys(withOfflineLibraries({ d3: { version: '1.0.0', load } })), ['d3'], 'a host may list any valid name, d3 included');
+  assert.match((await offlineLibraryHead(['d3'], {})).problems[0], /Available: \(none\)/);
 });
 
 test('the base bundle does not carry a library: its source sits in a chunk only a dynamic import reaches', async () => {
@@ -69,16 +71,15 @@ test('InteractiveFrame supplies a declared library offline, only when declared',
   const { act } = await import('react');
   const { createRoot } = await import('react-dom/client');
   const { InteractiveFrame } = await import(resolve(out, 'interactive-html.mjs'));
-  const { offlineLibraries } = await import('@hachej/boring-ui-kit/offline-libs');
+  const { d3Library } = await import('@hachej/boring-ui-kit/offline-libs');
   let loads = 0;
-  const original = offlineLibraries.d3.load;
-  offlineLibraries.d3.load = () => { loads++; return original(); };
-  cleanups.push(() => { offlineLibraries.d3.load = original; });
+  const counted = { ...d3Library, load: () => { loads++; return d3Library.load(); } };
+  const withD3 = { d3: counted };
 
-  async function show(text) {
+  async function show(text, libraries) {
     const container = document.createElement('div'); document.body.append(container);
     const root = createRoot(container);
-    await act(async () => root.render(createElement(InteractiveFrame, { text, sources: [] })));
+    await act(async () => root.render(createElement(InteractiveFrame, { text, sources: [], ...(libraries ? { libraries } : {}) })));
     // The library loads lazily (a 250 KB chunk read from disk): wait for the frame or an alert, not a fixed 20 ms or 3 s that a loaded runner misses (CI run 44040205326). A page that really never renders still fails, at 20 s.
     for (let waited = 0; waited < 20000 && !container.querySelector('iframe, [role=alert]'); waited += 20) await act(async () => { await new Promise(done => setTimeout(done, 20)); });
     await act(async () => { await new Promise(done => setTimeout(done, 20)); });
@@ -93,7 +94,7 @@ test('InteractiveFrame supplies a declared library offline, only when declared',
     return context;
   }
 
-  const declared = await show('<!-- lib: d3 --><svg></svg><script>result = d3.scaleLinear().domain([0, 10]).range([0, 100])(5) + ":" + d3.version;</script>');
+  const declared = await show('<!-- lib: d3 --><svg></svg><script>result = d3.scaleLinear().domain([0, 10]).range([0, 100])(5) + ":" + d3.version;</script>', withD3);
   assert.equal(loads, 1);
   assert.ok(declared.frame, 'the page renders');
   assert.deepEqual(declared.alerts, []);
@@ -104,16 +105,31 @@ test('InteractiveFrame supplies a declared library offline, only when declared',
   assert.equal(run(declared.srcdoc).result, '50:7.9.1', 'the page used d3 offline');
 
   loads = 0;
-  const plain = await show('<p>No library</p><script>result = typeof d3;</script>');
+  const plain = await show('<p>No library</p><script>result = typeof d3;</script>', withD3);
   assert.equal(loads, 0, 'a page without a declaration never loads the chunk');
   assert.ok(plain.frame, 'rendered without waiting');
   assert.doesNotMatch(plain.srcdoc, /d3js\.org/);
   assert.equal(run(plain.srcdoc).result, 'undefined');
 
-  const unknown = await show('<!-- lib: d3, nope --><p id="still-here">Still here</p>');
+  const unknown = await show('<!-- lib: d3, nope --><p id="still-here">Still here</p>', withD3);
   assert.equal(unknown.alerts.length, 1);
   assert.match(unknown.alerts[0], /Unknown library "nope"/);
   assert.match(unknown.alerts[0], /Available: d3/);
   assert.ok(unknown.frame && unknown.srcdoc.includes('id="still-here"'), 'the document still renders');
   assert.match(unknown.srcdoc, /d3js\.org/, 'the known library next to the unknown one still loads');
+
+  // The host owns the list: with no `libraries` a declared d3 is refused (and its chunk never loaded); with a host-only list d3 is unknown.
+  loads = 0;
+  const none = await show('<!-- lib: d3 --><p id="still-here">Still here</p>');
+  assert.equal(none.alerts.length, 1);
+  assert.match(none.alerts[0], /Unknown library "d3"\. Available: \(none\)\./);
+  assert.ok(none.frame && none.srcdoc.includes('id="still-here"'), 'the document still renders');
+  assert.doesNotMatch(none.srcdoc, /d3js\.org/);
+  assert.equal(loads, 0);
+
+  const chart = { version: '4.4.1', load: async () => ({ default: 'var chart = { ok: true };' }) };
+  const hostOnly = await show('<!-- lib: d3, chart --><script>result = typeof chart + ":" + typeof d3;</script>', { chart });
+  assert.equal(hostOnly.alerts.length, 1);
+  assert.match(hostOnly.alerts[0], /Unknown library "d3"\. Available: chart\./);
+  assert.equal(run(hostOnly.srcdoc).result, 'object:undefined', 'the host library loads, d3 does not');
 });

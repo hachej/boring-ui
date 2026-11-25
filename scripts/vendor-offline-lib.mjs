@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Writes packages/ui/src/offline-libs/<name>.ts: the pinned, minified source of an offline library as one string, so the kit's
 // tsc build ships it as a module only a dynamic import reaches. Usage: node scripts/vendor-offline-lib.mjs d3 node_modules/d3/dist/d3.min.js
-// Then add the library's licence to packages/ui/THIRD_PARTY_NOTICES.md and its entry to packages/ui/src/offline-libs.ts.
+// Then add the library's licence to packages/ui/THIRD_PARTY_NOTICES.md and one exported OfflineLibrary
+// (`export const <name>Library`, like `d3Library`) to packages/ui/src/offline-libs.ts. The kit lists none by default: a host opts in with `libraries={{ <name>: <name>Library }}`.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

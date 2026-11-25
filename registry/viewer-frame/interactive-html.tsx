@@ -8,12 +8,12 @@ import type { OfflineLibrary, OfflineLibraryHead } from '@hachej/boring-ui-kit/o
 /**
  * Host opt-in for running an HTML document's own scripts. `scriptSources` are the HTTPS origins the page may load libraries, styles and fonts
  * from (for example `https://cdnjs.cloudflare.com`). Everything else is closed: no network requests from the page, no frames, no forms.
- * Pinning library versions is the page's responsibility. A page can instead declare a library the kit carries, `<!-- lib: d3 -->` (several
+ * Pinning library versions is the page's responsibility. A page can instead declare an offline library the host lists in `libraries`, `<!-- lib: d3 -->` (several
  * with commas): its source is injected inline before the page's scripts, loaded only for pages that declare one, with no network.
  */
 export interface InteractiveHtml {
   readonly scriptSources: readonly string[];
-  /** More offline libraries a page may declare, beside the built-in ones: `{ chart: { version: '4.4.1', load: loadChartSource } }`. */
+  /** The complete set of offline libraries a page may declare (the kit has none built in; omitted means none): `{ d3: d3Library, chart: { version: '4.4.1', load: loadChartSource } }`. */
   readonly libraries?: Readonly<Record<string, OfflineLibrary>>;
 }
 
