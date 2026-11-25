@@ -422,6 +422,15 @@ await skills.refresh(context, 'letters'); // after the host saved skills/letters
 const agent = defineAgent({ id: 'clerk', model, skills: directorySkillSource(env, '/mnt/skills', { versioned: true }) });
 ```
 
+### S3 skills
+
+`s3SkillSource({ client, region, bucket, prefix?, manifest?, layout?, validate? })` is a versioned source over a `current.json` manifest (`{ version, files: [{ path, sha256 }] }`); the host injects `client.getText`, the kit imports no AWS code. Default layout: `<prefix>/current.json` and `<prefix>/<version>/<path>`; a file's key may have any name and depth.
+
+- **Layout**: `layout: { manifestKey, fileKey: (version, path) => key }` moves the objects, for example `skills/${version}/${path}` or the flat `${path}@${version}`. Keys are relative to `prefix` and checked (no `..` segment, no leading `/`, no backslash); a key that fails refuses the set. `layout.manifestKey` wins over `manifest`.
+- **A whole set or nothing**: every listed file present, its sha-256 equal, front matter parsed, no duplicate name, then `validate(files, context, version)` (sync or async; `files` are `{ path, text, sha256 }`). `validate` returns a reason or throws to refuse the set. A refused set leaves the last good one active.
+- **What was refused**: `source.lastRejected()` is `{ version?, at, reason, files? }` for the last refused set (any cause above, or an unusable manifest, which has no `version`) and `undefined` once a later set is accepted. `lastRefreshed().failed` still records the last failed attempt; it is wider (a read that threw, a missing manifest) and clears on the same event.
+- **Checking is cheap**: the source reads `current.json` alone; the files are fetched only when the manifest text differs from the active one. `liveSkills` re-checks on every `load_skill` miss: a skill published a moment ago is found by a new conversation on the first try; a conversation already pinned to an older version stays on it, and the `Unknown skill` answer says a newer version exists (`/reload-skill`).
+
 ## Sub-agents and schedules
 
 These follow [Pi Durable on Cloudflare](https://earendil.com/posts/pi-durable-on-cloudflare/) and stay host-agnostic: a Node process and a Durable Object mount the same tools.
