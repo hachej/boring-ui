@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomBytes } from 'node:crypto';
 import { signIn } from '@hachej/boring-ui-kit/signin';
-import { assertSignInQueryBudget, countingD1, resetSignInCaches } from '@hachej/boring-ui-kit/signin/testing';
+import { REQUEST_ENDED, assertSignInQueryBudget, countingD1 } from '@hachej/boring-ui-kit/signin/testing';
 
 const fresh = () => randomBytes(32).toString('hex');
 
@@ -38,16 +38,26 @@ test('a database with no sign-in tables is a clear 503 and error, never a silent
   await assert.rejects(app().personOf(new Request(origin, { headers: { cookie: 'better-auth.session_token=fictional.value' } })), /Sign-in tables are missing/);
 });
 
-test('the sign-in is built once per database binding and options: the same ones share it, another origin, secret or database does not', async () => {
-  resetSignInCaches();
-  const database = countingD1().database, other = countingD1().database;
+test('nothing is kept between requests: signIn on the same binding and options is a new Better Auth every time, and a build that keeps one is refused', async () => {
+  const database = countingD1().database;
   const options = { database, secret: fresh(), origin: 'https://one.fictional.test', appName: 'One' };
-  const first = signIn(options);
-  assert.equal(signIn({ ...options }).auth, first.auth, 'the same binding and options: one Better Auth object');
-  assert.equal(signIn({ ...options, waitUntil: () => {} }).auth, first.auth, 'a per-request waitUntil does not make another');
-  assert.notEqual(signIn({ ...options, origin: 'https://two.fictional.test' }).auth, first.auth, 'another origin');
-  assert.notEqual(signIn({ ...options, secret: fresh() }).auth, first.auth, 'another secret');
-  assert.notEqual(signIn({ ...options, database: other }).auth, first.auth, 'another database');
-  resetSignInCaches();
-  assert.notEqual(signIn(options).auth, first.auth, 'a new isolate builds again');
+  assert.notEqual(signIn(options).auth, signIn({ ...options }).auth, 'a new Better Auth for each request');
+  // An app (or a kit) that keeps the sign-in of request 1 for request 2: it holds request 1's binding, which ended with it.
+  const secret = fresh(); let kept;
+  const keeper = (db, firstOwnerHash) => (kept ??= signIn({ database: db, secret, origin: 'https://budget.fictional.test', appName: 'Keeper', firstOwnerHash }));
+  await assert.rejects(assertSignInQueryBudget({ build: keeper, requests: 5 }), /kept between requests|since ended/);
+  // And a fresh one at each request, as the kit does, passes under the same rule.
+  const report = await assertSignInQueryBudget({ build: (db, firstOwnerHash) => signIn({ database: db, secret, origin: 'https://budget.fictional.test', appName: 'Fresh', firstOwnerHash }), requests: 10 });
+  assert.ok(report.max <= 10);
+});
+
+test('endsWithRequest: a statement or a promise of an ended request fails as Cloudflare says', async () => {
+  const d1 = countingD1(), epochs = d1.epochs();
+  const statement = epochs.database.prepare('select 1 as one');
+  assert.equal(JSON.stringify((await statement.all()).results), '[{"one":1}]');
+  const pending = statement.all();
+  epochs.nextRequest();
+  await assert.rejects(pending, new RegExp(REQUEST_ENDED));
+  await assert.rejects(statement.all(), new RegExp(REQUEST_ENDED));
+  assert.equal(JSON.stringify((await epochs.database.prepare('select 2 as two').all()).results), '[{"two":2}]', 'the one binding works for the next request');
 });

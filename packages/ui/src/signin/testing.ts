@@ -26,6 +26,55 @@ export interface CountingD1 {
   count(): number;
   /** The next `n` statements to run fail with this error (to test that a failure is not kept). */
   failNext(n: number, error?: Error): void;
+  /** The same binding under Cloudflare's rule (see `endsWithRequest`). */
+  epochs(): RequestEpochs;
+}
+
+/** What Cloudflare says to a promise made by a request that has ended and awaited later. */
+export const REQUEST_ENDED = 'This promise was created by a request that has since ended, so it can never settle';
+
+export interface RequestEpochs {
+  /** The ONE binding of the isolate (as `env.DB` is), the same object at every request. */
+  readonly database: object;
+  /** The request is over, the next begins: a statement made by an earlier request and used now, or a query of an earlier request that settles now, fails with `REQUEST_ENDED`. */
+  nextRequest(): void;
+}
+
+/**
+ * Cloudflare's rule, as far as a fake can model it: what a request creates (a prepared statement, the promise of a query) belongs to that request, and using it
+ * or waiting on it after the request ended fails (« This promise was created by a request that has since ended »). The binding itself is the one object of the
+ * isolate, as `env.DB` is. It catches an app or kit that keeps a statement or a query of request 1 for request 2. It CANNOT see inside Better Auth: the
+ * promise that failed on Cloudflare (kit 0.6.2, 0.7.0) was Better Auth's own context, made by awaiting I/O, so the budget test also checks structurally that
+ * `build` returns a sign-in with a Better Auth of its own at each request. Only workerd (`scripts/test-signin-workerd.mjs`) or a draft deploy proves the rest.
+ */
+export function endsWithRequest(database: object): RequestEpochs {
+  const inner = database as { prepare: (sql: string) => Record<string, unknown>; batch: (list: unknown[]) => Promise<unknown>; exec: (sql: string) => Promise<unknown> };
+  let epoch = 0;
+  const originals = new WeakMap<object, unknown>();
+  const guard = <T>(born: number, run: () => Promise<T>): Promise<T> => {
+    if (born !== epoch) return Promise.reject(new Error(REQUEST_ENDED));
+    return new Promise<T>((resolve, reject) => { run().then((value) => (born !== epoch ? reject(new Error(REQUEST_ENDED)) : resolve(value)), reject); });
+  };
+  const wrap = (statement: Record<string, unknown>, born: number): object => {
+    const wrapped = {
+      get reads() { return statement['reads']; },
+      bind: (...values: unknown[]) => { if (born !== epoch) throw new Error(REQUEST_ENDED); return wrap((statement['bind'] as (...v: unknown[]) => Record<string, unknown>)(...values), born); },
+      all: () => guard(born, () => (statement['all'] as () => Promise<unknown>)()),
+      run: () => guard(born, () => (statement['run'] as () => Promise<unknown>)()),
+      first: (column?: string) => guard(born, () => (statement['first'] as (c?: string) => Promise<unknown>)(column)),
+      raw: () => guard(born, () => (statement['raw'] as () => Promise<unknown>)()),
+    };
+    originals.set(wrapped, statement);
+    return wrapped;
+  };
+  return {
+    database: {
+      prepare: (sql: string) => wrap(inner.prepare(sql), epoch),
+      batch: (list: object[]) => guard(epoch, () => inner.batch(list.map((statement) => originals.get(statement) ?? statement))),
+      exec: (sql: string) => guard(epoch, () => inner.exec(sql)),
+    },
+    nextRequest: () => { epoch++; },
+  };
 }
 
 interface Sqlite {
@@ -74,7 +123,7 @@ export function countingD1(): CountingD1 {
     batch: async (list: { all: () => Promise<unknown>; run: () => Promise<unknown>; reads: boolean }[]) => { const out: unknown[] = []; for (const s of list) out.push(await (s.reads ? s.all() : s.run())); return out; },
     exec: async (sql: string) => { note(sql); sqlite.exec(sql); return { count: 1 }; },
   };
-  return { database, ran, count: () => ran.length, failNext: (n, error) => { failures = n; if (error) failure = error; } };
+  return { database, ran, count: () => ran.length, failNext: (n, error) => { failures = n; if (error) failure = error; }, epochs: () => endsWithRequest(database) };
 }
 
 /** What `build` makes: anything that answers the sign-in routes, as the kit's `signIn(...)` does. */
@@ -105,7 +154,7 @@ export interface QueryBudgetReport {
   readonly worst: readonly string[];
 }
 
-/** Applies the kit's migration, signs a fictional person up through the first-owner link, then drives `requests` signed-in requests, each on a fresh isolate, and counts the statements of each. */
+/** Applies the kit's migration, signs a fictional person up through the first-owner link, then drives `requests` signed-in requests, each on its own view of the binding that ends with it (`endsWithRequest`), and counts the statements of each. */
 export async function measureSignInQueries(options: QueryBudgetOptions = {}): Promise<QueryBudgetReport> {
   const origin = options.origin ?? 'https://budget.fictional.test', requests = options.requests ?? 100, path = options.path ?? '/api/signin/me';
   const token = random(24), hash = await sha256(token);
@@ -118,24 +167,36 @@ export async function measureSignInQueries(options: QueryBudgetOptions = {}): Pr
   await applySignInMigration(d1.database as never);
   const setupStart = d1.count();
 
-  resetSignInCaches();
-  const up = await build(d1.database, hash).handle(new Request(`${origin}/api/auth/sign-up/email`, {
+  // The binding is the isolate's one object; a request's statements and queries end with it (`endsWithRequest`). Nothing a request makes may live on in the next:
+  // each request's sign-in must also have a Better Auth of its own (Better Auth's promises are what Cloudflare refused in kit 0.6.2 and 0.7.0).
+  const epochs = d1.epochs();
+  let previous: unknown;
+  const betterAuthOf = (app: Servable) => (app as { auth?: unknown }).auth ?? app;
+  const fresh = (what: string) => {
+    const app = build(epochs.database, hash), id = betterAuthOf(app);
+    if (previous !== undefined && id === previous) throw new Error(`The sign-in of ${what} is the sign-in object of the request before: something is kept between requests (Cloudflare refuses a promise made by a request that has ended: ${REQUEST_ENDED}).`);
+    previous = id;
+    return app;
+  };
+  const up = await fresh('the sign-up').handle(new Request(`${origin}/api/auth/sign-up/email`, {
     method: 'POST', headers: { ...headers, 'content-type': 'application/json', 'x-boring-first-owner': token },
     body: JSON.stringify({ email: 'ada@budget.fictional.test', password: 'correct horse battery', name: 'Ada' }),
   }));
   if (up?.status !== 200) throw new Error(`The query budget could not sign its fictional person up: ${up?.status} ${await up?.text()}`);
+  await up.arrayBuffer(); epochs.nextRequest();
   const cookie = up.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
   const setup = d1.count() - setupStart;
 
   const perRequest: number[] = [];
   let worst: string[] = [], max = -1;
   for (let i = 0; i < requests; i++) {
-    // Each request on a NEW isolate, as on Cloudflare, where nearly every request is: nothing kept by an earlier request may save the next.
-    resetSignInCaches();
+    // Each request builds its own sign-in on its own view of the binding and ends it: as on Cloudflare, where nearly every request is a new isolate
+    // and nothing made by an earlier request may be used by the next.
     const before = d1.count();
-    const r = await build(d1.database, hash).handle(new Request(`${origin}${path}`, { headers: { ...headers, cookie } }));
-    if (r?.status !== 200) throw new Error(`Request ${i + 1} of the query budget was not signed in: ${r?.status}`);
+    const r = await fresh(`request ${i + 1}`).handle(new Request(`${origin}${path}`, { headers: { ...headers, cookie } }));
+    if (r?.status !== 200) throw new Error(`Request ${i + 1} of the query budget was not signed in: ${r?.status} ${(await r?.text())?.slice(0, 200) ?? ''}`);
     await r.arrayBuffer();
+    epochs.nextRequest();
     const used = d1.count() - before;
     perRequest.push(used);
     if (used > max) { max = used; worst = d1.ran.slice(before); }

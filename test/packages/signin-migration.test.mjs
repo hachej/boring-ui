@@ -5,7 +5,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { getMigrations } from 'better-auth/db/migration';
 import { signIn, signInMigrationSql, signInMigrationStatements } from '@hachej/boring-ui-kit/signin';
-import { applySignInMigration, countingD1, resetSignInCaches } from '@hachej/boring-ui-kit/signin/testing';
+import { applySignInMigration, countingD1 } from '@hachej/boring-ui-kit/signin/testing';
 import { FULL_OPTIONS, deriveSignInMigration } from '../../scripts/signin-migration.mjs';
 
 const options = (database, extra = {}) => ({ database, secret: 'derive-'.repeat(8), origin: 'https://migration.fictional.test', appName: 'Migration', ...extra });
@@ -22,7 +22,6 @@ test('after the migration Better Auth has nothing to create or add, and applying
   const d1 = countingD1();
   await applySignInMigration(d1.database);
   await applySignInMigration(d1.database);
-  resetSignInCaches();
   const { auth } = signIn(options(d1.database, FULL_OPTIONS));
   const plan = await getMigrations(auth.options);
   assert.deepEqual([plan.toBeCreated.map((t) => t.table), plan.toBeAdded.map((t) => t.table)], [[], []]);

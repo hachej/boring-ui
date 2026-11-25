@@ -1,0 +1,10 @@
+// A Worker that mounts the kit's sign-in on a D1 binding, run by `wrangler dev --local` (workerd itself) for scripts/test-signin-workerd.mjs.
+// Local D1 only, fictional data; no account, no secret, nothing is deployed.
+{
+  "name": "signin-workerd-test",
+  "main": "signin-worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "d1_databases": [{ "binding": "DB", "database_name": "signin-workerd-test", "database_id": "00000000-0000-0000-0000-000000000000" }]
+}
