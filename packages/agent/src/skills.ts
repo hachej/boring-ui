@@ -337,7 +337,7 @@ function versionsOf(versions: SkillVersions, sourceFs: SkillFileSystem | undefin
   const maxAgeMs = options.maxAgeMs ?? 5000, fs = options.companionFiles ? sourceFs : undefined;
   const empty: Loaded = { known: new Map(), errors: [] };
   const read = new Map<string, Promise<Loaded>>(), pins = new Map<ConversationId, string>();
-  let latest: string | undefined, checkedAt = -Infinity, reported: string | undefined, pending: Promise<unknown> | undefined;
+  let latest: string | undefined, checkedAt = -Infinity, reported: string | undefined, pending: Promise<unknown> | undefined, missing: Promise<unknown> | undefined;
   function load(version: string, context: Context): Promise<Loaded> {
     let found = read.get(version);
     if (!found) {
@@ -372,14 +372,25 @@ function versionsOf(versions: SkillVersions, sourceFs: SkillFileSystem | undefin
     }
     return pointed;
   }
+  async function now(context: Context, conversationId: ConversationId | undefined): Promise<Loaded> {
+    let version = conversationId === undefined ? undefined : pins.get(conversationId);
+    if (version === undefined) {
+      version = await newest(context);
+      if (version !== undefined && conversationId !== undefined) pins.set(conversationId, version);
+    }
+    return version === undefined ? empty : load(version, context);
+  }
   return {
-    current: async (context: Context, conversationId: ConversationId | undefined): Promise<Loaded> => {
-      let version = conversationId === undefined ? undefined : pins.get(conversationId);
-      if (version === undefined) {
-        version = await newest(context);
-        if (version !== undefined && conversationId !== undefined) pins.set(conversationId, version);
-      }
-      return version === undefined ? empty : load(version, context);
+    current: now,
+    // A load_skill miss: read the pointer now, whatever maxAgeMs; concurrent misses share one read, and a version already read is
+    // not read again. The conversation stays on its pinned version: `newer` says when the pointer moved on (/reload-skill moves it).
+    miss: async (context: Context, conversationId: ConversationId | undefined): Promise<Loaded> => {
+      await (missing ??= check(context).finally(() => { missing = undefined; }));
+      return now(context, conversationId);
+    },
+    newer: (conversationId: ConversationId | undefined): string | undefined => {
+      const pinned = conversationId === undefined ? undefined : pins.get(conversationId);
+      return pinned !== undefined && latest !== undefined && latest !== pinned ? latest : undefined;
     },
     reload: async (context: Context, conversationId: ConversationId | undefined): Promise<string> => {
       const pointed = await move(context, conversationId);
@@ -463,7 +474,9 @@ async function withCompanions(fs: SkillFileSystem, listing: Loaded, context: Con
  */
 interface Live {
   readonly current: (context: Context, conversationId: ConversationId | undefined) => Promise<Loaded>;
-  readonly miss?: (context: Context) => Promise<Loaded>;
+  readonly miss?: (context: Context, conversationId: ConversationId | undefined) => Promise<Loaded>;
+  /** A versioned source: the version the pointer names now, when this conversation is pinned to an older one. */
+  readonly newer?: (conversationId: ConversationId | undefined) => string | undefined;
   readonly reload?: (context: Context, conversationId: ConversationId | undefined) => Promise<string>;
 }
 
@@ -505,13 +518,14 @@ function skillsExtension(live: Live, options: SkillsOptions, fs: SkillFileSystem
         let shown = await seen(known, () => api.conversationId);
         if (!shown.some(candidate => candidate.name === args.name) && live.miss) {
           // Not in this conversation's listing: the skill may have been added since, so check the source once now.
-          ({ known, errors } = await live.miss(context));
+          ({ known, errors } = await live.miss(context, api?.conversationId));
           shown = await seen(known, () => api.conversationId);
         }
         const skill = shown.find(candidate => candidate.name === args.name) ?? await unlisted(api?.conversationId, args.name);
         if (!skill) {
+          const newer = live.newer?.(api?.conversationId);
           const failed = visible ? undefined : errors.find(error => error.name === args.name);
-          return text(failed ? `Skill "${args.name}" could not be loaded (${failed.path}): ${failed.message}` : `Unknown skill "${args.name}". Available: ${shown.map(entry => entry.name).join(', ')}`);
+          return text(failed ? `Skill "${args.name}" could not be loaded (${failed.path}): ${failed.message}` : `Unknown skill "${args.name}". Available: ${shown.map(entry => entry.name).join(', ')}${newer ? `. A newer skill version (${newer}) is published: this conversation stays on its own until the person sends /reload-skill` : ''}`);
         }
         const folder = skillFolders.get(skill);
         const companions = fs ? companionLists.get(skill) ?? [] : [];
