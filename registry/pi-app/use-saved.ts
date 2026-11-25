@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useVisibleInterval } from '@hachej/boring-ui-kit/visible-interval';
 import type { ResourceClient, ResourceLocator, ResourceSnapshot } from '@hachej/boring-files';
 
 const POLL_MS = 1500;
@@ -32,6 +33,9 @@ export function useSaved<C extends SavedController = SavedController>({ client, 
   // eslint-disable-next-line react-hooks/immutability -- the binding is this hook's own mutable holder (one per client and key); the open revision reads the latest callbacks from it
   useLayoutEffect(() => { binding.create = create; binding.beforeDispose = beforeDispose; }, [binding, create, beforeDispose]);
   const [stored, setStored] = useState<{ readonly binding: typeof binding; readonly state: SavedState<C> }>();
+  // The open follow, called by the visible interval below: shown tabs only, paused while hidden, stopped after ten idle minutes.
+  const following = useRef<(() => Promise<void>) | undefined>(undefined);
+  useVisibleInterval(() => { void following.current?.(); }, POLL_MS, { enabled: !revision });
   useEffect(() => {
     let cancelled = false, reading = false;
     let state: SavedState<C> = { kind: 'loading' };
@@ -68,8 +72,8 @@ export function useSaved<C extends SavedController = SavedController>({ client, 
       update({ kind: 'open', snapshot: read.snapshot, text, controller });
     };
     void follow();
-    const timer = revision ? undefined : setInterval(() => { void follow(); }, POLL_MS);
-    return () => { cancelled = true; clearInterval(timer); release(state.controller); };
+    following.current = follow;
+    return () => { cancelled = true; following.current = undefined; release(state.controller); };
   }, [binding]); // eslint-disable-line react-hooks/exhaustive-deps
   return stored?.binding === binding ? stored.state : { kind: 'loading' };
 }

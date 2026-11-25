@@ -23,7 +23,6 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const loopback = (u: string) => { try { const x = new URL(u); return x.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(x.hostname); } catch { return false; } };
 const issuerOf = (token: string) => { try { return decodeJwt(token).iss; } catch { return undefined; } };
 const opt = <T>(user: T | null) => (user ? { user } : {});
-const sha256 = async (text: string) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, '0')).join('');
 
 export function signIn(options: SignInOptions) {
   const a = makeAuth(options);
@@ -162,21 +161,10 @@ export function signIn(options: SignInOptions) {
     return new Response(null, { status: 302, headers: out });
   };
 
-  /** Whether a first-owner token is good now: it is the link's (`firstOwnerHash`) and no owner exists yet. Reads only; it never uses the link up. */
-  const linkOpen = async (token: string | null): Promise<boolean> =>
-    !!token && !!options.firstOwnerHash && await sha256(token) === options.firstOwnerHash.toLowerCase() && !await a.hasOwner();
-
   /** The sign-in page's check of `/sign-in?first-owner=<token>`: `{ valid }`, one answer for a used link and an unknown one, any number of times. */
   const firstOwnerCheck = async (request: Request): Promise<Response> => {
     await ready();
-    return Response.json({ valid: await linkOpen(request.headers.get('x-boring-first-owner')) }, { headers: { 'cache-control': 'no-store' } });
-  };
-
-  /** The first-owner link's token on a sign-up: while no owner exists, its holder may sign up and becomes the owner. */
-  const firstOwner = async (request: Request): Promise<void> => {
-    if (!await linkOpen(request.headers.get('x-boring-first-owner'))) return;
-    const body = await request.clone().json().catch(() => ({})) as { email?: unknown };
-    if (typeof body.email === 'string') a.pending.firstOwner = normalEmail(body.email);
+    return Response.json({ valid: await a.linkOpen(request.headers.get('x-boring-first-owner')) }, { headers: { 'cache-control': 'no-store' } });
   };
 
   /** The sign-in routes; undefined for any other path, which stays the app's. */
@@ -206,7 +194,6 @@ export function signIn(options: SignInOptions) {
     }
     if (path.startsWith('/api/auth/')) {
       await ready();
-      if (path === '/api/auth/sign-up/email' && request.method === 'POST') await firstOwner(request);
       return inWords(await auth.handler(request), lang);
     }
     // OAuth discovery for assistants: the protected resource (RFC 9728) and the authorization server's metadata (RFC 8414, OIDC).

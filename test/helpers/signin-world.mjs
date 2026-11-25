@@ -5,6 +5,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { getCurrentAuthContextAsyncLocalStorage, getCurrentDBAdapterAsyncLocalStorage, getRequestStateAsyncLocalStorage } from '@better-auth/core/context';
 import { signIn } from '@hachej/boring-ui-kit/signin';
+import { resetSignInCaches } from '@hachej/boring-ui-kit/signin/testing';
 
 export const STUDIO = 'https://studio.test', APP = 'https://app.test';
 export const password = 'correct horse battery';
@@ -47,7 +48,8 @@ export function world() {
   };
   let app;
   const route = async (request) => (new URL(request.url).origin === STUDIO ? studio : app).handle(request).then((r) => r ?? new Response('page', { status: 200 }));
-  const makeApp = (extra) => (app = signIn({ database: new DatabaseSync(':memory:'), secret: secret(), origin: APP, appName: 'Demo', ...extra }));
+  // A new app Worker is a new isolate: the kit keeps its sign-in per isolate and database.
+  const makeApp = (extra) => (resetSignInCaches(), app = signIn({ database: new DatabaseSync(':memory:'), secret: secret(), origin: APP, appName: 'Demo', ...extra }));
   return { studio, route, first, makeApp, studioFetch };
 }
 

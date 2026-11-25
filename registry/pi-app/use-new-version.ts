@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useVisibleInterval } from '@hachej/boring-ui-kit/visible-interval';
 
 export interface NewVersionOptions {
   /** The build this page runs, as the host bakes it into its bundle. `undefined`, empty or `dev` means no check. */
@@ -16,20 +17,13 @@ export interface NewVersionOptions {
  */
 export function useNewVersion({ current, url = '/version.json', everyMs = 60_000 }: NewVersionOptions): boolean {
   const [stale, setStale] = useState(false);
-  useEffect(() => {
-    if (!current || current === 'dev') return undefined;
-    let done = false;
-    const check = async () => {
-      if (done) return;
-      try {
-        const response = await fetch(url, { cache: 'no-store', credentials: 'same-origin' });
-        if (response.ok && (await response.json()).build !== current) { done = true; setStale(true); }
-      } catch { /* offline or not deployed yet: try again on the next check */ }
-    };
-    const visible = () => { if (document.visibilityState === 'visible') void check(); };
-    const timer = setInterval(check, everyMs);
-    document.addEventListener('visibilitychange', visible);
-    return () => { done = true; clearInterval(timer); document.removeEventListener('visibilitychange', visible); };
-  }, [current, url, everyMs]);
+  const check = async () => {
+    try {
+      const response = await fetch(url, { cache: 'no-store', credentials: 'same-origin' });
+      if (response.ok && (await response.json()).build !== current) setStale(true);
+    } catch { /* offline or not deployed yet: try again on the next check */ }
+  };
+  // Checks only while the tab is shown (and once when it comes back), and stops after ten idle minutes: a forgotten tab does not poll all night.
+  useVisibleInterval(() => { void check(); }, everyMs, { enabled: !!current && current !== 'dev' && !stale });
   return stale;
 }

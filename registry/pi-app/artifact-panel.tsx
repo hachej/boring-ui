@@ -1,6 +1,7 @@
 'use client';
 
 import { useChatView } from '@hachej/boring-ui-kit/chat-react';
+import { useVisibleInterval } from '@hachej/boring-ui-kit/visible-interval';
 
 // The artifact panel: the standard viewer bar (title, type, version switcher, Refresh, Share, copy, download, close) over the viewer for
 // the artifact's type. It follows the latest saved revision while nothing is unsaved ("Latest") or pins one older version, read-only. It
@@ -128,14 +129,16 @@ export function useTurn(controller: ChatController | undefined): number {
 /** The revisions the workspace provider retains for a file with their save times, newest first; followed while the panel is open. */
 function useHistory(history: ViewerOptions['history'], path: string): readonly SavedRevision[] {
   const [revisions, setRevisions] = useState<readonly SavedRevision[]>([]);
+  const reload = useRef<(() => void) | undefined>(undefined);
+  useVisibleInterval(() => reload.current?.(), POLL_MS, { enabled: !!history });
   useEffect(() => {
     if (!history) return;
     let cancelled = false;
     const key = (saves: readonly SavedRevision[]) => saves.map(save => `${save.revision}@${save.savedAt}`).join();
     const load = () => history(path).then(saves => { if (!cancelled) setRevisions(current => key(current) === key(saves) ? current : saves); }).catch(() => {});
     void load();
-    const timer = setInterval(load, POLL_MS);
-    return () => { cancelled = true; clearInterval(timer); };
+    reload.current = load;
+    return () => { cancelled = true; reload.current = undefined; };
   }, [history, path]);
   return revisions;
 }

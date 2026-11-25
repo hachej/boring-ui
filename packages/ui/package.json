@@ -76,6 +76,14 @@
       "types": "./dist/signin/index.d.ts",
       "import": "./dist/signin/index.js"
     },
+    "./signin/testing": {
+      "types": "./dist/signin/testing.d.ts",
+      "import": "./dist/signin/testing.js"
+    },
+    "./visible-interval": {
+      "types": "./dist/visible-interval.d.ts",
+      "import": "./dist/visible-interval.js"
+    },
     "./voice-capture": {
       "types": "./dist/voice-capture.d.ts",
       "import": "./dist/voice-capture.js"
