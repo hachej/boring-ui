@@ -1,0 +1,29 @@
+# The kit's sign-in on workerd (the runtime Cloudflare runs): kit 0.6.2 and 0.7.0 kept Better Auth across requests and failed there while node's tests passed.
+# NOT a gate (a workflow of its own, in no `needs` of verify.yml or release admission): it joins the gate once it has run reliably. Local D1, fictional people,
+# no account, nothing deployed.
+name: Sign-in on workerd (not gating)
+on:
+  pull_request:
+    paths: ['packages/ui/src/signin/**', 'scripts/test-signin-workerd.mjs', 'test/workerd/**', '.github/workflows/signin-workerd.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  signin-workerd:
+    name: Sign-in on workerd
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.1
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:signin-workerd
+        env:
+          WRANGLER_SEND_METRICS: 'false'

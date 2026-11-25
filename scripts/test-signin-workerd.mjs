@@ -59,7 +59,7 @@ function person() {
       const h = new Headers({ origin: base, 'cf-connecting-ip': ip, ...headers });
       if (jar.size) h.set('cookie', [...jar].map(([k, v]) => `${k}=${v}`).join('; '));
       if (body) h.set('content-type', 'application/json');
-      const r = await fetch(`${base}${path}`, { method, headers: h, body: body ? JSON.stringify(body) : undefined, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+      const r = await fetch(`${base}${path}`, { method, headers: h, body: body ? JSON.stringify(body) : undefined, redirect: 'manual', signal: AbortSignal.timeout(arg('request-timeout', 20) * 1000) });
       for (const c of r.headers.getSetCookie()) { const [pair] = c.split(';'); const i = pair.indexOf('='); const v = pair.slice(i + 1); if (v) jar.set(pair.slice(0, i), v); else jar.delete(pair.slice(0, i)); }
       const text = await r.text();
       if (!expect.includes(r.status)) note(`${method} ${path} -> ${r.status} (wanted ${expect})`, text);
