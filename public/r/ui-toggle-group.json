@@ -9,8 +9,8 @@
     "react@^19.0.0"
   ],
   "registryDependencies": [
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.2/r/ui-toggle.json",
-    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.6.2/r/utils.json"
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.7.0/r/ui-toggle.json",
+    "https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.7.0/r/utils.json"
   ],
   "files": [
     {
