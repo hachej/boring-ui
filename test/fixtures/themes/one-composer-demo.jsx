@@ -14,13 +14,15 @@ import { recordsKind } from '../../../registry/record-viewer/records-kind.tsx';
 import { maquetteKind } from '../../../registry/maquette-viewer/maquette-kind.tsx';
 import { LooksViewer } from '../../../registry/looks-viewer/looks-viewer.tsx';
 import { isLooksPath } from '../../../registry/looks-viewer/looks.ts';
+import { d3Library } from '@hachej/boring-ui-kit/offline-libs';
 import { InteractiveFrame } from '../../../registry/viewer-frame/interactive-html.tsx';
 
 // The UX demo layer (`?demo=1`, UX loop): what a person does with the one composer, over invented English bookkeeping content:
 // a library (the kit's FileTreeView over an in-memory provider), earlier conversations (the chat's History list), a long conversation,
 // a record opened from a page row, a quote from the page. Nothing here changes the default fixture page.
 /** An HTML page the pane runs in the kit's sandboxed frame (no scripts' network, no storage): a host's opt-in, here for the demo's own invented pages. A `*.mockup.html` goes to the mock-up kind first. */
-const htmlKind = { match: target => /\.html?$/i.test(target.resource.path), label: 'HTML', renderer: ({ text }) => <div className="flex h-96 flex-col" data-testid="demo-html"><InteractiveFrame text={text} sources={[]} testId="demo-html" title="HTML page (running)" /></div> };
+const DEMO_LIBRARIES = { d3: d3Library };
+const htmlKind = { match: target => /\.html?$/i.test(target.resource.path), label: 'HTML', renderer: ({ text }) => <div className="flex h-96 flex-col" data-testid="demo-html"><InteractiveFrame text={text} sources={[]} libraries={DEMO_LIBRARIES} testId="demo-html" title="HTML page (running)" /></div> };
 /** A `*.looks.json` reads its sibling screens through the same demo files; the pane hands a renderer the file's name, the folder is the demo's one `samples/looks`. */
 const looksKind = { match: target => isLooksPath(target.resource.path), label: 'Looks', renderer: ({ text, title }) => <LooksViewer key={title} text={text} path={`samples/looks/${title}`} read={async path => (await demoFiles.read(path).catch(() => undefined))?.blob.text()} /> };
 /** The artifact kinds the demo's pane draws (`agent.fileKinds`): diagram, drawing (Excalidraw and draw.io), mock-up, records, maquette, looks and a sandboxed HTML page. The board and canvas need a tldraw bundle, its assets and a workspace client: they have their own journeys. */
