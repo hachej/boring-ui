@@ -5,8 +5,8 @@
 //
 // Cost per request (24 Nov outage: ~97 D1 queries per request, from a migration and Better Auth's schema check at every request; on Cloudflare
 // nearly every request is a new isolate, so "once per isolate" still ran them almost every time): a request runs no migration and no schema check
-// (`advanced.database.validateSchema: false`). The Better Auth object is also kept per isolate and database binding (`makeAuth`; the key is below),
-// but only as a saving: nothing depends on it.
+// (`advanced.database.validateSchema: false`). The Better Auth object is built at every request and kept nowhere (see `makeAuth`): it holds promises
+// made by awaiting I/O, which Cloudflare refuses to settle once the request that made them has ended.
 //
 // Who is an owner:
 // - In an app linked to Studio, only a person who came through Studio and whose Studio id is on Studio's signed owner list (studio.ts).
@@ -110,50 +110,22 @@ function watchTables(database: unknown, watch: TablesWatch): unknown {
     return value.bind(target);
   } });
 }
-const isObject = (value: unknown): value is object => (typeof value === 'object' && value !== null) || typeof value === 'function';
-
 /**
- * The sign-in object of one app, built once per isolate and database binding. The cache key is the binding itself (a WeakMap key, so it goes with the
- * binding) and, inside it, every option that shapes the object: secret, origin, app name, first-owner hash, Google client, Studio link (origin, app,
- * client id, owner, TTL), provider flag and sign-up limit. A request with other values (another origin, a rotated secret) builds its own object; at
- * most 8 stay per binding, the oldest dropped, so a request's Host cannot grow it without end. What differs per request without shaping the object
- * is not in the key and is kept current instead: `waitUntil` and the Studio `fetch` (a service binding) are read through `live`, set at every
- * call. Nothing about a person or a request is kept in the object: the first-owner link is read from the sign-up's own header.
+ * The sign-in object of one request. It is built at every request and kept nowhere: Better Auth holds promises made by awaiting I/O (its context), and
+ * Cloudflare refuses to settle a promise made by a request that has ended (« This promise was created by a request that has since ended »: kit 0.6.2 and 0.7.0
+ * kept the object per isolate and about a quarter of sign-ins failed). No module state: no map, no promise, no object made while serving a request outlives it.
+ * Building costs CPU only, no query, since the tables are the app's deploy migration.
  */
-let built = new WeakMap<object, Map<string, Auth>>();
-const MAX_PER_BINDING = 8;
-interface Live { waitUntil: SignInOptions['waitUntil']; studioFetch: typeof fetch | undefined }
-const lives = new WeakMap<Auth, Live>();
-const keyOf = (o: SignInOptions) => JSON.stringify([o.secret, new URL(o.origin).origin, o.appName, o.firstOwnerHash ?? null, o.google ? [o.google.clientId, o.google.clientSecret] : null,
-  o.studio ? [o.studio.origin, o.studio.app, o.studio.clientId, o.studio.owner ?? null, o.studio.ownersTtlMs ?? null] : null, !!o.provider, o.signUpsPerHour ?? null]);
-
-/** Forgets every kept sign-in object, as a new isolate would (tests: a Worker that starts again). Objects already handed out keep working. */
-export function resetSignInCaches(): void {
-  built = new WeakMap();
-}
-
 export function makeAuth(options: SignInOptions): Auth {
-  if (!isObject(options.database)) return buildAuth(options, { waitUntil: options.waitUntil, studioFetch: options.studio?.fetch });
-  let perBinding = built.get(options.database);
-  if (!perBinding) built.set(options.database, perBinding = new Map());
-  const key = keyOf(options);
-  let auth = perBinding.get(key);
-  if (!auth) {
-    const live: Live = { waitUntil: options.waitUntil, studioFetch: options.studio?.fetch };
-    auth = buildAuth(options, live);
-    lives.set(auth, live);
-    perBinding.set(key, auth);
-    if (perBinding.size > MAX_PER_BINDING) perBinding.delete(perBinding.keys().next().value!);
-  }
-  const live = lives.get(auth)!;
-  live.waitUntil = options.waitUntil;
-  live.studioFetch = options.studio?.fetch;
-  return auth;
+  return buildAuth(options);
 }
 
-function buildAuth(options: SignInOptions, live: Live) {
+/** Kept so an app's test that calls it still runs: nothing is kept between requests now, so there is nothing to forget. */
+export function resetSignInCaches(): void { /* nothing is kept */ }
+
+function buildAuth(options: SignInOptions) {
   const origin = new URL(options.origin).origin;
-  const link = options.studio ? studioLink({ ...options.studio, fetch: (input, init) => (live.studioFetch ?? fetch)(input, init) }) : undefined;
+  const link = options.studio ? studioLink(options.studio) : undefined;
   // Vouched for by Studio: the owners who came back from Studio, each used once by the sign-up that follows. (The first-owner link is not kept here:
   // it is read from the sign-up's own header, so one request's proof never reaches another.)
   const pending = { studioOwners: new Set<string>() };
@@ -225,7 +197,7 @@ function buildAuth(options: SignInOptions, live: Live) {
       // Better Auth's own runtime schema check reads the schema again for each adapter it sees (13 reads a request on D1); the migration below owns it.
       database: { validateSchema: false },
       ipAddress: { ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'] },
-      backgroundTasks: { handler: (promise: Promise<unknown>) => { if (live.waitUntil) live.waitUntil(promise); else promise.catch(() => undefined); } },
+      backgroundTasks: { handler: (promise: Promise<unknown>) => { if (options.waitUntil) options.waitUntil(promise); else promise.catch(() => undefined); } },
     },
   };
   const auth = betterAuth(settings as never);

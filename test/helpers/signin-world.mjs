@@ -5,7 +5,6 @@ import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { getCurrentAuthContextAsyncLocalStorage, getCurrentDBAdapterAsyncLocalStorage, getRequestStateAsyncLocalStorage } from '@better-auth/core/context';
 import { signIn, signInMigrationStatements } from '@hachej/boring-ui-kit/signin';
-import { resetSignInCaches } from '@hachej/boring-ui-kit/signin/testing';
 
 /** An in-memory database as a deploy leaves it: the kit's sign-in tables applied (a request never migrates). Applying twice changes nothing. */
 export const migrated = (database = new DatabaseSync(':memory:')) => { for (const statement of signInMigrationStatements()) database.exec(statement); return database; };
@@ -51,8 +50,7 @@ export function world() {
   };
   let app;
   const route = async (request) => (new URL(request.url).origin === STUDIO ? studio : app).handle(request).then((r) => r ?? new Response('page', { status: 200 }));
-  // A new app Worker is a new isolate: the kit keeps its sign-in per isolate and database.
-  const makeApp = (extra) => (resetSignInCaches(), app = signIn({ secret: secret(), origin: APP, appName: 'Demo', ...extra, database: migrated(extra?.database) }));
+  const makeApp = (extra) => (app = signIn({ secret: secret(), origin: APP, appName: 'Demo', ...extra, database: migrated(extra?.database) }));
   return { studio, route, first, makeApp, studioFetch };
 }
 
