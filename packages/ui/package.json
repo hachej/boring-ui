@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-ui-kit",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "license": "MIT",
   "private": false,
   "type": "module",
@@ -174,7 +174,7 @@
     }
   },
   "peerDependencies": {
-    "@hachej/boring-files": "^0.6.1",
+    "@hachej/boring-files": "^0.6.2",
     "@earendil-works/pi-durable": "~1.6.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
