@@ -37,6 +37,8 @@ for (const directory of readdirSync(join(root, 'packages'), { withFileTypes: tru
   for (const target of Object.values(manifest.exports ?? {})) {
     const file = typeof target === 'string' ? target : target?.import;
     if (typeof file !== 'string' || !file.startsWith('./dist/')) continue;
+    // Data the build writes from a compiled source (the sign-in migration .sql) is no module: its source is the string it comes from.
+    if (file.endsWith('.sql')) continue;
     const sourceBase = join(packageRoot, 'src', file.slice('./dist/'.length).replace(/\.js$/, ''));
     const source = candidates(sourceBase).find((path) => knownSources.has(path));
     if (source) roots.add(source);

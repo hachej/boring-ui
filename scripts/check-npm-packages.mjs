@@ -22,7 +22,7 @@ export function checkPackage(manifest, paths, versions, { release = false } = {}
   const isKitBin = path => manifest.name === '@hachej/boring-ui-kit' && path === 'bin/boring-ui-blocks.mjs';
   for (const path of files) {
     if (isTreeStyles(path) || isRegistryFile(path) || isKitBin(path) || agentNotices.includes(path)) continue;
-    if (!/^(package\.json|README\.md|LICENSE|INVARIANTS\.md|THIRD_PARTY_NOTICES\.md|dist\/(?:[\w.-]+\/)*[\w.-]+\.(?:js|d\.ts))$/.test(path)) errors.push(`Unexpected packed file: ${path}`);
+    if (!/^(package\.json|README\.md|LICENSE|INVARIANTS\.md|THIRD_PARTY_NOTICES\.md|dist\/(?:[\w.-]+\/)*[\w.-]+\.(?:js|d\.ts)|dist\/signin\/migration\.sql)$/.test(path)) errors.push(`Unexpected packed file: ${path}`);
   }
   function target(value) {
     if (typeof value === 'string') {

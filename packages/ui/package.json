@@ -11,6 +11,7 @@
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",
+    "dist/signin/migration.sql",
     "r/*.json",
     "bin/*.mjs",
     "atlas.schema.json",
@@ -76,6 +77,7 @@
       "types": "./dist/signin/index.d.ts",
       "import": "./dist/signin/index.js"
     },
+    "./signin/migration.sql": "./dist/signin/migration.sql",
     "./signin/testing": {
       "types": "./dist/signin/testing.d.ts",
       "import": "./dist/signin/testing.js"

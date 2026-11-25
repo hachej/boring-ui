@@ -26,14 +26,16 @@ test('the budget helper fails an app whose sign-in costs more: a build that coun
   await assert.rejects(assertSignInQueryBudget({ build: greedy, requests: 5, budget: 3 }), /Sign-in ran up to \d+ D1 statements/);
 });
 
-test('a failed migration is not kept: the next request on the same database tries again', async () => {
-  const d1 = countingD1(), secret = fresh();
-  const app = () => signIn({ database: d1.database, secret, origin: 'https://retry.fictional.test', appName: 'Retry' });
-  d1.failNext(1);
-  const first = await app().handle(new Request('https://retry.fictional.test/api/auth/sign-up/email', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://retry.fictional.test' }, body: JSON.stringify({ email: 'x@y.test', password: 'correct horse battery', name: 'X' }) })).catch((e) => e);
-  assert.ok(first instanceof Error || first.status >= 500, 'the first request fails with the database');
-  const second = await app().handle(new Request('https://retry.fictional.test/api/signin/first-owner'));
-  assert.equal(second.status, 200, 'the next request migrated and answered');
+test('a database with no sign-in tables is a clear 503 and error, never a silent signed-out page or a bare 500', async () => {
+  const secret = fresh(), origin = 'https://missing.fictional.test';
+  const app = () => signIn({ database: countingD1().database, secret, origin, appName: 'Missing' });
+  const asked = await app().handle(new Request(`${origin}/api/signin/me`, { headers: { cookie: 'better-auth.session_token=fictional.value' } }));
+  assert.equal(asked.status, 503);
+  const body = await asked.json();
+  assert.equal(body.code, 'SIGNIN_TABLES_MISSING');
+  assert.match(body.message, /signin\/migration\.sql/);
+  assert.match(body.message, /wrangler d1 migrations apply/);
+  await assert.rejects(app().personOf(new Request(origin, { headers: { cookie: 'better-auth.session_token=fictional.value' } })), /Sign-in tables are missing/);
 });
 
 test('the sign-in is built once per database binding and options: the same ones share it, another origin, secret or database does not', async () => {

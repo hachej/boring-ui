@@ -4,8 +4,11 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { getCurrentAuthContextAsyncLocalStorage, getCurrentDBAdapterAsyncLocalStorage, getRequestStateAsyncLocalStorage } from '@better-auth/core/context';
-import { signIn } from '@hachej/boring-ui-kit/signin';
+import { signIn, signInMigrationStatements } from '@hachej/boring-ui-kit/signin';
 import { resetSignInCaches } from '@hachej/boring-ui-kit/signin/testing';
+
+/** An in-memory database as a deploy leaves it: the kit's sign-in tables applied (a request never migrates). Applying twice changes nothing. */
+export const migrated = (database = new DatabaseSync(':memory:')) => { for (const statement of signInMigrationStatements()) database.exec(statement); return database; };
 
 export const STUDIO = 'https://studio.test', APP = 'https://app.test';
 export const password = 'correct horse battery';
@@ -39,7 +42,7 @@ export const me = async (b, origin) => (await b.json(`${origin}/api/signin/me`))
 /** A Studio and, once linked, an app; requests are routed by origin, as the two Workers would serve them. */
 export function world() {
   const first = link();
-  const studio = signIn({ database: new DatabaseSync(':memory:'), secret: secret(), origin: STUDIO, appName: 'Studio', firstOwnerHash: first.hash, provider: true });
+  const studio = signIn({ database: migrated(), secret: secret(), origin: STUDIO, appName: 'Studio', firstOwnerHash: first.hash, provider: true });
   // Two Workers in one process: Studio must not see the app's Better Auth request and transaction (async local storage), as it would not on Cloudflare.
   const studioFetch = async (input, init) => {
     const stores = await Promise.all([getCurrentDBAdapterAsyncLocalStorage(), getCurrentAuthContextAsyncLocalStorage(), getRequestStateAsyncLocalStorage()]);
@@ -49,7 +52,7 @@ export function world() {
   let app;
   const route = async (request) => (new URL(request.url).origin === STUDIO ? studio : app).handle(request).then((r) => r ?? new Response('page', { status: 200 }));
   // A new app Worker is a new isolate: the kit keeps its sign-in per isolate and database.
-  const makeApp = (extra) => (resetSignInCaches(), app = signIn({ database: new DatabaseSync(':memory:'), secret: secret(), origin: APP, appName: 'Demo', ...extra }));
+  const makeApp = (extra) => (resetSignInCaches(), app = signIn({ secret: secret(), origin: APP, appName: 'Demo', ...extra, database: migrated(extra?.database) }));
   return { studio, route, first, makeApp, studioFetch };
 }
 

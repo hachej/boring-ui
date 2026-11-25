@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { gate } from '../fixtures/studio-template-signin.ts';
-import { APP, STUDIO, assistantToken, browser, link, me, secret, signUp, throughStudio, world } from '../helpers/signin-world.mjs';
+import { APP, STUDIO, assistantToken, browser, link, me, migrated, secret, signUp, throughStudio, world } from '../helpers/signin-world.mjs';
 
 const NAME = 'demo';
 const TABLES = ['user', 'account', 'session', 'verification', 'invitation', 'jwks'];
@@ -251,7 +251,7 @@ test('adoption: the template\'s own worker/signin.ts, copied unchanged, takes th
   t.after(() => { globalThis.fetch = realFetch; });
 
   const first = link(), ran = [];
-  const env = { DB: new DatabaseSync(':memory:'), BETTER_AUTH_SECRET: secret(), FIRST_OWNER_HASH: first.hash, STUDIO_ORIGIN: STUDIO, STUDIO_APP: NAME, STUDIO_CLIENT: 'client-1' };
+  const env = { DB: migrated(), BETTER_AUTH_SECRET: secret(), FIRST_OWNER_HASH: first.hash, STUDIO_ORIGIN: STUDIO, STUDIO_APP: NAME, STUDIO_CLIENT: 'client-1' };
   const worker = (request) => gate(request, env, async () => { ran.push(new URL(request.url).pathname); return Response.json({ result: 'the stand-in operation' }); });
   const ada = browser(worker);
   assert.equal((await signUp(ada, APP, 'ada@app.test', { 'x-boring-first-owner': first.token })).status, 200);

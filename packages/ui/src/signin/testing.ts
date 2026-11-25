@@ -10,9 +10,11 @@
 // `build` is called for every request, as the app's Worker does (its sign-in object is made inside `fetch`), so a per-request build that is
 // expensive shows up; with no `build` the kit's own sign-in is driven with fictional options.
 import { signIn } from './index.js';
+import { applySignInMigration } from './migration.js';
+import { resetSignInCaches } from './auth.js';
 
 /** A new isolate: the sign-in objects and migrations the kit kept are forgotten, so the next `signIn(...)` builds and migrates again. */
-export { resetSignInCaches } from './auth.js';
+export { resetSignInCaches, applySignInMigration };
 
 /** The D1 methods Better Auth's dialect uses, on `node:sqlite`, counting every statement that runs. */
 export interface CountingD1 {
@@ -97,13 +99,13 @@ export interface QueryBudgetReport {
   readonly perRequest: readonly number[];
   readonly max: number;
   readonly mean: number;
-  /** Statements run before the first driven request: the migration and the sign-up. */
+  /** Statements run by the sign-up, before the first driven request (the migration is applied before and not counted). */
   readonly setup: number;
   /** The statements of the busiest request. */
   readonly worst: readonly string[];
 }
 
-/** Signs a fictional person up through the first-owner link, then drives `requests` signed-in requests and counts the statements of each. */
+/** Applies the kit's migration, signs a fictional person up through the first-owner link, then drives `requests` signed-in requests, each on a fresh isolate, and counts the statements of each. */
 export async function measureSignInQueries(options: QueryBudgetOptions = {}): Promise<QueryBudgetReport> {
   const origin = options.origin ?? 'https://budget.fictional.test', requests = options.requests ?? 100, path = options.path ?? '/api/signin/me';
   const token = random(24), hash = await sha256(token);
@@ -112,26 +114,24 @@ export async function measureSignInQueries(options: QueryBudgetOptions = {}): Pr
   const build = options.build ?? ((database: object, firstOwnerHash: string) => signIn({ database, secret, origin, appName: 'Budget', firstOwnerHash }));
   const headers = { origin, 'cf-connecting-ip': '203.0.113.7' };
 
-  // A deployed app's database is migrated already: the first requests (setup, not measured) bring the fake to that state. A build that checks the
-  // schema before it migrates may refuse the first one, as such a build does on a fresh database.
-  let warm: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    warm = await build(d1.database, hash).handle(new Request(`${origin}/api/signin/first-owner`, { headers })).then((r) => r?.status, (e: unknown) => e);
-    if (warm === 200) break;
-  }
-  if (warm !== 200) throw new Error(`The query budget could not set its fictional database up: ${String(warm)}`);
+  // The deploy applied the sign-in tables (the kit's migration), once; a request never migrates nor checks the schema.
+  await applySignInMigration(d1.database as never);
+  const setupStart = d1.count();
 
+  resetSignInCaches();
   const up = await build(d1.database, hash).handle(new Request(`${origin}/api/auth/sign-up/email`, {
     method: 'POST', headers: { ...headers, 'content-type': 'application/json', 'x-boring-first-owner': token },
     body: JSON.stringify({ email: 'ada@budget.fictional.test', password: 'correct horse battery', name: 'Ada' }),
   }));
   if (up?.status !== 200) throw new Error(`The query budget could not sign its fictional person up: ${up?.status} ${await up?.text()}`);
   const cookie = up.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
-  const setup = d1.count();
+  const setup = d1.count() - setupStart;
 
   const perRequest: number[] = [];
   let worst: string[] = [], max = -1;
   for (let i = 0; i < requests; i++) {
+    // Each request on a NEW isolate, as on Cloudflare, where nearly every request is: nothing kept by an earlier request may save the next.
+    resetSignInCaches();
     const before = d1.count();
     const r = await build(d1.database, hash).handle(new Request(`${origin}${path}`, { headers: { ...headers, cookie } }));
     if (r?.status !== 200) throw new Error(`Request ${i + 1} of the query budget was not signed in: ${r?.status}`);

@@ -13,11 +13,13 @@ import { createLocalJWKSet, decodeJwt, jwtVerify } from 'jose';
 import { makeAuth, MCP_SCOPES, normalEmail, type Person, type Role, type SignInOptions } from './auth.js';
 import { OWNERS_AUDIENCE, STUDIO, STUDIO_SCOPES, studioCallback, type PassClaims } from './studio.js';
 import { inWords, langOf, refuse } from './words.js';
+import { missingTables, SIGNIN_TABLES_MISSING } from './migration.js';
 
 export type { Person, Role, SignInOptions } from './auth.js';
 export type { StudioClientOptions } from './studio.js';
 export { MCP_SCOPES } from './auth.js';
 export { langOf, say, type Lang } from './words.js';
+export { applySignInMigration, signInMigrationSql, signInMigrationStatements, SIGNIN_TABLES_MISSING } from './migration.js';
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const loopback = (u: string) => { try { const x = new URL(u); return x.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(x.hostname); } catch { return false; } };
@@ -26,7 +28,7 @@ const opt = <T>(user: T | null) => (user ? { user } : {});
 
 export function signIn(options: SignInOptions) {
   const a = makeAuth(options);
-  const { auth, origin, ready } = a;
+  const { auth, origin } = a;
   const api = auth.api as unknown as Record<string, (input: unknown) => Promise<unknown>>;
   const db = a.adapter;
   type User = { id: string; email: string; name: string };
@@ -37,8 +39,9 @@ export function signIn(options: SignInOptions) {
 
   /** The signed-in person behind a session cookie (or bearer session), with their role; undefined when nobody, or on no list. */
   const personOf = async (request: Request): Promise<Person | undefined> => {
-    await ready();
+    // A database with no sign-in tables is never « nobody signed in »: it says what to apply (a clear error, not a silent signed-out page).
     const s = await api['getSession']!({ headers: request.headers }).catch(() => null) as { user: User } | null;
+    if (!s && a.tables.missing) throw new Error(SIGNIN_TABLES_MISSING);
     return withRole(s?.user);
   };
 
@@ -88,7 +91,6 @@ export function signIn(options: SignInOptions) {
   /** The person an MCP bearer token stands for, or nobody: a token this app issued for `<origin>/mcp`, or, in an app linked to Studio, Studio's
    *  5-minute pass (issuer Studio's origin), whose role is still the app's own at this request. Only here: `personOf` never takes a pass. */
   const mcpPerson = async (request: Request): Promise<Person | undefined> => {
-    await ready();
     const header = request.headers.get('authorization') ?? '';
     if (!header.startsWith('Bearer ')) return undefined;
     const token = header.slice(7);
@@ -136,7 +138,6 @@ export function signIn(options: SignInOptions) {
 
   /** Studio: its owners, by Studio id only (the route is public, so no address or name), in a 5-minute token signed with its own keys. */
   const owners = async (): Promise<Response> => {
-    await ready();
     const store = await db();
     const rows = await store.findMany<{ email: string }>({ model: 'invitation', where: [{ field: 'role', value: 'owner' }] });
     const users = (await Promise.all(rows.map((r) => store.findOne<User>({ model: 'user', where: [{ field: 'email', value: r.email }] })))).filter((u): u is User => !!u);
@@ -149,7 +150,6 @@ export function signIn(options: SignInOptions) {
 
   /** An app linked to Studio: start the round trip (Better Auth's genericOAuth), keeping its state cookie, then on to Studio. */
   const toStudio = async (request: Request): Promise<Response> => {
-    await ready();
     const headers = new Headers({ 'content-type': 'application/json', origin, cookie: request.headers.get('cookie') ?? '' });
     // The person's address, for Better Auth's limiter: without it every round trip would share one bucket.
     for (const name of ['cf-connecting-ip', 'x-forwarded-for']) { const value = request.headers.get(name); if (value) headers.set(name, value); }
@@ -163,7 +163,6 @@ export function signIn(options: SignInOptions) {
 
   /** The sign-in page's check of `/sign-in?first-owner=<token>`: `{ valid }`, one answer for a used link and an unknown one, any number of times. */
   const firstOwnerCheck = async (request: Request): Promise<Response> => {
-    await ready();
     return Response.json({ valid: await a.linkOpen(request.headers.get('x-boring-first-owner')) }, { headers: { 'cache-control': 'no-store' } });
   };
 
@@ -185,16 +184,14 @@ export function signIn(options: SignInOptions) {
     // An assistant registers itself: one whose callbacks are all http on loopback (Claude Code, any port) is a native client, since
     // Better Auth refuses http callbacks for web clients.
     if (path === '/api/auth/oauth2/register' && request.method === 'POST') {
-      await ready();
-      const { metadata: _dropped, ...body } = await request.json().catch(() => ({})) as { redirect_uris?: string[]; metadata?: unknown };
+        const { metadata: _dropped, ...body } = await request.json().catch(() => ({})) as { redirect_uris?: string[]; metadata?: unknown };
       const uris = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
       const native = uris.length > 0 && uris.every(loopback);
       const inner = new Request(request.url, { method: 'POST', headers: request.headers, body: JSON.stringify({ ...body, token_endpoint_auth_method: 'none', ...(native ? { application_type: 'native' } : {}) }) });
       return inWords(await auth.handler(inner), lang);
     }
     if (path.startsWith('/api/auth/')) {
-      await ready();
-      return inWords(await auth.handler(request), lang);
+        return inWords(await auth.handler(request), lang);
     }
     // OAuth discovery for assistants: the protected resource (RFC 9728) and the authorization server's metadata (RFC 8414, OIDC).
     if (/^\/\.well-known\/oauth-protected-resource(\/mcp)?$/.test(path)) {
@@ -202,13 +199,12 @@ export function signIn(options: SignInOptions) {
         { headers: { 'access-control-allow-origin': '*' } });
     }
     const server = /^\/\.well-known\/(oauth-authorization-server|openid-configuration)(\/api\/auth)?$/.exec(path);
-    if (server) { await ready(); const inner = new URL(url); inner.pathname = `/api/auth/.well-known/${server[1]}`; return auth.handler(new Request(inner, request)); }
+    if (server) { const inner = new URL(url); inner.pathname = `/api/auth/.well-known/${server[1]}`; return auth.handler(new Request(inner, request)); }
     return undefined;
   };
 
   /** Studio: register (once) the client of an app's round trip, as an owner (`headers` carry their session); answers its client id. */
   const linkApp = async (headers: Headers, app: string, appOrigin: string): Promise<string> => {
-    await ready();
     const name = `studio-link:${app}`;
     const known = await (await db()).findOne<{ clientId: string }>({ model: 'oauthClient', where: [{ field: 'name', value: name }] });
     if (known) return known.clientId;
@@ -230,7 +226,14 @@ export function signIn(options: SignInOptions) {
     return Response.json({ app: body.app, clientId: await linkApp(request.headers, body.app, body.origin) });
   };
 
-  return { handle, personOf, mcpPerson, mcpRefusal, linkApp, auth };
+  /** `handle` with a clear answer when the database has no sign-in tables: 503 with the instruction, in the log and in the body, never a bare 500. */
+  const handleClearly = async (request: Request): Promise<Response | undefined> => {
+    const tablesMissing = () => { console.error(SIGNIN_TABLES_MISSING); return Response.json({ code: 'SIGNIN_TABLES_MISSING', message: SIGNIN_TABLES_MISSING }, { status: 503 }); };
+    let response: Response | undefined;
+    try { response = await handle(request); } catch (e) { if (missingTables(e) || a.tables.missing) return tablesMissing(); throw e; }
+    return response && response.status >= 400 && a.tables.missing ? tablesMissing() : response;
+  };
+  return { handle: handleClearly, personOf, mcpPerson, mcpRefusal, linkApp, auth };
 }
 
 export type SignIn = ReturnType<typeof signIn>;

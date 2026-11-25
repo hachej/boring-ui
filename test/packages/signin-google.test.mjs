@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { signIn } from '@hachej/boring-ui-kit/signin';
+import { migrated } from '../helpers/signin-world.mjs';
 
 const APP = 'https://app.test', CLIENT = 'fictional-client.apps.googleusercontent.com';
 const { privateKey, publicKey } = await generateKeyPair('RS256');
@@ -27,7 +28,7 @@ globalThis.fetch = async (input, init) => {
 test.after(() => { globalThis.fetch = realFetch; });
 
 function app(google) {
-  const owner = signIn({ database: new DatabaseSync(':memory:'), secret: randomBytes(32).toString('hex'), origin: APP, appName: 'Demo', ...(google ? { google } : {}) });
+  const owner = signIn({ database: migrated(), secret: randomBytes(32).toString('hex'), origin: APP, appName: 'Demo', ...(google ? { google } : {}) });
   return owner;
 }
 

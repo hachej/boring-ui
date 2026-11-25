@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -36,8 +36,18 @@ export function build(root, { stdio = 'inherit' } = {}) {
   cleanOutputs(root);
   const result = spawnSync(process.execPath, [compiler, '--build', '--force', resolve(root, 'tsconfig.json')], { cwd: root, stdio });
   if (result.error) throw result.error;
-  if (result.status === 0) syncRegistryArchive(root);
+  if (result.status === 0) { syncRegistryArchive(root); writeSignInMigration(root); }
   return result.status ?? 1;
+}
+
+/** The sign-in migration ships as a file too (`@hachej/boring-ui-kit/signin/migration.sql`), written from the compiled string so the two cannot differ. */
+export function writeSignInMigration(root) {
+  const compiled = resolve(root, 'packages/ui/dist/signin/migration-sql.js');
+  if (!existsSync(compiled)) return;
+  const source = readFileSync(compiled, 'utf8');
+  const match = /signInMigrationSql\s*=\s*`([\s\S]*)`;/.exec(source);
+  if (!match) throw new Error('migration-sql.js has no signInMigrationSql template');
+  writeFileSync(resolve(root, 'packages/ui/dist/signin/migration.sql'), match[1].replace(/\\`/g, '`').replace(/\\\$\{/g, '${').replace(/\\\\/g, '\\'));
 }
 
 /** The shadcn registry is committed once under public/r (release-version rewrites its pins there). The UI package ships a
