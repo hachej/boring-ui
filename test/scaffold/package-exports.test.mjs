@@ -20,6 +20,15 @@ for (const name of readdirSync(join(root, 'packages'))) {
         assert.equal(JSON.parse(readFileSync(join(dir, entry), 'utf8')).title, 'Atlas manifest');
         continue;
       }
+      if (subpath === './signin/migration.sql') {
+        // The sign-in tables as a D1 migration (data the build writes from migration-sql.ts): every statement IF NOT EXISTS.
+        assert.equal(manifest.name, '@hachej/boring-ui-kit');
+        assert.equal(entry, './dist/signin/migration.sql');
+        const sql = readFileSync(join(dir, entry), 'utf8');
+        assert.match(sql, /^create table if not exists "user" /);
+        assert.ok(sql.split(/;\s*\n/).map(statement => statement.trim()).filter(Boolean).every(statement => /^create (unique )?(table|index) if not exists /.test(statement)));
+        continue;
+      }
       if (typeof entry === 'string') {
         assert.match(subpath, /^\.\/[\w.-]+\.css$/);
         assert.equal(manifest.name, '@hachej/boring-ui-kit');
