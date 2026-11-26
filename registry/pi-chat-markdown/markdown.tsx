@@ -6,7 +6,7 @@ import { Marked } from 'marked';
 import { decodeHTML } from 'entities';
 import { CodeBlock } from '../pi-chat/code-block';
 import { pieces } from '@hachej/boring-ui-kit/chat-text';
-import type { CommandMention, CommandMentions, LinkContext, LinkResolver } from '../pi-chat/config';
+import type { CommandMention, CommandMentions, LinkContext, LinkResolution, LinkResolver } from '../pi-chat/config';
 import { useChatText } from '../pi-chat/labels';
 import type { ChatLabels } from '../pi-chat/labels';
 import type { ChatTextPart } from '../pi-chat/message';
@@ -97,20 +97,27 @@ function linkTarget(value: unknown): string | undefined {
   } catch { return undefined; }
 }
 
-/** What the host's `resolveLink` makes of one link: the address and how to open it, `null` for no link. `undefined` from the host is the default. */
-function resolvedLink(value: unknown, label: string, title: string | undefined, context: Context): { readonly href: string; readonly target: '_blank' | '_self'; readonly onClick?: ((event: MouseEvent<HTMLAnchorElement>) => void) | undefined } | null {
-  const own = (): { readonly href: string; readonly target: '_blank' | '_self' } | null => { const href = linkTarget(value); return href ? { href, target: '_blank' } : null; };
+/** What the host's `resolveLink` makes of one link: an address (with how to open it), an action without an address, or `null` for no link. `undefined` from the host is the default. */
+type Resolved = { readonly kind: 'link'; readonly href: string; readonly target: '_blank' | '_self'; readonly onClick?: ((event: MouseEvent<HTMLElement>) => void) | undefined }
+  | { readonly kind: 'action'; readonly onClick: (event: MouseEvent<HTMLElement>) => void };
+function resolvedLink(value: unknown, label: string, title: string | undefined, context: Context): Resolved | null {
+  const own = (): Resolved | null => { const href = linkTarget(value); return href ? { kind: 'link', href, target: '_blank' } : null; };
   if (!context.resolveLink || typeof value !== 'string') return own();
+  const link: LinkContext = { source: context.linkSource, text: label, ...(title === undefined ? {} : { title }) };
   let answer: ReturnType<LinkResolver>;
-  try { answer = context.resolveLink(decodeHTML(value), { source: context.linkSource, text: label, ...(title === undefined ? {} : { title }) }); } catch { return own(); }
+  try { answer = context.resolveLink(decodeHTML(value), link); } catch { return own(); }
   if (answer === undefined) return own();
-  if (answer === null) return null;
+  const given: Exclude<NonNullable<LinkResolution>, string> | null = typeof answer === 'string' ? { href: answer } : isRecord(answer) ? answer : null;
+  if (!given) return null;
+  const click = typeof given.onClick === 'function' ? given.onClick : undefined;
+  const onClick = click ? (event: MouseEvent<HTMLElement>) => click(event, link) : undefined;
+  const hasHref = given.href !== undefined && given.href !== null;
+  // No address: a button when there is an action, words only otherwise.
+  if (!hasHref) return onClick ? { kind: 'action', onClick } : null;
   // The renderer's own check still decides: no javascript:, data:, vbscript:, credentials or relative addresses.
-  const given = typeof answer === 'string' ? { href: answer } : isRecord(answer) ? answer : null;
-  const href = given && linkTarget(given.href);
-  if (!given || !href) return null;
-  const target = 'target' in given && given.target === '_self' ? '_self' : '_blank';
-  return { href, target, ...('onClick' in given && typeof given.onClick === 'function' ? { onClick: given.onClick } : {}) };
+  const href = linkTarget(given.href);
+  if (!href) return null;
+  return { kind: 'link', href, target: given.target === '_self' ? '_self' : '_blank', ...(onClick ? { onClick } : {}) };
 }
 
 function cells(value: unknown, header: boolean, context: Context): ReactNode {
@@ -160,8 +167,11 @@ function renderToken(value: unknown, context: Context, before = '', after = ''):
     case 'link': {
       const title = typeof value['title'] === 'string' ? decodeHTML(value['title']) : undefined;
       const link = resolvedLink(value['href'], visible(value), title, context);
-      return link ? <a href={link.href} title={title} {...(link.target === '_blank' ? { target: '_blank' } : {})} rel="noopener noreferrer" {...(link.onClick ? { onClick: link.onClick } : {})}
-        className="font-medium text-foreground underline decoration-muted-foreground/50 underline-offset-4 hover:decoration-foreground">{children(value['tokens'], context)}</a> : children(value['tokens'], context);
+      const className = 'font-medium text-foreground underline decoration-muted-foreground/50 underline-offset-4 hover:decoration-foreground';
+      if (!link) return children(value['tokens'], context);
+      if (link.kind === 'action') return <button type="button" title={title} onClick={link.onClick} className={`${className} cursor-pointer text-start`}>{children(value['tokens'], context)}</button>;
+      return <a href={link.href} title={title} {...(link.target === '_blank' ? { target: '_blank' } : {})} rel="noopener noreferrer" {...(link.onClick ? { onClick: link.onClick } : {})}
+        className={className}>{children(value['tokens'], context)}</a>;
     }
     case 'list': {
       const start = value['start'];

@@ -280,7 +280,13 @@ export interface LinkContext {
   readonly title?: string | undefined;
 }
 /** What `resolveLink` may answer: an address, an address with how to open it, `null` (show the words without a link) or `undefined` (the default). */
-export type LinkResolution = string | { readonly href: string; readonly target?: '_blank' | '_self'; readonly onClick?: ((event: MouseEvent<HTMLAnchorElement>) => void) | undefined } | null | undefined;
+export type LinkResolution = string | {
+  /** Absent with an `onClick`: the link is a button (an in-app action, no address to copy or open in a tab). */
+  readonly href?: string | undefined;
+  readonly target?: '_blank' | '_self';
+  /** Gets the click and the link's context. A throw is not caught here: it reaches the host's own error reporting. */
+  readonly onClick?: ((event: MouseEvent<HTMLElement>, context: LinkContext) => void) | undefined;
+} | null | undefined;
 /**
  * The host's say over every link in rendered Markdown. `href` is the link as written. A resolved address still passes the renderer's
  * own check (a plain http(s) URL without credentials); anything else is shown as text.

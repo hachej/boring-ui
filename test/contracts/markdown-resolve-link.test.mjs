@@ -89,6 +89,38 @@ test('resolveLink: the host decides each link of a chat reply and of a viewer no
     assert.equal(JSON.stringify(links().map(link => link.text)), JSON.stringify(['site', 'bad']), 'a throwing resolver falls back to the default');
   });
 
+  await t.test('onClick without href: a real button styled like the link, no address; neither href nor onClick is words only', async () => {
+    const heard = [];
+    await chat({ resolveLink: (href, context) => {
+      if (href === 'doc:123') return { onClick: (event, given) => { heard.push(`${event.type}|${given.source}|${given.text}|${href}`); } };
+      if (href === 'docs/a.md') return { target: '_self' };
+      if (href === 'gone:1') return { href: undefined };
+      return undefined;
+    } });
+    const buttons = [...container.querySelectorAll('button')].filter(button => button.textContent === 'the ledger');
+    assert.equal(buttons.length, 1, 'one button for the action');
+    assert.equal(buttons[0].getAttribute('type'), 'button');
+    assert.equal(buttons[0].hasAttribute('href'), false, 'no address');
+    assert.equal(buttons[0].className.includes('underline'), true, 'styled like the link');
+    assert.equal(JSON.stringify(links().map(link => link.text)), JSON.stringify(['site', 'bad']), 'the action, the target-only and the empty answers are not anchors');
+    assert.equal(text().includes('a file'), true, 'neither href nor onClick keeps the words');
+    await act(async () => { buttons[0].dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })); });
+    assert.equal(JSON.stringify(heard), JSON.stringify(['click|chat|the ledger|doc:123']), 'onClick gets the event and the context');
+  });
+
+  await t.test('onClick without href: a refused href stays words, and a throwing onClick neither unmounts the reply nor is swallowed', async () => {
+    await chat({ resolveLink: href => href === 'doc:123' ? { href: 'javascript:alert(1)', onClick: () => {} } : href === 'docs/a.md' ? { onClick: () => { throw new Error('fictional click'); } } : undefined });
+    const actions = () => [...container.querySelectorAll('button')].filter(button => button.className.includes('underline')).map(button => button.textContent);
+    assert.equal(JSON.stringify(actions()), JSON.stringify(['a file']), 'only the address-less action is a button; the refused href is words');
+    const seen = [];
+    const listen = event => { seen.push(String(event.error?.message ?? event.message)); event.preventDefault(); };
+    window.addEventListener('error', listen);
+    try { await act(async () => { [...container.querySelectorAll('button')].find(button => button.textContent === 'a file').dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })); }); } catch (error) { seen.push(String(error.message)); }
+    window.removeEventListener('error', listen);
+    assert.equal(seen.some(message => message.includes('fictional click')), true, 'the error reaches the host, not a silent catch');
+    assert.equal(JSON.stringify(actions()), JSON.stringify(['a file']), 'the reply still renders');
+  });
+
   await t.test('viewer: the note reports source viewer', async () => {
     const seen = [];
     await act(async () => ui.render(createElement(Markdown, { text: '[the ledger](doc:123)', linkSource: 'viewer', resolveLink: (href, context) => { seen.push(`${context.source}|${href}`); return 'https://app.fictional.invalid/docs/123'; } })));
