@@ -42,7 +42,7 @@ See [asking the person](packages/agent/README.md#asking-the-person).
 
 Gate any tool behind Approve/Deny. The model cannot skip the check: it runs in your host code, inside the tool. Cards also show queued, running, done and failed work.
 
-<img src="docs/assets/readme/approval-390.webp" alt="Agent cards on a phone: queued, running, and one needing approval with Approve and Deny buttons" width="240">
+<img src="docs/assets/readme/approval-390.webp" alt="Agent cards on a phone: queued, running, one needing approval with Approve and Deny, done and failed" width="240">
 
 ```js
 import { createApprovalExtension } from '@hachej/boring-agent/approval';
@@ -55,10 +55,10 @@ See [approval gate](packages/agent/README.md#approval-gate).
 
 ### Sub-agents you can watch
 
-Hand work to a child agent and show what it does: status, time, tool calls, tokens, the latest steps and the result. English and French words, light and dark.
+Hand work to a child agent and show what it does: status, time, tool calls, tokens, the latest steps and the result. English and French words are built in.
 
 <table><tr>
-<td valign="top"><img src="docs/assets/readme/subagents-390-dark.webp" alt="Three sub-agent cards (running, done, failed) in French, dark theme, on a phone" width="240"></td>
+<td valign="top"><img src="docs/assets/readme/subagents-390.webp" alt="Three sub-agent cards (running, done, failed) on a phone" width="240"></td>
 <td valign="top"><img src="docs/assets/readme/subagents-1280.webp" alt="The same three sub-agent cards on a desktop, English" width="520"></td>
 </tr></table>
 
@@ -81,7 +81,7 @@ A sign-in page themed to your app, with Google and e-mail, invitations, and Engl
 
 <table><tr>
 <td valign="top"><img src="docs/assets/readme/signin-390.webp" alt="Sign-in page on a phone with a lime button" width="240"></td>
-<td valign="top"><img src="docs/assets/readme/signin-1280-dark.webp" alt="Sign-in page on a desktop, dark theme" width="520"></td>
+<td valign="top"><img src="docs/assets/readme/signin-1280.webp" alt="Sign-in card on a desktop" width="520"></td>
 </tr></table>
 
 Also in the kit: shell, Git and sandboxes ([`@hachej/boring-execution`](packages/execution/README.md)), user feedback ([`@hachej/boring-feedback`](packages/feedback/README.md)), conversation history, voice messages and `@` file mentions. The [feature map](features/README.md) lists everything and how to drive it.
