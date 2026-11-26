@@ -56,7 +56,8 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   await build({ entryPoints: [join(root, 'packages/testing/src/browser.ts')], bundle: true, platform: 'node', format: 'esm', outfile: join(work, 'browser.mjs') });
   const { launch } = await import(pathToFileURL(join(work, 'browser.mjs')));
-  const browser = await launch('about:blank', { evidence: shots ?? work });
+  // A browser that fails to start must not leave the server listening: an open server keeps node alive and the run hangs instead of failing.
+  const browser = await launch('about:blank', { evidence: shots ?? work }).catch(error => { server.close(); throw error; });
 
   // One page script: the token as the page computes it, the sizes of the parts, and every text-bearing element under 13px that is not sr-only.
   const measure = () => browser.evaluate(`(() => {
@@ -157,6 +158,28 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
       await browser.evaluate(`document.documentElement.style.setProperty('--text-chat', '1.5rem')`);
       await new Promise(done => setTimeout(done, 200));
       near((await measure()).prose?.size ?? null, 24, `${width}: an app's --text-chat override`);
+      // PiChat `textSize` sets the size for one chat: named 'sm' 14px, 'md' 15px (the default, floored to 16px on touch), 'lg' 17px, or any CSS length.
+      // The reply prose, the heading, the thought and tool rows follow it, the meta rows are 0.93 of it, and 'lg' also lifts the message field a step.
+      const sizes = [['', mobile ? 16 : 15], ['md', mobile ? 16 : 15], ['sm', 14], ['lg', 17], ['1.25rem', 20]];
+      for (const [textSize, px] of sizes) {
+        const label = `${width} textSize=${textSize || 'unset'}`;
+        for (const state of ['reply', 'thought']) {
+          await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?state=${state}&theme=light&textSize=${encodeURIComponent(textSize)}&w=${width}` });
+          await browser.until('chat mounted', `document.querySelector('.pi-chat') && document.readyState === 'complete'`);
+          await new Promise(done => setTimeout(done, 300));
+          if (state === 'thought') { await browser.evaluate(`document.querySelector('[data-testid=activity] button')?.click()`); await new Promise(done => setTimeout(done, 500)); await browser.evaluate(`document.querySelectorAll('[data-testid=tool-card] button, [data-testid=reasoning] button').forEach(button => button.click())`); await new Promise(done => setTimeout(done, 300)); }
+          const m = await measure();
+          if (shots) await browser.screenshot(`chat-size-${textSize || 'unset'}-${state}-${width}.png`);
+          const heading = await browser.evaluate(`parseFloat(getComputedStyle(document.querySelector('[data-role=assistant] h2')).fontSize)`).catch(() => null);
+          assert.deepEqual(m.small, [], `${label} ${state}: nothing in pi-chat computes under 13px`);
+          if (state === 'reply') {
+            near(m.prose?.size ?? null, px, `${label}: reply prose`); near(m.li?.size ?? null, px, `${label}: list item`);
+            near(heading, px * 1.0667, `${label}: Markdown heading scales with it`);
+            near(m.codespan?.size ?? null, px * 0.875, `${label}: inline code`);
+            near(m.composer?.size ?? null, textSize === 'lg' ? (mobile ? 16 : 14.7333) : mobile ? 16 : 13, `${label}: composer field`);
+          } else near(m.line?.size ?? null, px * 0.93, `${label}: thought and tool rows`);
+        }
+      }
     }
     if (shots) writeFileSync(join(shots, 'measurements.json'), JSON.stringify(report, null, 1));
     assert.deepEqual(browser.problems, []);
