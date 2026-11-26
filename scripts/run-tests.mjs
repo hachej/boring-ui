@@ -48,7 +48,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     for (const path of registered) if (!files.includes(path)) throw new Error(`Registered test not discovered: ${path}`);
     files = files.filter(path => !registered.has(path));
   }
-  const weights = JSON.parse(readFileSync(resolve(root, 'scripts/test-shard-weights.json'), 'utf8'));
+  const weights = shard || jobs > 1 ? JSON.parse(readFileSync(resolve(root, 'scripts/test-shard-weights.json'), 'utf8')) : {};
   if (shard) files = shardOf(files, Number(shard[1]), Number(shard[2]), weights);
   if (!files.length) throw new Error('No tests discovered');
   if (shard) console.log(`Shard ${shard[1]} of ${shard[2]}: ${files.length} test files`);
