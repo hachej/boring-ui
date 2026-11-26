@@ -23,6 +23,7 @@ import { StepButtons, stepIndex, stepOffset } from '../pi-chat/image-viewer';
 import { useBackLayer } from '../utils/back';
 import { cn } from '../utils/utils';
 import type { ArtifactDescriptor, PresentedArtifact } from '../pi-artifacts/artifact';
+import type { LinkResolver } from '../pi-chat/config';
 import type { AppShellLocale, AppShellText } from './text';
 import { shellWords, useInternal } from './layer-context';
 import { PaneFrameContext, PaneFullscreenContext } from './layer-context';
@@ -36,14 +37,13 @@ type Draft = PaneEntry extends infer E ? E extends PaneEntry ? Omit<E, 'id' | 'o
 const nameOf = (path: string) => path.split('/').at(-1) || path;
 
 /** A Markdown file read as a note, with the chat's own renderer (no editor: the bytes are the app's, read only). */
-const markdownKind: LocalTextKind = {
+const markdownKind = (resolveLink: LinkResolver | undefined): LocalTextKind => ({
   match: (_target, artifact) => artifact.type === 'markdown',
-  load: () => import('../pi-chat-markdown/markdown').then(module => ({ default: ({ text }: { readonly text: string }) => <div data-testid="pane-markdown" className="pi-chat text-sm"><module.Markdown text={text} /></div> })),
-};
-const TEXT_KINDS: readonly LocalTextKind[] = [csvKind, svgKind, codeKind, markdownKind];
+  load: () => import('../pi-chat-markdown/markdown').then(module => ({ default: ({ text }: { readonly text: string }) => <div data-testid="pane-markdown" className="pi-chat text-sm"><module.Markdown text={text} linkSource="viewer" {...(resolveLink ? { resolveLink } : {})} /></div> })),
+});
 /** The host's artifact kinds as text kinds of the file viewer, ahead of the pane's own (a `.diagram.json` is JSON text, a `.mockup.html` HTML text). */
-const withKinds = (kinds: readonly FileKind[] | undefined): readonly LocalTextKind[] => [
-  ...(kinds ?? []).map(kind => ({ match: (target: { readonly resource: { readonly path: string } }) => kind.match(target), load: async () => ({ default: ({ text, artifact }: { readonly text: string; readonly artifact: { readonly title: string } }) => <>{kind.renderer({ text, title: artifact.title })}</> }) })), ...TEXT_KINDS];
+const withKinds = (kinds: readonly FileKind[] | undefined, resolveLink: LinkResolver | undefined): readonly LocalTextKind[] => [
+  ...(kinds ?? []).map(kind => ({ match: (target: { readonly resource: { readonly path: string } }) => kind.match(target), load: async () => ({ default: ({ text, artifact }: { readonly text: string; readonly artifact: { readonly title: string } }) => <>{kind.renderer({ text, title: artifact.title })}</> }) })), csvKind, svgKind, codeKind, markdownKind(resolveLink)];
 let readyFileViewer: typeof import('../viewer-pdf/local-file-viewer').LocalFileViewer | undefined;
 const loadFileViewer = () => import('../viewer-pdf/local-file-viewer').then(module => {
   readyFileViewer = module.LocalFileViewer;
@@ -302,9 +302,9 @@ function RefocusTitle() {
 }
 
 /** A file entry: its bytes read through `agent.files`, shown by `LocalFileViewer`; once shown, a presented revision is acknowledged. */
-function FileEntry({ entry, frame, read, onShown, fileKinds, rows }: { readonly entry: Extract<PaneEntry, { kind: 'file' }>; readonly frame: { readonly id: string; readonly headerStart: ReactNode; readonly controls: ReactNode; readonly onClose: () => void; readonly text: AppShellText };
-  readonly read: FileReader; readonly onShown: PanePresent['shown'] | undefined; readonly fileKinds: readonly FileKind[] | undefined; readonly rows: RowReferenceTarget | null }) {
-  const kinds = useMemo(() => withKinds(fileKinds), [fileKinds]);
+function FileEntry({ entry, frame, read, onShown, fileKinds, resolveLink, rows }: { readonly entry: Extract<PaneEntry, { kind: 'file' }>; readonly frame: { readonly id: string; readonly headerStart: ReactNode; readonly controls: ReactNode; readonly onClose: () => void; readonly text: AppShellText };
+  readonly read: FileReader; readonly onShown: PanePresent['shown'] | undefined; readonly fileKinds: readonly FileKind[] | undefined; readonly resolveLink: LinkResolver | undefined; readonly rows: RowReferenceTarget | null }) {
+  const kinds = useMemo(() => withKinds(fileKinds, resolveLink), [fileKinds, resolveLink]);
   const [loaded, setLoaded] = useState<{ readonly path: string; readonly blob: Blob | null; readonly revision?: string | undefined }>();
   useEffect(() => {
     let live = true;
@@ -359,7 +359,7 @@ function EntryView({ entry, below, top, placement, assistant }: { readonly entry
     // A phone folds a frame's controls into its « … » menu: there previous and next sit under the file instead.
     const steps = <FileSteps entry={entry} text={text} onStep={layer.step} />;
     return <>
-      <div className="flex min-h-0 flex-1 flex-col"><FileEntry entry={entry} read={layer.agent.files.read} onShown={layer.presented?.shown} fileKinds={layer.agent.fileKinds} rows={rows} frame={{ id, headerStart, controls: placement === 'screen' ? undefined : steps, onClose: layer.pane.close, text }} /></div>
+      <div className="flex min-h-0 flex-1 flex-col"><FileEntry entry={entry} read={layer.agent.files.read} onShown={layer.presented?.shown} fileKinds={layer.agent.fileKinds} resolveLink={layer.agent.chatProps?.resolveLink} rows={rows} frame={{ id, headerStart, controls: placement === 'screen' ? undefined : steps, onClose: layer.pane.close, text }} /></div>
       {placement === 'screen' && entry.files.length > 1 && <div className="flex shrink-0 justify-center px-2 py-1">{steps}</div>}
     </>;
   }
