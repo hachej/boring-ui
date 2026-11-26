@@ -39,19 +39,32 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/check-release-notes.mjs
       # These are the non-test parts of npm run verify. Registered tests run in release-gate, the rest in tests.
-      - run: npm run check
-      - run: npm run typecheck
+      # `check` reads sources and `typecheck` builds then compiles: independent, run at once (4 cores). Each log is printed whole after both end; either failing fails the step.
+      - name: Static checks and typecheck (npm run check, npm run typecheck)
+        run: |
+          npm run check > "$RUNNER_TEMP/check.log" 2>&1 & check_pid=$!
+          npm run typecheck > "$RUNNER_TEMP/typecheck.log" 2>&1 & typecheck_pid=$!
+          status=0
+          wait "$check_pid" || { echo "::error::npm run check failed"; status=1; }
+          wait "$typecheck_pid" || { echo "::error::npm run typecheck failed"; status=1; }
+          for name in check typecheck; do echo "::group::npm run $name"; cat "$RUNNER_TEMP/$name.log"; echo "::endgroup::"; done
+          exit "$status"
       - name: Install Chromium for the design audit included in verify
         timeout-minutes: 8
         # Ubuntu runners already have Chrome libraries; apt is only a fallback for missing ldd dependencies.
         run: bash scripts/install-ci-chromium.sh 1.63.0
       - name: Allow the Chromium sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: npm run test:design
-      - name: Transcript scroll budget (500 messages, no long task over 50 ms)
-        run: npm run test:chat-scroll
-      - name: Sending shows the message at once and scrolls to it (slow host, phone and desktop)
-        run: npm run test:chat-send
+      # The design audit and the two chat browser budgets use separate servers and browsers: the audit runs beside the scroll and send budgets (two Chromium at once on 4 cores).
+      - name: Design audit and chat browser budgets (test:design; chat-scroll then chat-send)
+        run: |
+          npm run test:design > "$RUNNER_TEMP/design.log" 2>&1 & design_pid=$!
+          ( npm run test:chat-scroll && npm run test:chat-send ) > "$RUNNER_TEMP/chat.log" 2>&1 & chat_pid=$!
+          status=0
+          wait "$design_pid" || { echo "::error::npm run test:design failed"; status=1; }
+          wait "$chat_pid" || { echo "::error::chat-scroll or chat-send failed"; status=1; }
+          for name in design chat; do echo "::group::$name"; cat "$RUNNER_TEMP/$name.log"; echo "::endgroup::"; done
+          exit "$status"
       - name: Design evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
