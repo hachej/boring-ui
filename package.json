@@ -12,9 +12,7 @@
     "packages/*"
   ],
   "scripts": {
-    "host:journey": "node examples/hosts/alchemy/journey.mjs",
     "ux": "node ux/runner/cli.mjs",
-    "ux:list": "node ux/runner/cli.mjs list",
     "ux:capture": "node ux/runner/cli.mjs capture",
     "ux:check": "node ux/runner/cli.mjs check",
     "ux:judge": "node ux/runner/cli.mjs judge",
@@ -42,7 +40,6 @@
     "shared-chat:journey:mockups": "node scripts/test-shared-room-mockups-browser.mjs",
     "mockup:journey": "node examples/workspace-app/journey-mockup.mjs",
     "looks:journey": "node examples/looks-viewer/journey.mjs",
-    "maquette:journey": "node examples/workspace-app/journey-maquette.mjs",
     "blobs:journey": "node examples/workspace-app/journey-blobs.mjs",
     "diagram:journey": "node examples/workspace-app/journey-diagram.mjs",
     "drawing:journey": "node examples/drawing-viewer/journey.mjs",
@@ -70,7 +67,6 @@
     "feedback:voice-sync": "npm run build && node scripts/feedback-voice-sync.mjs",
     "cloudflare:build": "npm run build && node examples/hosts/cloudflare/scripts/build-browser.mjs",
     "cloudflare:dev": "wrangler dev --config examples/hosts/cloudflare/wrangler.jsonc",
-    "cloudflare:deploy": "npm run cloudflare:build && wrangler deploy --config examples/hosts/cloudflare/wrangler.jsonc",
     "aws:journey": "npm run build && node examples/hosts/aws/journey.mjs",
     "studio:journey:scripted": "node lab/studio/journey.mjs --scripted",
     "studio:smoke": "node lab/studio/journey.mjs --smoke",
@@ -199,7 +195,6 @@
     "alchemy": "2.0.0-beta.87",
     "effect": "4.1.4",
     "@alchemy.run/cloudflare": "2.0.0-beta.87",
-    "@alchemy.run/better-auth": "2.0.0-beta.87",
     "better-auth": "1.7.7",
     "@better-auth/core": "1.7.7",
     "@better-auth/oauth-provider": "1.7.7",

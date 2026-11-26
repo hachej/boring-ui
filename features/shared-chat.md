@@ -9,7 +9,7 @@
 - `shared-members` presence and member list. `registry/shared-chat/shared-chat.tsx`.
 - `shared-reply` reply with a quoted parent, reveal the parent. `registry/shared-chat/timeline.tsx`.
 - `shared-presented-artifacts` native successful `present` descriptors keep exact title/target/revision through room stream, question, settlement and history; removed messages clear them. `packages/agent/src/room.ts`, `packages/ui/src/shared-chat/room.ts`.
-- `shared-artifact-cards` optional `artifacts` card/opener config reuses PM mockup cards/full views with a host reader; repeated exact descriptors appear once at their latest message. `registry/shared-chat/messages.tsx`, `text.tsx`, `registry/pm-panel/pm-mockups.tsx`.
+- `shared-artifact-cards` optional `artifacts` card/opener config reuses PM mockup cards/full views with a host reader; repeated exact descriptors appear once at their latest message. `registry/shared-chat/messages.tsx`, `text.tsx`.
 - `shared-answered-choice` answered questions leave the person’s actual reply, not a repeated assistant prompt/Answered log or quote; their presented mockups remain accessible. `registry/shared-chat/messages.tsx`, `timeline.tsx`.
 - `shared-labels` English and French words. `registry/shared-chat/shared-labels.ts`, `shared-labels-fr.ts`.
 

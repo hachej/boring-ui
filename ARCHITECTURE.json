@@ -68,7 +68,6 @@
     "alchemy": "2.0.0-beta.87",
     "effect": "4.1.4",
     "@alchemy.run/cloudflare": "2.0.0-beta.87",
-    "@alchemy.run/better-auth": "2.0.0-beta.87",
     "better-auth": "1.7.7",
     "@better-auth/core": "1.7.7",
     "@better-auth/oauth-provider": "1.7.7",
@@ -129,8 +128,6 @@
         "cloudflare:*",
         "@alchemy.run/domain/*",
         "@alchemy.run/cloudflare",
-        "@alchemy.run/better-auth",
-        "@alchemy.run/better-auth/*",
         "better-auth",
         "better-auth/*",
         "node:fs",
@@ -142,7 +139,7 @@
         { "names": ["@alchemy.run/domain/Ai"], "prefixes": ["src/host/runtime/", "src/host-cloudflare"] },
         { "names": ["node:fs", "node:fs/promises", "node:path", "node:url"], "prefixes": ["src/host-build"] },
         {
-          "names": ["@alchemy.run/domain/Cloudflare", "@alchemy.run/domain/Http", "cloudflare:*", "alchemy", "alchemy/*", "@alchemy.run/cloudflare", "@alchemy.run/better-auth*", "better-auth*"],
+          "names": ["@alchemy.run/domain/Cloudflare", "@alchemy.run/domain/Http", "cloudflare:*", "alchemy", "alchemy/*", "@alchemy.run/cloudflare", "better-auth*"],
           "prefixes": ["src/host-cloudflare"]
         }
       ],

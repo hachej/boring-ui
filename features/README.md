@@ -22,7 +22,6 @@ Harness for every file: the example journeys (`npm run <name>:journey`, headless
 | Agent workspace | `pi-app`, embedded and placed workspaces, Library, viewers | [agent-workspace.md](agent-workspace.md) |
 | Shared chat | the room: people and agents in one conversation | [shared-chat.md](shared-chat.md) |
 | Spaces | switcher, members sheet and client for a host's shared spaces | [spaces.md](spaces.md) |
-| Needs-you blocks | InlineQuestion, StatusNarrative, then SpaceCard | [attention.md](attention.md) |
 | Needs-you blocks | InlineQuestion, then StatusNarrative and SpaceCard | [attention.md](attention.md) |
 | Needs-you blocks | ExpertOverview and ExpertTrack: at most three things that need a busy person, one line per app, a four-step track | [attention.md](attention.md) |
 | Packages | agent, files, execution, ui kit and the `boring-ui-blocks` CLI | [packages.md](packages.md) |
