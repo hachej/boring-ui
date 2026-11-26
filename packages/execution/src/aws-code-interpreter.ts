@@ -7,6 +7,8 @@ import type { ExecutionEnv, FileInfo, Result, ShellExecOptions, ShellExecResult 
 import { boundedMessage } from './bounded-error.js';
 import { shellCommand } from './fs-readers.js';
 import { createMountedFiles } from './mounted-files.js';
+import type { MountedFiles } from './mounted-files.js';
+import { withStaleMissRetry } from './stale-miss.js';
 
 /** What the adapter sends: the host's own `BedrockAgentCoreClient` (it owns region, credentials and retries). */
 export type CodeInterpreterClient = Pick<BedrockAgentCoreClient, 'send'>;
@@ -53,6 +55,17 @@ export interface CodeInterpreterEnvOptions {
   readonly renew?: 'auto' | 'manual';
   /** Seconds before the session time to live at which `'auto'` rotates (default 60; at most half the time to live). */
   readonly rotateMarginSeconds?: number;
+  /**
+   * Stale missing-path lookups on EFS: for this many ms after a command ran (or while one runs), a read that finds nothing
+   * (`fileInfo`, `exists`, `readTextFile`, `readBinaryFile`, `readTextLines`, the readers, `listDir`, `canonicalPath`) is not
+   * believed at once: the parent directory is opened and read (NFS close-to-open revalidation, which drops this host's cached
+   * negative lookup) and the lookup is repeated with a short backoff until the window ends, the context deadline passes or the
+   * caller aborts; only then is `not_found` reported. Outside the window a miss is answered at once. Writes and every other
+   * error are never retried. Default 5000; 0 disables. A host that mounts EFS itself should still use `lookupcache=pos`.
+   */
+  readonly staleMissWindowMs?: number;
+  /** @internal Test seam: the mounted files layer to wrap, instead of the walk of `mount.root`. */
+  readonly mountedFiles?: MountedFiles;
 }
 
 export interface CodeInterpreterEnv {
@@ -134,6 +147,8 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
   const auto = start !== undefined && (options.renew ?? 'auto') === 'auto';
   const ttlMs = (start?.sessionTimeoutSeconds ?? 900) * 1000;
   const marginMs = Math.min((options.rotateMarginSeconds ?? 60) * 1000, ttlMs / 2);
+  /** What the stale-miss window counts from: any command through this env, whatever its outcome. */
+  const commands = { running: 0, lastEndedAt: 0 };
   let sessionId = borrowed, starting: Promise<string> | undefined, lost = false, stopped = false, startedAt = 0, rotateRetryAt = 0;
   const forgetLost = (): void => { lost = false; sessionId = undefined; }; // the next command starts a new session
   // Every session this env started and has not confirmed stopped (rotation never stops one), and the stops in flight.
@@ -246,7 +261,9 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
     // The task API takes one command string: cwd, environment and umask become part of it.
     const runner = execOptions?.inheritEnv === false ? `env -i ${assignments} bash -c` : `${assignments ? `env ${assignments} ` : ''}bash -c`;
     const script = `umask ${umask} && cd ${quote(directory)} && ${runner} ${quote(shellCommand(command))}`;
-    return dispatch(script, execOptions, context);
+    commands.running++;
+    try { return await dispatch(script, execOptions, context); }
+    finally { commands.running--; commands.lastEndedAt = Date.now(); }
   }
 
   async function dispatch(script: string, execOptions: ShellExecOptions | undefined, context: Context): Promise<Result<ShellExecResult, ExecutionError>> {
@@ -310,12 +327,15 @@ export function createCodeInterpreterEnv(options: CodeInterpreterEnvOptions): Co
   // ---- Files: interpreter paths mapped onto this host's mount of the same folder, confined to it. Code in the interpreter writes
   // the same folder, so every operation walks it by directory fds, never by a checked path (D-2087); see `mounted-files.ts`.
   const mounted = createMountedFiles({ root, mountPath, cwd: () => env.cwd });
+  const staleMissWindowMs = options.staleMissWindowMs ?? 5000;
+  if (!(staleMissWindowMs >= 0) || !Number.isFinite(staleMissWindowMs)) throw new TypeError('staleMissWindowMs must be a number of ms, 0 or more');
+  const files = withStaleMissRetry(options.mountedFiles ?? mounted.files, { windowMs: staleMissWindowMs, activity: () => ({ running: commands.running > 0, lastEndedAt: commands.lastEndedAt }) });
   const notSupported = (what: string): Result<string, FileError> => err(new FileError('not_supported', `${what} is not available on the shared workspace mount`));
 
   const env: ExecutionEnv = {
     id: options.id,
     cwd,
-    ...mounted.files,
+    ...files,
     // A temporary file on this host would not be visible to the interpreter, and one in the folder would show in the workspace.
     createTempDir: async () => notSupported('createTempDir'),
     createTempFile: async () => notSupported('createTempFile'),
