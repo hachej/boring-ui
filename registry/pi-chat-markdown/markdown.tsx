@@ -169,7 +169,7 @@ function renderToken(value: unknown, context: Context, before = '', after = ''):
       const link = resolvedLink(value['href'], visible(value), title, context);
       const className = 'font-medium text-foreground underline decoration-muted-foreground/50 underline-offset-4 hover:decoration-foreground';
       if (!link) return children(value['tokens'], context);
-      if (link.kind === 'action') return <Button type="button" size="inline" title={title} onClick={link.onClick} className="font-medium text-foreground decoration-muted-foreground/50 hover:decoration-foreground">{children(value['tokens'], context)}</Button>;
+      if (link.kind === 'action') return <Button type="button" size="inline" title={title} onClick={link.onClick}>{children(value['tokens'], context)}</Button>;
       return <a href={link.href} title={title} {...(link.target === '_blank' ? { target: '_blank' } : {})} rel="noopener noreferrer" {...(link.onClick ? { onClick: link.onClick } : {})}
         className={className}>{children(value['tokens'], context)}</a>;
     }
