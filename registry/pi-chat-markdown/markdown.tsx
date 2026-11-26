@@ -132,8 +132,8 @@ function cells(value: unknown, header: boolean, context: Context): ReactNode {
 }
 
 const HEADINGS: Record<number, string> = {
-  1: 'mt-6 mb-2 text-[length:calc(var(--chat-text,0.9375rem)*1.3333)] font-semibold tracking-tight', 2: 'mt-5 mb-2 text-[length:calc(var(--chat-text,0.9375rem)*1.0667)] font-semibold tracking-tight', 3: 'mt-4 mb-1.5 text-[length:calc(var(--chat-text,0.9375rem)*1.0667)] font-semibold',
-  4: 'mt-4 mb-1 text-[length:calc(var(--chat-text,0.9375rem)*1.0667)] font-semibold', 5: 'mt-3 mb-1 text-[length:calc(var(--chat-text,0.9375rem)*1.0667)] font-medium', 6: 'mt-3 mb-1 text-[length:calc(var(--chat-text,0.9375rem)*1.0667)] font-medium text-muted-foreground',
+  1: 'mt-6 mb-2 text-[length:calc(var(--text-chat,0.9375rem)*1.3333)] leading-[1.4] font-semibold tracking-tight', 2: 'mt-5 mb-2 text-[length:calc(var(--text-chat,0.9375rem)*1.0667)] leading-normal font-semibold tracking-tight', 3: 'mt-4 mb-1.5 text-[length:calc(var(--text-chat,0.9375rem)*1.0667)] leading-normal font-semibold',
+  4: 'mt-4 mb-1 text-[length:calc(var(--text-chat,0.9375rem)*1.0667)] leading-normal font-semibold', 5: 'mt-3 mb-1 text-[length:calc(var(--text-chat,0.9375rem)*1.0667)] leading-normal font-medium', 6: 'mt-3 mb-1 text-[length:calc(var(--text-chat,0.9375rem)*1.0667)] leading-normal font-medium text-muted-foreground',
 };
 
 // Marked's extension token includes arbitrary fields. Narrow those fields here before creating React nodes.

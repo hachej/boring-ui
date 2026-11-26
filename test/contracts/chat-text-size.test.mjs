@@ -161,6 +161,11 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
       // PiChat `textSize` sets the size for one chat: named 'sm' 14px, 'md' 15px (the default, floored to 16px on touch), 'lg' 17px, or any CSS length.
       // The reply prose, the heading, the thought and tool rows follow it, the meta rows are 0.93 of it, and 'lg' also lifts the message field a step.
       const sizes = [['', mobile ? 16 : 15], ['md', mobile ? 16 : 15], ['sm', 14], ['lg', 17], ['1.25rem', 20]];
+      if (shots) for (const textSize of ['sm', 'lg']) { // evidence only: the dark theme at the two non-default sizes
+        await browser.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/?state=reply&theme=dark&textSize=${textSize}&w=${width}` });
+        await browser.until('chat mounted', `document.querySelector('.pi-chat') && document.readyState === 'complete'`);
+        await new Promise(done => setTimeout(done, 400)); await browser.screenshot(`chat-size-${textSize}-reply-${width}-dark.png`);
+      }
       for (const [textSize, px] of sizes) {
         const label = `${width} textSize=${textSize || 'unset'}`;
         for (const state of ['reply', 'thought']) {
@@ -174,7 +179,7 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
           assert.deepEqual(m.small.filter(node => !['CODE', 'PRE'].includes(node.tag)), [], `${label} ${state}: nothing in pi-chat computes under 13px (code is one step down, 12.25px at sm)`);
           if (state === 'reply') {
             near(m.prose?.size ?? null, px, `${label}: reply prose`); near(m.li?.size ?? null, px, `${label}: list item`);
-            near(heading, px * 1.0667, `${label}: Markdown heading scales with it`);
+            near(heading, (textSize === '' || textSize === 'md' ? 15 : px) * 1.0667, `${label}: Markdown heading scales with the token (not the touch floor, so the default is unchanged)`);
             near(m.codespan?.size ?? null, px * 0.875, `${label}: inline code`);
             near(m.composer?.size ?? null, textSize === 'lg' ? (mobile ? 16 : 14.7333) : mobile ? 16 : 13, `${label}: composer field`);
           } else near(m.line?.size ?? null, px * 0.93, `${label}: thought and tool rows`);
