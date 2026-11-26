@@ -171,7 +171,7 @@ test('the assistant reads at --text-chat: prose, Markdown, composer and empty st
           const m = await measure();
           if (shots) await browser.screenshot(`chat-size-${textSize || 'unset'}-${state}-${width}.png`);
           const heading = await browser.evaluate(`parseFloat(getComputedStyle(document.querySelector('[data-role=assistant] h2')).fontSize)`).catch(() => null);
-          assert.deepEqual(m.small, [], `${label} ${state}: nothing in pi-chat computes under 13px`);
+          assert.deepEqual(m.small.filter(node => !['CODE', 'PRE'].includes(node.tag)), [], `${label} ${state}: nothing in pi-chat computes under 13px (code is one step down, 12.25px at sm)`);
           if (state === 'reply') {
             near(m.prose?.size ?? null, px, `${label}: reply prose`); near(m.li?.size ?? null, px, `${label}: list item`);
             near(heading, px * 1.0667, `${label}: Markdown heading scales with it`);
