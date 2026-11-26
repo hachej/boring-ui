@@ -8,7 +8,7 @@ import type { JsonObject } from '@earendil-works/pi-durable';
 import { AlertCircleIcon, CircleSlashIcon, ClockIcon, FileAudioIcon, FileIcon, FileSpreadsheetIcon, FileTextIcon, ImageIcon, ImageOffIcon, PauseIcon, PlayIcon, PresentationIcon } from '../_shared/icons';
 import { CopyButton } from './code-block';
 import type { OwnMessageActions } from './queue';
-import type { AnswerOutcome, ChatArtifactsConfig, ChatCards, CommandMentions } from './config';
+import type { AnswerOutcome, ChatArtifactsConfig, ChatCards, CommandMentions, LinkResolver } from './config';
 import { ActivityBlock } from './activity';
 import type { ActivityState } from './activity';
 import { Shimmer } from './shimmer';
@@ -45,6 +45,8 @@ export interface ChatTextPart {
   /** The `/` commands a settled reply may turn into buttons. */
   readonly commandMentions?: CommandMentions | undefined;
   readonly onCopy?: ((text: string) => Promise<void>) | undefined;
+  /** The host's say over each link in the reply (`PiChat resolveLink`). */
+  readonly resolveLink?: LinkResolver | undefined;
 }
 /** The default text renderer: the reply as plain text. `markdownText` of `pi-chat-markdown` draws it as Markdown. */
 const plainText = ({ text, streaming }: ChatTextPart): ReactNode =>
@@ -70,6 +72,7 @@ export interface RowContext {
   /** Host openers keep their single image argument; the workspace's default also accepts the message gallery. */
   readonly onOpenImage: ((image: ImageContent, gallery?: readonly ImageContent[]) => void) | undefined;
   readonly onCopy: ((text: string) => Promise<void>) | undefined;
+  readonly resolveLink?: LinkResolver | undefined;
   /** Which tokens of a sent message get a styled treatment (`@path` mentions, a leading `/skill`). */
   readonly pieces: { readonly kinds?: MentionsConfig['kinds']; readonly mentions: boolean; readonly uploads?: boolean; readonly skills: readonly string[]; readonly openMention?: ((path: string) => void) | undefined; readonly renderMention?: ((path: string) => ReactNode | undefined) | undefined;
     readonly preview?: PreviewRead | undefined; readonly audioUrl?: AudioUrlRead | undefined } | undefined;
@@ -502,7 +505,7 @@ function RowBody({ row, images, context: liveContext }: { readonly row: Row; rea
             if (part.kind === 'card') return <div key={part.key}>{part.content}</div>;
             if (part.kind === 'text') {
               const text = (context.renderText ?? plainText)({ text: part.text, renderMention, streaming: row.streaming && part === lastText && row.parts[row.parts.length - 1] === part,
-                ...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {}), ...(context.onCopy ? { onCopy: context.onCopy } : {}) });
+                ...(settled && context.commandMentions ? { commandMentions: context.commandMentions } : {}), ...(context.onCopy ? { onCopy: context.onCopy } : {}), ...(context.resolveLink ? { resolveLink: context.resolveLink } : {}) });
               if (context.messageStyle !== 'messaging') return <Bubble key={part.key} variant="ghost"><BubbleContent>{text}</BubbleContent></Bubble>;
               const time = part === lastText ? isoAt(row.timestamp) : undefined;
               return <Bubble key={part.key} variant="secondary" align="start">{row.lead && part === firstText && <BubbleTail side="start" />}

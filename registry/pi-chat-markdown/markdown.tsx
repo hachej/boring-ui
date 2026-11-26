@@ -1,12 +1,12 @@
 'use client';
 
 import { createElement, Fragment, memo, useMemo } from 'react';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { Marked } from 'marked';
 import { decodeHTML } from 'entities';
 import { CodeBlock } from '../pi-chat/code-block';
 import { pieces } from '@hachej/boring-ui-kit/chat-text';
-import type { CommandMention, CommandMentions } from '../pi-chat/config';
+import type { CommandMention, CommandMentions, LinkContext, LinkResolver } from '../pi-chat/config';
 import { useChatText } from '../pi-chat/labels';
 import type { ChatLabels } from '../pi-chat/labels';
 import type { ChatTextPart } from '../pi-chat/message';
@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-export type { CommandMention, CommandMentions } from '../pi-chat/config';
+export type { CommandMention, CommandMentions, LinkContext, LinkResolution, LinkResolver } from '../pi-chat/config';
 
 /*
  * Safe Markdown for model output. Tokens are mapped to React elements one by one: raw HTML is shown as text, images are
@@ -38,7 +38,8 @@ function containsHtml(value: unknown): boolean {
 }
 function literal(value: string): ReactNode { return <span className="whitespace-pre-wrap">{value}</span>; }
 
-interface Context { readonly renderMention: ((path: string, text: string) => ReactNode) | undefined; readonly mentions: CommandMentions | undefined; readonly onCopy: ((text: string) => Promise<void>) | undefined; readonly labels: ChatLabels }
+interface Context { readonly renderMention: ((path: string, text: string) => ReactNode) | undefined; readonly mentions: CommandMentions | undefined; readonly onCopy: ((text: string) => Promise<void>) | undefined; readonly labels: ChatLabels;
+  readonly resolveLink: LinkResolver | undefined; readonly linkSource: LinkContext['source'] }
 
 function children(value: unknown, context: Context, before = '', after = '', inline = false): ReactNode {
   if (!Array.isArray(value)) return null;
@@ -96,6 +97,22 @@ function linkTarget(value: unknown): string | undefined {
   } catch { return undefined; }
 }
 
+/** What the host's `resolveLink` makes of one link: the address and how to open it, `null` for no link. `undefined` from the host is the default. */
+function resolvedLink(value: unknown, label: string, title: string | undefined, context: Context): { readonly href: string; readonly target: '_blank' | '_self'; readonly onClick?: ((event: MouseEvent<HTMLAnchorElement>) => void) | undefined } | null {
+  const own = (): { readonly href: string; readonly target: '_blank' | '_self' } | null => { const href = linkTarget(value); return href ? { href, target: '_blank' } : null; };
+  if (!context.resolveLink || typeof value !== 'string') return own();
+  let answer: ReturnType<LinkResolver>;
+  try { answer = context.resolveLink(decodeHTML(value), { source: context.linkSource, text: label, ...(title === undefined ? {} : { title }) }); } catch { return own(); }
+  if (answer === undefined) return own();
+  if (answer === null) return null;
+  // The renderer's own check still decides: no javascript:, data:, vbscript:, credentials or relative addresses.
+  const given = typeof answer === 'string' ? { href: answer } : isRecord(answer) ? answer : null;
+  const href = given && linkTarget(given.href);
+  if (!given || !href) return null;
+  const target = 'target' in given && given.target === '_self' ? '_self' : '_blank';
+  return { href, target, ...('onClick' in given && typeof given.onClick === 'function' ? { onClick: given.onClick } : {}) };
+}
+
 function cells(value: unknown, header: boolean, context: Context): ReactNode {
   if (!Array.isArray(value)) return null;
   return value.map((cell: unknown, index) => {
@@ -141,8 +158,9 @@ function renderToken(value: unknown, context: Context, before = '', after = ''):
     case 'html': return value['block'] === true ? <pre className="my-3 overflow-x-auto font-mono text-xs whitespace-pre-wrap">{raw}</pre> : literal(raw);
     case 'image': return literal(decodeHTML(content) || raw);
     case 'link': {
-      const href = linkTarget(value['href']), title = typeof value['title'] === 'string' ? decodeHTML(value['title']) : undefined;
-      return href ? <a href={href} title={title} target="_blank" rel="noopener noreferrer"
+      const title = typeof value['title'] === 'string' ? decodeHTML(value['title']) : undefined;
+      const link = resolvedLink(value['href'], visible(value), title, context);
+      return link ? <a href={link.href} title={title} {...(link.target === '_blank' ? { target: '_blank' } : {})} rel="noopener noreferrer" {...(link.onClick ? { onClick: link.onClick } : {})}
         className="font-medium text-foreground underline decoration-muted-foreground/50 underline-offset-4 hover:decoration-foreground">{children(value['tokens'], context)}</a> : children(value['tokens'], context);
     }
     case 'list': {
@@ -163,15 +181,16 @@ function renderToken(value: unknown, context: Context, before = '', after = ''):
 /** One top-level block; unchanged blocks skip re-rendering while a long answer streams. */
 const Block = memo(function Block({ token, context }: { readonly token: unknown; readonly context: Context }) {
   return <>{renderToken(token, context)}</>;
-}, (a, b) => isRecord(a.token) && isRecord(b.token) && a.token['raw'] === b.token['raw'] && a.token['type'] === b.token['type'] && a.context.mentions === b.context.mentions && a.context.renderMention === b.context.renderMention && a.context.onCopy === b.context.onCopy && a.context.labels === b.context.labels);
+}, (a, b) => isRecord(a.token) && isRecord(b.token) && a.token['raw'] === b.token['raw'] && a.token['type'] === b.token['type'] && a.context.mentions === b.context.mentions && a.context.renderMention === b.context.renderMention && a.context.onCopy === b.context.onCopy && a.context.resolveLink === b.context.resolveLink && a.context.linkSource === b.context.linkSource && a.context.labels === b.context.labels);
 
-export const Markdown = memo(function Markdown({ text: source, commandMentions, renderMention, onCopy, streaming = false }: {
+export const Markdown = memo(function Markdown({ text: source, commandMentions, renderMention, onCopy, resolveLink, linkSource = 'chat', streaming = false }: {
+  readonly resolveLink?: LinkResolver | undefined; readonly linkSource?: LinkContext['source'];
   readonly text: string; readonly renderMention?: ((path: string, text: string) => ReactNode) | undefined; readonly commandMentions?: CommandMentions; readonly onCopy?: (text: string) => Promise<void>; readonly streaming?: boolean;
 }) {
   const tokens = useMemo(() => { try { return markdown.lexer(source); } catch { return null; } }, [source]);
   const mentions = source.includes('/') && commandMentions?.commands.length ? commandMentions : undefined;
   const { labels } = useChatText();
-  const context = useMemo<Context>(() => ({ mentions, renderMention, onCopy, labels }), [mentions, renderMention, onCopy, labels]);
+  const context = useMemo<Context>(() => ({ mentions, renderMention, onCopy, labels, resolveLink, linkSource }), [mentions, renderMention, onCopy, labels, resolveLink, linkSource]);
   const body = useMemo(() => {
     if (!tokens) return literal(source);
     // With mentions enabled, positions are relative to the whole text, so render the token list as one unit.
@@ -184,5 +203,5 @@ export const Markdown = memo(function Markdown({ text: source, commandMentions, 
 });
 
 /** The chat's `renderText` that draws an assistant reply as Markdown: `<PiChat renderText={markdownText} />`. */
-export const markdownText = ({ text, streaming, renderMention, commandMentions, onCopy }: ChatTextPart): ReactNode =>
-  <Markdown text={text} streaming={streaming} renderMention={renderMention} {...(commandMentions ? { commandMentions } : {})} {...(onCopy ? { onCopy } : {})} />;
+export const markdownText = ({ text, streaming, renderMention, commandMentions, onCopy, resolveLink }: ChatTextPart): ReactNode =>
+  <Markdown text={text} streaming={streaming} renderMention={renderMention} {...(commandMentions ? { commandMentions } : {})} {...(onCopy ? { onCopy } : {})} {...(resolveLink ? { resolveLink } : {})} />;

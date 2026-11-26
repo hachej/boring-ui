@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import type { ComposerFeedback, ComposerProps } from './composer';
 import type { AttachmentsConfig, EffortConfig, MentionsConfig, ModelConfig, SentContent, SlashConfig } from './config';
 import type { PasteToFile } from '@hachej/boring-ui-kit/chat-text';
-import type { CommandMentions } from './config';
+import type { CommandMentions, LinkResolver } from './config';
 import type { ChatCards, ChatTextPart, RowContext } from './message';
 import type { QueuedMessage } from './queue';
 import type { AnswerOutcome, ChatArtifactsConfig } from './config';
@@ -79,6 +79,8 @@ export interface ChatFeatureProps {
   readonly commandMentions?: CommandMentions;
   readonly onOpenImage?: (image: ImageContent) => void;
   readonly onCopy?: (text: string) => Promise<void>;
+  /** The host's say over every link in a Markdown reply: an address, `{ href, target, onClick }`, `null` (the words without a link) or `undefined` (the default). Results still pass the renderer's http(s) check. */
+  readonly resolveLink?: LinkResolver;
   readonly onComposerKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   /** What Enter does in the message field (`Composer enterSends`). `'keyboard'` (default): a physical keyboard sends, a touch device adds a line. `'always'`: Enter sends everywhere; Shift+Enter adds a line. */
   readonly enterSends?: ComposerProps['enterSends'];
@@ -165,7 +167,7 @@ export function useCursorInOpened(textarea: { readonly current: HTMLTextAreaElem
 
 /** Presentation adapter; all session state and controller protocols live in the kit. */
 export function useChatSession(options: ChatSessionOptions) {
-  const { controller, activeController, mode, presentation, toolDetails, hideTools, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, onComposerKeyDown, enterSends, onFiles, fileAccept,
+  const { controller, activeController, mode, presentation, toolDetails, hideTools, voiceReplay, targetLabel, sentContent, actions, renderEntry, hideLine, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions, onOpenImage, onCopy, resolveLink, onComposerKeyDown, enterSends, onFiles, fileAccept,
     slash, mentions, attachments, model, effort, artifacts, messageActions, replyFooter, afterSend, rowExtras, feedback, sendContext, onOpenFile, fileChanges, composerChips, composerHeader, composerHasContent, onPickFiles, pasteToFile } = options;
   const { labels } = useChatText();
   const textarea = useRef<HTMLTextAreaElement | null>(null);
@@ -177,7 +179,7 @@ export function useChatSession(options: ChatSessionOptions) {
     afterSend, feedback: sendContext ?? feedback, onOpenFile, onPickFiles, commandMentions, labels, onFocus: () => textarea.current?.focus() });
   const { state, developer, natural, connected, working, sendBlocked, act } = session;
   const rowContext = useMemo<RowContext>(() => ({
-    developer, natural, plainTools: toolDetails === 'none', hideTools: hideTools === true, voiceReplay, targetLabel, sentContent, renderText, cards, groupTool, onOpenImage, onCopy, openFile: onOpenFile ?? mentions?.open, fileChanges,
+    developer, natural, plainTools: toolDetails === 'none', hideTools: hideTools === true, voiceReplay, targetLabel, sentContent, renderText, cards, groupTool, onOpenImage, onCopy, resolveLink, openFile: onOpenFile ?? mentions?.open, fileChanges,
     commandMentions: commandMentions ? { commands: commandMentions.commands, onActivate: session.activateMention } : undefined,
     answer: actions?.answer,
     artifacts: offered?.Card ? { open: offered.open, isOpen: offered.isOpen, kinds: offered.kinds, Card: offered.Card } : undefined,
@@ -186,7 +188,7 @@ export function useChatSession(options: ChatSessionOptions) {
     pieces: slash?.skills?.length || mentions || attachments ? { kinds: mentions?.kinds, mentions: Boolean(mentions), uploads: Boolean(attachments), skills: (slash?.skills ?? []).map(skill => skill.name), openMention: mentions?.open, renderMention: mentions?.renderSent ?? mentions?.render, preview: mentions?.preview, audioUrl: mentions?.audioUrl } : undefined,
     ...rowExtras,
   // eslint-disable-next-line react-hooks/exhaustive-deps -- lists the fields rows read, not whole objects: activateMention changes every render and must not rebuild every row.
-  }), [controller, developer, natural, toolDetails, hideTools, voiceReplay, targetLabel, sentContent, renderText, cards, groupTool, onOpenImage, onCopy, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, offered?.open, offered?.isOpen, offered?.kinds, offered?.Card, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
+  }), [controller, developer, natural, toolDetails, hideTools, voiceReplay, targetLabel, sentContent, renderText, cards, groupTool, onOpenImage, onCopy, resolveLink, onOpenFile, fileChanges, commandMentions, actions?.answer, slash?.skills, mentions, mentions?.open, mentions?.render, mentions?.renderSent, mentions?.preview, mentions?.audioUrl, attachments, offered?.open, offered?.isOpen, offered?.kinds, offered?.Card, messageActions, historicalMessageActions, unread, replyError, replyFooter, rowExtras]);
 
   /** The model-and-effort pill and the note that reports a refused change. */
   const pickers = () => {

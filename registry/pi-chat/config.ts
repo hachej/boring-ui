@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from 'react';
+import type { ComponentType, MouseEvent, ReactNode } from 'react';
 import type { ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
 import type { SlashItem } from '@hachej/boring-ui-kit/chat-text';
 import type { VoiceMessageConfig as KitVoiceMessageConfig, PendingVoice, VoiceMessageHandle, VoiceRecorderOptions as KitVoiceRecorderOptions } from '@hachej/boring-ui-kit/chat-react/voice';
@@ -272,6 +272,21 @@ export interface CameraSheetProps {
 
 /** A `/command` a settled reply may turn into a button (`commandMentions`; drawn by a text renderer such as `pi-chat-markdown`). */
 export interface CommandMention { readonly name: string; readonly behavior: 'execute' | 'insert' }
+/** Where a rendered Markdown link sits: a chat reply, or a file read in the viewer pane. */
+export interface LinkContext {
+  readonly source: 'chat' | 'viewer';
+  /** The words the link shows. */
+  readonly text: string;
+  readonly title?: string | undefined;
+}
+/** What `resolveLink` may answer: an address, an address with how to open it, `null` (show the words without a link) or `undefined` (the default). */
+export type LinkResolution = string | { readonly href: string; readonly target?: '_blank' | '_self'; readonly onClick?: ((event: MouseEvent<HTMLAnchorElement>) => void) | undefined } | null | undefined;
+/**
+ * The host's say over every link in rendered Markdown. `href` is the link as written. A resolved address still passes the renderer's
+ * own check (a plain http(s) URL without credentials); anything else is shown as text.
+ */
+export type LinkResolver = (href: string, context: LinkContext) => LinkResolution;
+
 export interface CommandMentions {
   readonly commands: readonly CommandMention[];
   readonly onActivate: (command: CommandMention) => void;
