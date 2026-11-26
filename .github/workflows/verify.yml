@@ -61,7 +61,7 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
   tests-shard:
-    # The suite is one serial Node process of 25 minutes (D-1937). Five runners each take a fifth of the test files, balanced by measured time (scripts/run-tests.mjs --shard=i/5), and run them as two node --test processes at once (--jobs=2; the runner has 4 cores), so the job takes about a tenth plus its install.
+    # The suite is one serial Node process of 25 minutes (D-1937). Five runners each take a fifth of the test files, balanced by measured time (scripts/run-tests.mjs --shard=i/5), and run them as three node --test processes at once (--jobs=3; the runner has 4 cores), so the job takes about a seventh plus its install.
     # The check named `tests` below is the join of the five: release admission and `verify` read that one name.
     name: Tests (${{ matrix.part }} of 5)
     strategy:
@@ -92,7 +92,7 @@ jobs:
         run: bash scripts/install-ci-chromium.sh 1.63.0
       - name: Allow the Chromium sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: npm test -- --exclude-registered --shard=${{ matrix.part }}/5 --jobs=2
+      - run: npm test -- --exclude-registered --shard=${{ matrix.part }}/5 --jobs=3
         env:
           SIDEBAR_RESIZE_EVIDENCE: ${{ runner.temp }}/evidence/sidebar-resize
           SIDEBAR_OPEN_EVIDENCE: ${{ runner.temp }}/evidence/sidebar-open
