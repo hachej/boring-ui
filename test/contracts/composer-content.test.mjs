@@ -513,6 +513,19 @@ test('1280, composer=content with an AgentComposerAnchor: the field and the tray
   assert.deepEqual(browser.problems, []);
 });
 
+test('1280, composer=bar with an AgentComposerAnchor beside the right pane: the column draws no empty box of its own, and the pane opens at the width the view asks', { skip, timeout: 120000 }, async () => {
+  await open(1280, 'composer=bar&anchor=1');
+  await browser.until('the field is in the anchor', `!!document.querySelector('[data-testid=agent-composer-anchor] [data-testid=composer-input]')`);
+  assert.equal(await count('[data-testid=agent-content-composer]'), 0, 'the column under the page draws no second, empty composer box');
+  assert.equal(await count('[data-testid=composer]'), 1, 'one composer');
+  await browser.evaluate(`window.__layer.preview({ title: 'Aperçu', content: 'Le devis', width: 440 }), 0`);
+  await browser.until('the pane opens', `!!document.querySelector('[data-testid=agent-preview]')`);
+  const pane = await rect('[data-testid=agent-preview]');
+  assert.ok(Math.abs(pane.w - 440) <= 2, `the pane is 440px wide, not the default: ${JSON.stringify(pane)}`);
+  assert.equal(await inside('[data-testid=composer]', '[data-testid=agent-composer-anchor]'), true, 'the field stays in the anchor beside the pane');
+  await browser.screenshot('composer-anchor-bar-pane-1280.png');
+});
+
 test('1280, composer=content without an anchor: the field still spans the column under the aside', { skip, timeout: 120000 }, async () => {
   await open(1280, 'composer=content&aside=1&bar=1');
   assert.equal(await count('[data-testid=agent-composer-anchor]'), 0, 'no anchor in the page');

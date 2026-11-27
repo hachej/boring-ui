@@ -171,6 +171,8 @@ export function BarBox({ standalone = false }: { readonly standalone?: boolean }
   }, [place, focusRef, composerSlot]);
   if (place === 'float') return <FloatFrame><OneBox floating>{slots}</OneBox></FloatFrame>;
   if (place === 'icon') return <><div hidden><OneBox>{slots}</OneBox></div><ComposerFab /></>;
+  // An `AgentComposerAnchor` holds the field and its card: the column draws no empty box of its own under the page.
+  if (anchored && !standalone) return null;
   return standalone ? <div className={cn('@container fixed inset-x-0 bottom-0 z-(--z-app-shell-layer)', hostClass)}><NoticeSlot /><OneBox>{slots}</OneBox></div> : <OneBox>{slots}</OneBox>;
 }
 

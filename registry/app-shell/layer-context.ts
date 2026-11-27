@@ -193,7 +193,7 @@ export interface AgentPane {
 
 /** One entry of the pane's stack: what it shows, its title (the back control of the entry above says it) and the control that opened it (focus returns there). */
 export type PaneEntry = { readonly id: number; readonly title: string; readonly opener: HTMLElement | null } & (
-  | { readonly kind: 'view'; readonly content: ReactNode; readonly bare?: boolean }
+  | { readonly kind: 'view'; readonly content: ReactNode; readonly bare?: boolean; readonly width?: number }
   | { readonly kind: 'library'; readonly content: ReactNode }
   | { readonly kind: 'artifact'; readonly descriptor: ArtifactDescriptor; readonly follow: boolean }
   | { readonly kind: 'file'; readonly path: string; readonly files: readonly string[]; readonly revision?: string | undefined });
@@ -207,6 +207,8 @@ export interface AgentPreview {
    * close and back reach it through `usePaneFrame()`: `<FileViewer onClose={close} onBack={back} backLabel={backLabel} … />`. Default: the pane's frame.
    */
   readonly frame?: false | undefined;
+  /** The wide pane's width in px when this view opens it, until the person resizes it (default 512). A view pushed over another keeps the width of the one under it. */
+  readonly width?: number | undefined;
 }
 
 /** What a frameless pane entry (`frame: false`) wires into its own header: the pane's Fermer, and « ← <what is under> » when there is something to go back to. */
