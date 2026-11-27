@@ -11,6 +11,8 @@
 //   /api/signin/links                  Studio: an owner links an app (registers its client for the round trip)
 import { createLocalJWKSet, decodeJwt, jwtVerify } from 'jose';
 import { makeAuth, MCP_SCOPES, normalEmail, type Person, type Role, type SignInOptions } from './auth.js';
+/** How long Studio waits for its own list of an app's owners (`provider.appOwners`) before it signs Studio's owners alone: a slow directory never holds every linked app's sign-in. */
+const APP_OWNERS_MS = 2000;
 import { OWNERS_AUDIENCE, STUDIO, STUDIO_SCOPES, studioCallback, type PassClaims } from './studio.js';
 import { inWords, langOf, refuse } from './words.js';
 import { missingTables, SIGNIN_TABLES_MISSING } from './migration.js';
@@ -140,9 +142,11 @@ export function signIn(options: SignInOptions) {
    *  itself (`?app=`) also gets the owners Studio gives for it (`provider.appOwners`), and the token names that app, so it is no other app's list. */
   const owners = async (url: URL): Promise<Response> => {
     const store = await db();
-    const app = url.searchParams.get('app') ?? undefined, hook = typeof options.provider === 'object' ? options.provider.appOwners : undefined;
+    // A linked app's name as it links (`boring-studio-<slug>`): anything else names no app. Its owners come from Studio's hook within 2 s, else none (never open).
+    const asked = url.searchParams.get('app') ?? '', app = /^[a-z0-9][a-z0-9-]{0,63}$/.test(asked) ? asked : undefined, hook = typeof options.provider === 'object' ? options.provider.appOwners : undefined;
+    const given = app && hook ? await Promise.race([hook(app).catch(() => []), new Promise<readonly string[]>((done) => setTimeout(() => done([]), APP_OWNERS_MS))]) : [];
     const rows = await store.findMany<{ email: string }>({ model: 'invitation', where: [{ field: 'role', value: 'owner' }] });
-    const emails = [...new Set([...rows.map((r) => r.email), ...(app && hook ? await hook(app).catch(() => []) : [])].map((e) => e.toLowerCase()))];
+    const emails = [...new Set([...rows.map((r) => r.email), ...given].map((e) => normalEmail(e)))];
     const users = (await Promise.all(emails.map((email) => store.findOne<User>({ model: 'user', where: [{ field: 'email', value: email }] })))).filter((u): u is User => !!u);
     const { token } = await api['signJWT']!({ body: {
       payload: { owners: users.map((u) => ({ sub: u.id })), ...(app ? { app } : {}) },

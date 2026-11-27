@@ -149,3 +149,14 @@ test('an app\'s own owners in Studio own its deploys: Studio names them for that
   await signUp(max, STUDIO, 'max@studio.test');
   assert.match((await throughStudio(max)).search, /error/);
 });
+
+test('Studio\'s list for an app never waits on a slow directory: past 2 s it is Studio\'s owners alone, and a name that is no app names none', async () => {
+  const w = world({ appOwners: () => new Promise(() => {}) });
+  const olive = browser(w.route);
+  assert.equal((await signUp(olive, STUDIO, 'olive@studio.test', { 'x-boring-first-owner': w.first.token })).status, 200);
+  const t0 = Date.now(), slow = (await olive.json(`${STUDIO}/api/signin/owners?app=demo`)).body.token;
+  assert.ok(Date.now() - t0 < 4000, 'answered within the wait');
+  assert.equal(JSON.parse(Buffer.from(slow.split('.')[1], 'base64url').toString()).owners.length, 1);
+  const odd = (await olive.json(`${STUDIO}/api/signin/owners?app=${encodeURIComponent('x'.repeat(100))}`)).body.token;
+  assert.equal(JSON.parse(Buffer.from(odd.split('.')[1], 'base64url').toString()).app, undefined, 'no app is echoed for a name that is none');
+});
