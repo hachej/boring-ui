@@ -109,7 +109,7 @@ export function usePane({ agent, bar, compact, locale, field, storageKey, uncove
   }, [commit, compact, uncover]);
   const pushNow = useCallback((item: PaneItem): boolean => {
     if (!agent || !bar) return false;
-    if ('content' in item) return pushEntry({ kind: 'view', title: item.title, content: item.content, ...(item.frame === false ? { bare: true } : {}) }) > 0;
+    if ('content' in item) return pushEntry({ kind: 'view', title: item.title, content: item.content, ...(item.frame === false ? { bare: true } : {}), ...(item.width === undefined ? {} : { width: item.width }) }) > 0;
     if (!files) return false;
     const set = item.files?.includes(item.file) ? item.files : [item.file];
     return pushEntry({ kind: 'file', title: item.title ?? nameOf(item.file), path: item.file, files: set }) > 0;
@@ -437,8 +437,8 @@ export function PaneStack({ placement, assistant }: { readonly placement: 'colum
 export function PaneDock({ assistant }: { readonly assistant: string }) {
   const layer = useInternal();
   const text = shellWords(layer.locale ?? layer.agent?.chatProps?.locale, layer.agent);
-  const top = layer.stack.at(-1);
-  return <Dock id="preview" side="right" defaultWidth={512} minWidth={320} open onOpenChange={next => { if (!next) layer.pane.close(); }} labels={{ region: `${text.preview} · ${top?.title ?? ''}`, resize: text.resizePreview }}>
+  const top = layer.stack.at(-1), first = layer.stack[0];
+  return <Dock id="preview" side="right" defaultWidth={first?.kind === 'view' && first.width !== undefined ? first.width : 512} minWidth={320} open onOpenChange={next => { if (!next) layer.pane.close(); }} labels={{ region: `${text.preview} · ${top?.title ?? ''}`, resize: text.resizePreview }}>
     <PaneStack placement="column" assistant={assistant} />
   </Dock>;
 }
