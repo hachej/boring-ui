@@ -1,12 +1,104 @@
 # Boring UI
 
-**Put an AI agent inside your app.**
+**Put an AI agent inside your app, on a durable engine.**
 
-Chat, files, document viewers, approvals and background work for React and Node apps, built on the [Pi](https://www.npmjs.com/package/@earendil-works/pi-durable) agent harness. You keep authentication, data, permissions and model keys.
+Boring UI is the React and Node kit for apps with an agent inside: chat, files, document viewers, approvals, questions, sub-agents and sign-in. It sits on top of Pi's durable engine ([`pi-durable`](https://www.npmjs.com/package/@earendil-works/pi-durable)), and that is what it allows:
+
+- **Parked work survives restarts.** A question the agent asks is a native Pi task that sleeps with a signal key. No model request is held while it waits, and a restart keeps it asleep until the answer arrives.
+- **Approvals wait for a person.** A gated tool (`write`, `edit`, `bash`, your own) shows an Approve/Deny card. A pending approval survives a restart, and a crash mid-change never repeats the change: the model gets an "outcome unknown" error.
+- **Schedules and sub-agents resume.** A scheduled follow-up is a Pi task that a restart resumes. A sub-agent call replayed after a crash finds its existing child instead of starting a second one.
+- **Conversations and runs are stored by Pi**, not by the browser tab or a server process.
+
+You keep authentication, data, permissions and model keys. Details and limits: [Pi integration](docs/architecture/PI-COMPLEMENT.md), [asking the person](packages/agent/README.md#asking-the-person), [approval gate](packages/agent/README.md#approval-gate), [sub-agents and schedules](packages/agent/README.md#sub-agents-and-schedules).
 
 [![npm](https://img.shields.io/npm/v/@hachej/boring-ui-kit?label=%40hachej%2Fboring-ui-kit)](https://www.npmjs.com/package/@hachej/boring-ui-kit)
 [![CI](https://github.com/hachej/boring-ui/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/hachej/boring-ui/actions/workflows/verify.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+## What you can build
+
+Every picture is a real capture of a kit component from the [UX scenarios](ux/README.md) (`node ux/runner/cli.mjs capture`), with fictional data.
+
+### An agent workspace in your app
+
+One agent over any screen: a bar at the bottom on a phone, a panel on a wide screen, or the whole page. The conversation shows steps, file chips and one-tap actions such as "Undo". `AppShell` and `PiChat` do the layout; you pick the placement.
+
+<table><tr>
+<td valign="top"><img src="docs/assets/readme/workspace-390.webp" alt="Assistant panel open over a bank reconciliation screen on a phone" width="240"></td>
+<td valign="top"><img src="docs/assets/readme/workspace-1280-dark.webp" alt="The same assistant panel on a desktop screen, dark theme" width="520"></td>
+</tr></table>
+
+See [app layout](features/app-shell.md) and the [block list](registry/README.md#blocks-what-to-install).
+
+### Questions the agent asks and a person answers later
+
+The agent asks, the card waits, the person taps a choice or types an answer. The wait is a parked Pi task, so it does not need the page to stay open.
+
+<img src="docs/assets/readme/question-390.webp" alt="A question card with three choices and a free-text field" width="240">
+
+See [asking the person](packages/agent/README.md#asking-the-person).
+
+### Approvals before anything changes
+
+Gate any tool behind Approve/Deny. The model cannot skip the check: it runs in your host code, inside the tool. Cards also show queued, running, done and failed work.
+
+<img src="docs/assets/readme/approval-390.webp" alt="Agent cards on a phone: queued, running, one needing approval with Approve and Deny, done and failed" width="240">
+
+```js
+import { createApprovalExtension } from '@hachej/boring-agent/approval';
+
+const approvals = createApprovalExtension({ tools: { write: true, edit: true } });
+defineAgent({ id: 'writer', model, extensions: [fileTools, approvals] });  // Approve/Deny before every write or edit
+```
+
+See [approval gate](packages/agent/README.md#approval-gate).
+
+### Sub-agents you can watch
+
+Hand work to a child agent and show what it does: status, time, tool calls, tokens, the latest steps and the result. English and French words are built in.
+
+<table><tr>
+<td valign="top"><img src="docs/assets/readme/subagents-390.webp" alt="Three sub-agent cards (running, done, failed) on a phone" width="240"></td>
+<td valign="top"><img src="docs/assets/readme/subagents-1280.webp" alt="The same three sub-agent cards on a desktop, English" width="520"></td>
+</tr></table>
+
+See [sub-agents and schedules](packages/agent/README.md#sub-agents-and-schedules).
+
+### Files and viewers beside the conversation
+
+The agent writes a file and calls `present`; the page opens it in a viewer: Markdown (editable), HTML, PDF, images, CSV tables, code, mock-ups, diagrams. Every read and write goes through one workspace with revisions and conflict checks.
+
+<table><tr>
+<td valign="top"><img src="docs/assets/readme/files-390.webp" alt="A CSV table open full screen on a phone" width="240"></td>
+<td valign="top"><img src="docs/assets/readme/files-1280.webp" alt="A reconciliation page with a CSV viewer open in a side pane" width="520"></td>
+</tr></table>
+
+See [`@hachej/boring-files`](packages/files/README.md) and [artifacts](packages/agent/README.md#artifacts).
+
+### Sign-in
+
+A sign-in page themed to your app, with Google and e-mail, invitations, and English or French words. Your server still decides who gets in.
+
+<table><tr>
+<td valign="top"><img src="docs/assets/readme/signin-390.webp" alt="Sign-in page on a phone with a lime button" width="240"></td>
+<td valign="top"><img src="docs/assets/readme/signin-1280.webp" alt="Sign-in card on a desktop" width="520"></td>
+</tr></table>
+
+Also in the kit: shell, Git and sandboxes ([`@hachej/boring-execution`](packages/execution/README.md)), user feedback ([`@hachej/boring-feedback`](packages/feedback/README.md)), conversation history, voice messages and `@` file mentions. The [feature map](features/README.md) lists everything and how to drive it.
+
+## Try it in 30 seconds
+
+Node.js 22.19 or later. The scripted model needs no API key.
+
+```sh
+git clone https://github.com/hachej/boring-ui && cd boring-ui
+npm ci && npm run build
+STUDIO_MODEL=scripted npm run workspace-app
+```
+
+Open the printed URL and click **Draft a plan**. The agent writes a fictional picnic plan and opens it in the side panel. Drop `STUDIO_MODEL=scripted` and set `OPENAI_API_KEY` to use a real model.
+
+## Wire it up
 
 ```tsx
 // Browser: a whole agent app (sessions, chat, artifact viewers) from one registry block.
@@ -30,26 +122,6 @@ const harness = await Harness.open(storage, { registry, models, env: () => env }
 const chatHandler = createChatTransportHandler({ authenticate });  // your auth decides who opens which conversation
 ```
 
-## Try it in 30 seconds
-
-Node.js 22.19 or later. The scripted model needs no API key.
-
-```sh
-git clone https://github.com/hachej/boring-ui && cd boring-ui
-npm ci && npm run build
-STUDIO_MODEL=scripted npm run workspace-app
-```
-
-Open the printed URL and click **Draft a plan**. The agent writes a fictional picnic plan and opens it in the side panel. Drop `STUDIO_MODEL=scripted` and set `OPENAI_API_KEY` to use a real model.
-
-## Why Boring UI
-
-- **The agent lives in your app.** A side panel, a floating bar, a bottom drawer on phones, or the whole page. You pick the placement.
-- **You own the server.** Your process opens the Pi Harness. The kit never holds your keys, your users or your policy.
-- **One place for files.** The agent's `read`/`write`/`edit`, the viewers and the file tree all go through one workspace provider, with revisions and conflict checks.
-- **Copy the UI, keep it updatable.** Blocks install through the shadcn CLI into your code, use your shadcn theme, and update with one command.
-- **Durable by default.** Conversations, questions, approvals and schedules survive a restart, because Pi stores them.
-
 ## Install
 
 ```sh
@@ -66,7 +138,7 @@ npx boring-ui-blocks add https://cdn.jsdelivr.net/npm/@hachej/boring-ui-kit@0.4.
 
 From the release after 0.4.23, also add `.../r/pi-app-kinds.json` and pass its `defaultKinds()` as `artifactKinds`, as above: `pi-app` draws only the kinds it is given. Add `.../r/theme.json` once if your app has no shadcn tokens yet. The full walk-through is the [build-agent-app skill](skills/build-agent-app/SKILL.md).
 
-## Features
+## More code
 
 ### Chat that knows your app
 
@@ -78,11 +150,7 @@ import { FloatingComposer } from '@/components/app-shell/floating-composer';
 <FloatingComposer agent={{ controller, chatProps: { actions, labels: { title: 'Console assistant' } } }} appId="console" />
 ```
 
-See the [block list](registry/README.md#blocks-what-to-install).
-
 ### Artifacts the agent can show
-
-The agent writes a file and calls `present`. The page opens it in a viewer: Markdown (editable), HTML, PDF, images, code, mock-ups, diagrams, typed records and boards.
 
 ```js
 import { createPresentTool } from '@hachej/boring-agent/artifacts';
@@ -90,7 +158,7 @@ import { createPresentTool } from '@hachej/boring-agent/artifacts';
 defineAgent({ id: 'writer', model, tools: [createPresentTool({ workspace: { files, root, access } })] });
 ```
 
-See [Whole agent app](registry/README.md#whole-agent-app-pi-app-agentworkspace) and [Artifacts](packages/agent/README.md#artifacts).
+See [Whole agent app](registry/README.md#whole-agent-app-pi-app-agentworkspace).
 
 ### A workspace with history
 
@@ -104,32 +172,7 @@ const files = createWorkspaceProvider({ identity, fs: env, journal: createWorksp
 const guard = createFileGuard({ workspace: { files, root, access } });
 ```
 
-The browser reaches it through one route, `createRevisionHandler`: reads, saves, the file list, `@` search and uploads (a conditional create with a receipt, binary-safe, up to `maxFileBytes`) all use the same resolve and access. See [`@hachej/boring-files`](packages/files/README.md) and [One file tool set](packages/agent/README.md#one-file-tool-set-the-guard).
-
-### Approvals, questions and schedules
-
-Gate any tool behind an Approve/Deny card, let the agent ask the person a question, hand work to a sub-agent, or schedule a follow-up. Each one is a native Pi tool or extension.
-
-```js
-import { createApprovalExtension } from '@hachej/boring-agent/approval';
-
-const approvals = createApprovalExtension({ tools: { write: true, edit: true } });
-defineAgent({ id: 'writer', model, extensions: [fileTools, approvals] });  // Approve/Deny before every write or edit
-```
-
-See [Approval gate](packages/agent/README.md#approval-gate), [Asking the person](packages/agent/README.md#asking-the-person) and [Sub-agents and schedules](packages/agent/README.md#sub-agents-and-schedules).
-
-### Shell, Git and sandboxes
-
-A virtual Bash and Git workspace in memory or SQLite, or a remote shell and file system you already run. The agent's tools see one view of the files either way.
-
-See [`@hachej/boring-execution`](packages/execution/README.md).
-
-### Feedback from your users
-
-People point at what they see, dictate a note and send it. Works with or without an agent.
-
-See [`@hachej/boring-feedback`](packages/feedback/README.md).
+The browser reaches it through one route, `createRevisionHandler`: reads, saves, the file list, `@` search and uploads all use the same resolve and access. See [One file tool set](packages/agent/README.md#one-file-tool-set-the-guard).
 
 ## Packages
 
@@ -205,11 +248,12 @@ One job per top-level folder. What the kit does is in the [feature map](features
 | `shared/` | Host helpers (standard agent, workspace and MCP tools, SQLite workspaces, canvas transport) imported by relative path, not a package | examples, fixtures, `lab/`, boring-factory (`local-host.mjs`) |
 | [`examples/`](examples/README.md) | Single-feature and host recipes, one runnable app each | people learning the kit; boring-factory (`app-shell`) |
 | [`lab/`](lab/README.md) | The studio playground over every block, plus its scripted-model and Tailwind helpers | maintainers, the scripted CI journeys, boring-factory |
+| [`ux/`](ux/README.md) | UX scenarios and the runner that captures them (the pictures above) | maintainers, this README |
 | `fixtures/` | Fictional data and fake hosts | tests, examples |
 | `test/` | All tests and their fixtures | CI, boring-factory (`test/fixtures`) |
 | `scripts/` | Build, release, check and browser-journey scripts | `package.json`, CI, boring-factory (`css-stub-register.mjs`) |
 | [`features/`](features/README.md) | The feature map, one file per feature | people and agents; `check-features` |
-| [`docs/`](docs/) | Specs, contracts, guides and per-task notes | everyone |
+| [`docs/`](docs/) | Specs, contracts, guides and per-task notes; `docs/assets/readme/` holds the README pictures | everyone |
 | [`skills/`](skills/README.md) | Agent skills for building apps with the kit | coding agents, boring-factory's `build-app` |
 
 `examples/` are recipes to copy (`examples/workspace-demo` tells one product story end to end), and `lab/` is the playground that exercises the library itself.
