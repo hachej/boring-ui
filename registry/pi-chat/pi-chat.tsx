@@ -3,7 +3,7 @@
 import { useKeyboardInset, useBelowLg, useToastOffset } from '../utils/use-media';
 
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { viewHasEarlier } from '@hachej/boring-ui-kit/native-chat';
 import type { ChatController } from '@hachej/boring-ui-kit/native-chat';
@@ -103,6 +103,8 @@ export interface PiChatProps extends ChatFeatureProps {
   /** `false` lets the host supply one shared header around chat and viewers. Default true. */
   readonly header?: boolean;
   readonly className?: string;
+  /** The assistant's reading size for this chat (D-1901 `--text-chat`): `'sm'` 0.875rem, `'md'` 0.9375rem (the default), `'lg'` 1.0625rem, or any CSS length (`'1.125rem'`). Sets `--text-chat` on the chat root (and the composer host); prose, Markdown, cards and the empty state follow it, meta rows are 0.93 of it, code 0.875 of it, headings scale with it. On touch the size keeps its 1rem floor unless `textSize` is set to something other than `'md'`; the message field stays at least 1rem on touch either way (iOS zoom). Menus and drawers portalled to the page body follow the app's `--text-chat` instead. */
+  readonly textSize?: ChatTextSize | (string & {}) | undefined;
   /** Pad the chat's bottom by how far it reaches below the visual viewport (the phone's soft keyboard). Default true; `false` for a host that already follows the keyboard itself, such as a bottom drawer whose lower part sits off screen by design. */
   readonly keyboardInset?: boolean;
   readonly decisions?: ReactNode;
@@ -222,7 +224,17 @@ const noVoice: VoiceRecorderHook = () => silent;
 /** A shell's pending voice row when no `voiceMessage.Bubble` is plugged in: nothing to draw. */
 function NoVoiceBubble(_: { readonly pending: PendingVoice | undefined }) { return null; }
 
-function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, toolDetails, hideTools, voiceReplay, targetLabel, sentContent, messageStyle = 'default', answeredBy, className, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, composerWhenEmpty, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerHost, dropZone, onSent, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
+/** The named reading sizes of `PiChat textSize`. */
+export type ChatTextSize = 'sm' | 'md' | 'lg';
+const TEXT_SIZES: Readonly<Record<ChatTextSize, string>> = { sm: '0.875rem', md: '0.9375rem', lg: '1.0625rem' };
+/** `textSize` as the attribute CSS lifts the touch floor by and the `--text-chat` value it sets; undefined when the host set none. */
+function textSizeStyle(textSize: string | undefined): { readonly attr?: string; readonly style?: CSSProperties } {
+  if (!textSize) return {};
+  const named = Object.hasOwn(TEXT_SIZES, textSize) ? TEXT_SIZES[textSize as ChatTextSize] : undefined;
+  return { attr: named ? textSize : 'custom', style: { '--text-chat': named ?? textSize } as CSSProperties };
+}
+
+function PiChatSession({ controller, placement = 'docked', mode = 'expert', presentation, toolDetails, hideTools, voiceReplay, targetLabel, sentContent, messageStyle = 'default', answeredBy, className, textSize, keyboardInset = true, actions, avatar, headerActions, header = true, decisions, controls, tools, composerStart, composerWhenEmpty, voiceReplacesSend = false, voiceMessage, pendingVoice, belowComposer, composerHost, dropZone, onSent, composerChips, composerHeader, composerHasContent, onPickFiles, timeline, renderConnectionError, headerStart, renderEntry, hideLine, displayLimit, paging, historicalMessageActions, unread, replyError, renderTool, toolRenderers, renderText, cards, groupTool, commandMentions,
   onOpenImage, onCopy, resolveLink, onComposerKeyDown, enterSends, onFiles, camera, fileAccept = 'image/*', emptyState, suggestions, messageActions, replyFooter, slash, mentions, attachments, model, effort, artifacts, conversations, historyList = true, showHistory = true, showConnectionStatus = false, emptyLayout = 'centered', composerLayout = 'card', composerBarActions, composerFileChips, composerRecording, composerRecordingSlots, composerEditLast = false, renderComposer, conversationTitle, onRenameTitle, feedback, sendContext, draftKey, onOpenFile, fileChanges, pasteToFile, activeController: active }: PiChatProps & { readonly activeController: { readonly current: ChatController } }) {
   const { labels, icons } = useChatText();
   useChatDraft(controller, draftKey);
@@ -357,7 +369,8 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
       </div>
     </div>
   </footer>;
-  return <><section ref={page} data-boring="pi-chat" data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative box-border flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card text-card-foreground ', keyboardInset && 'max-md:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'md:justify-center', className)}>
+  const size = textSizeStyle(textSize);
+  return <><section ref={page} data-boring="pi-chat" data-text-size={size.attr} style={size.style} data-connection={connectionKind} data-empty={empty && !loading ? emptyLayout : undefined} aria-label={title} className={cn('pi-chat relative box-border flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card text-card-foreground ', keyboardInset && 'max-md:pb-(--composer-keyboard-inset)', empty && emptyLayout === 'centered' && 'md:justify-center', className)}>
     {header && <header className={cn(empty && emptyLayout === 'centered' && 'md:absolute md:inset-x-0 md:top-0', 'flex h-13 shrink-0 items-center gap-2 px-3 md:gap-3 md:px-4')}>
       {headerStart}
       {avatar && <Avatar data-testid="chat-avatar" className="overflow-hidden"><AvatarFallback className="*:max-h-full *:max-w-full">{avatar}</AvatarFallback></Avatar>}
@@ -401,7 +414,7 @@ function PiChatSession({ controller, placement = 'docked', mode = 'expert', pres
     {composerHost ? null : footer}
   </section>
   {/* The shell's `composer: 'content'`: the same footer, drawn into the content column (the `pi-chat` class keeps the chat's text and resets there). */}
-  {composerHost && createPortal(<div data-boring="pi-chat-composer" className="pi-chat bg-card text-card-foreground">{footer}</div>, composerHost)}
+  {composerHost && createPortal(<div data-boring="pi-chat-composer" data-text-size={size.attr} style={size.style} className="pi-chat bg-card text-card-foreground">{footer}</div>, composerHost)}
   {zone && dragged && createPortal(<div data-testid="content-drop-overlay" aria-hidden="true" className="pi-chat pointer-events-none absolute inset-0 z-raised flex items-center justify-center ring-2 ring-inset ring-primary bg-background/80 text-sm font-medium text-foreground">{labels.attachFiles}</div>, zone)}
   </>;
 }

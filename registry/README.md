@@ -347,6 +347,19 @@ A sent message that mentions an upload (`@uploads/<path>`, what `attachments` sa
 
 In both values an input method that is composing a candidate (`isComposing`, `keyCode` 229) never sends, an empty field never sends, and `onComposerKeyDown` runs first and can stop the key with `preventDefault()`. Use `'always'` for a one-line message to an assistant, typed by a person who expects Return to send; keep the default where messages are long and a phone's Return is a new line. The option needs no edit of the installed block, so `boring-ui-blocks check` stays green. The `AgentBar` field is its own input and always sends on Enter. Test: `CHROMIUM=... node --test test/contracts/one-composer.test.mjs --test-name-pattern "touch|fine pointer"`.
 
+## Reading size in `pi-chat` (`textSize`)
+
+`textSize` (on `PiChat`, so also `AgentWorkspace`'s `chat` and `AgentSpec.chatProps` of the app shell) sets the assistant's reading size for one chat. Without it the chat reads at the app's `--text-chat` token (default `0.9375rem`, set in `theme.core.css` for every chat of the app).
+
+| Value | Reply prose | Notes |
+| --- | --- | --- |
+| omitted or `'md'` | `--text-chat` (0.9375rem) | Nothing changes for an existing app. At least 1rem on touch. |
+| `'sm'` | 0.875rem | The touch floor is lifted: the host chose it. Meta rows stay at 13px or more. |
+| `'lg'` | 1.0625rem | The message field also grows a step (x1.1333 of the app's body size, at least 1rem on touch). |
+| any CSS length, e.g. `'1.125rem'` | that length | The touch floor is lifted; the message field keeps the app's body size. |
+
+It writes `--text-chat` on the chat root (and on the composer host of the shell's `composer: 'content'`), so one chat can differ from another on the same page. Prose, Markdown (headings scale with it), the empty state, cards and the panel title follow it; thought, tool, time and action rows are 0.93 of it and code 0.875 of it. The message field never goes under 1rem on touch (iOS zooms below that). Menus and drawers portalled to the page body (the `+` menu, pickers, history sheet) read the app's `--text-chat`, not the chat's `textSize`. `SharedChat` is not a `pi-chat` surface and is unchanged.
+
 ## Voice messages in `pi-chat`
 
 Install the `pi-chat-voice` item and spread its `voiceMessagePlugin` (recorder hook, microphone button, pending bubble) into `voiceMessage`, or use `withChatPlugins`; without them `pi-chat` shows no microphone.

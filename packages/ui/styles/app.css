@@ -242,6 +242,8 @@
 }
 @media (width < 768px), (pointer: coarse) {
   .pi-chat { --chat-text: max(var(--text-chat, 0.9375rem), 1rem); }
+  /* A host that sets PiChat textSize (other than md) chooses the size on touch too; the message field keeps its own 1rem floor below. */
+  .pi-chat[data-text-size]:not([data-text-size="md"]) { --chat-text: var(--text-chat, 0.9375rem); }
 }
 .pi-chat :is([class*="text-xs"], [class*="text-sm"], [class*="text-[11px]"], [class*="text-[0.6875rem]"]):not(input, textarea, select) {
   font-size: var(--chat-meta);
@@ -259,6 +261,11 @@
 @media (width < 768px), (pointer: coarse) {
   .pi-chat { --composer-text: max(var(--text-md, var(--text-body, 0.8125rem)), 1rem); }
 }
+/* PiChat textSize="lg": the message field grows with the reading size (a step, not 1:1: it is body text), still at least 1rem on touch. */
+.pi-chat[data-text-size="lg"] { --composer-text: calc(var(--text-md, var(--text-body, 0.8125rem)) * 1.1333); }
+@media (width < 768px), (pointer: coarse) {
+  .pi-chat[data-text-size="lg"] { --composer-text: max(calc(var(--text-md, var(--text-body, 0.8125rem)) * 1.1333), 1rem); }
+}
 .pi-chat.pi-chat.pi-chat :is([data-slot="composer-placeholder"], [data-testid="composer-input"]) {
   font-size: var(--composer-text);
   line-height: var(--chat-leading);
@@ -266,6 +273,10 @@
 .pi-chat.pi-chat.pi-chat :is(pre, code) {
   font-size: var(--chat-code);
 }
+/* Markdown headings in a reply (fixed text-xl / text-base in the item) are steps of the reading token, not of the root: 1.3333 and 1.0667 of it, which is
+   the 20px and 16px they were at the default. The token, not the touch floor, so a phone at the default is unchanged. */
+.pi-chat.pi-chat [data-testid="message-text"] :is(h1, h2, h3, h4, h5, h6) { font-size: calc(var(--text-chat, 0.9375rem) * 1.0667); }
+.pi-chat.pi-chat [data-testid="message-text"] h1 { font-size: calc(var(--text-chat, 0.9375rem) * 1.3333); }
 
 /* Overlay blur (D-1799): no blur unless the shell opts in, including for an older copy of the overlays that still carries an unconditional
    backdrop-blur class. Without <html data-overlay-blur="on"> the four overlay slots get none; with it (AppShell overlayBlur) they blur by
