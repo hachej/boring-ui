@@ -275,8 +275,8 @@
 }
 /* Markdown headings in a reply (fixed text-xl / text-base in the item) are steps of the reading token, not of the root: 1.3333 and 1.0667 of it, which is
    the 20px and 16px they were at the default. The token, not the touch floor, so a phone at the default is unchanged. */
-.pi-chat.pi-chat :is(h1, h2, h3, h4, h5, h6):not(header *) { font-size: calc(var(--text-chat, 0.9375rem) * 1.0667); }
-.pi-chat.pi-chat h1:not(header *) { font-size: calc(var(--text-chat, 0.9375rem) * 1.3333); }
+.pi-chat.pi-chat [data-testid="message-text"] :is(h1, h2, h3, h4, h5, h6) { font-size: calc(var(--text-chat, 0.9375rem) * 1.0667); }
+.pi-chat.pi-chat [data-testid="message-text"] h1 { font-size: calc(var(--text-chat, 0.9375rem) * 1.3333); }
 
 /* Overlay blur (D-1799): no blur unless the shell opts in, including for an older copy of the overlays that still carries an unconditional
    backdrop-blur class. Without <html data-overlay-blur="on"> the four overlay slots get none; with it (AppShell overlayBlur) they blur by
