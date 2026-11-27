@@ -227,8 +227,8 @@
   },
   "dependencies": {
     "@mozilla/readability": "0.6.0",
-    "linkedom": "0.18.13",
-    "turndown": "7.2.4",
+    "linkedom": "0.18.15",
+    "turndown": "7.2.5",
     "unpdf": "1.9.1"
   },
   "devDependencies": {
