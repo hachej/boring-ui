@@ -39,9 +39,9 @@ export const signUp = (b, origin, email, extra = {}) => b.json(`${origin}/api/au
 export const me = async (b, origin) => (await b.json(`${origin}/api/signin/me`));
 
 /** A Studio and, once linked, an app; requests are routed by origin, as the two Workers would serve them. */
-export function world() {
+export function world({ appOwners } = {}) {
   const first = link();
-  const studio = signIn({ database: migrated(), secret: secret(), origin: STUDIO, appName: 'Studio', firstOwnerHash: first.hash, provider: true });
+  const studio = signIn({ database: migrated(), secret: secret(), origin: STUDIO, appName: 'Studio', firstOwnerHash: first.hash, provider: appOwners ? { appOwners } : true });
   // Two Workers in one process: Studio must not see the app's Better Auth request and transaction (async local storage), as it would not on Cloudflare.
   const studioFetch = async (input, init) => {
     const stores = await Promise.all([getCurrentDBAdapterAsyncLocalStorage(), getCurrentAuthContextAsyncLocalStorage(), getRequestStateAsyncLocalStorage()]);

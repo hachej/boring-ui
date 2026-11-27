@@ -45,8 +45,9 @@ export interface SignInOptions {
   readonly google?: { readonly clientId: string; readonly clientSecret: string } | undefined;
   /** An app linked to Studio: its owners are Studio's owners, proven by a round trip through Studio. */
   readonly studio?: StudioClientOptions | undefined;
-  /** Studio itself: it signs its owner list for the apps it links (`/api/signin/owners`) and registers their clients (`linkApp`). */
-  readonly provider?: boolean | undefined;
+  /** Studio itself: it signs its owner list for the apps it links (`/api/signin/owners`) and registers their clients (`linkApp`). With `appOwners`, a linked
+   *  app that names itself (`?app=`) also gets the owners Studio gives for that app (their e-mails), and the token says which app it is for. */
+  readonly provider?: boolean | { readonly appOwners?: ((app: string) => Promise<readonly string[]>) | undefined } | undefined;
   /** Sign-ups per hour from one address (Better Auth's limiter); 20 by default. */
   readonly signUpsPerHour?: number | undefined;
   readonly waitUntil?: ((promise: Promise<unknown>) => void) | undefined;

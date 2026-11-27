@@ -136,13 +136,16 @@ export function signIn(options: SignInOptions) {
     return new Response(null, { status: 405 });
   };
 
-  /** Studio: its owners, by Studio id only (the route is public, so no address or name), in a 5-minute token signed with its own keys. */
-  const owners = async (): Promise<Response> => {
+  /** Studio: its owners, by Studio id only (the route is public, so no address or name), in a 5-minute token signed with its own keys. An app that names
+   *  itself (`?app=`) also gets the owners Studio gives for it (`provider.appOwners`), and the token names that app, so it is no other app's list. */
+  const owners = async (url: URL): Promise<Response> => {
     const store = await db();
+    const app = url.searchParams.get('app') ?? undefined, hook = typeof options.provider === 'object' ? options.provider.appOwners : undefined;
     const rows = await store.findMany<{ email: string }>({ model: 'invitation', where: [{ field: 'role', value: 'owner' }] });
-    const users = (await Promise.all(rows.map((r) => store.findOne<User>({ model: 'user', where: [{ field: 'email', value: r.email }] })))).filter((u): u is User => !!u);
+    const emails = [...new Set([...rows.map((r) => r.email), ...(app && hook ? await hook(app).catch(() => []) : [])].map((e) => e.toLowerCase()))];
+    const users = (await Promise.all(emails.map((email) => store.findOne<User>({ model: 'user', where: [{ field: 'email', value: email }] })))).filter((u): u is User => !!u);
     const { token } = await api['signJWT']!({ body: {
-      payload: { owners: users.map((u) => ({ sub: u.id })) },
+      payload: { owners: users.map((u) => ({ sub: u.id })), ...(app ? { app } : {}) },
       overrideOptions: { jwt: { issuer: `${origin}/api/auth`, audience: OWNERS_AUDIENCE, expirationTime: '5m' } },
     } }) as { token: string };
     return Response.json({ token }, { headers: { 'cache-control': 'no-store' } });
@@ -178,7 +181,7 @@ export function signIn(options: SignInOptions) {
     }
     if (path === '/api/signin/first-owner') return request.method === 'GET' ? firstOwnerCheck(request) : new Response(null, { status: 405 });
     if (path === '/api/signin/people') return people(request, url);
-    if (path === '/api/signin/owners' && options.provider) return owners();
+    if (path === '/api/signin/owners' && options.provider) return owners(url);
     if (path === '/api/signin/links' && options.provider && request.method === 'POST') return links(request);
     if (path === '/api/signin/studio' && a.link) return toStudio(request);
     // An assistant registers itself: one whose callbacks are all http on loopback (Claude Code, any port) is a native client, since
