@@ -1,5 +1,11 @@
 # Unreleased
 
+# Migrating to 0.7.3
+
+- **`pi-chat`: `textSize` sets the reading size of one chat (additive).** `PiChat textSize` (`'sm'` | `'md'` default | `'lg'` | any CSS length; also through `AgentWorkspace chat`, `AgentSpec.chatProps`) sets `--text-chat` on that chat's root; without it nothing changes. Markdown headings now scale with `--text-chat` (identical at the default; they were fixed `text-base`/`text-xl`, so with a larger `--text-chat` they were smaller than the prose). Update `pi-chat` and the kit's `app.css` together (`boring-ui-blocks update`).
+
+- **`pi-chat`, `pi-chat-markdown`, `app-shell`: `resolveLink` for Markdown links (additive).** `PiChat` (so `AgentWorkspace chat` and `AgentChat chatProps`) takes an optional `resolveLink(href, { source, text, title })`; `Markdown` takes `resolveLink` and `linkSource`, and `ChatTextPart` carries `resolveLink`. It returns an address, `{ href?, target?, onClick?(event, context) }`, `null` (the words, no link) or `undefined` (unchanged). `{ onClick }` without `href` renders a `<button type="button">` styled like the link (an in-app action); neither `href` nor `onClick` shows the words only; a throwing `onClick` is not caught. A given `href` still has to be a plain http(s) URL (nothing wider than before); anything else renders as text. The app shell's Markdown note in the pane uses `agent.chatProps.resolveLink` with `source: 'viewer'`. Without it nothing changes. Re-run `npx boring-ui-blocks update` to adopt it.
+
 # Migrating to 0.7.2
 
 - **`createCodeInterpreterEnv`: file reads no longer report a stale `not_found` right after a command (additive, new option `staleMissWindowMs`).** On EFS, a path a command in the interpreter just created could be reported `not_found` by the host's NFS client for up to a minute. For `staleMissWindowMs` ms (default 5000, `0` restores the old behaviour) after a command through the env finished, a read that misses (`fileInfo`, `exists`, `readTextFile`, `readBinaryFile`, `readTextLines`, the readers, `listDir`, `canonicalPath`) now reads the parent directory to force revalidation and looks again with a short backoff before reporting `not_found`; outside the window a miss is immediate. Writes and other errors are not retried. No change needed; a host that mounts EFS itself should still use `lookupcache=pos`. Not yet proven on real EFS.
