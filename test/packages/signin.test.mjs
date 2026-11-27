@@ -122,3 +122,41 @@ test('the Studio bridge: a Studio owner proven through Studio owns the app; the 
   assert.equal((await me(remy, APP)).status, 401, 'and no longer an owner of the app');
   assert.ok(await app.personOf(new Request(APP)) === undefined);
 });
+
+test('an app\'s own owners in Studio own its deploys: Studio names them for that app only, and they come in through Studio as owners', async () => {
+  const given = { demo: ['ada-master@studio.test'] };
+  const w = world({ appOwners: async (app) => given[app] ?? [] });
+  const olive = browser(w.route);
+  assert.equal((await signUp(olive, STUDIO, 'olive@studio.test', { 'x-boring-first-owner': w.first.token })).status, 200);
+  const { clientId } = (await olive.json(`${STUDIO}/api/signin/links`, { method: 'POST', body: { app: 'demo', origin: APP } })).body;
+  w.makeApp({ studio: { origin: STUDIO, app: 'demo', clientId, fetch: w.studioFetch, ownersTtlMs: 0 } });
+
+  // The app's master: a Studio member (not a Studio owner) whom Studio gives as an owner of « demo ».
+  await olive.json(`${STUDIO}/api/signin/people`, { method: 'POST', body: { email: 'ada-master@studio.test', role: 'member' } });
+  const ada = browser(w.route);
+  await signUp(ada, STUDIO, 'ada-master@studio.test');
+  assert.equal((await throughStudio(ada)).pathname, '/');
+  assert.equal((await me(ada, APP)).body.person.role, 'owner', 'an owner of the app in Studio owns its deploy');
+
+  // Studio's list for another app does not name her; a plain Studio member stays out.
+  const other = (await olive.json(`${STUDIO}/api/signin/owners?app=other`)).body.token, plain = (await olive.json(`${STUDIO}/api/signin/owners`)).body.token;
+  const subsOf = (t) => JSON.parse(Buffer.from(t.split('.')[1], 'base64url').toString()).owners.length;
+  assert.equal(subsOf(other), 1, 'only Olive, Studio\'s owner, for another app');
+  assert.equal(subsOf(plain), 1, 'an app that names no app gets Studio\'s owners only');
+  assert.equal(JSON.parse(Buffer.from(other.split('.')[1], 'base64url').toString()).app, 'other', 'the token names the app it is for');
+  await olive.json(`${STUDIO}/api/signin/people`, { method: 'POST', body: { email: 'max@studio.test', role: 'member' } });
+  const max = browser(w.route);
+  await signUp(max, STUDIO, 'max@studio.test');
+  assert.match((await throughStudio(max)).search, /error/);
+});
+
+test('Studio\'s list for an app never waits on a slow directory: past 2 s it is Studio\'s owners alone, and a name that is no app names none', async () => {
+  const w = world({ appOwners: () => new Promise(() => {}) });
+  const olive = browser(w.route);
+  assert.equal((await signUp(olive, STUDIO, 'olive@studio.test', { 'x-boring-first-owner': w.first.token })).status, 200);
+  const t0 = Date.now(), slow = (await olive.json(`${STUDIO}/api/signin/owners?app=demo`)).body.token;
+  assert.ok(Date.now() - t0 < 4000, 'answered within the wait');
+  assert.equal(JSON.parse(Buffer.from(slow.split('.')[1], 'base64url').toString()).owners.length, 1);
+  const odd = (await olive.json(`${STUDIO}/api/signin/owners?app=${encodeURIComponent('x'.repeat(100))}`)).body.token;
+  assert.equal(JSON.parse(Buffer.from(odd.split('.')[1], 'base64url').toString()).app, undefined, 'no app is echoed for a name that is none');
+});

@@ -83,8 +83,10 @@ export function studioLink(studio: StudioClientOptions) {
   const ownerSubs = async (): Promise<Set<string>> => {
     if (owners && Date.now() - owners.at < ttl) return owners.subs;
     try {
-      const { token } = await (await get(`${studio.origin}/api/signin/owners`)).json() as { token: string };
+      // Asked for this app: Studio adds the app's own owners and names the app in the token; a token for another app is no list here (an older Studio names none).
+      const { token } = await (await get(`${studio.origin}/api/signin/owners?${new URLSearchParams({ app: studio.app })}`)).json() as { token: string };
       const { payload } = await jwtVerify(token, await keySet(), { issuer, audience: OWNERS_AUDIENCE });
+      if (payload['app'] !== undefined && payload['app'] !== studio.app) return new Set();
       const list = Array.isArray(payload['owners']) ? payload['owners'] as Owner[] : [];
       owners = { at: Date.now(), subs: new Set(list.map((o) => o.sub)) };
       return owners.subs;
